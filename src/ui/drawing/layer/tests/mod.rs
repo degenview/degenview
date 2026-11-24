@@ -902,12 +902,37 @@ fn keep_drawing_off_returns_to_the_crosshair_after_each_drawing() {
         assert_eq!(rig.drawings.len(), 1, "{tool:?}");
         assert_eq!(rig.tool, Tool::Cursor, "{tool:?} disarms");
     }
-    // The ruler never counts: it is a measurement.
+}
+
+#[test]
+fn keep_drawing_off_ends_a_ruler_at_the_next_press() {
+    for by_drag in [false, true] {
+        let mut rig = Rig::with_tool(Tool::Ruler);
+        rig.keep_drawing = false;
+        rig.click(POINTS[0]);
+        rig.click(POINTS[1]);
+        // The measurement stays up to be read.
+        assert_eq!(rig.tool, Tool::Ruler);
+        assert_eq!(rig.drawings.len(), 1);
+        if by_drag {
+            rig.drag(POINTS[2], POINTS[3]);
+        } else {
+            rig.click(POINTS[2]);
+        }
+        assert_eq!(rig.tool, Tool::Cursor, "by_drag: {by_drag}");
+        assert!(rig.layer.gesture.is_none(), "by_drag: {by_drag}");
+        assert_eq!(rig.undo_steps, 0);
+    }
+}
+
+#[test]
+fn keep_drawing_on_starts_another_ruler_at_the_next_press() {
     let mut rig = Rig::with_tool(Tool::Ruler);
-    rig.keep_drawing = false;
     rig.click(POINTS[0]);
     rig.click(POINTS[1]);
+    rig.click(POINTS[2]);
     assert_eq!(rig.tool, Tool::Ruler);
+    assert!(rig.layer.claims_drag(), "the click began a measurement");
 }
 
 #[test]

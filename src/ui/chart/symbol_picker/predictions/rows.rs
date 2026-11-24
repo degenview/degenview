@@ -2,9 +2,10 @@
 //! checkbox each, and the topic chips offered while the box is empty.
 
 use super::{EventHead, Tick};
+use crate::i18n::{tr, tr_n};
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::prediction_icon;
-use crate::ui::chart::picker_kit::suggestions::PREDICTION_TOPICS;
+use crate::ui::chart::picker_kit::suggestions::prediction_topics;
 use crate::ui::chart::symbol_picker::list::{
     PAD, RowOutput, RowState, SUBTITLE_SIZE, TITLE_SIZE, chance_label, content_right, marks,
     paint_background, venue_block,
@@ -41,7 +42,12 @@ pub fn event_header(
     width: f32,
 ) -> (Response, RowOutput) {
     let (rect, response) = ui.allocate_exact_size(vec2(width, HEADER_HEIGHT), Sense::click());
-    let label = format!("{}, {} choices", head.title, head.choices);
+    let label = tr_n!(
+        head.choices,
+        "{title}, {count} choice",
+        "{title}, {count} choices",
+        title = head.title
+    );
     let response = crate::ui::accessibility::label(response, label);
     let checkbox = Rect::from_center_size(
         pos2(rect.left() + CHECK_LEFT + CHECKBOX / 2.0, rect.center().y),
@@ -53,7 +59,7 @@ pub fn event_header(
             response.id.with("tick"),
             Sense::click(),
         )
-        .on_hover_text("Chart every choice together")
+        .on_hover_text(tr!("Chart every choice together"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let out = RowOutput {
         hovered: response.hovered() || tick.hovered(),
@@ -220,7 +226,7 @@ const CHIP_LINES: usize = 2;
 /// The starting points offered while the box is empty, as pills on at most two lines. What does not
 /// fit scrolls sideways. Returns the search the clicked one stands for.
 pub fn topic_chips(ui: &mut Ui, width: f32) -> Option<&'static str> {
-    let labels: Vec<_> = PREDICTION_TOPICS
+    let labels: Vec<_> = prediction_topics()
         .iter()
         .map(|(title, _, _)| kit::galley(ui, title, 13.0, MEDIUM, theme::text_primary(), 200.0))
         .collect();
@@ -243,7 +249,7 @@ pub fn topic_chips(ui: &mut Ui, width: f32) -> Option<&'static str> {
             for &index in members {
                 let rect = Rect::from_min_size(pos2(x, y), vec2(widths[index], CHIP_HEIGHT));
                 if chip(ui, rect, index, &labels[index]) {
-                    chosen = Some(PREDICTION_TOPICS[index].1);
+                    chosen = Some(prediction_topics()[index].1);
                 }
                 x += widths[index] + CHIP_GAP;
             }
@@ -262,7 +268,7 @@ pub fn topic_chips(ui: &mut Ui, width: f32) -> Option<&'static str> {
 
 /// One pill: its icon and title. Returns whether it was clicked.
 fn chip(ui: &mut Ui, rect: Rect, index: usize, label: &Arc<Galley>) -> bool {
-    let (title, query, icon) = PREDICTION_TOPICS[index];
+    let (title, query, icon) = prediction_topics()[index];
     let response = ui
         .interact(rect, Id::new(("prediction_topic", query)), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);

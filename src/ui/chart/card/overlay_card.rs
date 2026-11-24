@@ -10,6 +10,7 @@
 
 use super::overlays::{LineState, OverlayFrame, OverlayLine};
 use super::{ChartCard, READOUT_MARGIN, READOUT_PAD, READOUT_ROW_GAP, View, truncated};
+use crate::i18n::tr;
 use crate::model::overlay::feed::OverlayStatus;
 use crate::model::overlay::{Move, OverlayCommand, OverlayId, OverlayScale, ScaleChoice};
 use crate::ui::chart::indicator_strip::{self, Action};
@@ -306,7 +307,7 @@ impl ChartCard {
             painter.text(
                 Pos2::new(origin.x + pad.x, y),
                 Align2::LEFT_CENTER,
-                format!("+{more} more"),
+                tr!("+{count} more", count = more),
                 font,
                 theme::text_secondary(),
             );
@@ -376,13 +377,17 @@ impl ChartCard {
         let controls = [
             (
                 if visible { Icon::Eye } else { Icon::EyeSlash },
-                if visible { "Hide" } else { "Show" },
+                if visible { tr!("Hide") } else { tr!("Show") },
                 Action::Overlay(OverlayCommand::SetVisible(id, !visible)),
             ),
-            (Icon::Sliders, "Settings", Action::ConfigureOverlay(id, row)),
+            (
+                Icon::Sliders,
+                tr!("Settings"),
+                Action::ConfigureOverlay(id, row),
+            ),
             (
                 Icon::Xmark,
-                "Remove",
+                tr!("Remove"),
                 Action::Overlay(OverlayCommand::Remove(id)),
             ),
         ];
@@ -427,27 +432,32 @@ impl ChartCard {
     /// What a row's tooltip says: the market, where it comes from and how its data is doing.
     fn row_note(&self, row: &Row) -> String {
         let overlay = row.line.overlay;
-        let mut note = format!(
-            "{} · {}",
-            overlay.name(),
-            overlay.instrument.source.display_name()
+        let mut note = tr!(
+            "{name} · {source}",
+            name = overlay.name(),
+            source = overlay.instrument.source.display_name()
         );
         let status = match &row.line.state {
-            LineState::Waiting => Some("waiting to load".to_owned()),
-            LineState::NoOverlap => Some("no data in view".to_owned()),
-            LineState::NoBaseline => Some("nothing to start from yet".to_owned()),
+            LineState::Waiting => Some(tr!("waiting to load").to_owned()),
+            LineState::NoOverlap => Some(tr!("no data in view").to_owned()),
+            LineState::NoBaseline => Some(tr!("nothing to start from yet").to_owned()),
             LineState::Blocked(reason) => Some(reason.to_string()),
-            LineState::Unsupported => Some("not available on price-based chart types".to_owned()),
+            LineState::Unsupported => {
+                Some(tr!("not available on price-based chart types").to_owned())
+            }
             LineState::Hidden | LineState::Drawn => None,
         };
         if let Some(status) = status {
-            note.push_str(" — ");
-            note.push_str(&status);
+            note = tr!("{note} — {status}", note = note, status = status);
         }
         if let Some(OverlayStatus::Error(message)) =
             self.overlay_feed(overlay.id).map(|feed| &feed.status)
         {
-            note.push_str(&format!(" — could not load: {message}"));
+            note = tr!(
+                "{note} — could not load: {message}",
+                note = note,
+                message = message
+            );
         }
         note
     }
@@ -456,19 +466,23 @@ impl ChartCard {
 /// Every label a row's menu can show, for measuring it: the menu is as wide as its longest row.
 fn menu_labels(visible: bool, others: &[(OverlayId, String)]) -> Vec<String> {
     let mut labels: Vec<String> = [
-        if visible { "Hide" } else { "Show" },
-        "Settings…",
-        "Chart's scale",
-        "Its own scale",
-        "Bring to front",
-        "Bring forward",
-        "Send backward",
-        "Send to back",
-        "Remove",
+        if visible { tr!("Hide") } else { tr!("Show") },
+        tr!("Settings…"),
+        tr!("Chart's scale"),
+        tr!("Its own scale"),
+        tr!("Bring to front"),
+        tr!("Bring forward"),
+        tr!("Send backward"),
+        tr!("Send to back"),
+        tr!("Remove"),
     ]
     .map(str::to_owned)
     .to_vec();
-    labels.extend(others.iter().map(|(_, name)| format!("Scale of {name}")));
+    labels.extend(
+        others
+            .iter()
+            .map(|(_, name)| tr!("Scale of {name}", name = name)),
+    );
     labels
 }
 
@@ -488,15 +502,15 @@ fn row_menu(
     let mut action = None;
     ui.spacing_mut().item_spacing.y = 0.0;
     let (icon, label) = if visible {
-        (Icon::EyeSlash, "Hide")
+        (Icon::EyeSlash, tr!("Hide"))
     } else {
-        (Icon::Eye, "Show")
+        (Icon::Eye, tr!("Show"))
     };
     if kit::menu_item(ui, icon, label, true, false) {
         action = Some(Action::Overlay(OverlayCommand::SetVisible(id, !visible)));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::Sliders, "Settings…", true, false) {
+    if kit::menu_item(ui, Icon::Sliders, tr!("Settings…"), true, false) {
         action = Some(Action::ConfigureOverlay(id, row));
         ui.close();
     }
@@ -505,23 +519,28 @@ fn row_menu(
         ui.close();
     };
     kit::menu_separator(ui);
-    indicator_strip::menu_heading(ui, "Scale");
+    indicator_strip::menu_heading(ui, tr!("Scale"));
     let own = scale == OverlayScale::Own(id);
     let shared = matches!(scale, OverlayScale::Own(group) if group != id);
     if kit::menu_item_marked(
         ui,
         Icon::Check,
-        "Chart's scale",
+        tr!("Chart's scale"),
         scale == OverlayScale::Main,
     ) {
         send(ui, OverlayCommand::SetScale(id, ScaleChoice::Main));
     }
-    if kit::menu_item_marked(ui, Icon::Check, "Its own scale", own) {
+    if kit::menu_item_marked(ui, Icon::Check, tr!("Its own scale"), own) {
         send(ui, OverlayCommand::SetScale(id, ScaleChoice::Own));
     }
     for (other, name) in others {
         let marked = shared && scale == OverlayScale::Own(*other);
-        if kit::menu_item_marked(ui, Icon::Check, &format!("Scale of {name}"), marked) {
+        if kit::menu_item_marked(
+            ui,
+            Icon::Check,
+            &tr!("Scale of {name}", name = name),
+            marked,
+        ) {
             send(
                 ui,
                 OverlayCommand::SetScale(id, ScaleChoice::SharedWith(*other)),
@@ -529,19 +548,19 @@ fn row_menu(
         }
     }
     kit::menu_separator(ui);
-    indicator_strip::menu_heading(ui, "Visual order");
+    indicator_strip::menu_heading(ui, tr!("Visual order"));
     for (label, to, enabled) in [
-        ("Bring to front", Move::ToFront, !last),
-        ("Bring forward", Move::Forward, !last),
-        ("Send backward", Move::Backward, !first),
-        ("Send to back", Move::ToBack, !first),
+        (tr!("Bring to front"), Move::ToFront, !last),
+        (tr!("Bring forward"), Move::Forward, !last),
+        (tr!("Send backward"), Move::Backward, !first),
+        (tr!("Send to back"), Move::ToBack, !first),
     ] {
         if kit::menu_item(ui, Icon::ArrowUp, label, enabled, false) {
             send(ui, OverlayCommand::Move(id, to));
         }
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Remove", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Remove"), true, true) {
         send(ui, OverlayCommand::Remove(id));
     }
     action

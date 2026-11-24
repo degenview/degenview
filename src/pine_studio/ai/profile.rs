@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use super::tools::Outcome;
 use crate::host::pine::KlineSecurityDataProvider;
+use crate::i18n::tr_n;
 use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
@@ -73,6 +74,7 @@ impl ProfileTool {
         config.inputs = feed.inputs.clone();
         config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
+        config.timeframe_seconds = feed.timeframe_seconds;
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(KlineSecurityDataProvider));
         let mut session = match ProfileSession::start(config, std::sync::Arc::new(|| {})) {
@@ -114,16 +116,19 @@ impl ProfileTool {
         let previous = self.take_previous(&report);
         let content = describe(&report, &marks, label, previous);
         let summary = match marks.hot.first() {
-            Some(hot) => format!(
-                "Profiled the draft \u{b7} {} bars \u{b7} {} \u{b7} hottest line {} ({})",
-                marks.totals.bars,
-                marks.totals.time,
-                hot.line,
-                percent(f64::from(hot.line_share))
+            Some(hot) => tr_n!(
+                report.summary.bars,
+                "Profiled the draft · {count} bar · {time} · hottest line {line} ({share})",
+                "Profiled the draft · {count} bars · {time} · hottest line {line} ({share})",
+                time = marks.totals.time,
+                line = hot.line,
+                share = percent(f64::from(hot.line_share))
             ),
-            None => format!(
-                "Profiled the draft \u{b7} {} bars \u{b7} {}",
-                marks.totals.bars, marks.totals.time
+            None => tr_n!(
+                report.summary.bars,
+                "Profiled the draft · {count} bar · {time}",
+                "Profiled the draft · {count} bars · {time}",
+                time = marks.totals.time
             ),
         };
         Outcome {
@@ -292,6 +297,7 @@ mod tests {
             inputs: HashMap::new(),
             visible_range: None,
             theme: ChartTheme::DARK,
+            timeframe_seconds: Some(60.0),
             label: "TEST \u{b7} 1m".to_owned(),
         }
     }

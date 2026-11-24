@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use super::fast_hash::FastMap;
 use super::security_slice;
-use super::session::Session;
+use super::session::{SeriesAnswer, Session};
 use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
@@ -480,15 +480,22 @@ impl Session {
         }))
     }
 
-    /// The provider's candles for `key`, asked once per run.
+    /// The provider's candles for `key`: asked once while it answers, and again once
+    /// [`Session::security_retry_after`] has passed if it did not (a series it could not give is a
+    /// moment, not a fact; see [`SeriesAnswer`]).
     pub(in crate::pine) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
-        if let Some(known) = self.security_series.get(&key) {
-            return known.clone();
+        if let Some(known) = self.security_series.get(&key)
+            && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
+        {
+            return known.candles.clone();
         }
         let span = match (self.first_bar_time, self.last_bar_time) {
             (Some(start_ms), Some(last)) if self.bar_seconds > 0.0 => Some(ChartSpan {
                 start_ms,
-                end_ms: last + (self.bar_seconds * 1000.0).round() as i64,
+                // Only bounds the fetch, so it errs long: the nominal length of a month is 30 days
+                // and a month is up to 31.
+                end_ms: (last + (self.bar_seconds * 1000.0).round() as i64)
+                    .max(time::bucket::end(last, self.bar_seconds)),
                 spacing_ms: (self.bar_seconds * 1000.0).round() as i64,
             }),
             _ => None,
@@ -506,7 +513,13 @@ impl Session {
         if let Some(deadline) = self.deadline_at.as_mut() {
             *deadline += asked.elapsed();
         }
-        self.security_series.insert(key, answer.clone());
+        self.security_series.insert(
+            key,
+            SeriesAnswer {
+                candles: answer.clone(),
+                asked: std::time::Instant::now(),
+            },
+        );
         answer
     }
 
@@ -807,7 +820,7 @@ impl Session {
         let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut fresh = false;
         if context.flags.is_confirmed {
-            let chart_close = chart.end;
+            let chart_close = self.bar_end(&bar);
             while state.completed_candles < candles.len() {
                 let candle = &candles[state.completed_candles];
                 if time::bucket::end(candle.open_time, request.interval) > chart_close {
@@ -873,7 +886,7 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let end = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
+        let end = self.bar_end(&bar);
         let mut low = 0usize;
         let mut high = candles.len();
         while low < high {
@@ -2555,7 +2568,12 @@ mod tests {
             Some(Box::new(SpanOnlyProvider { seen: seen.clone() })),
             None,
         );
-        let chart = [bar(0, 10.0), bar(60_000, 11.0)];
+        // Minute bars that close when a minute ends: a bar's intrabars are the ones inside it.
+        let minute = |open_time: i64, close: f64| Kline {
+            close_time: open_time + 59_999,
+            ..bar(open_time, close)
+        };
+        let chart = [minute(0, 10.0), minute(60_000, 11.0)];
         assert!(session.load_history(&chart, false, None).is_ok());
         let output = session.output();
         assert_eq!(output.plots[0].values, [Some(0.0), Some(3.0)]);
@@ -2643,5 +2661,21 @@ mod tests {
         );
         // On the second bar the four 15s intrabars sum to 1 + 2 + 3 + 4.
         assert_eq!(output.plots[0].values.last(), Some(&Some(10.0)));
+    }
+
+    #[test]
+    fn timeframe_change_in_a_request_compares_with_the_request_sites_previous_bar() {
+        // TradingView (probe R2, M1 and M2): the call keeps the bar it last ran on inside the
+        // request too. It runs every third hour, so each run is compared with the one before:
+        // 4-hour buckets open at hours 6, 9, 12, 18, 21 (day one) and 24, 30, 33, 36, 42, 45.
+        let chart: Vec<Kline> = (0..48).map(|hour| bar(hour * 3_600_000, 1.0)).collect();
+        let output = run(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(ta.cum(request.security(syminfo.tickerid, \"60\", \
+             hour % 3 == 0 ? (timeframe.change(\"240\") ? 1.0 : 0.0) : 0.0)))",
+            TestProvider::default(),
+            &chart,
+        );
+        assert_eq!(output.plots[0].values.last(), Some(&Some(11.0)));
     }
 }

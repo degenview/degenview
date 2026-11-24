@@ -69,6 +69,18 @@ pub enum Error {
     Network(String),
 }
 
+impl Error {
+    /// A failure that asking again may not repeat: the transport failed, or the server said it
+    /// was busy or broken (408, 425, 429, 5xx). A refusal of this request (4xx) or a body too big
+    /// is not.
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Status(408 | 425 | 429 | 500..=599) | Self::Network(_)
+        )
+    }
+}
+
 pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<String, Error> {
     get_text_with_limit(url, headers, retry, MAX_BODY_BYTES)
 }
@@ -170,10 +182,7 @@ fn fetch<T>(
             Err(ureq::Error::StatusCode(code)) => (Err(Error::Status(code)), None),
             Err(error) => (Err(Error::Network(error.to_string())), None),
         };
-        let should_retry = matches!(
-            result,
-            Err(Error::Status(408 | 425 | 429 | 500..=599)) | Err(Error::Network(_))
-        );
+        let should_retry = result.as_ref().err().is_some_and(Error::is_transient);
         if attempt + 1 == attempts || !should_retry {
             return result;
         }

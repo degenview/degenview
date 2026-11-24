@@ -219,7 +219,7 @@ beside the code they exercise.
 | --- | --- |
 | `syntax/` | `token`, `lexer`, `parser`, `ast`, `traversal` |
 | `check/` | The type checker and the rules that need no types: names, structure, declarations, identifiers, ignored features, `callables` |
-| `compiler/` | `compiler` (source → `CompiledProgram`), `program`, the builtin `registry`, `symbol_catalog` |
+| `compiler/` | `compiler` (source → `CompiledProgram`), `program`, the builtin `registry`, `symbol_catalog`, `signatures` (parameter names and results of the builtins) |
 | `runtime/` | The interpreter: `session/` (`build`, `running`, `expressions`, `statements`, `calls`, `scalar`, `hooks`, `bookkeeping`), `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
 | `builtins/` | Constants and colour math (`mod.rs`), then one child per namespace: `alert`, `array`, `map`, `matrix`, `math`, `strings`, `number_format`, `regex_lite`, `ta`, `misc`, `market_values` |
 | `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings/` (dispatch and binding in `mod.rs`; `names`, `coordinates`, `create`, `table`, `mutate`), `style_overrides`; how an `input.*` call is read |

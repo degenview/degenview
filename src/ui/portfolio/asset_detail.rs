@@ -3,6 +3,7 @@
 //! editing or deleting a transaction refreshes the figures in place) and applies the actions.
 //! Every amount is in the reporting currency — the same one the Holdings table shows — and says so.
 
+use crate::i18n::tr;
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioTransaction};
 use crate::ui::chart::picker_kit::{art, widgets};
@@ -61,20 +62,22 @@ pub fn asset_transactions<'a>(
 // MARK: Pure text
 
 pub fn values_note(code: &str) -> String {
-    format!("Values in {code}")
+    tr!("Values in {currency}", currency = code)
 }
 
-pub const NO_POSITION: &str = "No open position — the transactions below net to zero.";
+pub fn no_position_note() -> &'static str {
+    tr!("No open position — the transactions below net to zero.")
+}
 
 /// The eight position cards.
 pub fn stat_cards<'a>(
     holding: &'a PortfolioHolding,
     f: PortfolioValueFormatter,
 ) -> Vec<StatCard<'a>> {
-    let unavailable = "Unavailable".to_owned();
+    let unavailable = tr!("Unavailable").to_owned();
     vec![
         StatCard::new(
-            "Holdings",
+            tr!("Holdings"),
             if f.privacy {
                 f.quantity(holding.quantity, Default::default())
             } else {
@@ -86,30 +89,30 @@ pub fn stat_cards<'a>(
             },
         ),
         StatCard::new(
-            "Current Value",
+            tr!("Current Value"),
             holding
                 .current_value
                 .map_or(unavailable.clone(), |v| f.money(v)),
         )
         .placeholder(holding.current_value.is_none()),
-        StatCard::new("Average Cost", f.price(holding.average_cost)),
+        StatCard::new(tr!("Average Cost"), f.price(holding.average_cost)),
         StatCard::new(
-            "Current Price",
+            tr!("Current Price"),
             holding.current_price.map_or(unavailable, |v| f.price(v)),
         )
         .placeholder(holding.current_price.is_none()),
         StatCard::new(
-            "Unrealized P&L",
+            tr!("Unrealized P&L"),
             holding
                 .unrealized_pnl
                 .map_or("—".to_owned(), |v| f.signed_money(v)),
         )
         .tone(f.tone(holding.unrealized_pnl))
         .placeholder(holding.unrealized_pnl.is_none()),
-        StatCard::new("Realized P&L", f.signed_money(holding.realized_pnl))
+        StatCard::new(tr!("Realized P&L"), f.signed_money(holding.realized_pnl))
             .tone(f.tone(Some(holding.realized_pnl))),
         StatCard::new(
-            "Total P&L",
+            tr!("Total P&L"),
             holding
                 .total_pnl()
                 .map_or("—".to_owned(), |v| f.signed_money(v)),
@@ -117,7 +120,7 @@ pub fn stat_cards<'a>(
         .tone(f.tone(holding.total_pnl()))
         .caption(holding.pnl_percent().map(|p| f.signed_percent(p, 2)))
         .placeholder(holding.total_pnl().is_none()),
-        StatCard::new("Allocation", f.percent(holding.allocation, 2)),
+        StatCard::new(tr!("Allocation"), f.percent(holding.allocation, 2)),
     ]
 }
 
@@ -168,7 +171,7 @@ pub fn show(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 ui.label(kit::text(
-                    "Transactions",
+                    tr!("Transactions"),
                     kit::size::HEADLINE + 1.0,
                     kit::SEMIBOLD,
                     theme::text_primary(),
@@ -189,7 +192,8 @@ pub fn show(
         });
         ui.add_space(16.0);
         sheet::footer(ui, |ui| {
-            if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 90.0).clicked() {
+            if kit::footer_button(ui, tr!("Done"), kit::FooterButton::Primary, true, 90.0).clicked()
+            {
                 actions.push(AssetDetailAction::Close);
             }
         });
@@ -284,7 +288,7 @@ fn no_position(ui: &mut egui::Ui) {
     );
     let label = kit::galley(
         ui,
-        NO_POSITION,
+        no_position_note(),
         kit::size::SUBHEADLINE + 1.0,
         kit::REGULAR,
         theme::text_secondary(),
@@ -305,7 +309,7 @@ fn header(ui: &mut egui::Ui, input: &AssetDetailInput) {
     widgets::header(
         ui,
         art::Scene::Portfolio,
-        &format!("{} Transactions", asset.display_ticker()),
+        &tr!("{ticker} Transactions", ticker = asset.display_ticker()),
         &header_subtitle(input.subtitle, asset, input.formatter.currency.code()),
     );
 }
@@ -331,20 +335,20 @@ fn transactions(
             ui,
             outer,
             Icon::List,
-            "No Transactions",
-            "This asset has no transactions in this portfolio.",
+            tr!("No Transactions"),
+            tr!("This asset has no transactions in this portfolio."),
         );
         return;
     }
     let f = input.formatter;
     let code = f.currency.code();
     let headers: Vec<String> = [
-        "Date".to_owned(),
-        "Type".to_owned(),
-        "Quantity".to_owned(),
-        format!("Price ({code})"),
-        format!("Total ({code})"),
-        "Notes".to_owned(),
+        tr!("Date").to_owned(),
+        tr!("Type").to_owned(),
+        tr!("Quantity").to_owned(),
+        tr!("Price ({currency})", currency = code),
+        tr!("Total ({currency})", currency = code),
+        tr!("Notes").to_owned(),
     ]
     .into();
     let rows = input.transactions;
@@ -457,7 +461,7 @@ fn transaction_row(
         ui,
         cells[5],
         Id::new(("portfolio-detail-menu", id)),
-        &format!("Actions for {}", type_name(transaction.kind)),
+        &tr!("Actions for {kind}", kind = type_name(transaction.kind)),
         |ui| row_menu(ui, id, actions),
     );
     if row.response.double_clicked() {
@@ -469,18 +473,18 @@ fn transaction_row(
 }
 
 fn row_menu(ui: &mut egui::Ui, id: u64, actions: &mut Vec<AssetDetailAction>) {
-    grid::fit_menu(ui, &["Edit", "Duplicate", "Delete"]);
+    grid::fit_menu(ui, &[tr!("Edit"), tr!("Duplicate"), tr!("Delete")]);
     ui.spacing_mut().item_spacing.y = 0.0;
-    if kit::menu_item(ui, Icon::Pencil, "Edit", true, false) {
+    if kit::menu_item(ui, Icon::Pencil, tr!("Edit"), true, false) {
         actions.push(AssetDetailAction::Edit(id));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::CopyDoc, "Duplicate", true, false) {
+    if kit::menu_item(ui, Icon::CopyDoc, tr!("Duplicate"), true, false) {
         actions.push(AssetDetailAction::Duplicate(id));
         ui.close();
     }
     kit::menu_separator(ui);
-    if kit::menu_item(ui, Icon::Trash, "Delete", true, true) {
+    if kit::menu_item(ui, Icon::Trash, tr!("Delete"), true, true) {
         actions.push(AssetDetailAction::Delete(id));
         ui.close();
     }
@@ -611,6 +615,6 @@ mod tests {
             header_subtitle("Bitcoin", &asset("Binance:BTCUSDT"), "USD"),
             "Bitcoin \u{00B7} Binance \u{00B7} Values in USD"
         );
-        assert!(NO_POSITION.starts_with("No open position"));
+        assert!(no_position_note().starts_with("No open position"));
     }
 }

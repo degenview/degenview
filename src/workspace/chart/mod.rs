@@ -10,12 +10,14 @@ pub(in crate::workspace) mod symbol_picker;
 
 use super::PersistedChart;
 use crate::host::portfolio::card::CardRuntime;
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;
 use crate::model::market::live::{LiveFold, LiveMark};
 use crate::model::overlay::OverlayList;
+use crate::model::pine::bundled;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, Drawing, IndicatorConfig, Kline, PmSeries, Timeframe};
@@ -106,7 +108,7 @@ impl Fetched {
             .iter()
             .find(|(_, history)| !history.is_empty())
             .map(|(_, history)| history.clone())
-            .ok_or_else(|| ProviderError::other("No price history for these choices"))?;
+            .ok_or_else(|| ProviderError::other(tr!("No price history for these choices")))?;
         Ok(Self {
             candles,
             bars: Vec::new(),
@@ -182,7 +184,7 @@ impl Chart {
     /// The name shown for the chart: an explicit display title, else its provider symbol.
     pub(super) fn display_title(&self) -> String {
         if let Some(card) = &self.card {
-            return card.kind.title().to_owned();
+            return card.kind.display_title().to_owned();
         }
         self.chart
             .title()
@@ -301,6 +303,7 @@ impl Chart {
         chart.chart.set_visible_candles(saved.candle_count as usize);
         chart.chart.restore_viewport(saved.viewport);
         chart.indicators = saved.indicators;
+        chart.adopt_legacy_rsi();
         if !chart.source.takes_indicators() {
             // A layout saved before these charts stopped taking indicators.
             chart.indicators = IndicatorConfig::default();
@@ -308,6 +311,31 @@ impl Chart {
         }
         chart.set_stored_drawings(saved.drawings);
         chart
+    }
+
+    /// A layout saved before RSI had a pane of its own holds it as a flag of the built-in
+    /// indicators, drawn as a band of the price plot. It becomes the bundled RSI, hidden if its eye
+    /// was off, so the chart keeps its RSI where an RSI belongs. A chart that already has the
+    /// bundled one (another build wrote the flag back) keeps just that.
+    fn adopt_legacy_rsi(&mut self) {
+        let Some(hidden) = self.indicators.take_legacy_rsi() else {
+            return;
+        };
+        let Some(rsi) = bundled::find("rsi") else {
+            return;
+        };
+        let script_id = bundled::script_id(rsi);
+        let has_it = self
+            .chart
+            .pine_instances()
+            .iter()
+            .any(|instance| instance.script_id.as_deref() == Some(script_id.as_str()));
+        if !has_it {
+            let id = self
+                .chart
+                .add_pine_instance(Some(script_id), rsi.name, rsi.source);
+            self.chart.set_pine_visible(id, !hidden);
+        }
     }
 
     pub(super) fn fetch(&mut self, timeframe: Timeframe, ctx: &egui::Context) {
@@ -452,7 +480,7 @@ impl Chart {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
-                Err(ProviderError::other("Older candles stopped loading"))
+                Err(ProviderError::other(tr!("Older candles stopped loading")))
             }
         };
         let current = request.source == self.source
@@ -479,9 +507,9 @@ impl Chart {
         let result = match receiver.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(
-                "Chart fetch stopped before returning data",
-            )),
+            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(tr!(
+                "Chart fetch stopped before returning data"
+            ))),
         };
 
         self.loading = false;

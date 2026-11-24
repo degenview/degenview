@@ -4,6 +4,7 @@
 
 pub mod program;
 pub mod registry;
+pub mod signatures;
 pub mod symbol_catalog;
 
 use std::collections::{HashMap, HashSet};
@@ -120,7 +121,10 @@ fn compile_internal(
         );
         diagnostics.extend(checked.diagnostics);
         resolutions = checked.resolutions;
-        diagnostics.extend(super::check::ignored_features::validate(&statements));
+        diagnostics.extend(super::check::ignored_features::validate(
+            &statements,
+            &checked.builtin_methods,
+        ));
         diagnostics.extend(super::check::name_check::validate(
             &statements,
             &import_aliases,

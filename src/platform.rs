@@ -2,78 +2,137 @@
 //! on the machine it runs on instead of hard-coding macOS. Key combinations live in
 //! `ui::shortcut`.
 
-/// "in your Keychain" / "in secure storage".
-pub const fn in_secret_store() -> &'static str {
+use crate::i18n::tr;
+
+// Wording that names the machine: one whole message per platform, never the platform's word put into
+// a sentence, so another language writes the sentence its own way and inflects the word.
+
+/// "Secret not found in your Keychain": a webhook whose secret cannot be read.
+pub fn webhook_secret_missing() -> &'static str {
     if cfg!(target_os = "macos") {
-        "in your Keychain"
+        tr!("Secret not found in your Keychain")
     } else if cfg!(windows) {
-        "in Windows Credential Manager"
+        tr!("Secret not found in Windows Credential Manager")
     } else {
-        "in secure storage"
+        tr!("Secret not found in secure storage")
+    }
+}
+
+/// How a webhook's secret is kept and used, in the page that explains webhooks.
+pub fn webhook_secret_is_kept() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!(
+            "A secret is kept in your Keychain and added to the URL or a header where you place it."
+        )
+    } else if cfg!(windows) {
+        tr!(
+            "A secret is kept in Windows Credential Manager and added to the URL or a header where you place it."
+        )
+    } else {
+        tr!(
+            "A secret is kept in secure storage and added to the URL or a header where you place it."
+        )
+    }
+}
+
+/// The tip on a webhook that has a secret.
+pub fn webhook_secret_in_use() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!("Uses a secret kept in your Keychain")
+    } else if cfg!(windows) {
+        tr!("Uses a secret kept in Windows Credential Manager")
+    } else {
+        tr!("Uses a secret kept in secure storage")
+    }
+}
+
+/// The advice to move what looks like a credential out of a webhook's address or headers.
+pub fn webhook_move_to_secret() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!("Save it as the secret so it is kept in your Keychain instead of in plain text.")
+    } else if cfg!(windows) {
+        tr!(
+            "Save it as the secret so it is kept in Windows Credential Manager instead of in plain text."
+        )
+    } else {
+        tr!("Save it as the secret so it is kept in secure storage instead of in plain text.")
+    }
+}
+
+/// The hint under a webhook's secret field.
+pub fn webhook_secret_hint() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!("Kept in your Keychain and inserted wherever you place it, in the URL or a header.")
+    } else if cfg!(windows) {
+        tr!(
+            "Kept in Windows Credential Manager and inserted wherever you place it, in the URL or a header."
+        )
+    } else {
+        tr!("Kept in secure storage and inserted wherever you place it, in the URL or a header.")
+    }
+}
+
+/// What the System theme does, under Settings ▸ Appearance.
+pub fn system_theme_hint() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!("System follows your Mac's light or dark setting.")
+    } else {
+        tr!("System follows your computer's light or dark setting.")
+    }
+}
+
+/// The menu item that opens the OS file browser on a file or folder.
+pub fn show_in_file_manager() -> &'static str {
+    if cfg!(target_os = "macos") {
+        tr!("Show in Finder")
+    } else if cfg!(windows) {
+        tr!("Show in Explorer")
+    } else {
+        tr!("Show in File Manager")
     }
 }
 
 /// "Saved securely in Keychain." in green beside a credentials form.
-pub const fn saved_securely() -> &'static str {
+pub fn saved_securely() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Saved securely in Keychain."
+        tr!("Saved securely in Keychain.")
     } else if cfg!(windows) {
-        "Saved securely in Windows Credential Manager."
+        tr!("Saved securely in Windows Credential Manager.")
     } else {
-        "Saved securely in secure storage."
+        tr!("Saved securely in secure storage.")
     }
 }
 
 /// The hint under a credential field that holds nothing yet.
-pub const fn credential_stored_hint() -> &'static str {
+pub fn credential_stored_hint() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Stored in your Mac's Keychain, never in a file."
+        tr!("Stored in your Mac's Keychain, never in a file.")
     } else if cfg!(windows) {
-        "Stored in Windows Credential Manager, never in a file."
+        tr!("Stored in Windows Credential Manager, never in a file.")
     } else {
-        "Stored in this computer's secure storage, never in a file."
+        tr!("Stored in this computer's secure storage, never in a file.")
     }
 }
 
 /// Where a saved key stays, as a sentence: "The key stays in this Mac's Keychain."
-pub const fn key_stays_stored() -> &'static str {
+pub fn key_stays_stored() -> &'static str {
     if cfg!(target_os = "macos") {
-        "The key stays in this Mac's Keychain."
+        tr!("The key stays in this Mac's Keychain.")
     } else if cfg!(windows) {
-        "The key stays in Windows Credential Manager on this computer."
+        tr!("The key stays in Windows Credential Manager on this computer.")
     } else {
-        "The key stays in this computer's secure storage."
+        tr!("The key stays in this computer's secure storage.")
     }
 }
 
 /// The hint under a credential field that already holds a key.
-pub const fn credential_saved_hint() -> &'static str {
+pub fn credential_saved_hint() -> &'static str {
     if cfg!(target_os = "macos") {
-        "A key is saved in your Keychain. Enter a new one to replace it."
+        tr!("A key is saved in your Keychain. Enter a new one to replace it.")
     } else if cfg!(windows) {
-        "A key is saved in Windows Credential Manager. Enter a new one to replace it."
+        tr!("A key is saved in Windows Credential Manager. Enter a new one to replace it.")
     } else {
-        "A key is saved in secure storage. Enter a new one to replace it."
-    }
-}
-
-/// The user's machine, for "your Mac's light or dark setting".
-pub const fn computer() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Mac"
-    } else {
-        "computer"
-    }
-}
-
-/// The OS file browser's name.
-pub const fn file_manager() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Finder"
-    } else if cfg!(windows) {
-        "Explorer"
-    } else {
-        "File Manager"
+        tr!("A key is saved in secure storage. Enter a new one to replace it.")
     }
 }
 
@@ -119,18 +178,52 @@ mod tests {
     #[test]
     fn mac_words_stay_mac_only() {
         if cfg!(target_os = "macos") {
-            assert_eq!(in_secret_store(), "in your Keychain");
+            assert_eq!(
+                webhook_secret_in_use(),
+                "Uses a secret kept in your Keychain"
+            );
             assert_eq!(key_stays_stored(), "The key stays in this Mac's Keychain.");
-            assert_eq!(file_manager(), "Finder");
+            assert_eq!(show_in_file_manager(), "Show in Finder");
             assert!(has_system_notifications());
         } else if cfg!(windows) {
-            assert_eq!(in_secret_store(), "in Windows Credential Manager");
-            assert_ne!(file_manager(), "Finder");
+            assert_eq!(
+                webhook_secret_in_use(),
+                "Uses a secret kept in Windows Credential Manager"
+            );
+            assert_eq!(show_in_file_manager(), "Show in Explorer");
             assert!(!has_system_notifications());
         } else {
-            assert_eq!(in_secret_store(), "in secure storage");
-            assert_ne!(file_manager(), "Finder");
+            assert_eq!(
+                webhook_secret_in_use(),
+                "Uses a secret kept in secure storage"
+            );
+            assert_eq!(show_in_file_manager(), "Show in File Manager");
             assert!(!has_system_notifications());
         }
+    }
+
+    #[test]
+    fn every_wording_is_a_whole_message_in_the_pseudo_locale() {
+        use crate::i18n::{Locale, with_locale};
+        with_locale(Locale::PSEUDO, || {
+            for text in [
+                webhook_secret_missing(),
+                webhook_secret_is_kept(),
+                webhook_secret_in_use(),
+                webhook_move_to_secret(),
+                webhook_secret_hint(),
+                system_theme_hint(),
+                show_in_file_manager(),
+                saved_securely(),
+                credential_stored_hint(),
+                key_stays_stored(),
+                credential_saved_hint(),
+            ] {
+                assert!(
+                    text.starts_with('[') && text.ends_with(']'),
+                    "not put through tr!: {text}"
+                );
+            }
+        });
     }
 }

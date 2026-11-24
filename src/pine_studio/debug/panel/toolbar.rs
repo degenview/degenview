@@ -2,6 +2,7 @@
 
 use eframe::egui::{Color32, Sense, Ui, vec2};
 
+use crate::i18n::tr;
 use crate::pine::debug::DebugCommand;
 use crate::pine_studio::debug::DebugPanel;
 use crate::ui::icons::{self, Icon};
@@ -29,9 +30,9 @@ fn button(ui: &mut Ui, icon: Icon, color: Color32, enabled: bool, tooltip: &str)
 /// The toolbar's debugger button: shows or hides the panel under the editor, lit while it shows.
 pub fn panel_button<A, M>(panel_open: bool, on_click: A) -> bar::Button<A, M> {
     let tip = if panel_open {
-        "Hide the debugger"
+        tr!("Hide the debugger")
     } else {
-        "Show the debugger: controls, breakpoints, variables, watches"
+        tr!("Show the debugger: controls, breakpoints, variables, watches")
     };
     bar::Button::new("debugger", tip)
         .icon(Icon::Bug)
@@ -44,11 +45,14 @@ pub fn transport(ui: &mut Ui, panel: &DebugPanel) -> Vec<DebugCommand> {
     let mut commands = Vec::new();
     let (continue_tip, continue_icon) = if panel.would_start() {
         (
-            shortcut::DEBUG_CONTINUE.hint("Start debugging"),
+            shortcut::DEBUG_CONTINUE.hint(tr!("Start debugging")),
             Icon::PlayFill,
         )
     } else {
-        (shortcut::DEBUG_CONTINUE.hint("Continue"), Icon::PlayFill)
+        (
+            shortcut::DEBUG_CONTINUE.hint(tr!("Continue")),
+            Icon::PlayFill,
+        )
     };
     let steps = [
         (
@@ -61,44 +65,46 @@ pub fn transport(ui: &mut Ui, panel: &DebugPanel) -> Vec<DebugCommand> {
             DebugCommand::Pause,
             Icon::PauseFill,
             theme::text_primary(),
-            shortcut::DEBUG_PAUSE.hint("Pause at the next statement"),
+            shortcut::DEBUG_PAUSE.hint(tr!("Pause at the next statement")),
         ),
         (
             DebugCommand::StepOver,
             Icon::StepOver,
             theme::text_primary(),
-            shortcut::DEBUG_STEP_OVER
-                .hint("Step over: run this statement and stop at the next one"),
+            shortcut::DEBUG_STEP_OVER.hint(tr!(
+                "Step over: run this statement and stop at the next one"
+            )),
         ),
         (
             DebugCommand::StepInto,
             Icon::StepInto,
             theme::text_primary(),
-            shortcut::DEBUG_STEP_INTO.hint("Step into a function call"),
+            shortcut::DEBUG_STEP_INTO.hint(tr!("Step into a function call")),
         ),
         (
             DebugCommand::StepOut,
             Icon::StepOut,
             theme::text_primary(),
-            shortcut::DEBUG_STEP_OUT.hint("Step out: run until the function returns"),
+            shortcut::DEBUG_STEP_OUT.hint(tr!("Step out: run until the function returns")),
         ),
         (
             DebugCommand::StepBar,
             Icon::StepBar,
             theme::text_primary(),
-            shortcut::DEBUG_STEP_BAR.hint("Step bar: run to the first statement of the next bar"),
+            shortcut::DEBUG_STEP_BAR
+                .hint(tr!("Step bar: run to the first statement of the next bar")),
         ),
         (
             DebugCommand::Restart,
             Icon::Restart,
             theme::text_primary(),
-            shortcut::DEBUG_RESTART.hint("Restart on the current code"),
+            shortcut::DEBUG_RESTART.hint(tr!("Restart on the current code")),
         ),
         (
             DebugCommand::Stop,
             Icon::StopFill,
             kit::RED,
-            shortcut::DEBUG_STOP.hint("Stop debugging"),
+            shortcut::DEBUG_STOP.hint(tr!("Stop debugging")),
         ),
     ];
     for (command, icon, color, tip) in steps {

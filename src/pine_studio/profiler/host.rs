@@ -8,6 +8,7 @@ use eframe::egui;
 
 use super::ProfileKey;
 use super::ui::Action;
+use crate::i18n::tr;
 use crate::model::pine::script::{CompileStatus, ScriptType};
 use crate::pine::profile::ProfileConfig;
 use crate::pine_studio::PineStudio;
@@ -96,18 +97,22 @@ impl PineStudio {
         if open.script_type == ScriptType::Library {
             self.profiler.refuse(
                 key,
-                "A library exports functions; there is nothing to run.",
+                tr!("A library exports functions; there is nothing to run."),
                 true,
             );
             return;
         }
         if open.editor.compile_pending() {
-            self.profiler.wait("Waiting for the script to compile.");
+            self.profiler
+                .wait(tr!("Waiting for the script to compile."));
             return;
         }
         if open.editor.status == CompileStatus::Error {
-            self.profiler
-                .refuse(key, "The script has errors. Fix them to profile it.", true);
+            self.profiler.refuse(
+                key,
+                tr!("The script has errors. Fix them to profile it."),
+                true,
+            );
             return;
         }
         let source = open.editor.source.clone();
@@ -115,14 +120,16 @@ impl PineStudio {
             .preview
             .debug_feed(crate::clock::now_ms(), theme::is_light())
         else {
-            self.profiler
-                .wait("The preview chart has no bars yet. Wait for it to load.");
+            self.profiler.wait(tr!(
+                "The preview chart has no bars yet. Wait for it to load."
+            ));
             return;
         };
         let mut config = ProfileConfig::new(source.clone(), feed.symbol, feed.bars, feed.now_ms);
         config.inputs = feed.inputs;
         config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
+        config.timeframe_seconds = feed.timeframe_seconds;
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(crate::host::pine::KlineSecurityDataProvider));
         let ctx = ctx.clone();

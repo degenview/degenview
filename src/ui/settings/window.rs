@@ -4,6 +4,7 @@
 //!
 //! A pure view: it reads settings values and returns `SettingsAction`s for the host.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::alert::{
     AlertNotificationPermission, AlertNotificationSettings, AlertRuntimeHealth, AlertServiceState,
 };
@@ -73,20 +74,20 @@ impl SettingsSection {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Appearance => crate::i18n::tr!("Appearance"),
-            Self::PineStudio => "Pine Studio",
+            Self::Appearance => tr!("Appearance"),
+            Self::PineStudio => tr!("Pine Studio"),
             Self::Alpaca => "Alpaca",
-            Self::Brokers => "Brokers",
+            Self::Brokers => tr!("Brokers"),
             Self::CoinMarketCap => "CoinMarketCap",
-            Self::Ai => "AI Assistant",
-            Self::Notifications => "Notifications",
-            Self::Webhooks => "Webhooks",
-            Self::Snapshots => "Snapshots",
-            Self::Network => "Network",
-            Self::Storage => "Storage",
-            Self::Mcp => "MCP Server",
-            Self::Sync => "iCloud Sync",
-            Self::About => "About",
+            Self::Ai => tr!("AI Assistant"),
+            Self::Notifications => tr!("Notifications"),
+            Self::Webhooks => tr!("Webhooks"),
+            Self::Snapshots => tr!("Snapshots"),
+            Self::Network => tr!("Network"),
+            Self::Storage => tr!("Storage"),
+            Self::Mcp => tr!("MCP Server"),
+            Self::Sync => tr!("iCloud Sync"),
+            Self::About => tr!("About"),
         }
     }
 
@@ -198,12 +199,12 @@ pub struct SettingsState {
 /// The background agent's state in words.
 pub fn service_label(state: AlertServiceState) -> &'static str {
     match state {
-        AlertServiceState::Enabled => "Running in background",
-        AlertServiceState::RequiresApproval => "Needs approval in Login Items",
-        AlertServiceState::Disabled => "Foreground only",
-        AlertServiceState::NotFound => "Agent not embedded",
-        AlertServiceState::Failed => "Registration failed",
-        AlertServiceState::Unavailable => "Unavailable",
+        AlertServiceState::Enabled => tr!("Running in background"),
+        AlertServiceState::RequiresApproval => tr!("Needs approval in Login Items"),
+        AlertServiceState::Disabled => tr!("Foreground only"),
+        AlertServiceState::NotFound => tr!("Agent not embedded"),
+        AlertServiceState::Failed => tr!("Registration failed"),
+        AlertServiceState::Unavailable => tr!("Unavailable"),
     }
 }
 
@@ -218,12 +219,12 @@ pub fn service_tone(state: AlertServiceState) -> Tone {
 
 pub fn permission_label(permission: AlertNotificationPermission) -> &'static str {
     match permission {
-        AlertNotificationPermission::Authorized => "Authorized",
-        AlertNotificationPermission::Provisional => "Provisional",
-        AlertNotificationPermission::Ephemeral => "Ephemeral",
-        AlertNotificationPermission::Denied => "Denied",
-        AlertNotificationPermission::NotDetermined => "Not requested",
-        AlertNotificationPermission::Unknown => "Unknown",
+        AlertNotificationPermission::Authorized => tr!("Authorized"),
+        AlertNotificationPermission::Provisional => tr!("Provisional"),
+        AlertNotificationPermission::Ephemeral => tr!("Ephemeral"),
+        AlertNotificationPermission::Denied => tr!("Denied"),
+        AlertNotificationPermission::NotDetermined => tr!("Not requested"),
+        AlertNotificationPermission::Unknown => tr!("Unknown"),
     }
 }
 
@@ -243,16 +244,17 @@ pub fn permission_tone(permission: AlertNotificationPermission) -> Tone {
 pub fn provider_label(last_error: Option<&str>, has_quote: bool) -> String {
     match last_error {
         Some(error) => error.to_owned(),
-        None if has_quote => "Healthy".to_owned(),
-        None => "Waiting for data".to_owned(),
+        None if has_quote => tr!("Healthy").to_owned(),
+        None => tr!("Waiting for data").to_owned(),
     }
 }
 
 /// "3 unreconciled data gaps".
 pub fn gaps_title(count: usize) -> String {
-    format!(
-        "{count} unreconciled data {}",
-        if count == 1 { "gap" } else { "gaps" }
+    tr_n!(
+        count,
+        "{count} unreconciled data gap",
+        "{count} unreconciled data gaps"
     )
 }
 
@@ -282,22 +284,22 @@ impl NotificationSwitch {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Delivery => "Price Alert Delivery",
-            Self::Sound => "Sound",
-            Self::InAppBanners => "In-App Banners",
-            Self::MacosNotifications => "macOS Notifications",
+            Self::Delivery => tr!("Price Alert Delivery"),
+            Self::Sound => tr!("Sound"),
+            Self::InAppBanners => tr!("In-App Banners"),
+            Self::MacosNotifications => tr!("macOS Notifications"),
         }
     }
 
     pub fn hint(self) -> &'static str {
         match self {
             Self::Delivery => {
-                "Evaluate armed alerts and deliver them when their conditions are met."
+                tr!("Evaluate armed alerts and deliver them when their conditions are met.")
             }
-            Self::Sound => "Play an alert sound when a notification is delivered.",
-            Self::InAppBanners => "Show alerts inside DegenView while the app is open.",
+            Self::Sound => tr!("Play an alert sound when a notification is delivered."),
+            Self::InAppBanners => tr!("Show alerts inside DegenView while the app is open."),
             Self::MacosNotifications => {
-                "Send alerts through Notification Center, including in the background."
+                tr!("Send alerts through Notification Center, including in the background.")
             }
         }
     }
@@ -417,7 +419,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                crate::i18n::tr!("Choose how DegenView looks across every window and chart."),
+                tr!("Choose how DegenView looks across every window and chart."),
                 |ui| {
                     if let Some(theme) =
                         crate::ui::settings::appearance::body(ui, crate::ui::theme::choice())
@@ -451,7 +453,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Connect Alpaca to chart US stocks and ETFs in DegenView.",
+                tr!("Connect Alpaca to chart US stocks and ETFs in DegenView."),
                 |ui| api_keys::alpaca_body(ui, &mut state.api_keys, store),
             );
         }
@@ -459,7 +461,9 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Connect a broker to trade for real from your charts. Paper trading is separate.",
+                tr!(
+                    "Connect a broker to trade for real from your charts. Paper trading is separate."
+                ),
                 |ui| {
                     if let Some(prefs) = crate::ui::settings::brokers::body(
                         ui,
@@ -476,7 +480,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Market sentiment charts, with optional higher API rate limits.",
+                tr!("Market sentiment charts, with optional higher API rate limits."),
                 |ui| api_keys::coinmarketcap_body(ui, &mut state.api_keys, store),
             );
         }
@@ -485,7 +489,9 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Describe a change and an AI model edits your Pine script, using your own API key.",
+                tr!(
+                    "Describe a change and an AI model edits your Pine script, using your own API key."
+                ),
                 |ui| crate::ui::settings::ai::body(ui, &mut state.ai, &input.ai, &mut ai_actions),
             );
             actions.extend(ai_actions.into_iter().map(SettingsAction::Ai));
@@ -495,7 +501,9 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Route DegenView's connections through a proxy, such as the one your VPN or network sets.",
+                tr!(
+                    "Route DegenView's connections through a proxy, such as the one your VPN or network sets."
+                ),
                 |ui| {
                     crate::ui::settings::network::body(
                         ui,
@@ -511,7 +519,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Choose how DegenView delivers price alerts and check on background delivery.",
+                tr!("Choose how DegenView delivers price alerts and check on background delivery."),
                 |ui| notifications_page(ui, input, &mut actions),
             );
         }
@@ -520,7 +528,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Logos and lookups saved on this computer so they appear instantly.",
+                tr!("Logos and lookups saved on this computer so they appear instantly."),
                 |ui| storage::body(ui, &mut state.storage, &mut storage_actions),
             );
             actions.extend(storage_actions.into_iter().map(SettingsAction::Storage));
@@ -530,7 +538,9 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control.",
+                tr!(
+                    "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control."
+                ),
                 |ui| mcp::body(ui, &mut state.mcp, &input.mcp, &mut mcp_actions),
             );
             actions.extend(mcp_actions.into_iter().map(SettingsAction::Mcp));
@@ -540,7 +550,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Share a picture of a chart, and choose what it shows.",
+                tr!("Share a picture of a chart, and choose what it shows."),
                 |ui| {
                     crate::ui::settings::snapshots::body(
                         ui,
@@ -565,7 +575,9 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Keep your watchlists, layouts, drawings, templates, scripts, portfolios and paper trading the same on every Mac.",
+                tr!(
+                    "Keep your watchlists, layouts, drawings, templates, scripts, portfolios and paper trading the same on every Mac."
+                ),
                 |ui| crate::ui::settings::sync::body(ui, input.sync, input.now_ms),
             );
         }
@@ -574,7 +586,9 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Send alert messages to external HTTP endpoints, such as a trading bot or a chat channel.",
+                tr!(
+                    "Send alert messages to external HTTP endpoints, such as a trading bot or a chat channel."
+                ),
                 |ui| webhook_actions = settings::body(ui, &mut state.webhooks, &input.webhooks),
             );
             actions.extend(webhook_actions.into_iter().map(SettingsAction::Webhook));
@@ -765,7 +779,7 @@ impl NotificationSwitch {
 }
 
 fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Vec<SettingsAction>) {
-    section(ui, "Delivery", None, |ui| {
+    section(ui, tr!("Delivery"), None, |ui| {
         for (index, switch) in NotificationSwitch::available().enumerate() {
             if index > 0 {
                 ui.add_space(10.0);
@@ -787,12 +801,12 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
         }
     });
 
-    section(ui, "Paper trading", None, |ui| {
+    section(ui, tr!("Paper trading"), None, |ui| {
         card::card(
             ui,
             Icon::SpeakerWave,
-            "Fill sound",
-            Some("Play a sound when a paper order is filled."),
+            tr!("Fill sound"),
+            Some(tr!("Play a sound when a paper order is filled.")),
             |ui| {
                 let prefs = input.trading_hub.paper_prefs();
                 let mut value = prefs.fill_sound;
@@ -811,12 +825,12 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
     }
     section(
         ui,
-        "Background agent",
-        Some("Keeps alerts evaluating while DegenView is closed."),
+        tr!("Background agent"),
+        Some(tr!("Keeps alerts evaluating while DegenView is closed.")),
         |ui| {
             let health = input.health;
             card(ui, |ui| {
-                row(ui, "Status", |ui| {
+                row(ui, tr!("Status"), |ui| {
                     kit::status_badge(
                         ui,
                         service_label(health.service_state),
@@ -824,7 +838,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                     );
                 });
                 kit::divider(ui);
-                row(ui, "Notification permission", |ui| {
+                row(ui, tr!("Notification permission"), |ui| {
                     kit::status_badge(
                         ui,
                         permission_label(health.notification_permission),
@@ -833,7 +847,7 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                 });
                 if let Some(heartbeat) = health.heartbeat_ms {
                     kit::divider(ui);
-                    row(ui, "Last heartbeat", |ui| {
+                    row(ui, tr!("Last heartbeat"), |ui| {
                         ui.label(kit::text(
                             relative_time(input.now_ms, heartbeat),
                             kit::size::BODY,
@@ -880,21 +894,21 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                     AlertServiceState::NotFound | AlertServiceState::Unavailable
                 );
                 if has_agent {
-                    if kit::push_button(ui, None, "Retry Registration", true).clicked() {
+                    if kit::push_button(ui, None, tr!("Retry Registration"), true).clicked() {
                         actions.push(SettingsAction::RetryRegistration);
                     }
-                    if kit::push_button(ui, None, "Login Items Settings", true).clicked() {
+                    if kit::push_button(ui, None, tr!("Login Items Settings"), true).clicked() {
                         actions.push(SettingsAction::OpenLoginItems);
                     }
                 }
-                if kit::push_button(ui, None, "Notification Settings", true).clicked() {
+                if kit::push_button(ui, None, tr!("Notification Settings"), true).clicked() {
                     actions.push(SettingsAction::OpenNotificationSettings);
                 }
             });
             ui.add_space(10.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    "If the background item is disabled or unavailable, alerts keep evaluating while DegenView is open.",
+                    tr!("If the background item is disabled or unavailable, alerts keep evaluating while DegenView is open."),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_secondary(),

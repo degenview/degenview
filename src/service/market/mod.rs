@@ -18,5 +18,6 @@ pub(in crate::service) mod mexc;
 pub(in crate::service) mod okx;
 pub(in crate::service) mod paging;
 pub(in crate::service) mod polymarket;
+pub mod retry;
 pub mod search_rank;
 pub mod trend;

@@ -7,6 +7,7 @@
 //! mutation, [`check`]s the snapshot against what is live before it acts. The price and time of
 //! the click are captured once, so moving the pointer to an entry never changes them.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::alert::{AlertId, AlertState};
 use crate::model::broker::chart::Unavailable as LiveUnavailable;
 use crate::model::chart::price_scale::PriceScaleMode;
@@ -339,53 +340,114 @@ impl Entry {
     }
 }
 
-pub const IN_REPLAY: &str = "Not available during replay";
-const NO_PRICE: &str = "No price at this point";
-const NO_MARKET: &str = "Price is at the market";
-const NOTHING_TO_PASTE: &str = "No copied drawings to paste";
-const NOTHING_TO_REMOVE: &str = "Nothing to remove";
-const FILLED: &str = "The order is no longer working";
+// The reasons a row is greyed out. Functions, not constants, because they are put in the language
+// in use when the menu is built.
+pub fn in_replay() -> &'static str {
+    tr!("Not available during replay")
+}
+
+fn no_price() -> &'static str {
+    tr!("No price at this point")
+}
+
+fn no_market() -> &'static str {
+    tr!("Price is at the market")
+}
+
+fn nothing_to_paste() -> &'static str {
+    tr!("No copied drawings to paste")
+}
+
+fn nothing_to_remove() -> &'static str {
+    tr!("Nothing to remove")
+}
+
+fn order_not_working() -> &'static str {
+    tr!("The order is no longer working")
+}
 
 // MARK: Labels
 
-/// "1 drawing", "17 drawings".
-fn counted(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("{count} {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
 pub fn remove_drawings_label(count: usize) -> String {
     if count == 0 {
-        "Remove drawings".to_owned()
+        tr!("Remove drawings").to_owned()
     } else {
-        format!("Remove {}", counted(count, "drawing"))
+        tr_n!(count, "Remove {count} drawing", "Remove {count} drawings")
     }
 }
 
 pub fn remove_indicators_label(count: usize) -> String {
     if count == 0 {
-        "Remove indicators".to_owned()
+        tr!("Remove indicators").to_owned()
     } else {
-        format!("Remove {}", counted(count, "indicator"))
+        tr_n!(
+            count,
+            "Remove {count} indicator",
+            "Remove {count} indicators"
+        )
     }
 }
 
-fn side_word(side: PaperOrderSide) -> &'static str {
-    match side {
-        PaperOrderSide::Buy => "Buy",
-        PaperOrderSide::Sell => "Sell",
+/// A quick order's menu row: "Sell 0.5 BTC @ 70,000.00 limit". The quantity, when there is one,
+/// carries its own trailing space.
+fn quick_order_label(order: QuickOrder, quantity: &str, symbol: &str, price: &str) -> String {
+    match (order.side, order.kind) {
+        (PaperOrderSide::Sell, PaperOrderType::Limit) => tr!(
+            "Sell {quantity}{symbol} @ {price} limit",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Buy, PaperOrderType::Stop) => tr!(
+            "Buy {quantity}{symbol} @ {price} stop",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Buy, PaperOrderType::Limit) => tr!(
+            "Buy {quantity}{symbol} @ {price} limit",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Sell, PaperOrderType::Stop) => tr!(
+            "Sell {quantity}{symbol} @ {price} stop",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Buy, PaperOrderType::StopLimit) => tr!(
+            "Buy {quantity}{symbol} @ {price} stop limit",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Sell, PaperOrderType::StopLimit) => tr!(
+            "Sell {quantity}{symbol} @ {price} stop limit",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Buy, PaperOrderType::Market) => tr!(
+            "Buy {quantity}{symbol} @ {price} market",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
+        (PaperOrderSide::Sell, PaperOrderType::Market) => tr!(
+            "Sell {quantity}{symbol} @ {price} market",
+            quantity = quantity,
+            symbol = symbol,
+            price = price
+        ),
     }
 }
 
-fn kind_word(kind: PaperOrderType) -> &'static str {
-    match kind {
-        PaperOrderType::Limit => "limit",
-        PaperOrderType::Stop => "stop",
-        PaperOrderType::StopLimit => "stop limit",
-        PaperOrderType::Market => "market",
+/// The greyed row shown while no order is suggested: "Sell BTC limit".
+fn idle_order_label(order: QuickOrder, symbol: &str) -> String {
+    match order.side {
+        PaperOrderSide::Sell => tr!("Sell {symbol} limit", symbol = symbol),
+        PaperOrderSide::Buy => tr!("Buy {symbol} stop", symbol = symbol),
     }
 }
 
@@ -469,8 +531,60 @@ fn grouped(groups: Vec<Vec<Item>>) -> Vec<Entry> {
     entries
 }
 
-const CONSTRUCTED_PRICES: &str =
-    "This chart's prices are constructed, not market prices. Use a candle or line chart.";
+fn constructed_prices() -> &'static str {
+    tr!("This chart's prices are constructed, not market prices. Use a candle or line chart.")
+}
+
+/// A live order's menu row: "Live · Buy BTC limit @ 70,000.00…". `price` is `None` for a row
+/// without one (a market order, or a priced order while the clicked price is unknown).
+fn live_label(
+    side: degenview_brokers::Side,
+    kind: TicketKind,
+    symbol: &str,
+    price: Option<&str>,
+) -> String {
+    use degenview_brokers::Side;
+    match (side, kind, price) {
+        (Side::Buy, TicketKind::Market, _) => {
+            tr!("Live · Buy {symbol} at market…", symbol = symbol)
+        }
+        (Side::Sell, TicketKind::Market, _) => {
+            tr!("Live · Sell {symbol} at market…", symbol = symbol)
+        }
+        (Side::Buy, TicketKind::Limit, Some(price)) => tr!(
+            "Live · Buy {symbol} limit @ {price}…",
+            symbol = symbol,
+            price = price
+        ),
+        (Side::Buy, TicketKind::Limit, None) => {
+            tr!("Live · Buy {symbol} limit…", symbol = symbol)
+        }
+        (Side::Sell, TicketKind::Limit, Some(price)) => tr!(
+            "Live · Sell {symbol} limit @ {price}…",
+            symbol = symbol,
+            price = price
+        ),
+        (Side::Sell, TicketKind::Limit, None) => {
+            tr!("Live · Sell {symbol} limit…", symbol = symbol)
+        }
+        (Side::Buy, TicketKind::StopLimit, Some(price)) => tr!(
+            "Live · Buy {symbol} stop-limit @ {price}…",
+            symbol = symbol,
+            price = price
+        ),
+        (Side::Buy, TicketKind::StopLimit, None) => {
+            tr!("Live · Buy {symbol} stop-limit…", symbol = symbol)
+        }
+        (Side::Sell, TicketKind::StopLimit, Some(price)) => tr!(
+            "Live · Sell {symbol} stop-limit @ {price}…",
+            symbol = symbol,
+            price = price
+        ),
+        (Side::Sell, TicketKind::StopLimit, None) => {
+            tr!("Live · Sell {symbol} stop-limit…", symbol = symbol)
+        }
+    }
+}
 
 /// The live entries: a market order and a limit and stop-limit order each way. They open the
 /// ticket; none places anything. Greyed, with the reason, whenever an order could not be placed
@@ -484,19 +598,14 @@ fn live_items(context: &ChartContext, facts: &Facts, live: &LiveFacts) -> Vec<It
         .zip(live.price_increment)
         .and_then(|(price, increment)| snap_to_increment(price, increment));
     let mut items = Vec::new();
-    for (side, word) in [(Side::Buy, "Buy"), (Side::Sell, "Sell")] {
-        for (kind, supported, kind_word, needs_price) in [
-            (TicketKind::Market, live.market, "at market", false),
-            (TicketKind::Limit, live.limit, "limit", true),
-            (TicketKind::StopLimit, live.stop_limit, "stop-limit", true),
+    for side in [Side::Buy, Side::Sell] {
+        for (kind, supported, needs_price) in [
+            (TicketKind::Market, live.market, false),
+            (TicketKind::Limit, live.limit, true),
+            (TicketKind::StopLimit, live.stop_limit, true),
         ] {
-            let label = match (needs_price, clicked) {
-                (true, Some(price)) => {
-                    format!("Live · {word} {symbol} {kind_word} @ {}…", shown(price))
-                }
-                (true, None) => format!("Live · {word} {symbol} {kind_word}…"),
-                (false, _) => format!("Live · {word} {symbol} {kind_word}…"),
-            };
+            let price = clicked.filter(|_| needs_price).map(shown);
+            let label = live_label(side, kind, symbol, price.as_deref());
             let item = Item::new(
                 Command::LiveOrder(LiveOrderRequest {
                     side,
@@ -508,13 +617,13 @@ fn live_items(context: &ChartContext, facts: &Facts, live: &LiveFacts) -> Vec<It
             let item = if let Some(reason) = live.unavailable {
                 item.disabled_unless(false, reason.text())
             } else if facts.replay {
-                item.disabled_unless(false, IN_REPLAY)
+                item.disabled_unless(false, in_replay())
             } else if !supported {
-                item.disabled_unless(false, "Not available in this market.")
+                item.disabled_unless(false, tr!("Not available in this market."))
             } else if needs_price && live.constructed {
-                item.disabled_unless(false, CONSTRUCTED_PRICES)
+                item.disabled_unless(false, constructed_prices())
             } else if needs_price && snapped.is_none() {
-                item.disabled_unless(false, NO_PRICE)
+                item.disabled_unless(false, no_price())
             } else {
                 item
             };
@@ -533,31 +642,37 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
     let copy = Item::new(
         Command::CopyPrice,
         price.map_or_else(
-            || "Copy price".to_owned(),
-            |p| format!("Copy price {}", shown(p)),
+            || tr!("Copy price").to_owned(),
+            |p| tr!("Copy price {price}", price = shown(p)),
         ),
     )
-    .disabled_unless(price.is_some(), NO_PRICE);
-    let paste = Item::new(Command::Paste, "Paste")
+    .disabled_unless(price.is_some(), no_price());
+    let paste = Item::new(Command::Paste, tr!("Paste"))
         .hint(Hint::Paste)
-        .disabled_unless(facts.clipboard, NOTHING_TO_PASTE);
+        .disabled_unless(facts.clipboard, nothing_to_paste());
 
     let mut trading = Vec::new();
     if facts.alerts_supported {
         let label = price.map_or_else(
-            || format!("Add alert on {symbol}…"),
-            |p| format!("Add alert on {symbol} at {}…", shown(p)),
+            || tr!("Add alert on {symbol}…", symbol = symbol),
+            |p| {
+                tr!(
+                    "Add alert on {symbol} at {price}…",
+                    symbol = symbol,
+                    price = shown(p)
+                )
+            },
         );
         trading.push(
             Item::new(Command::AddAlert, label)
-                .disabled_unless(price.is_some(), NO_PRICE)
-                .disabled_unless(!facts.replay, IN_REPLAY),
+                .disabled_unless(price.is_some(), no_price())
+                .disabled_unless(!facts.replay, in_replay()),
         );
     }
     if let Some(live) = &facts.live {
         trading.extend(live_items(context, facts, live));
     } else if facts.paper != PaperAccess::Unsupported {
-        let reason = facts.replay.then_some(IN_REPLAY);
+        let reason = facts.replay.then_some(in_replay());
         let quantity = if facts.quantity.is_empty() {
             String::new()
         } else {
@@ -572,38 +687,33 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
                     let order = orders[index];
                     Item::new(
                         Command::QuickOrder(order),
-                        format!(
-                            "{} {quantity}{symbol} @ {} {}",
-                            side_word(order.side),
-                            shown(clicked),
-                            kind_word(order.kind)
-                        ),
+                        quick_order_label(order, &quantity, symbol, &shown(clicked)),
                     )
                 }
                 // At the market, or no market known: the entries stay so the menu does not
                 // reshuffle, greyed out with the reason.
                 _ => {
-                    let (side, kind) = if index == 0 {
-                        ("Sell", "limit")
-                    } else {
-                        ("Buy", "stop")
+                    let order = QuickOrder {
+                        side: if index == 0 {
+                            PaperOrderSide::Sell
+                        } else {
+                            PaperOrderSide::Buy
+                        },
+                        kind: if index == 0 {
+                            PaperOrderType::Limit
+                        } else {
+                            PaperOrderType::Stop
+                        },
                     };
-                    Item::new(
-                        Command::QuickOrder(QuickOrder {
-                            side: if index == 0 {
-                                PaperOrderSide::Sell
+                    Item::new(Command::QuickOrder(order), idle_order_label(order, symbol))
+                        .disabled_unless(
+                            false,
+                            if price.is_some() {
+                                no_market()
                             } else {
-                                PaperOrderSide::Buy
+                                no_price()
                             },
-                            kind: if index == 0 {
-                                PaperOrderType::Limit
-                            } else {
-                                PaperOrderType::Stop
-                            },
-                        }),
-                        format!("{side} {symbol} {kind}"),
-                    )
-                    .disabled_unless(false, if price.is_some() { NO_MARKET } else { NO_PRICE })
+                        )
                 }
             };
             trading.push(match reason {
@@ -612,10 +722,16 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
             });
         }
         let label = price.map_or_else(
-            || format!("Add order on {symbol}…"),
-            |p| format!("Add order on {symbol} at {}…", shown(p)),
+            || tr!("Add order on {symbol}…", symbol = symbol),
+            |p| {
+                tr!(
+                    "Add order on {symbol} at {price}…",
+                    symbol = symbol,
+                    price = shown(p)
+                )
+            },
         );
-        let add = Item::new(Command::AddOrder, label).disabled_unless(price.is_some(), NO_PRICE);
+        let add = Item::new(Command::AddOrder, label).disabled_unless(price.is_some(), no_price());
         trading.push(match reason {
             Some(reason) => add.disabled_unless(false, reason),
             None => add,
@@ -626,18 +742,18 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
         Item::new(
             Command::ToggleTimeLock,
             if facts.time_locked {
-                "Unlock vertical cursor line"
+                tr!("Unlock vertical cursor line")
             } else {
-                "Lock vertical cursor line by time"
+                tr!("Lock vertical cursor line by time")
             },
         )
-        .disabled_unless(facts.time_locked || context.time_ms.is_some(), NO_PRICE),
+        .disabled_unless(facts.time_locked || context.time_ms.is_some(), no_price()),
     ];
 
     let utilities = vec![
-        Item::new(Command::ToggleTable, "Table view").checked(facts.table_open),
-        Item::new(Command::ToggleObjectTree, "Object tree").checked(facts.tree_open),
-        Item::new(Command::ToggleSessionStats, "Session statistics").checked(facts.stats_open),
+        Item::new(Command::ToggleTable, tr!("Table view")).checked(facts.table_open),
+        Item::new(Command::ToggleObjectTree, tr!("Object tree")).checked(facts.tree_open),
+        Item::new(Command::ToggleSessionStats, tr!("Session statistics")).checked(facts.stats_open),
         template_submenu(facts),
     ];
 
@@ -646,17 +762,17 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
             Command::RemoveDrawings,
             remove_drawings_label(facts.drawings),
         )
-        .disabled_unless(facts.drawings > 0, NOTHING_TO_REMOVE)
+        .disabled_unless(facts.drawings > 0, nothing_to_remove())
         .destructive(),
         Item::new(
             Command::RemoveIndicators,
             remove_indicators_label(facts.indicators),
         )
-        .disabled_unless(facts.indicators > 0, NOTHING_TO_REMOVE)
+        .disabled_unless(facts.indicators > 0, nothing_to_remove())
         .destructive(),
     ];
 
-    let settings = vec![Item::new(Command::OpenSettings, "Settings…")];
+    let settings = vec![Item::new(Command::OpenSettings, tr!("Settings…"))];
     grouped(vec![
         vec![copy, paste],
         trading,
@@ -673,15 +789,15 @@ fn template_submenu(facts: &Facts) -> Item {
             Item::new(Command::ApplyTemplate(row.id), row.name.clone()).current(row.current),
         )
     };
-    let mut children = vec![Entry::Heading("My templates".to_owned())];
+    let mut children = vec![Entry::Heading(tr!("My templates").to_owned())];
     let mut saved = facts
         .templates
         .iter()
         .filter(|row| !row.built_in)
         .peekable();
     if saved.peek().is_none() {
-        let mut none = Item::new(Command::SaveTemplate, "None saved yet")
-            .disabled_unless(false, "Save the current look to add one");
+        let mut none = Item::new(Command::SaveTemplate, tr!("None saved yet"))
+            .disabled_unless(false, tr!("Save the current look to add one"));
         none.command = None;
         children.push(Entry::Item(none));
     }
@@ -689,29 +805,32 @@ fn template_submenu(facts: &Facts) -> Item {
     let mut presets = facts.templates.iter().filter(|row| row.built_in).peekable();
     if presets.peek().is_some() {
         children.push(Entry::Separator);
-        children.push(Entry::Heading("Presets".to_owned()));
+        children.push(Entry::Heading(tr!("Presets").to_owned()));
         children.extend(presets.map(row));
     }
     children.push(Entry::Separator);
     children.push(Entry::Item(Item::new(
         Command::SaveTemplate,
-        "Save current as template…",
+        tr!("Save current as template…"),
     )));
     children.push(Entry::Item(Item::new(
         Command::ManageTemplates,
-        "Manage templates…",
+        tr!("Manage templates…"),
     )));
     children.push(Entry::Separator);
     children.push(Entry::Item(Item::new(
         Command::ResetTemplate,
-        "Reset to default",
+        tr!("Reset to default"),
     )));
-    Item::submenu("Chart template", children).glyph(Glyph::Template)
+    Item::submenu(tr!("Chart template"), children).glyph(Glyph::Template)
 }
 
 fn price_axis(facts: &Facts) -> Vec<Entry> {
     grouped(vec![
-        vec![Item::new(Command::ResetPriceScale, "Reset price scale")],
+        vec![Item::new(
+            Command::ResetPriceScale,
+            tr!("Reset price scale"),
+        )],
         PriceScaleMode::ALL
             .into_iter()
             .map(|mode| {
@@ -725,7 +844,7 @@ fn price_axis(facts: &Facts) -> Vec<Entry> {
 fn time_axis() -> Vec<Entry> {
     grouped(vec![vec![Item::new(
         Command::ResetChartView,
-        "Reset chart view",
+        tr!("Reset chart view"),
     )]])
 }
 
@@ -742,25 +861,29 @@ fn pane(instance: u64, facts: &Facts) -> Vec<Entry> {
         vec![
             Item::new(
                 Command::PaneSettings(instance),
-                format!("{} settings…", pane.name),
+                tr!("{name} settings…", name = pane.name),
             ),
             Item::new(
                 Command::PaneToggle(instance),
-                if pane.visible { "Hide" } else { "Show" },
+                if pane.visible {
+                    tr!("Hide")
+                } else {
+                    tr!("Show")
+                },
             ),
             Item::submenu(
-                "Visual order",
+                tr!("Visual order"),
                 vec![
-                    order("As the script declares", VisualOrder::Script),
-                    order("Bring to front", VisualOrder::Front),
-                    order("Send behind chart", VisualOrder::Behind),
+                    order(tr!("As the script declares"), VisualOrder::Script),
+                    order(tr!("Bring to front"), VisualOrder::Front),
+                    order(tr!("Send behind chart"), VisualOrder::Behind),
                 ],
             )
             .glyph(Glyph::Layers),
-            Item::new(Command::PineLogs(instance), "Pine logs"),
-            Item::new(Command::OpenPineStudio, "Open Pine Studio"),
+            Item::new(Command::PineLogs(instance), tr!("Pine logs")),
+            Item::new(Command::OpenPineStudio, tr!("Open Pine Studio")),
         ],
-        vec![Item::new(Command::PaneRemove(instance), "Remove from chart").destructive()],
+        vec![Item::new(Command::PaneRemove(instance), tr!("Remove from chart")).destructive()],
     ])
 }
 
@@ -769,17 +892,17 @@ fn alert(id: AlertId, facts: &Facts) -> Vec<Entry> {
         return Vec::new();
     };
     let toggle = match state {
-        AlertState::Paused => Some(("Resume alert", Glyph::Play)),
-        AlertState::Active => Some(("Pause alert", Glyph::Pause)),
+        AlertState::Paused => Some((tr!("Resume alert"), Glyph::Play)),
+        AlertState::Active => Some((tr!("Pause alert"), Glyph::Pause)),
         AlertState::Triggered | AlertState::Unsupported => None,
     };
-    let mut first = vec![Item::new(Command::EditAlert(id), "Edit alert…")];
+    let mut first = vec![Item::new(Command::EditAlert(id), tr!("Edit alert…"))];
     if let Some((label, glyph)) = toggle {
         first.push(Item::new(Command::ToggleAlert(id), label).glyph(glyph));
     }
     grouped(vec![
         first,
-        vec![Item::new(Command::DeleteAlert(id), "Delete alert").destructive()],
+        vec![Item::new(Command::DeleteAlert(id), tr!("Delete alert")).destructive()],
     ])
 }
 
@@ -789,18 +912,30 @@ fn order(id: u64, facts: &Facts) -> Vec<Entry> {
     };
     grouped(vec![
         vec![
-            Item::new(Command::CancelOrder(id), "Cancel order")
-                .disabled_unless(order.cancelable, FILLED)
+            Item::new(Command::CancelOrder(id), tr!("Cancel order"))
+                .disabled_unless(order.cancelable, order_not_working())
                 .destructive(),
         ],
-        vec![Item::new(Command::ShowPaperPanel, "Show in Paper panel")],
+        vec![Item::new(
+            Command::ShowPaperPanel,
+            tr!("Show in Paper panel"),
+        )],
     ])
 }
 
 fn position(key: &str) -> Vec<Entry> {
     grouped(vec![
-        vec![Item::new(Command::ClosePosition(key.to_owned()), "Close position").destructive()],
-        vec![Item::new(Command::ShowPaperPanel, "Show in Paper panel")],
+        vec![
+            Item::new(
+                Command::ClosePosition(key.to_owned()),
+                tr!("Close position"),
+            )
+            .destructive(),
+        ],
+        vec![Item::new(
+            Command::ShowPaperPanel,
+            tr!("Show in Paper panel"),
+        )],
     ])
 }
 
@@ -827,9 +962,11 @@ pub enum Stale {
 impl Stale {
     pub fn message(self) -> &'static str {
         match self {
-            Self::ChartClosed => "That chart was closed, so nothing was changed.",
-            Self::ChartChanged => "The chart changed while the menu was open, so nothing was done.",
-            Self::TargetGone => "That item is gone, so nothing was changed.",
+            Self::ChartClosed => tr!("That chart was closed, so nothing was changed."),
+            Self::ChartChanged => {
+                tr!("The chart changed while the menu was open, so nothing was done.")
+            }
+            Self::TargetGone => tr!("That item is gone, so nothing was changed."),
         }
     }
 }

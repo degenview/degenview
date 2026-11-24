@@ -9,6 +9,7 @@
 
 use super::ChartSettingsAction;
 use super::overlay::{self, rgb};
+use crate::i18n::{tr, tr_n};
 use crate::model::chart::kind::LineDash;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::feed::OverlayStatus;
@@ -58,8 +59,10 @@ pub fn page(
     let mut action = None;
     card::section_title(
         ui,
-        "Compare",
-        Some("Draw other markets on this chart, on the same time axis."),
+        tr!("Compare"),
+        Some(tr!(
+            "Draw other markets on this chart, on the same time axis."
+        )),
     );
     let overlays: Vec<ChartOverlay> = input.card.overlay_list().iter().cloned().collect();
     if overlays.is_empty() {
@@ -75,7 +78,7 @@ pub fn page(
             ui,
             Id::new("compare-search"),
             &mut state.query,
-            "Search markets",
+            tr!("Search markets"),
             ui.available_width(),
         );
     } else {
@@ -118,7 +121,7 @@ pub fn page(
         ui.add_space(8.0);
         ui.vertical_centered(|ui| {
             ui.label(kit::text(
-                format!("No market matches “{}”", state.query.trim()),
+                tr!("No market matches “{query}”", query = state.query.trim()),
                 12.0,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -141,7 +144,7 @@ fn empty_state(ui: &mut Ui, input: &CompareInput) -> Option<ChartSettingsAction>
             kit::paint_card_badge(ui, badge, Icon::Compare);
             ui.add_space(10.0);
             ui.label(kit::text(
-                "Compare markets",
+                tr!("Compare markets"),
                 14.0,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -149,10 +152,9 @@ fn empty_state(ui: &mut Ui, input: &CompareInput) -> Option<ChartSettingsAction>
             ui.add_space(2.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    format!(
-                        "See how other markets move against {} on the same chart and time axis. \
-                         Any number can be added, each with its own colour and scale.",
-                        input.chart_name
+                    tr!(
+                        "See how other markets move against {market} on the same chart and time axis. Any number can be added, each with its own colour and scale.",
+                        market = input.chart_name
                     ),
                     11.5,
                     kit::REGULAR,
@@ -161,12 +163,12 @@ fn empty_state(ui: &mut Ui, input: &CompareInput) -> Option<ChartSettingsAction>
                 .wrap(),
             );
             ui.add_space(14.0);
-            if kit::sheet_button(ui, "Add symbol…", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("Add symbol…"), true, true).clicked() {
                 action = Some(ChartSettingsAction::AddOverlay);
             }
             ui.add_space(12.0);
             ui.label(kit::text(
-                "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart.",
+                tr!("In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."),
                 10.5,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -181,11 +183,15 @@ fn empty_state(ui: &mut Ui, input: &CompareInput) -> Option<ChartSettingsAction>
 
 /// "3 markets", and how many of them are hidden.
 pub fn summary(count: usize, hidden: usize) -> String {
-    let noun = if count == 1 { "market" } else { "markets" };
     if hidden == 0 {
-        format!("{count} {noun}")
+        tr_n!(count, "{count} market", "{count} markets")
     } else {
-        format!("{count} {noun} · {hidden} hidden")
+        tr_n!(
+            count,
+            "{count} market · {hidden} hidden",
+            "{count} markets · {hidden} hidden",
+            hidden = hidden
+        )
     }
 }
 
@@ -198,7 +204,7 @@ fn toolbar(
     let hidden = overlays.iter().filter(|overlay| !overlay.visible).count();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        if kit::sheet_button(ui, "Add symbol…", true, true).clicked() {
+        if kit::sheet_button(ui, tr!("Add symbol…"), true, true).clicked() {
             action = Some(ChartSettingsAction::AddOverlay);
         }
         ui.label(kit::text(
@@ -208,8 +214,14 @@ fn toolbar(
             theme::text_secondary(),
         ));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let more = icons::button(ui, Icon::Ellipsis, 26.0, theme::text_secondary(), "More");
-            let labels = ["Show all", "Hide all", "Remove all…"];
+            let more = icons::button(
+                ui,
+                Icon::Ellipsis,
+                26.0,
+                theme::text_secondary(),
+                tr!("More"),
+            );
+            let labels = [tr!("Show all"), tr!("Hide all"), tr!("Remove all…")];
             kit::fitted_menu(ui, &more, egui::RectAlign::BOTTOM_END, &labels, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 if kit::menu_item(ui, Icon::Eye, labels[0], hidden > 0, false) {
@@ -253,24 +265,21 @@ fn confirm_remove_all(
             ui.spacing_mut().item_spacing.x = 10.0;
             icons::inline(ui, Icon::TriangleFill, 14.0, kit::ORANGE);
             ui.label(kit::text(
-                format!(
-                    "Stop comparing {}?",
-                    if count == 1 {
-                        "this market".to_owned()
-                    } else {
-                        format!("all {count} markets")
-                    }
-                ),
+                if count == 1 {
+                    tr!("Stop comparing this market?").to_owned()
+                } else {
+                    tr!("Stop comparing all {count} markets?", count = count)
+                },
                 12.0,
                 kit::MEDIUM,
                 theme::text_primary(),
             ));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if kit::sheet_button(ui, "Remove all", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Remove all"), false, true).clicked() {
                     action = Some(ChartSettingsAction::Overlay(OverlayCommand::RemoveAll));
                     state.confirm_remove_all = false;
                 }
-                if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                     state.confirm_remove_all = false;
                 }
             });
@@ -304,7 +313,7 @@ fn axis_notice(
             ui.spacing_mut().item_spacing.x = 8.0;
             icons::inline(ui, Icon::InfoCircle, 14.0, theme::text_secondary());
             ui.label(kit::text(
-                "The price axis can't compare these markets",
+                tr!("The price axis can't compare these markets"),
                 12.0,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -312,8 +321,9 @@ fn axis_notice(
         });
         ui.add(
             egui::Label::new(kit::text(
-                "Markets on the chart's scale are drawn from where the chart starts, so their \
-                 prices only line up as a change. Read them on a relative axis:",
+                tr!(
+                    "Markets on the chart's scale are drawn from where the chart starts, so their prices only line up as a change. Read them on a relative axis:"
+                ),
                 11.0,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -323,10 +333,10 @@ fn axis_notice(
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            if kit::sheet_button(ui, "Percent", true, true).clicked() {
+            if kit::sheet_button(ui, tr!("Percent"), true, true).clicked() {
                 action = Some(ChartSettingsAction::SetScaleMode(PriceScaleMode::Percent));
             }
-            if kit::sheet_button(ui, "Indexed to 100", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Indexed to 100"), false, true).clicked() {
                 action = Some(ChartSettingsAction::SetScaleMode(
                     PriceScaleMode::IndexedTo100,
                 ));
@@ -371,13 +381,15 @@ pub enum Health {
 
 pub fn health(status: Option<&OverlayStatus>, price_based: bool) -> Health {
     if price_based {
-        return Health::Problem("Not shown on price-based chart types".to_owned());
+        return Health::Problem(tr!("Not shown on price-based chart types").to_owned());
     }
     match status {
-        Some(OverlayStatus::Error(message)) => Health::Problem(format!("Couldn't load: {message}")),
+        Some(OverlayStatus::Error(message)) => {
+            Health::Problem(tr!("Couldn't load: {message}", message = message))
+        }
         Some(OverlayStatus::Blocked(reason)) => Health::Problem(reason.to_string()),
-        Some(OverlayStatus::Loading) => Health::Note("Loading…".to_owned()),
-        Some(OverlayStatus::Queued) => Health::Note("Waiting to load".to_owned()),
+        Some(OverlayStatus::Loading) => Health::Note(tr!("Loading…").to_owned()),
+        Some(OverlayStatus::Queued) => Health::Note(tr!("Waiting to load").to_owned()),
         Some(OverlayStatus::Ready) | None => Health::Fine,
     }
 }
@@ -432,22 +444,28 @@ fn overlay_card(
                 22.0,
                 theme::text_secondary(),
                 if open {
-                    "Hide settings"
+                    tr!("Hide settings")
                 } else {
-                    "Show settings"
+                    tr!("Show settings")
                 },
             );
             if chevron.clicked() {
                 state.open.insert(overlay.id, !open);
             }
-            let more = icons::button(ui, Icon::Ellipsis, 22.0, theme::text_secondary(), "More");
+            let more = icons::button(
+                ui,
+                Icon::Ellipsis,
+                22.0,
+                theme::text_secondary(),
+                tr!("More"),
+            );
             if let Some(next) = card_menu(ui, &more, overlay, place) {
                 action = Some(next);
             }
             let (eye, tip) = if overlay.visible {
-                (Icon::Eye, "Hide on the chart")
+                (Icon::Eye, tr!("Hide on the chart"))
             } else {
-                (Icon::EyeSlash, "Show on the chart")
+                (Icon::EyeSlash, tr!("Show on the chart"))
             };
             let eye = icons::button(ui, eye, 22.0, theme::text_secondary(), tip);
             if eye.clicked() {
@@ -547,20 +565,27 @@ fn subtitle_row(
             );
             return;
         }
-        let mut line = exchange.to_owned();
-        match health {
-            Health::Note(message) => line = format!("{line} · {message}"),
+        let line = match health {
+            Health::Note(message) => {
+                tr!("{exchange} · {note}", exchange = exchange, note = message)
+            }
             _ => match input.card.overlay_last_price(overlay.id) {
                 Some(price) => {
                     let format = input.card.appearance().price_format();
-                    line = format!("{line} · {}", format.format(price));
+                    tr!(
+                        "{exchange} · {price}",
+                        exchange = exchange,
+                        price = format.format(price)
+                    )
                 }
-                None => line.push_str(" · No data"),
+                None => tr!("{exchange} · No data", exchange = exchange),
             },
-        }
-        if !overlay.visible {
-            line.push_str(" · Hidden");
-        }
+        };
+        let line = if overlay.visible {
+            line
+        } else {
+            tr!("{details} · Hidden", details = line)
+        };
         ui.label(kit::text(&line, 10.5, kit::REGULAR, secondary));
     });
 }
@@ -574,11 +599,11 @@ fn card_menu(
 ) -> Option<ChartSettingsAction> {
     let mut action = None;
     let labels = [
-        "Bring to front",
-        "Bring forward",
-        "Send backward",
-        "Send to back",
-        "Remove",
+        tr!("Bring to front"),
+        tr!("Bring forward"),
+        tr!("Send backward"),
+        tr!("Send to back"),
+        tr!("Remove"),
     ];
     let can_forward = place.can_move && place.index + 1 < place.count;
     let can_back = place.can_move && place.index > 0;

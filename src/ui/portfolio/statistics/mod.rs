@@ -1,6 +1,7 @@
 //! The Portfolio's Statistics tab: performance, value range, activity and P&L by asset. A pure
 //! view over the statistics the host computes.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::accounting::ClosedPosition;
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::PortfolioStatistics;
@@ -37,9 +38,9 @@ pub struct StatisticsInput<'a> {
 /// "3 buys · 1 sell".
 pub fn activity_caption(buys: usize, sells: usize) -> String {
     format!(
-        "{buys} {} · {sells} {}",
-        if buys == 1 { "buy" } else { "buys" },
-        if sells == 1 { "sell" } else { "sells" }
+        "{} · {}",
+        tr_n!(buys, "{count} buy", "{count} buys"),
+        tr_n!(sells, "{count} sell", "{count} sells")
     )
 }
 
@@ -47,11 +48,10 @@ pub fn activity_caption(buys: usize, sells: usize) -> String {
 pub fn tracking_caption(since_ms: i64, now_ms: i64) -> String {
     let days = ((now_ms - since_ms) / 86_400_000).max(0);
     match days {
-        0 => "today".to_owned(),
-        1 => "1 day ago".to_owned(),
-        2..=59 => format!("{days} days ago"),
-        60..=729 => format!("{} months ago", days / 30),
-        _ => format!("{} years ago", days / 365),
+        0 => tr!("today").to_owned(),
+        1..=59 => tr_n!(days, "{count} day ago", "{count} days ago"),
+        60..=729 => tr_n!(days / 30, "{count} month ago", "{count} months ago"),
+        _ => tr_n!(days / 365, "{count} year ago", "{count} years ago"),
     }
 }
 
@@ -124,17 +124,17 @@ fn value_cards(ui: &mut Ui, input: &StatisticsInput, stats: &PortfolioStatistics
     grid(
         ui,
         &[
-            StatCard::new("Current Value", f.money(stats.total_value)).icon(Icon::Briefcase),
-            StatCard::new("Cost Basis", f.money(stats.cost_basis)).icon(Icon::Banknote),
+            StatCard::new(tr!("Current Value"), f.money(stats.total_value)).icon(Icon::Briefcase),
+            StatCard::new(tr!("Cost Basis"), f.money(stats.cost_basis)).icon(Icon::Banknote),
             StatCard::new(
-                "Portfolio High",
+                tr!("Portfolio High"),
                 stats.high.map_or("—".to_owned(), |e| f.money(e.value)),
             )
             .caption(stats.high.map(|e| on(e.timestamp)))
             .placeholder(stats.high.is_none())
             .icon(Icon::ArrowUp),
             StatCard::new(
-                "Portfolio Low",
+                tr!("Portfolio Low"),
                 stats.low.map_or("—".to_owned(), |e| f.money(e.value)),
             )
             .caption(stats.low.map(|e| on(e.timestamp)))
@@ -150,18 +150,19 @@ fn activity_cards(ui: &mut Ui, input: &StatisticsInput, stats: &PortfolioStatist
     grid(
         ui,
         &[
-            StatCard::new("Transactions", stats.transaction_count.to_string())
+            StatCard::new(tr!("Transactions"), stats.transaction_count.to_string())
                 .caption(Some(activity_caption(stats.buy_count, stats.sell_count)))
                 .icon(Icon::Exchange),
-            StatCard::new("Assets", stats.asset_count.to_string())
-                .caption(Some(format!(
-                    "{} in profit · {} at a loss",
-                    stats.winners, stats.losers
+            StatCard::new(tr!("Assets"), stats.asset_count.to_string())
+                .caption(Some(tr!(
+                    "{winners} in profit · {losers} at a loss",
+                    winners = stats.winners,
+                    losers = stats.losers
                 )))
                 .icon(Icon::Layers),
-            StatCard::new("Fees Paid", f.money(stats.fees_paid)).icon(Icon::Percent),
+            StatCard::new(tr!("Fees Paid"), f.money(stats.fees_paid)).icon(Icon::Percent),
             StatCard::new(
-                "Tracking Since",
+                tr!("Tracking Since"),
                 stats.first_transaction.map_or("—".to_owned(), on),
             )
             .caption(

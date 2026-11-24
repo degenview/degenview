@@ -2,6 +2,7 @@
 //! the empty state.
 
 use super::{ChartSettingsAction, ChartSettingsContext, ChartSettingsState};
+use crate::i18n::{tr, tr_n};
 use crate::model::pine::instance::{PineInstance, VisualOrder};
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::pine_studio::drawer;
@@ -63,7 +64,11 @@ pub(super) fn scripts_page(
     let saved = script_catalog::scripts(ui.ctx());
     let instances: Vec<PineInstance> = c.card.pine_instances().to_vec();
     if instances.is_empty() && saved.is_empty() {
-        card::section_title(ui, "Scripts", Some("Pine scripts running on this chart."));
+        card::section_title(
+            ui,
+            tr!("Scripts"),
+            Some(tr!("Pine scripts running on this chart.")),
+        );
         empty_state(ui, &mut action);
         return action;
     }
@@ -71,13 +76,13 @@ pub(super) fn scripts_page(
         ui.vertical(|ui| {
             card::section_title(
                 ui,
-                "Scripts",
-                Some("Switch a script on to run it on this chart."),
+                tr!("Scripts"),
+                Some(tr!("Switch a script on to run it on this chart.")),
             );
         });
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
             if kit::push_button(ui, Some(Icon::AngleBrackets), "Pine Studio", true)
-                .on_hover_text("Write, edit and organise scripts")
+                .on_hover_text(tr!("Write, edit and organise scripts"))
                 .clicked()
             {
                 action = Some(ChartSettingsAction::OpenPineStudio);
@@ -99,7 +104,7 @@ pub(super) fn scripts_page(
             ui,
             Id::new("chart-settings-script-search"),
             &mut state.script_query,
-            "Search scripts",
+            tr!("Search scripts"),
             ui.available_width(),
         );
         ui.add_space(4.0);
@@ -151,7 +156,7 @@ pub(super) fn scripts_page(
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.label(kit::text(
-                "On this chart",
+                tr!("On this chart"),
                 kit::size::SUBHEADLINE + 1.0,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -159,7 +164,11 @@ pub(super) fn scripts_page(
             count_chip(ui, &rows.len().to_string());
             if let Some(bars) = bars {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    status_badge(ui, &format!("{bars} bars"), theme::text_secondary());
+                    status_badge(
+                        ui,
+                        &tr_n!(bars, "{count} bar", "{count} bars"),
+                        theme::text_secondary(),
+                    );
                 });
             }
         });
@@ -173,9 +182,9 @@ pub(super) fn scripts_page(
         ui.horizontal(|ui| {
             ui.label(kit::text(
                 if rows.is_empty() {
-                    "Your scripts"
+                    tr!("Your scripts")
                 } else {
-                    "Available"
+                    tr!("Available")
                 },
                 kit::size::SUBHEADLINE + 1.0,
                 kit::SEMIBOLD,
@@ -192,7 +201,10 @@ pub(super) fn scripts_page(
         ui.add_space(24.0);
         ui.vertical_centered(|ui| {
             ui.label(kit::text(
-                format!("No scripts match “{}”", state.script_query.trim()),
+                tr!(
+                    "No scripts match “{query}”",
+                    query = state.script_query.trim()
+                ),
                 kit::size::SUBHEADLINE + 1.0,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -215,7 +227,7 @@ pub(super) fn scripts_page(
         .collect();
     if !strategies.is_empty() {
         ui.add_space(20.0);
-        card::section_title(ui, "Backtest", None);
+        card::section_title(ui, tr!("Backtest"), None);
         for instance in &strategies {
             if strategies.len() > 1 {
                 ui.label(kit::text(
@@ -327,8 +339,8 @@ fn empty_state(ui: &mut Ui, action: &mut Option<ChartSettingsAction>) {
                 );
                 ui.add_space(12.0);
                 let (title, message) = (
-                    "No scripts yet",
-                    "Write one in the Pine Studio and it shows up here.",
+                    tr!("No scripts yet"),
+                    tr!("Write one in the Pine Studio and it shows up here."),
                 );
                 ui.label(kit::text(
                     title,
@@ -344,7 +356,7 @@ fn empty_state(ui: &mut Ui, action: &mut Option<ChartSettingsAction>) {
                     theme::text_secondary(),
                 ));
                 ui.add_space(12.0);
-                if kit::sheet_button(ui, "Open Pine Studio", true, true).clicked() {
+                if kit::sheet_button(ui, tr!("Open Pine Studio"), true, true).clicked() {
                     *action = Some(ChartSettingsAction::OpenPineStudio);
                 }
             });

@@ -406,3 +406,79 @@ fn session_stats_gallery() {
         }
     }
 }
+
+/// The panel in the pseudo-locale, with an answer, with conditions that qualify no day and with
+/// none: every title and sentence goes through `tr!`, and the longer text still fits the panel's
+/// narrowest width. `DEGENVIEW_GALLERY_DIR=<dir>` also writes the pictures.
+#[test]
+fn the_panel_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::chart::painted_text;
+    use crate::ui::render_tests::{Screen, gallery_dir};
+
+    let _theme = crate::ui::theme::RestoreDefaultTheme;
+    let hourly = stock_hours();
+    let daily = bars(400);
+    for (theme_name, app_theme) in [
+        ("dark", crate::ui::theme::AppTheme::Dark),
+        ("light", crate::ui::theme::AppTheme::Light),
+    ] {
+        for (name, outcome, narrowed) in [
+            ("answer", Outcome::GapFill, false),
+            ("narrowed", Outcome::GapFill, true),
+            ("needs-hourly", Outcome::FirstBarHighBreak, false),
+        ] {
+            let mut screen = Screen::new(vec2(280.0, 900.0));
+            crate::ui::theme::apply(&screen.ctx, app_theme);
+            let mut state = StatsViewState {
+                outcome,
+                ..StatsViewState::default()
+            };
+            if narrowed {
+                state.filter.weekdays = WeekdaySet::from_names(&["Tue"]).unwrap();
+                state.filter.gap = Side::Up;
+                state.gap_min = "9".to_owned();
+                state.gap_max = "1".to_owned();
+            }
+            let (bars, bar_ms) = if name == "answer" {
+                (&hourly, 3_600_000)
+            } else {
+                (&daily, DAY_MS)
+            };
+            let input = Input {
+                chart_id: 1,
+                bars,
+                bar_ms,
+                hours: MarketHours::UsStock,
+                replay: narrowed,
+            };
+            let mut last = None;
+            with_locale(Locale::PSEUDO, || {
+                for _ in 0..4 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        let full = ui.max_rect();
+                        ui.painter()
+                            .rect_filled(full, 0.0, crate::ui::theme::chrome());
+                        show(ui, &mut state, "AAPL 1D", Some(input));
+                    }));
+                }
+            });
+            let last = last.take().expect("a frame");
+            let texts = painted_text::of(&last);
+            painted_text::assert_painted(&texts, "Session statistics");
+            painted_text::assert_painted(&texts, "Only count days that…");
+            painted_text::assert_painted(
+                &texts,
+                match name {
+                    "answer" => "Days counted",
+                    "narrowed" => "The smallest gap is above the largest, so no gap qualifies.",
+                    _ => "Not on this timeframe",
+                },
+            );
+            if gallery_dir().is_some() {
+                eprintln!("{name}: {:?}", painted_text::unbracketed(&texts));
+                screen.save(&format!("pseudo-session-stats-{name}-{theme_name}"), last);
+            }
+        }
+    }
+}

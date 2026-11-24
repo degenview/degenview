@@ -101,22 +101,31 @@ fn the_picker_opens_with_the_search_field_focused() {
     assert!(rig.screen.ctx.memory(|memory| memory.focused()).is_some());
 }
 
+/// What adding RSI does: it is the bundled indicator, in a pane of its own.
+fn rsi_action() -> Action {
+    Action::AddBundled(bundled::find("rsi").unwrap())
+}
+
 #[test]
 fn availability_follows_the_chart_and_the_indicator() {
     let catalog = catalog::all(&[]);
     let find = |key: EntryKey| catalog.iter().find(|entry| entry.key == key).unwrap();
-    let rsi = find(EntryKey::Native(BuiltIn::Rsi));
+    let rsi = find(EntryKey::Bundled("rsi"));
+    let ema = find(EntryKey::Native(BuiltIn::Ema));
     let macd = find(EntryKey::Bundled("macd"));
     let volume = find(EntryKey::Native(BuiltIn::Volume));
 
     let market = target(DataSource::Binance);
     assert_eq!(availability(rsi, Some(&market)), Availability::Add);
+    assert_eq!(availability(ema, Some(&market)), Availability::Add);
     assert_eq!(availability(macd, Some(&market)), Availability::Add);
 
     let mut busy = market.clone();
-    busy.config.show_rsi = true;
+    busy.config.show_ema = true;
     busy.on_chart.push("builtin:macd".to_owned());
-    assert_eq!(availability(rsi, Some(&busy)), Availability::Remove);
+    busy.on_chart.push("builtin:rsi".to_owned());
+    assert_eq!(availability(ema, Some(&busy)), Availability::Remove);
+    assert_eq!(availability(rsi, Some(&busy)), Availability::AddAnother);
     assert_eq!(availability(macd, Some(&busy)), Availability::AddAnother);
 
     let line = target(DataSource::CoinMarketCap);
@@ -134,15 +143,15 @@ fn availability_follows_the_chart_and_the_indicator() {
 fn actions_follow_what_the_entry_is() {
     let catalog = catalog::all(&[]);
     let find = |key: EntryKey| catalog.iter().find(|entry| entry.key == key).unwrap();
-    let rsi = find(EntryKey::Native(BuiltIn::Rsi));
+    let ema = find(EntryKey::Native(BuiltIn::Ema));
     let macd = find(EntryKey::Bundled("macd"));
     assert_eq!(
-        action_for(rsi, Availability::Add),
-        Some(Action::Add(BuiltIn::Rsi))
+        action_for(ema, Availability::Add),
+        Some(Action::Add(BuiltIn::Ema))
     );
     assert_eq!(
-        action_for(rsi, Availability::Remove),
-        Some(Action::Remove(BuiltIn::Rsi))
+        action_for(ema, Availability::Remove),
+        Some(Action::Remove(BuiltIn::Ema))
     );
     assert_eq!(
         action_for(macd, Availability::AddAnother),
@@ -156,7 +165,7 @@ fn return_adds_the_selected_indicator_and_closes() {
     let mut rig = Rig::new(1100.0);
     // Discover leads with Popular, whose first entry is RSI.
     let output = rig.key(Key::Enter, Modifiers::NONE);
-    assert_eq!(output, apply(Action::Add(BuiltIn::Rsi), false));
+    assert_eq!(output, apply(rsi_action(), false));
     assert!(!rig.picker.is_open());
 }
 
@@ -164,7 +173,7 @@ fn return_adds_the_selected_indicator_and_closes() {
 fn shift_return_adds_and_keeps_the_picker_open() {
     let mut rig = Rig::new(1100.0);
     let output = rig.key(Key::Enter, Modifiers::SHIFT);
-    assert_eq!(output, apply(Action::Add(BuiltIn::Rsi), true));
+    assert_eq!(output, apply(rsi_action(), true));
     assert!(rig.picker.is_open());
 }
 
@@ -234,8 +243,9 @@ fn nothing_is_added_without_a_chart_or_for_an_indicator_that_cannot_run_there() 
 fn return_never_takes_an_indicator_off() {
     let mut rig = Rig::new(1100.0);
     let mut busy = target(DataSource::Binance);
-    busy.config.show_rsi = true;
+    busy.config.show_ema = true;
     rig.target = Some(busy);
+    rig.type_text("ema");
     assert_eq!(rig.key(Key::Enter, Modifiers::NONE), None);
     assert!(rig.picker.is_open());
 }
@@ -269,7 +279,7 @@ fn f_stars_the_selected_indicator_only_when_not_typing() {
         .ctx
         .memory_mut(|memory| memory.surrender_focus(Id::new("indicator_picker_search")));
     rig.key(Key::F, Modifiers::NONE);
-    assert_eq!(rig.picker.favorites, ["native:rsi"]);
+    assert_eq!(rig.picker.favorites, ["bundled:rsi"]);
     rig.key(Key::F, Modifiers::NONE);
     assert!(rig.picker.favorites.is_empty(), "a second F takes it off");
 }
@@ -289,13 +299,43 @@ fn favorites_are_kept_in_the_store_and_come_back() {
 }
 
 #[test]
+fn favorites_stored_under_an_old_key_come_back_under_the_one_the_catalog_uses() {
+    use super::sections::{self, Section};
+    let store: SharedStore = Arc::new(Mutex::new(
+        crate::store::Store::open_in_memory().expect("open"),
+    ));
+    // RSI was `native:rsi` before it became the bundled indicator; a list written then (or by an
+    // older build on another Mac) can hold both spellings.
+    store
+        .lock()
+        .unwrap()
+        .set_setting(
+            FAVORITES_KEY,
+            &["native:rsi", "bundled:macd", "bundled:rsi", "bundled:gone"],
+        )
+        .expect("saved");
+    let picker = IndicatorPicker::new(Some(store));
+    assert_eq!(picker.favorites, ["bundled:rsi", "bundled:macd"]);
+    assert!(picker.is_favorite(&EntryKey::Bundled("rsi")));
+
+    let all = catalog::all(&[]);
+    let blocks = sections::blocks(Section::Favorites, &all, &picker.favorite_set(), 1);
+    let listed: Vec<_> = blocks
+        .iter()
+        .flat_map(|block| block.entries.iter().map(|entry| entry.title.as_str()))
+        .collect();
+    assert!(listed.contains(&"RSI"), "{listed:?}");
+    assert_eq!(listed.len(), 2, "{listed:?}");
+}
+
+#[test]
 fn a_narrow_window_drops_the_detail_panel_and_still_draws() {
     let mut rig = Rig::new(760.0);
     rig.type_text("rsi");
     assert!(rig.picker.is_open());
     assert_eq!(
         rig.key(Key::Enter, Modifiers::NONE),
-        apply(Action::Add(BuiltIn::Rsi), false)
+        apply(rsi_action(), false)
     );
 }
 

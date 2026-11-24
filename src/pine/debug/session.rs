@@ -54,6 +54,8 @@ pub struct DebugConfig {
     pub limits: Limits,
     pub theme: Option<ChartTheme>,
     pub bar_seconds: Option<f64>,
+    /// The length of the timeframe the chart is set to, which the bars' gaps may misstate.
+    pub timeframe_seconds: Option<f64>,
     pub libraries: Box<dyn LibraryResolver + Send>,
     pub security_data: Option<Box<dyn SecurityDataProvider>>,
     pub breakpoints: Vec<BreakpointSpec>,
@@ -86,6 +88,7 @@ impl DebugConfig {
             limits: Limits::default(),
             theme: None,
             bar_seconds: None,
+            timeframe_seconds: None,
             libraries: Box::new(NoLibraries),
             security_data: None,
             breakpoints: Vec::new(),
@@ -632,6 +635,9 @@ impl Thread {
         };
         if let Some(theme) = config.theme {
             controller = controller.with_theme(theme);
+        }
+        if let Some(seconds) = config.timeframe_seconds {
+            controller = controller.with_timeframe_seconds(seconds);
         }
         if let Some(seconds) = config.bar_seconds {
             controller = controller.with_bar_seconds(seconds);

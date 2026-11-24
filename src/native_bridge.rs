@@ -96,9 +96,82 @@ fn edit_menu() -> EditMenu {
     EditMenu::from_bits(EDIT_MENU.load(std::sync::atomic::Ordering::Acquire))
 }
 
+/// What the menu bar says, in the language in use. Items are found by the action they send, never
+/// by their title, so a title can change with the language; the table is kept apart from AppKit so
+/// a test can read it.
+#[cfg(any(target_os = "macos", test))]
+mod menu_titles {
+    use crate::i18n::{tr, tr_c};
+
+    /// The product name, which is not translated.
+    const APP_NAME: &str = "DegenView";
+
+    /// Tags of the top-level menus (the items of the menu bar), so a menu is found without its title.
+    pub const FILE: isize = 9001;
+    pub const EDIT: isize = 9002;
+    pub const VIEW: isize = 9003;
+    pub const WINDOW: isize = 9004;
+    pub const HELP: isize = 9005;
+
+    pub fn menu(tag: isize) -> Option<&'static str> {
+        Some(match tag {
+            FILE => tr_c!("menu bar", "File"),
+            EDIT => tr_c!("menu bar", "Edit"),
+            VIEW => tr_c!("menu bar", "View"),
+            WINDOW => tr_c!("menu bar", "Window"),
+            HELP => tr_c!("menu bar", "Help"),
+            _ => return None,
+        })
+    }
+
+    /// The title of the item that sends `action` (an Objective-C selector name such as
+    /// `openSettings:`), or `None` for an action this app does not title.
+    pub fn item(action: &str) -> Option<String> {
+        Some(match action {
+            // The application menu. winit makes the standard items in English; they are titled
+            // again here by their selectors, which stay the system's.
+            "openSettings:" => tr!("Settings…").to_string(),
+            "hide:" => tr!("Hide {app}", app = APP_NAME),
+            "hideOtherApplications:" => tr!("Hide Others").to_string(),
+            "unhideAllApplications:" => tr!("Show All").to_string(),
+            "terminate:" => tr!("Quit {app}", app = APP_NAME),
+            // File.
+            "newWindowForTab:" => tr!("New Tab").to_string(),
+            "newScript:" => tr!("New Script").to_string(),
+            "closeTab:" => tr!("Close Tab").to_string(),
+            "saveCurrentLayout:" => tr!("Save").to_string(),
+            // Edit.
+            "editCut:" => tr!("Cut").to_string(),
+            "editCopy:" => tr!("Copy").to_string(),
+            "editPaste:" => tr!("Paste").to_string(),
+            "goToDefinition:" => tr!("Go to Definition").to_string(),
+            "renameSymbol:" => tr!("Rename Symbol…").to_string(),
+            // View.
+            "openPineStudio:" => tr!("Pine Studio").to_string(),
+            "openPortfolio:" => tr!("Portfolio").to_string(),
+            // Window.
+            "performMiniaturize:" => tr!("Minimize").to_string(),
+            "moveTabToNewWindow:" => tr!("Move Tab to New Window").to_string(),
+            "mergeAllWindows:" => tr!("Merge All Windows").to_string(),
+            "selectNextTab:" => tr!("Show Next Tab").to_string(),
+            "selectPreviousTab:" => tr!("Show Previous Tab").to_string(),
+            // Help.
+            "openDocs:" => tr!("DegenView Documentation").to_string(),
+            "openGitHub:" => tr!("DegenView on GitHub").to_string(),
+            "openCoffee:" => tr!("Help supporting this project").to_string(),
+            _ => return None,
+        })
+    }
+
+    /// The title of the Services submenu of the application menu, which has no action.
+    pub fn services() -> &'static str {
+        tr!("Services")
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod platform {
-    use super::NativeCommand;
+    use super::{NativeCommand, menu_titles};
     use eframe::egui;
     use objc2::ffi;
     use objc2::rc::Retained;
@@ -109,7 +182,7 @@ mod platform {
         NSMenuItem, NSWindow,
     };
     use objc2_foundation::{MainThreadMarker, NSString, ns_string};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Mutex, OnceLock};
 
     static COMMANDS: Mutex<Vec<NativeCommand>> = Mutex::new(Vec::new());
@@ -533,182 +606,173 @@ mod platform {
                 menu
             };
         remove_about_item(&app_menu);
-        let settings = menu_item(
-            mtm,
-            ns_string!("Settings…"),
-            Some(sel!(openSettings:)),
-            ns_string!(","),
-        );
-        unsafe { settings.setTarget(Some(delegate)) };
-        if let Some(existing) = app_menu.itemWithTitle(ns_string!("Settings…")) {
-            unsafe {
-                existing.setAction(Some(sel!(openSettings:)));
-                existing.setTarget(Some(delegate));
-            }
+        if let Some(existing) = item_sending(&app_menu, sel!(openSettings:)) {
+            unsafe { existing.setTarget(Some(delegate)) };
             existing.setKeyEquivalent(ns_string!(","));
         } else {
+            let settings = menu_item(mtm, sel!(openSettings:), ns_string!(","));
+            unsafe { settings.setTarget(Some(delegate)) };
             app_menu.insertItem_atIndex(&settings, 0);
         }
 
-        let file_item = NSMenuItem::new(mtm);
-        let file_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("File"));
-        let new_tab = menu_item(
-            mtm,
-            ns_string!("New Tab"),
-            Some(sel!(newWindowForTab:)),
-            ns_string!("t"),
-        );
-        unsafe { new_tab.setTarget(Some(delegate)) };
-        file_menu.addItem(&new_tab);
-        let new_script = menu_item(
-            mtm,
-            ns_string!("New Script"),
-            Some(sel!(newScript:)),
-            ns_string!("n"),
-        );
-        unsafe { new_script.setTarget(Some(delegate)) };
-        file_menu.addItem(&new_script);
-        let close_tab = menu_item(
-            mtm,
-            ns_string!("Close Tab"),
-            Some(sel!(closeTab:)),
-            ns_string!("w"),
-        );
-        unsafe { close_tab.setTarget(Some(delegate)) };
-        file_menu.addItem(&close_tab);
-        let save_layout = menu_item(
-            mtm,
-            ns_string!("Save"),
-            Some(sel!(saveCurrentLayout:)),
-            ns_string!("s"),
-        );
-        unsafe { save_layout.setTarget(Some(delegate)) };
-        file_menu.addItem(&save_layout);
-        file_item.setSubmenu(Some(&file_menu));
-        menubar.addItem(&file_item);
+        let file_menu = submenu(mtm, menu_titles::FILE);
+        for (selector, key) in [
+            (sel!(newWindowForTab:), ns_string!("t")),
+            (sel!(newScript:), ns_string!("n")),
+            (sel!(closeTab:), ns_string!("w")),
+            (sel!(saveCurrentLayout:), ns_string!("s")),
+        ] {
+            let item = menu_item(mtm, selector, key);
+            unsafe { item.setTarget(Some(delegate)) };
+            file_menu.addItem(&item);
+        }
+        menubar.addItem(&top_level(mtm, menu_titles::FILE, &file_menu));
 
         // Edit: the code editor's clipboard and navigation. Items are grey (and their keys left to
         // the window) unless a Pine Studio editor has the keyboard; see `EditMenu`.
-        let edit_item = NSMenuItem::new(mtm);
-        let edit_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Edit"));
-        for (title, selector, key) in [
-            (ns_string!("Cut"), sel!(editCut:), ns_string!("x")),
-            (ns_string!("Copy"), sel!(editCopy:), ns_string!("c")),
-            (ns_string!("Paste"), sel!(editPaste:), ns_string!("v")),
+        let edit_menu = submenu(mtm, menu_titles::EDIT);
+        for (selector, key) in [
+            (sel!(editCut:), ns_string!("x")),
+            (sel!(editCopy:), ns_string!("c")),
+            (sel!(editPaste:), ns_string!("v")),
         ] {
-            let item = menu_item(mtm, title, Some(selector), key);
+            let item = menu_item(mtm, selector, key);
             unsafe { item.setTarget(Some(delegate)) };
             edit_menu.addItem(&item);
         }
         edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
         // Xcode's chords: F12 and F2 are media keys on a Mac keyboard. The editor answers the
         // F-keys itself.
-        for (title, selector, key) in [
-            (
-                ns_string!("Go to Definition"),
-                sel!(goToDefinition:),
-                ns_string!("j"),
-            ),
-            (
-                ns_string!("Rename Symbol…"),
-                sel!(renameSymbol:),
-                ns_string!("e"),
-            ),
+        for (selector, key) in [
+            (sel!(goToDefinition:), ns_string!("j")),
+            (sel!(renameSymbol:), ns_string!("e")),
         ] {
-            let item = menu_item(mtm, title, Some(selector), key);
+            let item = menu_item(mtm, selector, key);
             item.setKeyEquivalentModifierMask(
                 NSEventModifierFlags::Control | NSEventModifierFlags::Command,
             );
             unsafe { item.setTarget(Some(delegate)) };
             edit_menu.addItem(&item);
         }
-        edit_item.setSubmenu(Some(&edit_menu));
-        menubar.addItem(&edit_item);
+        menubar.addItem(&top_level(mtm, menu_titles::EDIT, &edit_menu));
 
         // View: the two tabs that are one per app. Each opens its tab, or shows the one that is
         // open, as the chart toolbar's buttons do.
-        let view_item = NSMenuItem::new(mtm);
-        let view_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("View"));
-        for (title, selector) in [
-            (ns_string!("Pine Studio"), sel!(openPineStudio:)),
-            (ns_string!("Portfolio"), sel!(openPortfolio:)),
-        ] {
-            let item = menu_item(mtm, title, Some(selector), ns_string!(""));
+        let view_menu = submenu(mtm, menu_titles::VIEW);
+        for selector in [sel!(openPineStudio:), sel!(openPortfolio:)] {
+            let item = menu_item(mtm, selector, ns_string!(""));
             unsafe { item.setTarget(Some(delegate)) };
             view_menu.addItem(&item);
         }
-        view_item.setSubmenu(Some(&view_menu));
-        menubar.addItem(&view_item);
+        menubar.addItem(&top_level(mtm, menu_titles::VIEW, &view_menu));
 
-        let window_item = NSMenuItem::new(mtm);
-        let window_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Window"));
-        window_menu.addItem(&menu_item(
-            mtm,
-            ns_string!("Minimize"),
-            Some(sel!(performMiniaturize:)),
-            ns_string!("m"),
-        ));
+        let window_menu = submenu(mtm, menu_titles::WINDOW);
+        window_menu.addItem(&menu_item(mtm, sel!(performMiniaturize:), ns_string!("m")));
         window_menu.addItem(&NSMenuItem::separatorItem(mtm));
-        let move_tab = menu_item(
-            mtm,
-            ns_string!("Move Tab to New Window"),
-            Some(sel!(moveTabToNewWindow:)),
-            ns_string!(""),
-        );
-        unsafe { move_tab.setTarget(Some(delegate)) };
-        window_menu.addItem(&move_tab);
-        let merge_all = menu_item(
-            mtm,
-            ns_string!("Merge All Windows"),
-            Some(sel!(mergeAllWindows:)),
-            ns_string!(""),
-        );
-        unsafe { merge_all.setTarget(Some(delegate)) };
-        window_menu.addItem(&merge_all);
-        let next_tab = menu_item(
-            mtm,
-            ns_string!("Show Next Tab"),
-            Some(sel!(selectNextTab:)),
-            ns_string!(""),
-        );
-        unsafe { next_tab.setTarget(Some(delegate)) };
-        window_menu.addItem(&next_tab);
-        let previous_tab = menu_item(
-            mtm,
-            ns_string!("Show Previous Tab"),
-            Some(sel!(selectPreviousTab:)),
-            ns_string!(""),
-        );
-        unsafe { previous_tab.setTarget(Some(delegate)) };
-        window_menu.addItem(&previous_tab);
-        window_item.setSubmenu(Some(&window_menu));
-        menubar.addItem(&window_item);
+        for selector in [
+            sel!(moveTabToNewWindow:),
+            sel!(mergeAllWindows:),
+            sel!(selectNextTab:),
+            sel!(selectPreviousTab:),
+        ] {
+            let item = menu_item(mtm, selector, ns_string!(""));
+            unsafe { item.setTarget(Some(delegate)) };
+            window_menu.addItem(&item);
+        }
+        menubar.addItem(&top_level(mtm, menu_titles::WINDOW, &window_menu));
         app.setWindowsMenu(Some(&window_menu));
 
         // Help: the user guide, the project's GitHub organisation and the maintainer's Buy Me a
         // Coffee page.
-        let help_item = NSMenuItem::new(mtm);
-        let help_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help"));
-        for (title, selector) in [
-            (ns_string!("DegenView Documentation"), sel!(openDocs:)),
-            (ns_string!("DegenView on GitHub"), sel!(openGitHub:)),
-            (
-                ns_string!("Help supporting this project"),
-                sel!(openCoffee:),
-            ),
-        ] {
-            let item = menu_item(mtm, title, Some(selector), ns_string!(""));
+        let help_menu = submenu(mtm, menu_titles::HELP);
+        for selector in [sel!(openDocs:), sel!(openGitHub:), sel!(openCoffee:)] {
+            let item = menu_item(mtm, selector, ns_string!(""));
             unsafe { item.setTarget(Some(delegate)) };
             help_menu.addItem(&item);
         }
-        help_item.setSubmenu(Some(&help_menu));
-        menubar.addItem(&help_item);
+        menubar.addItem(&top_level(mtm, menu_titles::HELP, &help_menu));
         app.setHelpMenu(Some(&help_menu));
         app.setMainMenu(Some(&menubar));
+        retitle(app);
+        TITLED_IN.store(crate::i18n::revision(), Ordering::Release);
+    }
+
+    /// Titles the menu bar in the language in use: every item by the action it sends, every
+    /// top-level menu by its tag. Menus are built once; this runs again when the language changes.
+    fn retitle(app: &NSApplication) {
+        let Some(menubar) = app.mainMenu() else {
+            return;
+        };
+        let services = app.servicesMenu();
+        for top in menubar.itemArray() {
+            if let Some(title) = menu_titles::menu(top.tag()) {
+                let title = NSString::from_str(title);
+                top.setTitle(&title);
+                if let Some(menu) = top.submenu() {
+                    menu.setTitle(&title);
+                }
+            }
+            let Some(menu) = top.submenu() else {
+                continue;
+            };
+            for item in menu.itemArray() {
+                if services.as_ref().is_some_and(|services| {
+                    item.submenu()
+                        .is_some_and(|sub| Retained::as_ptr(&sub) == Retained::as_ptr(services))
+                }) {
+                    set_title(&item, &NSString::from_str(menu_titles::services()));
+                    continue;
+                }
+                let title = item
+                    .action()
+                    .and_then(|action| action.name().to_str().ok().and_then(menu_titles::item));
+                if let Some(title) = title {
+                    set_title(&item, &NSString::from_str(&title));
+                }
+            }
+        }
+    }
+
+    /// The revision of the language the menu bar is titled in.
+    static TITLED_IN: AtomicU64 = AtomicU64::new(u64::MAX);
+
+    /// Retitles the menu bar when the language changed since it was last titled. Cheap to call
+    /// every frame; AppKit is touched only from the main thread, which the app's `update` is.
+    pub fn follow_language() {
+        let revision = crate::i18n::revision();
+        if TITLED_IN.load(Ordering::Acquire) == revision {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        retitle(&NSApplication::sharedApplication(mtm));
+        TITLED_IN.store(revision, Ordering::Release);
+    }
+
+    /// The item of `menu` that sends `action`.
+    fn item_sending(menu: &NSMenu, action: Sel) -> Option<Retained<NSMenuItem>> {
+        menu.itemArray()
+            .into_iter()
+            .find(|item| item.action() == Some(action))
+    }
+
+    /// An empty menu for the top-level menu `tag`; `retitle` gives it its title.
+    fn submenu(mtm: MainThreadMarker, tag: isize) -> Retained<NSMenu> {
+        let title = menu_titles::menu(tag).unwrap_or_default();
+        NSMenu::initWithTitle(mtm.alloc(), &NSString::from_str(title))
+    }
+
+    /// The menu bar item that holds `menu`, tagged so `retitle` finds it without its title.
+    fn top_level(mtm: MainThreadMarker, tag: isize, menu: &NSMenu) -> Retained<NSMenuItem> {
+        let item = NSMenuItem::new(mtm);
+        item.setTag(tag);
+        item.setSubmenu(Some(menu));
+        item
     }
 
     /// Drops winit's "About DegenView": the stock panel has nothing to show, About lives in
-    /// Settings.
+    /// Settings. It runs before the menus are titled, so the title is winit's English one.
     fn remove_about_item(menu: &NSMenu) {
         let about = (0..menu.numberOfItems()).find(|index| {
             menu.itemAtIndex(*index)
@@ -719,18 +783,28 @@ mod platform {
         }
     }
 
-    fn menu_item(
-        mtm: MainThreadMarker,
-        title: &NSString,
-        selector: Option<Sel>,
-        key: &NSString,
-    ) -> Retained<NSMenuItem> {
+    /// A menu item that sends `selector`, titled for it in the language in use.
+    fn menu_item(mtm: MainThreadMarker, selector: Sel, key: &NSString) -> Retained<NSMenuItem> {
+        let title = NSString::from_str(
+            selector
+                .name()
+                .to_str()
+                .ok()
+                .and_then(menu_titles::item)
+                .as_deref()
+                .unwrap_or_default(),
+        );
         let item = unsafe {
-            NSMenuItem::initWithTitle_action_keyEquivalent(mtm.alloc(), title, selector, key)
+            NSMenuItem::initWithTitle_action_keyEquivalent(mtm.alloc(), &title, Some(selector), key)
         };
         // VoiceOver names menu items from their title; make it explicit.
-        item.setAccessibilityTitle(Some(title));
+        item.setAccessibilityTitle(Some(&title));
         item
+    }
+
+    fn set_title(item: &NSMenuItem, title: &NSString) {
+        item.setTitle(title);
+        item.setAccessibilityTitle(Some(title));
     }
 }
 
@@ -740,6 +814,8 @@ mod platform {
     use eframe::egui;
 
     pub fn install(_ctx: &egui::Context) {}
+
+    pub fn follow_language() {}
 
     pub fn take_commands() -> Vec<NativeCommand> {
         Vec::new()
@@ -791,6 +867,11 @@ pub fn center_traffic_lights(height: f32) {
 
 pub fn install(ctx: &egui::Context) {
     platform::install(ctx);
+}
+
+/// Titles the menu bar again when the interface language changed. The app calls it every frame.
+pub fn follow_language() {
+    platform::follow_language();
 }
 
 pub fn take_commands() -> Vec<NativeCommand> {
@@ -1121,5 +1202,96 @@ mod screen_tests {
             top_left_frame([0.0, -1080.0, 1920.0, 1080.0], 982.0),
             [0.0, 982.0, 1920.0, 1080.0]
         );
+    }
+}
+
+#[cfg(test)]
+mod menu_title_tests {
+    use super::menu_titles;
+    use crate::i18n::{Locale, with_locale};
+
+    /// Every action the menus send, as `install_menus` builds them.
+    const ACTIONS: [&str; 24] = [
+        "openSettings:",
+        "hide:",
+        "hideOtherApplications:",
+        "unhideAllApplications:",
+        "terminate:",
+        "newWindowForTab:",
+        "newScript:",
+        "closeTab:",
+        "saveCurrentLayout:",
+        "editCut:",
+        "editCopy:",
+        "editPaste:",
+        "goToDefinition:",
+        "renameSymbol:",
+        "openPineStudio:",
+        "openPortfolio:",
+        "performMiniaturize:",
+        "moveTabToNewWindow:",
+        "mergeAllWindows:",
+        "selectNextTab:",
+        "selectPreviousTab:",
+        "openDocs:",
+        "openGitHub:",
+        "openCoffee:",
+    ];
+
+    #[test]
+    fn every_menu_action_has_an_english_title() {
+        assert_eq!(
+            menu_titles::item("openSettings:").as_deref(),
+            Some("Settings…")
+        );
+        assert_eq!(
+            menu_titles::item("terminate:").as_deref(),
+            Some("Quit DegenView")
+        );
+        assert_eq!(
+            menu_titles::item("hide:").as_deref(),
+            Some("Hide DegenView")
+        );
+        for action in ACTIONS {
+            let title = menu_titles::item(action).unwrap_or_default();
+            assert!(!title.is_empty(), "{action} has no title");
+        }
+        assert_eq!(menu_titles::item("noSuchAction:"), None);
+        for tag in [
+            menu_titles::FILE,
+            menu_titles::EDIT,
+            menu_titles::VIEW,
+            menu_titles::WINDOW,
+            menu_titles::HELP,
+        ] {
+            assert!(menu_titles::menu(tag).is_some());
+        }
+    }
+
+    #[test]
+    fn every_title_goes_through_the_language_in_use() {
+        with_locale(Locale::PSEUDO, || {
+            for action in ACTIONS {
+                let title = menu_titles::item(action).unwrap_or_default();
+                assert!(
+                    title.starts_with('[') && title.ends_with(']'),
+                    "{action}: {title}"
+                );
+            }
+            assert!(
+                menu_titles::menu(menu_titles::FILE)
+                    .unwrap()
+                    .starts_with('[')
+            );
+            assert!(menu_titles::services().starts_with('['));
+        });
+    }
+
+    #[test]
+    fn the_product_name_is_a_value_and_stays_unchanged() {
+        with_locale(Locale::PSEUDO, || {
+            let title = menu_titles::item("terminate:").unwrap_or_default();
+            assert!(title.contains("DegenView"), "{title}");
+        });
     }
 }

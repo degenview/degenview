@@ -3,6 +3,7 @@
 
 use super::EditorState;
 use super::diff::DiffSnapshot;
+use crate::i18n::{tr, tr_n};
 use crate::model::pine::script::CompileStatus;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
@@ -19,28 +20,25 @@ pub fn status_chip(status: CompileStatus, diagnostics: &[Diagnostic]) -> (Icon, 
         .filter(|d| d.severity == DiagnosticSeverity::Error)
         .count();
     let warnings = diagnostics.len() - errors;
-    let plural = |n: usize, noun: &str| format!("{n} {noun}{}", if n == 1 { "" } else { "s" });
     match status {
         CompileStatus::NotCompiled => (
             Icon::CircleDashed,
             theme::text_secondary(),
-            "Not compiled".to_owned(),
+            tr!("Not compiled").to_owned(),
         ),
         CompileStatus::Valid => (
             Icon::CheckCircleFill,
             Color32::from_rgb(0x30, 0xD1, 0x58),
-            "No problems".to_owned(),
+            tr!("No problems").to_owned(),
         ),
-        CompileStatus::Warning => (
-            Icon::TriangleFill,
-            theme::YELLOW,
-            plural(warnings.max(1), "warning"),
-        ),
-        CompileStatus::Error => (
-            Icon::XmarkOctagonFill,
-            theme::syntax::string(),
-            plural(errors.max(1), "error"),
-        ),
+        CompileStatus::Warning => (Icon::TriangleFill, theme::YELLOW, {
+            let count = warnings.max(1);
+            tr_n!(count, "{count} warning", "{count} warnings")
+        }),
+        CompileStatus::Error => (Icon::XmarkOctagonFill, theme::syntax::string(), {
+            let count = errors.max(1);
+            tr_n!(count, "{count} error", "{count} errors")
+        }),
     }
 }
 
@@ -78,8 +76,11 @@ impl ProblemsChip {
         let (icon, color, text) =
             status_chip_with_runtime(state.status, &state.diagnostics, &state.runtime_problems);
         let hover = match state.runtime_problems.first() {
-            Some(failure) => format!("The script failed when it ran: {}", failure.message),
-            None => "Compile status of the code in the editor".to_owned(),
+            Some(failure) => tr!(
+                "The script failed when it ran: {message}",
+                message = failure.message
+            ),
+            None => tr!("Compile status of the code in the editor").to_owned(),
         };
         Self {
             icon,
@@ -89,15 +90,16 @@ impl ProblemsChip {
         }
     }
 
-    /// Draws the chip ending at `right`, centred on `centre_y`.
-    pub fn show(&self, ui: &mut Ui, right: f32, centre_y: f32) -> Response {
+    /// Draws the chip ending at `right`, centred on `centre_y`. Its text is cut with an ellipsis
+    /// where it would pass `left`, so a longer translation never draws over what is there.
+    pub fn show(&self, ui: &mut Ui, left: f32, right: f32, centre_y: f32) -> Response {
         let text = kit::galley(
             ui,
             &self.text,
             size::CALLOUT,
             kit::REGULAR,
             self.color,
-            f32::INFINITY,
+            (right - left - CHIP_ICON - CHIP_GAP).max(0.0),
         );
         let width = CHIP_ICON + CHIP_GAP + text.size().x;
         let rect = Rect::from_min_size(
@@ -133,14 +135,22 @@ pub(super) fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &
                     .size(10.0)
                     .color(theme::editor_diff_added()),
             )
-            .on_hover_text(format!("{added} lines added since the last save"));
+            .on_hover_text(tr_n!(
+                added,
+                "{count} line added since the last save",
+                "{count} lines added since the last save"
+            ));
         inner
             .label(
                 RichText::new(format!("−{removed}"))
                     .size(10.0)
                     .color(theme::editor_diff_deleted()),
             )
-            .on_hover_text(format!("{removed} lines removed since the last save"));
+            .on_hover_text(tr_n!(
+                removed,
+                "{count} line removed since the last save",
+                "{count} lines removed since the last save"
+            ));
     }
     if let Some((text, at)) = state.notice.as_ref()
         && let Some(left) =

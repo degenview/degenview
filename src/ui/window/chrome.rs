@@ -4,6 +4,7 @@
 //! strip draws minimize / maximize / close at its right end (`trailing_inset`) and, where the
 //! window system does not provide resize borders, [`edge_at`] finds the edge under the pointer.
 
+use crate::i18n::tr;
 use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CursorIcon, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2, ViewportBuilder, pos2,
@@ -154,20 +155,25 @@ pub fn window_controls(ui: &mut Ui, strip: Rect, maximized: bool) -> Option<Cont
     let mut clicked = None;
     let painter = ui.painter().clone();
     let controls = [
-        (Control::Minimize, "Minimize"),
+        (Control::Minimize, "minimize", tr!("Minimize")),
         (
             Control::ToggleMaximize,
-            if maximized { "Restore" } else { "Maximize" },
+            "maximize",
+            if maximized {
+                tr!("Restore")
+            } else {
+                tr!("Maximize")
+            },
         ),
-        (Control::Close, "Close"),
+        (Control::Close, "close", tr!("Close")),
     ];
-    for (index, (control, name)) in controls.into_iter().enumerate() {
+    for (index, (control, key, name)) in controls.into_iter().enumerate() {
         let left = strip.right() - CONTROL_WIDTH * (CONTROL_COUNT - index as f32);
         let rect = Rect::from_min_size(
             pos2(left, strip.top()),
             vec2(CONTROL_WIDTH, strip.height() - 1.0),
         );
-        let response = ui.interact(rect, Id::new(("window-control", name)), Sense::click());
+        let response = ui.interact(rect, Id::new(("window-control", key)), Sense::click());
         let response = crate::ui::accessibility::label(response, name).on_hover_text(name);
         let danger = control == Control::Close;
         if response.hovered() {

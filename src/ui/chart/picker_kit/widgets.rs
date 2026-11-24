@@ -5,6 +5,7 @@ use super::art;
 use super::artwork::{prediction_icon, result_icon};
 use super::recents::RecentMarket;
 use super::results::{result_row, same_market};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::ui::icons::{self, Icon};
@@ -46,11 +47,11 @@ pub(crate) fn recents_card(
     let mut clear = false;
     card(ui, |ui| {
         ui.horizontal(|ui| {
-            caption_label(ui, Icon::ClockArrow, "Recent");
+            caption_label(ui, Icon::ClockArrow, tr!("Recent"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let clear_button = ui.add(
                     egui::Label::new(text(
-                        "Clear",
+                        tr!("Clear"),
                         size::CAPTION + 0.5,
                         400.0,
                         theme::text_secondary(),
@@ -78,7 +79,7 @@ pub(crate) fn recents_card(
                     let is_selected = selected.is_some_and(|picked| same_market(picked, &result));
                     let response = result_row(ui, &result, is_selected, true, column);
                     response.context_menu(|ui| {
-                        if ui.button("Remove from Recent").clicked() {
+                        if ui.button(tr!("Remove from Recent")).clicked() {
                             remove = Some(row * RECENT_COLUMNS as usize + offset);
                             ui.close();
                         }
@@ -155,8 +156,8 @@ pub(crate) fn provider_menu(ui: &mut Ui, provider: DataSource) -> Option<DataSou
     let width = 12.0 + 18.0 + 8.0 + name.size().x + 8.0 + 9.0 + 12.0;
     let (rect, response) =
         ui.allocate_exact_size(vec2(width, kit::search_box::HEIGHT), Sense::click());
-    let response = crate::ui::accessibility::label(response, "Prediction market provider")
-        .on_hover_text("Prediction market provider")
+    let response = crate::ui::accessibility::label(response, tr!("Prediction market provider"))
+        .on_hover_text(tr!("Prediction market provider"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let painter = ui.painter();
     painter.rect_filled(
@@ -323,7 +324,7 @@ pub(crate) fn selected_banner(ui: &mut Ui, result: &SearchResult, max_width: f32
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     ui.label(text(
-                        "Selected",
+                        tr!("Selected"),
                         size::CAPTION,
                         400.0,
                         theme::text_secondary(),

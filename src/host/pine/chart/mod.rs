@@ -100,6 +100,10 @@ pub struct ChartFrame<'a> {
     pub symbol: &'a SymbolInfo,
     /// The length of the chart's bars, when their times cannot say (price-based charts).
     pub bar_seconds: Option<f64>,
+    /// The length of the timeframe the chart is set to, in Pine's seconds (a month is 30 days):
+    /// what `timeframe.in_seconds()` reads, which the gap between two bars would misstate where a
+    /// bucket is cut short.
+    pub timeframe_seconds: Option<f64>,
     /// The colours the chart is drawn on: what `chart.bg_color` and `chart.fg_color` read.
     pub theme: ChartTheme,
     /// The open times of the first and last bar on screen, for a script that reads them.
@@ -125,6 +129,7 @@ struct Run {
     inputs: HashMap<String, StoredInput>,
     symbol: SymbolInfo,
     bar_seconds: Option<u64>,
+    timeframe_seconds: Option<u64>,
     /// The chart colours the script ran against; a change of app theme runs it again.
     theme: ChartTheme,
     worker: PineWorker,
@@ -312,6 +317,7 @@ impl ChartRuns {
         };
         let bars = Arc::clone(&bars.bars);
         let bar_seconds = chart.bar_seconds.map(f64::to_bits);
+        let timeframe_seconds = chart.timeframe_seconds.map(f64::to_bits);
         let visible_ids: HashSet<u64> = instances
             .iter()
             .filter(|instance| instance.visible)
@@ -325,6 +331,7 @@ impl ChartRuns {
                     && run.inputs == instance.inputs
                     && run.symbol == *chart.symbol
                     && run.bar_seconds == bar_seconds
+                    && run.timeframe_seconds == timeframe_seconds
                     && run.theme == chart.theme
             });
             if !configured {
@@ -419,6 +426,7 @@ impl ChartRuns {
                 inputs: instance.input_values(),
                 symbol: chart.symbol.clone(),
                 bar_seconds: chart.bar_seconds,
+                timeframe_seconds: chart.timeframe_seconds,
             },
             repaint.clone(),
         );
@@ -429,6 +437,7 @@ impl ChartRuns {
                 inputs: instance.inputs.clone(),
                 symbol: chart.symbol.clone(),
                 bar_seconds: chart.bar_seconds.map(f64::to_bits),
+                timeframe_seconds: chart.timeframe_seconds.map(f64::to_bits),
                 theme: chart.theme,
                 worker,
                 requested: None,

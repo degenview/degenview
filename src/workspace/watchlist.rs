@@ -2,6 +2,7 @@
 
 use super::ChartWorkspace;
 use super::alerts::AlertRequest;
+use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
@@ -28,7 +29,7 @@ fn report_watchlist(slot: &mut Option<WatchlistNotice>, result: Result<(), Watch
 /// answer is `None` when the user cancels.
 fn read_import_file(ctx: &egui::Context) -> Pending<Result<Option<String>, String>> {
     work_queue::SNAPSHOTS.start(Some(ctx), || {
-        file_dialog::choose_csv("Choose watchlist symbols").and_then(|path| {
+        file_dialog::choose_csv(tr!("Choose watchlist symbols")).and_then(|path| {
             path.map(|path| {
                 file_dialog::read_text_up_to(&path, crate::model::watchlist::text::MAX_IMPORT_BYTES)
             })
@@ -42,7 +43,7 @@ fn read_import_file(ctx: &egui::Context) -> Pending<Result<Option<String>, Strin
 fn export_to_file(ctx: &egui::Context, name: &str, text: String) -> Pending<Result<(), String>> {
     let file_name = crate::model::watchlist::text::export_file_name(name);
     work_queue::SNAPSHOTS.start(Some(ctx), move || {
-        file_dialog::choose_save_path("Export watchlist", &file_name)
+        file_dialog::choose_save_path(tr!("Export watchlist"), &file_name)
             .and_then(|path| {
                 path.map(|path| file_dialog::write_text(&path, &text))
                     .transpose()
@@ -137,7 +138,7 @@ impl ChartWorkspace {
     fn show_watchlist(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if let Some(export) = &mut self.watchlist_pane.file_result {
             if let Some(Err(error)) = export.poll() {
-                self.watchlist_pane.notice = Some(WatchlistNotice::new("File Error", error));
+                self.watchlist_pane.notice = Some(WatchlistNotice::new(tr!("File Error"), error));
             }
             if !export.is_pending() {
                 self.watchlist_pane.file_result = None;
@@ -156,7 +157,7 @@ impl ChartWorkspace {
                 .map(|chart| InstrumentId::new(chart.source, &chart.symbol));
             let store_notice = store
                 .last_error()
-                .map(|message| WatchlistNotice::new("Couldn\u{2019}t Save", message));
+                .map(|message| WatchlistNotice::new(tr!("Couldn\u{2019}t Save"), message));
             let input = WatchlistSidebarInput {
                 lists,
                 flags,
@@ -344,7 +345,7 @@ impl ChartWorkspace {
                                 .iter()
                                 .find(|candidate| candidate.id == list)
                                 .map(|candidate| candidate.name.clone())
-                                .unwrap_or_else(|| "Watchlist".to_owned());
+                                .unwrap_or_else(|| tr!("Watchlist").to_owned());
                             self.watchlist_pane.file_result =
                                 Some(export_to_file(ctx, &name, text));
                         }

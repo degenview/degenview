@@ -46,7 +46,7 @@ pub use autosave::Autosave;
 pub use button::{
     FooterButton, cta_button, destructive_button, destructive_sheet_button, footer_button,
     hover_button, large_button, large_prominent_button, neutral_button, open_button, push_button,
-    sheet_button, sheet_button_focusable, tinted_button,
+    push_button_width, sheet_button, sheet_button_focusable, sheet_button_width, tinted_button,
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice, notice_with};
@@ -58,8 +58,8 @@ pub use form::{
 pub use menu::{
     HEADING_INSET, MenuRow, context_popup, fitted_context_menu, fitted_context_menu_min,
     fitted_menu, fitted_menu_rows, menu_fill, menu_fit, menu_fit_rows, menu_frame, menu_heading,
-    menu_item, menu_item_marked, menu_item_with_shortcut, menu_picker, menu_picker_hinted,
-    menu_popup, menu_row, menu_scope, menu_separator, menu_submenu,
+    menu_item, menu_item_marked, menu_item_with_shortcut, menu_picker, menu_picker_fitted,
+    menu_picker_hinted, menu_popup, menu_row, menu_scope, menu_separator, menu_submenu,
 };
 pub(crate) use menu::{MENU_FRAME_MARGIN, MENU_MAX_HEIGHT, menu_width_for, menu_width_for_rows};
 pub use page::{empty_state, footer_bar, footer_bar_with, notice_card};

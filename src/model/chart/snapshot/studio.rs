@@ -8,6 +8,7 @@
 //! remembered; the area and the framing belong to one capture and never are.
 
 use super::framing::Framing;
+use crate::i18n::tr;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,29 +27,29 @@ pub enum Area {
 
 impl Area {
     /// The word on the Area control.
-    pub const fn control_label(self) -> &'static str {
+    pub fn control_label(self) -> &'static str {
         match self {
-            Self::FullChart => "Full chart",
-            Self::Portion => "Portion",
-            Self::EntireLayout => "Entire layout",
+            Self::FullChart => tr!("Full chart"),
+            Self::Portion => tr!("Portion"),
+            Self::EntireLayout => tr!("Entire layout"),
         }
     }
 
     /// What hovering the Area control's choice says.
-    pub const fn tooltip(self) -> &'static str {
+    pub fn tooltip(self) -> &'static str {
         match self {
-            Self::FullChart => "The whole chart that has the focus",
-            Self::Portion => "Choose a part of the charts; the window comes back with it",
-            Self::EntireLayout => "Every chart, as the window arranges them",
+            Self::FullChart => tr!("The whole chart that has the focus"),
+            Self::Portion => tr!("Choose a part of the charts; the window comes back with it"),
+            Self::EntireLayout => tr!("Every chart, as the window arranges them"),
         }
     }
 
     /// The words in the footer's summary line.
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::FullChart => "Full chart",
-            Self::Portion => "Selected portion",
-            Self::EntireLayout => "Entire layout",
+            Self::FullChart => tr!("Full chart"),
+            Self::Portion => tr!("Selected portion"),
+            Self::EntireLayout => tr!("Entire layout"),
         }
     }
 }
@@ -67,17 +68,17 @@ pub enum Style {
 impl Style {
     pub const ALL: [Self; 2] = [Self::Chart, Self::Styled];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Chart => "Chart",
-            Self::Styled => "Styled",
+            Self::Chart => tr!("Chart"),
+            Self::Styled => tr!("Styled"),
         }
     }
 
-    pub const fn tooltip(self) -> &'static str {
+    pub fn tooltip(self) -> &'static str {
         match self {
-            Self::Chart => "The chart as it is on screen",
-            Self::Styled => "Larger labels, a title block and the DegenView mark",
+            Self::Chart => tr!("The chart as it is on screen"),
+            Self::Styled => tr!("Larger labels, a title block and the DegenView mark"),
         }
     }
 }
@@ -111,9 +112,9 @@ impl AspectRatio {
         Self::Portrait9x16,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Original => "Original",
+            Self::Original => tr!("Original"),
             Self::Wide16x9 => "16:9",
             Self::Landscape3x2 => "3:2",
             Self::Square => "1:1",
@@ -121,13 +122,13 @@ impl AspectRatio {
         }
     }
 
-    pub const fn tooltip(self) -> &'static str {
+    pub fn tooltip(self) -> &'static str {
         match self {
-            Self::Original => "The capture's own proportions",
-            Self::Wide16x9 => "Wide landscape",
-            Self::Landscape3x2 => "Landscape",
-            Self::Square => "Square",
-            Self::Portrait9x16 => "Tall portrait",
+            Self::Original => tr!("The capture's own proportions"),
+            Self::Wide16x9 => tr!("Wide landscape"),
+            Self::Landscape3x2 => tr!("Landscape"),
+            Self::Square => tr!("Square"),
+            Self::Portrait9x16 => tr!("Tall portrait"),
         }
     }
 

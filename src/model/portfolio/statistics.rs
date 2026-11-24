@@ -2,6 +2,7 @@
 //! holdings, the value history and the (converted) transactions. Pure value types: no
 //! store, no formatting.
 
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 
 use crate::model::portfolio::accounting::ClosedPosition;
@@ -74,10 +75,10 @@ impl PortfolioHistoryRange {
     pub fn period_name(self) -> &'static str {
         match self {
             Self::OneDay => "24h",
-            Self::OneWeek => "7 days",
-            Self::OneMonth => "30 days",
-            Self::OneYear => "1 year",
-            Self::All => "all time",
+            Self::OneWeek => tr!("7 days"),
+            Self::OneMonth => tr!("30 days"),
+            Self::OneYear => tr!("1 year"),
+            Self::All => tr!("all time"),
         }
     }
 

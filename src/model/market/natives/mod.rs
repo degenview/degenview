@@ -10,6 +10,10 @@ use super::samples;
 use super::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
 
+const fn seconds(count: u16) -> Timeframe {
+    native(count, TimeUnit::Second)
+}
+
 const fn minutes(count: u16) -> Timeframe {
     native(count, TimeUnit::Minute)
 }
@@ -26,10 +30,12 @@ const fn native(count: u16, unit: TimeUnit) -> Timeframe {
     }
 }
 
-/// Binance's kline intervals. Its `3d` is left out: Binance counts those from a day of its own
+/// Binance's kline intervals, its `1s` among them (spot markets only, which is all that is
+/// listed). Its `3d` is left out: Binance counts those from a day of its own
 /// (not a multiple of three since 1970-01-01), so they would not match every other source's.
 /// Weeks start on Monday, as here.
-const BINANCE: [Timeframe; 14] = [
+const BINANCE: [Timeframe; 15] = [
+    seconds(1),
     minutes(1),
     minutes(3),
     minutes(5),
@@ -46,12 +52,13 @@ const BINANCE: [Timeframe; 14] = [
     Timeframe::MONTH_1,
 ];
 
-/// OKX's candle bars. Its plain `6H`, `12H`, `1D`, `1W`, `1M` and `3M` are cut at UTC+8
+/// OKX's candle bars, `1s` among them. Its plain `6H`, `12H`, `1D`, `1W`, `1M` and `3M` are cut at UTC+8
 /// midnight, so the `utc` bars are the ones used: they are cut as everything else is. Left out:
 /// `8H` (OKX has no such bar), `2D` and `3D` (counted from a day that is not a multiple of the
 /// length since 1970-01-01, as Binance's `3d` is: they fold from days) and the year (it folds from
 /// the quarter).
-const OKX: [Timeframe; 14] = [
+const OKX: [Timeframe; 15] = [
+    seconds(1),
     minutes(1),
     minutes(3),
     minutes(5),
@@ -69,10 +76,11 @@ const OKX: [Timeframe; 14] = [
 ];
 
 /// Gate.io's documented candlestick intervals (it also answers `3m`, `2h`, `6h` and `12h`, which
-/// its docs do not list, so they fold): 1, 5, 15, 30 minutes, 1, 4 and 8 hours, `1d`, `7d` and
+/// its docs do not list, so they fold): 10 seconds, 1, 5, 15, 30 minutes, 1, 4 and 8 hours, `1d`, `7d` and
 /// `30d`. Its days are cut at UTC midnight, its `7d` weeks start on Monday and its `30d` is the
 /// calendar month, so all of them are cut where this app cuts.
-const GATE: [Timeframe; 10] = [
+const GATE: [Timeframe; 11] = [
+    seconds(10),
     minutes(1),
     minutes(5),
     minutes(15),
@@ -217,7 +225,9 @@ impl DataSource {
             | Self::Alpaca
             | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
-            Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => true,
+            // Their lines are drawn from points a minute or more apart.
+            Self::Polymarket | Self::Kalshi => !timeframe.is_subminute(),
+            Self::CoinMarketCap => true,
         }
     }
 

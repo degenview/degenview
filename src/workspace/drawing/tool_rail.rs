@@ -89,6 +89,14 @@ impl ChartWorkspace {
         actions
     }
 
+    /// Back to the crosshair after the drawing layer put its tool down (a drawing was placed, or the
+    /// ruler's measurement was read). A measurement goes away with its tool, as on every other way
+    /// of putting it down.
+    pub(in crate::workspace) fn disarm_tool(&mut self) {
+        self.tools.disarm();
+        self.drop_rulers();
+    }
+
     /// Arms the Zoom In mode, or puts it down when it is armed. It takes the pointer from any
     /// drawing tool, as a drawing tool takes it from Zoom In.
     pub(in crate::workspace) fn toggle_zoom_in(&mut self) {
@@ -215,6 +223,31 @@ mod tests {
         );
         workspace.toggle_zoom_in();
         assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
+    }
+
+    #[test]
+    fn a_click_on_the_cursor_tile_puts_down_the_armed_tool_and_zoom_and_keeps_the_choice() {
+        use crate::model::CursorMode;
+        let mut workspace = empty_workspace(1);
+        workspace.tools.choose_cursor(CursorMode::Arrow);
+        // The tile's click is `SetCursor(chosen_cursor())`.
+        workspace.toggle_tool(Tool::Rectangle);
+        workspace
+            .tools
+            .choose_cursor(workspace.tools.chosen_cursor());
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Arrow);
+        workspace.toggle_zoom_in();
+        workspace
+            .tools
+            .choose_cursor(workspace.tools.chosen_cursor());
+        assert!(!workspace.tools.zoom_armed);
+        assert_eq!(workspace.tools.cursor(), CursorMode::Arrow);
+        // With nothing armed it changes nothing.
+        workspace
+            .tools
+            .choose_cursor(workspace.tools.chosen_cursor());
+        assert_eq!(workspace.tools.cursor(), CursorMode::Arrow);
     }
 
     #[test]

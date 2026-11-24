@@ -309,11 +309,55 @@ fn the_sheet_draws_the_footnotes_the_notes_and_coverage_give() {
     // With nothing to list the sheet says so and nothing more.
     let empty = available_with(true, ReleaseNotes::default(), coverage);
     let drawn = texts(&scrolled(&mut Screen::new(size), &empty, &[]));
-    assert!(drawn.iter().any(|text| text == NO_NOTES));
+    assert!(
+        drawn
+            .iter()
+            .any(|text| text == "No summary of changes is available for this version.")
+    );
     assert!(
         drawn.iter().all(|text| !footnotes.contains(text)),
         "{drawn:?}"
     );
+}
+
+/// The sheet in the pseudo-locale, installable and not: its own words went through `tr!` (the
+/// notes and the reason a release cannot install are data) and none is cut.
+#[test]
+fn the_sheet_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    let size = Vec2::new(700.0, 760.0);
+    with_locale(Locale::PSEUDO, || {
+        for installable in [true, false] {
+            let view = available(installable, notes());
+            let mut screen = Screen::new(size);
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(vec![], |ui| {
+                    show(ui.ctx(), &view, INSTALLED);
+                }));
+            }
+            let frame = last.expect("a frame");
+            let words = Screen::words(&frame);
+            let notes = notes();
+            let data: Vec<&str> = notes
+                .new
+                .iter()
+                .chain(&notes.fixed)
+                .map(String::as_str)
+                .chain(["Not published by the release workflow"])
+                .collect();
+            assert_eq!(
+                Screen::untranslated(&words, &data),
+                Vec::<&str>::new(),
+                "installable {installable}: text that did not go through tr!"
+            );
+            assert_eq!(
+                Screen::truncated_text(&frame),
+                Vec::<String>::new(),
+                "installable {installable}: a label was cut"
+            );
+        }
+    });
 }
 
 #[test]

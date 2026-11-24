@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use super::{bind, route_of};
+use super::total::{self, is_total};
+use super::{INLINE, MORE_SCALAR_NAMES, SCALAR_NAMES, bind, route_of};
+use crate::pine::builtins::ta::extra;
 use crate::pine::compiler::{self, LibraryResolver, NoLibraries};
 use crate::pine::runtime::session::{RunError, Session};
 use crate::pine::syntax::ast::{Expression, Route, Statement};
@@ -344,4 +346,881 @@ fn a_call_in_a_debugger_expression_is_not_bound_and_still_runs() {
             .iter()
             .any(|(_, route)| route.is_some())
     );
+}
+
+// MARK: Calls whose history a lazy operand reads
+
+/// The program as the session sees it: lazy histories hoisted, then calls bound.
+fn hoisted(
+    source: &str,
+    resolver: &dyn LibraryResolver,
+) -> crate::pine::compiler::program::CompiledProgram {
+    let mut program = compiler::compile(source, limits(), resolver);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    super::hoist::lazy_history(&mut program);
+    bind(&mut program);
+    program
+}
+
+/// The synthetic declarations in `statements`, at any depth, as (name, the called function, its
+/// call site, its route).
+fn synthetic(statements: &[Statement]) -> Vec<(String, String, usize, Option<Route>)> {
+    let mut found = Vec::new();
+    for statement in statements {
+        if let Statement::Declaration { name, value, .. } = statement
+            && statement.is_synthetic()
+        {
+            let Expression::Call {
+                name: callee,
+                site,
+                route,
+                ..
+            } = value
+            else {
+                panic!("a synthetic declaration holds a call: {value:?}");
+            };
+            found.push((name.clone(), callee.clone(), *site, *route));
+        }
+        for block in nested_blocks(statement) {
+            found.extend(synthetic(block));
+        }
+    }
+    found
+}
+
+/// The callee names of the synthetic declarations of `source`, in order.
+fn hoisted_calls(source: &str) -> Vec<String> {
+    let program = hoisted(
+        &format!("//@version=6\nindicator(\"T\")\n{source}\n"),
+        &NoLibraries,
+    );
+    synthetic(&program.statements)
+        .into_iter()
+        .map(|(_, callee, _, _)| callee)
+        .collect()
+}
+
+#[test]
+fn a_call_with_a_history_in_a_ternary_arm_moves_ahead_of_its_statement_unchanged() {
+    let source = "//@version=6\nindicator(\"T\")\nx = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(x)\n";
+    let program = hoisted(source, &NoLibraries);
+    let moved = synthetic(&program.statements);
+    assert_eq!(moved.len(), 1);
+    let (name, callee, _, route) = &moved[0];
+    assert_eq!(callee, "ta.sma");
+    assert_eq!(
+        *route,
+        Some(Route::TaTable),
+        "the moved call is routed like any other"
+    );
+    // Before the statement it came from, which now reads the variable's history.
+    let [_, first, second, _] = &program.statements[..] else {
+        panic!("{:?}", program.statements);
+    };
+    assert!(first.is_synthetic());
+    let Statement::Declaration { value, .. } = second else {
+        panic!("{second:?}");
+    };
+    let Expression::Ternary { when_true, .. } = value else {
+        panic!("{value:?}");
+    };
+    let Expression::History { base, .. } = when_true.as_ref() else {
+        panic!("{when_true:?}");
+    };
+    assert_eq!(**base, Expression::Identifier(name.clone(), base.range()));
+}
+
+#[test]
+fn the_moved_call_keeps_its_call_site() {
+    let source = "//@version=6\nindicator(\"T\")\nx = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(ta.ema(close, 3))\n";
+    let sites = |program: &crate::pine::compiler::program::CompiledProgram| {
+        let mut sites = Vec::new();
+        crate::pine::syntax::traversal::for_each_call_with_args(
+            &program.statements,
+            &mut |name, _, range| {
+                sites.push((name.to_owned(), range.start.offset));
+            },
+        );
+        sites.sort();
+        sites
+    };
+    let before = sites(&compiler::compile(source, limits(), &NoLibraries));
+    let after = sites(&hoisted(source, &NoLibraries));
+    assert_eq!(
+        before, after,
+        "no call is added, dropped or moved in the source"
+    );
+}
+
+#[test]
+fn only_a_history_in_a_lazy_operand_moves_a_call() {
+    // Eager positions run on every bar the statement does: nothing to move.
+    assert!(hoisted_calls("x = ta.sma(close, 3)[1]").is_empty());
+    assert!(hoisted_calls("x = ta.sma(close, 3)[1] > 0 ? 1.0 : 2.0").is_empty());
+    assert!(hoisted_calls("x = ta.sma(close, 3)[1] > 0 and close > 0").is_empty());
+    assert!(hoisted_calls("x = close > 0 ? ta.sma(close, 3) : na").is_empty());
+    assert!(hoisted_calls("x = close > 0 ? close[1] : na").is_empty());
+    // The lazy ones.
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? ta.sma(close, 3)[1] : na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? na : ta.ema(close, 3)[2]"),
+        ["ta.ema"]
+    );
+    assert_eq!(
+        hoisted_calls("x = close > 0 and ta.sma(close, 3)[1] > 0"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = close < 0 or ta.sma(close, 3)[1] > 0"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = if close > 0\n    ta.sma(close, 3)[1]\nelse\n    na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("x = switch\n    close > 0 => ta.sma(close, 3)[1]\n    => na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls(
+            "x = switch\n    close > 0 => 1.0\n    ta.sma(close, 3)[1] > 0 => 2.0\n    => na"
+        ),
+        ["ta.sma"]
+    );
+}
+
+#[test]
+fn two_histories_make_two_variables() {
+    let program = hoisted(
+        "//@version=6\nindicator(\"T\")\nx = close > 0 ? ta.sma(close, 3)[1] + ta.sma(close, 3)[2] : na\n",
+        &NoLibraries,
+    );
+    let moved = synthetic(&program.statements);
+    assert_eq!(moved.len(), 2);
+    assert_ne!(moved[0].0, moved[1].0);
+    assert_ne!(
+        moved[0].2, moved[1].2,
+        "each keeps the state of its own call site"
+    );
+}
+
+#[test]
+fn a_call_inside_the_moved_calls_arguments_that_is_lazy_moves_first() {
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? ta.sma(close > 1 ? ta.ema(close, 2)[1] : close, 3)[1] : na"),
+        ["ta.ema", "ta.sma"]
+    );
+}
+
+#[test]
+fn a_call_that_could_fail_or_change_something_stays_where_it_is() {
+    for body in [
+        "a = array.new_float(1)\nx = array.size(a) > 0 ? array.get(a, 0)[1] : na",
+        "a = array.new_float(1)\nx = array.size(a) > 0 and array.get(a, 0)[1] > 0",
+        "x = close > 0 ? str.length(\"ab\")[1] : na",
+        "x = close > 0 ? ta.pivot_point_levels(\"Traditional\")[1] : na",
+        "x = close > 0 ? math.random(0, 1)[1] : na",
+        "x = close > 0 ? request.security(syminfo.tickerid, \"D\", close)[1] : na",
+        "x = close > 0 ? request.security(syminfo.tickerid, \"D\", close > 0 ? ta.sma(close, 3)[1] : na) : na",
+        "x = close > 0 ? ta.sma(array.get(array.new_float(1), 0), 3)[1] : na",
+        "type P\n    float v\np = P.new(1.0)\nx = close > 0 ? p.v[1] : na",
+        "x = close > 0 ? nz(plot(close))[1] : na",
+        // An offset only the guard keeps non-negative: `close[lag]` raises for a negative `lag`.
+        "lag = bar_index - 1\nx = lag >= 0 ? math.abs(close[lag])[1] : na",
+        "lag = bar_index - 1\nx = lag >= 0 ? ta.sma(close[lag], 3)[1] : na",
+        "lag = bar_index - 1\nx = lag >= 0 ? ta.sma(close[-1], 3)[1] : na",
+        "f(l) =>\n    math.abs(close[l])\nlag = bar_index - 1\nx = lag >= 0 ? f(lag)[1] : na",
+        // Builtins that can raise, in families whose other members cannot.
+        "x = close > 0 ? runtime.error(\"x\")[1] : na",
+        "x = close > 0 ? time(\"nonsense\")[1] : na",
+        "x = close > 0 ? time_close(\"nonsense\")[1] : na",
+    ] {
+        assert!(hoisted_calls(body).is_empty(), "{body}");
+    }
+}
+
+#[test]
+fn a_user_function_moves_only_when_it_only_computes() {
+    let pure = "f() =>\n    ta.sma(close, 3) + math.abs(close)\n\
+                x = close > 0 ? f()[1] : na";
+    assert_eq!(hoisted_calls(pure), ["f"]);
+    let chain = "g() =>\n    ta.sma(close, 3)\nf() =>\n    g() * 2\n\
+                 x = close > 0 ? f()[1] : na";
+    assert_eq!(hoisted_calls(chain), ["f"]);
+    // A history at a literal offset cannot fail, in the call's argument or in a function's body.
+    assert_eq!(
+        hoisted_calls("x = close > 0 ? ta.sma(close[1], 3)[1] : na"),
+        ["ta.sma"]
+    );
+    assert_eq!(
+        hoisted_calls("f() =>\n    close[2]\nx = close > 0 ? f()[1] : na"),
+        ["f"]
+    );
+    for impure in [
+        "var a = array.new_float()\nf() =>\n    array.push(a, close)\n    1.0\n",
+        "f() =>\n    plot(close)\n    1.0\n",
+        "f() =>\n    array.get(array.new_float(0), 0)\n",
+        "f() =>\n    request.security(syminfo.tickerid, \"D\", close)\n",
+        "f() =>\n    na(close) ? 1.0 : label.new(bar_index, close).get_x()\n",
+        "g() =>\n    plot(close)\n    1.0\nf() =>\n    g()\n",
+        "f() =>\n    i = 0\n    while i < 3\n        i += 1\n    i\n",
+        "f() =>\n    runtime.error(\"x\")\n    1.0\n",
+        "f() =>\n    time(\"nonsense\")\n",
+        // A loop is total only when its trip count is known: a zero step raises, and a bound the
+        // data sets can run past the per-bar instruction budget.
+        "f() =>\n    s = 0.0\n    for i = 0 to 3 by 0\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to 3 by bar_index\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to bar_index\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = bar_index to 3\n        s += 1.0\n    s\n",
+        // Known, but more than a bar may be asked to spend ahead of its guard (PINE8004 is at 20
+        // million instructions): a long loop, loops that multiply, a function that calls one twice.
+        "f() =>\n    s = 0.0\n    for i = 0 to 30000000\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to 1 by 0.00000001\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 0 to 1000\n        for j = 0 to 1000\n            s += 1.0\n    s\n",
+        "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
+        // A counter that cannot move: past 2^53, or by less than the gap between floats there.
+        "f() =>\n    s = 0.0\n    for i = 1e20 to 1e20\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 9007199254740992 to 9007199254740994\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 1e15 to 1e15 by 0.01\n        s += 1.0\n    s\n",
+        // Half a gap rounds back to the same float on every other value (ties to even).
+        "f() =>\n    s = 0.0\n    for i = 4503599627370496 to 4503599627370497 by 0.5\n        s += 1.0\n    s\n",
+        // What a call leaves out is evaluated for it: a default is part of the function.
+        "f(v = math.random(0, 1)) =>\n    v\n",
+        "f(v = time(\"nonsense\")) =>\n    v\n",
+        "f(v = array.get(array.new_float(0), 0)) =>\n    v\n",
+        "g() =>\n    plot(close)\n    1.0\nf(v = g()) =>\n    v\n",
+    ] {
+        let source = format!("{impure}x = close > 0 ? f()[1] : na");
+        assert!(hoisted_calls(&source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn a_call_in_a_loop_moves_only_while_the_loop_leaves_room_for_its_cost() {
+    // The moved call runs once per pass of the loop around it, so its cost is multiplied by them.
+    let helper = "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\n";
+    assert_eq!(
+        hoisted_calls(&format!(
+            "{helper}for i = 0 to 0\n    r = close > 0 ? g()[1] : na"
+        )),
+        ["g"]
+    );
+    for loops in [
+        "for i = 0 to 999\n    r = close > 0 ? g()[1] : na",
+        "for i = 0 to bar_index\n    r = close > 0 ? g()[1] : na",
+        "while bar_index < 3\n    r = close > 0 ? g()[1] : na\n    break",
+        "for i = 0 to 9\n    for j = 0 to 9\n        r = close > 0 ? g()[1] : na",
+    ] {
+        let source = format!("{helper}{loops}");
+        assert!(hoisted_calls(&source).is_empty(), "{source}");
+    }
+    // A cheap call has room for a few passes and none for a loop nobody can count.
+    assert_eq!(
+        hoisted_calls("for i = 0 to 9\n    r = close > 0 ? ta.sma(close, 3)[1] : na"),
+        ["ta.sma"]
+    );
+    assert!(
+        hoisted_calls("for i = 0 to bar_index\n    r = close > 0 ? ta.sma(close, 3)[1] : na")
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_function_with_a_total_default_or_a_loop_within_the_budget_is_run_ahead() {
+    for helper in [
+        "f(v = 2.0) =>\n    v\n",
+        "f(v = ta.sma(close, 3)) =>\n    v\n",
+        "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g()\n",
+    ] {
+        let source = format!("{helper}x = close > 0 ? f()[1] : na");
+        assert_eq!(hoisted_calls(&source), ["f"], "{source}");
+    }
+}
+
+#[test]
+fn a_loop_with_a_known_trip_count_is_total() {
+    for body in [
+        "for i = 0 to 3\n        s += 1.0",
+        "for i = 0 to 3 by 1\n        s += 1.0",
+        "for i = 3 to 0 by -1\n        s += 1.0",
+        "for i = 0 to 10 by 2.5\n        s += 1.0",
+    ] {
+        let source = format!("f() =>\n    s = 0.0\n    {body}\n    s\nx = close > 0 ? f()[1] : na");
+        assert_eq!(hoisted_calls(&source), ["f"], "{source}");
+    }
+}
+
+// MARK: Which builtins may run ahead of their guard
+
+#[test]
+fn the_builtins_that_can_raise_or_draw_on_a_generator_are_not_total() {
+    for name in [
+        "runtime.error",
+        "ta.pivot_point_levels",
+        "time",
+        "time_close",
+        "math.random",
+        "array.get",
+        "str.tostring",
+        "request.security",
+        "plot",
+        "no.such.function",
+    ] {
+        assert!(!is_total(name), "{name}");
+    }
+    for name in [
+        "ta.sma", "ta.ema", "ta.atr", "math.abs", "math.max", "nz", "na", "fixnan",
+    ] {
+        assert!(is_total(name), "{name}");
+    }
+}
+
+#[test]
+fn every_name_that_is_total_is_a_builtin_the_compiler_knows() {
+    for name in total::NAMES.iter().chain(total::REFUSED) {
+        assert!(route_of(name).is_some(), "{name} has no route");
+    }
+}
+
+#[test]
+fn a_builtin_has_to_be_decided_before_it_may_run_ahead() {
+    // Every name the families that can raise answer is listed as total or as refused: a builtin
+    // added to one of them is neither until someone reads its evaluator, and until then it stays.
+    let answered = INLINE
+        .iter()
+        .chain(&extra::FUNCTIONS)
+        .chain(&SCALAR_NAMES)
+        .chain(&MORE_SCALAR_NAMES)
+        .chain(&crate::pine::time::PART_NAMES);
+    for name in answered {
+        let listed = total::NAMES.contains(name) as usize + total::REFUSED.contains(name) as usize;
+        assert_eq!(
+            listed, 1,
+            "{name} must be in exactly one of NAMES and REFUSED"
+        );
+        assert_eq!(is_total(name), total::NAMES.contains(name), "{name}");
+    }
+}
+
+#[test]
+fn a_call_reading_what_its_own_statement_declares_stays_in_the_branch() {
+    // `inner` exists only inside the arm: the call cannot run ahead of it.
+    assert!(
+        hoisted_calls(
+            "x = if close > 0\n    inner = close * 2\n    ta.sma(inner, 3)[1]\nelse\n    na"
+        )
+        .is_empty()
+    );
+    // A call that reads nothing the arm makes can.
+    assert_eq!(
+        hoisted_calls(
+            "x = if close > 0\n    inner = close * 2\n    ta.sma(close, 3)[1] + inner\nelse\n    na"
+        ),
+        ["ta.sma"]
+    );
+}
+
+#[test]
+fn a_move_stays_inside_the_block_or_function_it_was_written_in() {
+    let program = hoisted(
+        "//@version=6\nindicator(\"T\")\n\
+         f(c) =>\n    c ? ta.sma(close, 3)[1] : na\n\
+         total = 0.0\n\
+         for i = 0 to 2\n    total += close > 0 ? ta.ema(close, 2)[1] : 0.0\n\
+         if close > 0\n    total += close > 0 ? ta.rsi(close, 2)[1] : 0.0\n\
+         plot(f(true) + total)\n",
+        &NoLibraries,
+    );
+    // None at the top level: each sits before its statement in its own function, loop body or branch.
+    assert!(
+        program
+            .statements
+            .iter()
+            .all(|statement| !statement.is_synthetic())
+    );
+    let in_function = nested_blocks(
+        program
+            .statements
+            .iter()
+            .find(|s| matches!(s, Statement::Function { .. }))
+            .unwrap(),
+    )[0];
+    assert!(in_function[0].is_synthetic() && !in_function[1].is_synthetic());
+    let names: Vec<String> = synthetic(&program.statements)
+        .into_iter()
+        .map(|(_, callee, _, _)| callee)
+        .collect();
+    assert_eq!(names, ["ta.sma", "ta.ema", "ta.rsi"]);
+}
+
+#[test]
+fn a_library_function_is_hoisted_in_its_own_program() {
+    struct Lib;
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Lazy/1").then(|| {
+                "//@version=6\nlibrary(\"Lazy\")\nexport ahead(bool on) =>\n    on ? ta.sma(close, 3)[1] : na\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
+    let program = hoisted(source, &Lib);
+    assert!(synthetic(&program.statements).is_empty());
+    let library = program.imports[0]
+        .library
+        .as_deref()
+        .expect("the library compiled");
+    assert_eq!(synthetic(&library.statements).len(), 1);
+    assert_eq!(outcome(source, &Lib, false), outcome(source, &Lib, true));
+}
+
+#[test]
+fn a_library_function_that_calls_its_own_overload_is_still_hoisted() {
+    // A library's calls are not resolved, so a call reaches every overload of its name, the
+    // function it is in among them: that is not a recursion, and costs nothing.
+    struct Lib;
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Lazy/1").then(|| {
+                "//@version=6\nlibrary(\"Lazy\")\nf(float x) =>\n    x * 2\nf(float x, float y) =>\n    f(x) + y\n\
+                 export ahead(bool on) =>\n    on ? f(close, 1.0)[1] : na\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
+    let program = hoisted(source, &Lib);
+    let library = program.imports[0]
+        .library
+        .as_deref()
+        .expect("the library compiled");
+    assert_eq!(synthetic(&library.statements).len(), 1);
+    assert_eq!(outcome(source, &Lib, false), outcome(source, &Lib, true));
+}
+
+#[test]
+fn a_cost_found_while_another_function_is_being_counted_is_not_kept() {
+    // A library's calls are resolved by name only, so counting `a` reaches `p(float, float)` which
+    // reaches `a` again (a fallback, not a recursion). What `p(float, float)` costs there lacks `a`;
+    // kept, it would hide that a call of it costs 90 thousand and is made a thousand times.
+    struct Lib;
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Lazy/1").then(|| {
+                "//@version=6\nlibrary(\"Lazy\")\np(float x) =>\n    x\n\
+                 a(float x) =>\n    s = 0.0\n    for i = 0 to 29999\n        s += 1.0\n    s + p(x)\n\
+                 p(float x, float y) =>\n    a(x) + y\n\
+                 export ahead(bool on) =>\n    float r = na\n    for i = 0 to 999\n        r := on ? p(close, 1.0)[1] : na\n    r\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
+    let program = hoisted(source, &Lib);
+    let library = program.imports[0]
+        .library
+        .as_deref()
+        .expect("the library compiled");
+    assert!(synthetic(&library.statements).is_empty());
+}
+
+#[test]
+fn counting_what_overloads_that_call_each_other_by_name_cost_ends() {
+    // A library's calls are resolved by name only, so each of these ten overloads may reach all the
+    // others through `p(a)`: counting every path is exponential, and has to stop. What it costs is
+    // not asserted, only that the session builds.
+    let mut library = String::from("//@version=6\nlibrary(\"Lazy\")\np(float a) =>\n    a\n");
+    for arity in 2..=10 {
+        let names: Vec<String> = (1..arity).map(|n| format!("b{n}")).collect();
+        let parameters: Vec<String> = names.iter().map(|n| format!("float {n}")).collect();
+        library.push_str(&format!(
+            "p(float a, {}) =>\n    p(a) + {}\n",
+            parameters.join(", "),
+            names.join(" + ")
+        ));
+    }
+    library.push_str("export ahead(bool on) =>\n    on ? p(close, 1.0)[1] : na\n");
+    struct Lib(String);
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Many/1").then(|| self.0.clone())
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Many/1 as many\nplot(many.ahead(close > 0))\n";
+    let started = std::time::Instant::now();
+    let program = hoisted(source, &Lib(library));
+    assert!(program.imports[0].library.is_some(), "the library compiled");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "counting what the overloads cost took {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn hoisted_scripts_run_the_same_both_ways() {
+    for source in [
+        "x = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(x)",
+        "f() =>\n    ta.ema(close, 3)\nx = bar_index % 3 == 0 ? f()[2] : na\nplot(x)",
+        "hit = bar_index % 2 == 0 and ta.rsi(close, 3)[1] > 50\nplot(hit ? 1 : 0)",
+        "x = switch\n    bar_index % 2 == 0 => ta.wma(close, 3)[1]\n    => 0.0\nplot(x)",
+    ] {
+        same_both_ways(&format!("//@version=6\nindicator(\"T\")\n{source}\n"));
+    }
+}
+
+// MARK: The builtins that are total survive hostile arguments
+
+/// Arguments that are likeliest to break a builtin that trusts its inputs: a missing value, zero and
+/// negative lengths, huge ones, a series, a condition, an empty string and one that is no timeframe
+/// or format.
+const HOSTILE: [&str; 9] = [
+    "na",
+    "0",
+    "-1",
+    "1000000",
+    "1e300",
+    "close",
+    "close > open",
+    "\"\"",
+    "\"x\"",
+];
+
+/// Every argument list of up to three `HOSTILE` values (the first of a list of three is a series or
+/// `na`, which is what a builtin of three arguments reads first).
+fn hostile_argument_lists() -> Vec<String> {
+    let mut lists = vec![String::new()];
+    lists.extend(HOSTILE.iter().map(|value| (*value).to_owned()));
+    for first in HOSTILE {
+        for second in HOSTILE {
+            lists.push(format!("{first}, {second}"));
+        }
+    }
+    for first in ["close", "na"] {
+        for second in HOSTILE {
+            for third in HOSTILE {
+                lists.push(format!("{first}, {second}, {third}"));
+            }
+        }
+    }
+    lists
+}
+
+/// Calls `name` with each of `hostile_argument_lists`, as an assignment (or a tuple, for what returns
+/// one), over a few bars. Returns how many calls compiled and the first run-time failure, if any.
+fn hostile_calls(name: &str) -> (usize, Option<String>) {
+    let data = bars(12, MINUTE);
+    let mut compiled = 0;
+    for list in hostile_argument_lists() {
+        for target in ["x", "[a, b]", "[a, b, c]"] {
+            let source = format!("//@version=6\nindicator(\"T\")\n{target} = {name}({list})\n");
+            let program = compiler::compile(&source, limits(), &NoLibraries);
+            if !program.is_valid() {
+                continue;
+            }
+            compiled += 1;
+            let mut session = Session::new(
+                program,
+                HashMap::new(),
+                limits(),
+                Some(0.01),
+                symbol(),
+                None,
+                None,
+            );
+            if let Err(RunError::Script(diagnostic)) = session.evaluate(&data) {
+                return (compiled, Some(format!("{source}=> {diagnostic:?}")));
+            }
+            break;
+        }
+    }
+    (compiled, None)
+}
+
+#[test]
+fn the_search_for_a_failing_builtin_finds_one() {
+    // Without this the test below could pass because it looks at nothing.
+    for name in [
+        "runtime.error",
+        "time",
+        "time_close",
+        "ta.pivot_point_levels",
+    ] {
+        assert!(hostile_calls(name).1.is_some(), "{name}");
+    }
+    assert!(hostile_calls("ta.sma").1.is_none());
+}
+
+#[test]
+fn every_builtin_that_is_total_survives_hostile_arguments() {
+    let names: Vec<&str> = crate::pine::compiler::registry::all_functions()
+        .iter()
+        .map(String::as_str)
+        .filter(|name| is_total(name))
+        .collect();
+    assert!(
+        names.len() > 30,
+        "the registry lists the builtins that are total: {}",
+        names.len()
+    );
+    let workers = std::thread::available_parallelism().map_or(2, usize::from);
+    let results: Vec<(&str, usize, Option<String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|worker| {
+                let names = &names;
+                scope.spawn(move || {
+                    names
+                        .iter()
+                        .skip(worker)
+                        .step_by(workers)
+                        .map(|name| {
+                            let (compiled, failure) = hostile_calls(name);
+                            (*name, compiled, failure)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("a worker finished"))
+            .collect()
+    });
+    let failures: Vec<&str> = results
+        .iter()
+        .filter_map(|(_, _, failure)| failure.as_deref())
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    let untested: Vec<&str> = results
+        .iter()
+        .filter(|(_, compiled, _)| *compiled == 0)
+        .map(|(name, ..)| *name)
+        .collect();
+    assert!(
+        untested.is_empty(),
+        "no call of these compiled, so nothing was checked: {untested:?}"
+    );
+}
+
+// MARK: Hoisting never introduces a failure
+
+/// Whether `source` compiles and runs over a few bars without failing, with the hoist on or off.
+fn runs(source: &str, hoist: bool) -> Option<bool> {
+    let program = compiler::compile(source, limits(), &NoLibraries);
+    if !program.is_valid() {
+        return None;
+    }
+    super::hoist::OFF.set(!hoist);
+    // About a eightieth of the real per-bar budget, so what runs away fails quickly; what may move ahead
+    // (`RUN_AHEAD_WORK`) is two fifths of this, and one moved call is all a script here has.
+    let mut small = limits();
+    small.instructions_per_bar = 250_000;
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        small,
+        Some(0.01),
+        symbol(),
+        None,
+        None,
+    );
+    super::hoist::OFF.set(false);
+    Some(session.evaluate(&bars(12, MINUTE)).is_ok())
+}
+
+/// The lazy positions a `call[1]` can sit in, under the guard `guard`.
+fn lazy_scripts(call: &str, guard: &str) -> Vec<String> {
+    let c = call;
+    let g = guard;
+    vec![
+        format!("r = {g} ? {c}[1] : na\n"),
+        format!("r = {g} and {c}[1] > 0\n"),
+        format!("r = if {g}\n    {c}[1]\nelse\n    na\n"),
+        format!("r = switch\n    {g} => {c}[1]\n    => na\n"),
+        format!("float r = na\nfor i = 0 to 3\n    r := {g} ? {c}[1] : na\n"),
+        format!("wrap(flag) =>\n    flag ? {c}[1] : na\nr = wrap({g})\n"),
+    ]
+}
+
+const GUARDS: [&str; 2] = ["bar_index < 0", "bar_index % 2 == 0"];
+
+/// Helper functions, as a prelude and the call that uses it: some compute, some fail, some change
+/// state, some cost more than a bar may be asked to spend.
+const HELPERS: [(&str, &str); 16] = [
+    ("f() =>\n    ta.sma(close, 3)\n", "f()"),
+    ("f(v = ta.sma(close, 3)) =>\n    v\n", "f()"),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 20\n        s += close\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 2000\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 30000000\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 3 by 0\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 1e20 to 1e20\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    ("f() =>\n    runtime.error(\"x\")\n    1.0\n", "f()"),
+    ("f() =>\n    time(\"nonsense\")\n", "f()"),
+    ("f() =>\n    array.get(array.new_float(0), 0)\n", "f()"),
+    (
+        "a = array.new_float(0)\nf(v = array.get(a, 0)) =>\n    v\n",
+        "f()",
+    ),
+    ("f(v = math.random(0, 1)) =>\n    v\n", "f()"),
+    ("g() =>\n    ta.sma(close, 3)\nf() =>\n    g() * 2\n", "f()"),
+    (
+        "g() =>\n    s = 0.0\n    for i = 0 to 100000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
+        "f()",
+    ),
+    (
+        "var a = array.new_float(0)\nf() =>\n    array.push(a, close)\n    1.0\n",
+        "f()",
+    ),
+    (
+        "f(n) =>\n    s = 0.0\n    for i = 0 to n\n        s += 1.0\n    s\n",
+        "f(2000000000)",
+    ),
+];
+
+/// `(hoisted, violations)` over the scripts of `scripts`: how many had a call moved, and the ones that
+/// ran with the hoist off and failed with it on.
+fn hoisting_checks(scripts: &[String]) -> (usize, Vec<String>) {
+    let mut hoisted_count = 0;
+    let mut violations = Vec::new();
+    for body in scripts {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        let (Some(off), Some(on)) = (runs(&source, false), runs(&source, true)) else {
+            continue;
+        };
+        let program = hoisted(&source, &NoLibraries);
+        hoisted_count += usize::from(off && !synthetic(&program.statements).is_empty());
+        if off && !on {
+            violations.push(source);
+        }
+    }
+    (hoisted_count, violations)
+}
+
+/// `(scripts, hoisted, violations)` over `scripts`, checked on every core in turn.
+fn check_hoisting(scripts: &[String]) -> (usize, Vec<String>) {
+    let workers = std::thread::available_parallelism().map_or(2, usize::from);
+    let chunk = scripts.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = scripts
+            .chunks(chunk)
+            .map(|part| scope.spawn(move || hoisting_checks(part)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("a worker finished"))
+            .fold((0, Vec::new()), |(count, mut all), (moved, found)| {
+                all.extend(found);
+                (count + moved, all)
+            })
+    })
+}
+
+fn assert_no_violations(scripts: &[String], hoisted_count: usize, violations: &[String]) {
+    assert!(
+        violations.is_empty(),
+        "{} scripts ran without the hoist and failed with it:\n\n{}",
+        violations.len(),
+        violations.join("\n---\n")
+    );
+    // The check looks at something: scripts that ran without the hoist, with a call moved ahead.
+    assert!(
+        hoisted_count * 12 > scripts.len(),
+        "only {hoisted_count} of {} scripts ran and had a call moved",
+        scripts.len()
+    );
+}
+
+#[test]
+fn hoisting_never_makes_a_script_that_ran_fail() {
+    let mut scripts: Vec<String> = Vec::new();
+    for (prelude, call) in HELPERS {
+        for guard in GUARDS {
+            for lazy in lazy_scripts(call, guard) {
+                scripts.push(format!("{prelude}{lazy}"));
+            }
+        }
+    }
+    let (hoisted_count, violations) = check_hoisting(&scripts);
+    assert_no_violations(&scripts, hoisted_count, &violations);
+}
+
+/// The same check over every registered builtin called with hostile arguments, in a sample of the
+/// lazy positions: about a minute in a debug build, so it runs on request
+/// (`cargo test --lib -- --ignored hoisting_never_makes`), after a change to `total.rs`.
+#[test]
+#[ignore = "samples every builtin: about a minute in a debug build"]
+fn hoisting_never_makes_a_script_that_ran_fail_for_any_builtin() {
+    let names: Vec<&str> = crate::pine::compiler::registry::all_functions()
+        .iter()
+        .map(String::as_str)
+        .filter(|name| {
+            ![
+                "request.",
+                "input.",
+                "strategy.",
+                "log.",
+                "alert",
+                "library",
+                "indicator",
+            ]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        })
+        .collect();
+    let lists = hostile_argument_lists();
+    // A fixed sequence, so a failure is the same on every run.
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = move |bound: usize| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 33) as usize) % bound
+    };
+    let mut scripts: Vec<String> = Vec::new();
+    for name in &names {
+        let mut found = 0;
+        for _ in 0..30 {
+            let call = format!("{name}({})", lists[next(lists.len())]);
+            let valid = format!("//@version=6\nindicator(\"T\")\nx = {call}\n");
+            if runs(&valid, true).is_none() {
+                continue;
+            }
+            let contexts = lazy_scripts(&call, GUARDS[next(GUARDS.len())]);
+            scripts.push(contexts[next(contexts.len())].clone());
+            found += 1;
+            if found == 2 {
+                break;
+            }
+        }
+    }
+    let (hoisted_count, violations) = check_hoisting(&scripts);
+    eprintln!(
+        "{} scripts, {hoisted_count} with a call moved ahead of its guard",
+        scripts.len()
+    );
+    assert_no_violations(&scripts, hoisted_count, &violations);
 }

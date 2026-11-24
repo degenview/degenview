@@ -204,11 +204,11 @@ impl AlertCurrency {
 
     pub fn display_name(self) -> &'static str {
         match self {
-            Self::Usd => "US Dollar",
-            Self::Eur => "Euro",
-            Self::Gbp => "British Pound",
-            Self::Jpy => "Japanese Yen",
-            Self::Chf => "Swiss Franc",
+            Self::Usd => crate::i18n::tr!("US Dollar"),
+            Self::Eur => crate::i18n::tr!("Euro"),
+            Self::Gbp => crate::i18n::tr!("British Pound"),
+            Self::Jpy => crate::i18n::tr!("Japanese Yen"),
+            Self::Chf => crate::i18n::tr!("Swiss Franc"),
         }
     }
 

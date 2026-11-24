@@ -50,6 +50,14 @@ pub enum Size {
     Points(u16),
 }
 
+/// `font.family_*`: the face a label's, box's or table cell's text is drawn in.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FontFamily {
+    #[default]
+    Default,
+    Monospace,
+}
+
 impl Size {
     /// The sizes `size.*` names.
     pub const NAMED: [Size; 6] = [
@@ -369,6 +377,7 @@ pub struct LabelOutput {
     pub text_color: u32,
     pub style: LabelStyle,
     pub size: Size,
+    pub font_family: FontFamily,
     pub tooltip: Option<String>,
     pub text_align: TextAlign,
     pub yloc: YLocation,
@@ -399,6 +408,7 @@ pub struct BoxOutput {
     pub text: String,
     pub text_color: u32,
     pub text_size: Size,
+    pub text_font_family: FontFamily,
     pub text_horizontal_align: TextAlign,
     pub text_vertical_align: TextAlign,
     pub time_anchored: bool,
@@ -439,6 +449,7 @@ pub struct TableCell {
     pub text_color: u32,
     pub background_color: Option<u32>,
     pub text_size: Size,
+    pub text_font_family: FontFamily,
     pub column_span: usize,
     pub row_span: usize,
     pub text_horizontal_align: TextAlign,

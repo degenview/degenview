@@ -8,13 +8,16 @@
 //! is never silently dropped.
 
 use crate::host::editor_theme::FontStatus;
-use crate::model::editor_theme::{BUNDLED_FONT, SYSTEM_FONT};
+use crate::i18n::tr;
+use crate::model::editor_theme::BUNDLED_FONT;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Id, Key, Modifiers, Sense, Stroke, StrokeKind, Ui, vec2};
 
 /// The label of the system's monospace font.
-pub const SYSTEM_LABEL: &str = SYSTEM_FONT;
+fn system_label() -> &'static str {
+    tr!("System Mono")
+}
 
 const ROW_HEIGHT: f32 = 24.0;
 const LIST_HEIGHT: f32 = 264.0;
@@ -31,19 +34,19 @@ pub const BUTTON_WIDTH: f32 = 190.0;
 fn list_width(ui: &Ui, installed: &[String], saved: Option<&str>) -> f32 {
     let missing = saved
         .filter(|name| !installed.iter().any(|f| f.eq_ignore_ascii_case(name)))
-        .map(|name| format!("{name} (not installed)"));
+        .map(|name| tr!("{name} (not installed)", name = name));
     let longest = installed
         .iter()
         .map(|name| {
             if name.eq_ignore_ascii_case(BUNDLED_FONT) {
-                format!("{name} (default)")
+                tr!("{name} (default)", name = name)
             } else {
                 name.clone()
             }
         })
         .chain(missing)
         .max_by_key(|name| name.chars().count())
-        .unwrap_or_else(|| SYSTEM_LABEL.to_owned());
+        .unwrap_or_else(|| system_label().to_owned());
     let measured = kit::galley(
         ui,
         &longest,
@@ -88,7 +91,7 @@ pub fn choices<'a>(
 ) -> Vec<Choice<'a>> {
     let needle = search.trim().to_lowercase();
     let mut choices = Vec::new();
-    if include_system && (needle.is_empty() || SYSTEM_LABEL.to_lowercase().contains(&needle)) {
+    if include_system && (needle.is_empty() || system_label().to_lowercase().contains(&needle)) {
         choices.push(Choice::System);
     }
     choices.extend(
@@ -130,10 +133,10 @@ pub fn show(
     fonts_ready: bool,
     include_system: bool,
 ) -> Option<Option<String>> {
-    let label = current.unwrap_or(SYSTEM_LABEL);
+    let label = current.unwrap_or(system_label());
     let (rect, response) =
         ui.allocate_exact_size(vec2(BUTTON_WIDTH, kit::outline::HEIGHT), Sense::click());
-    let response = crate::ui::accessibility::label(response, format!("Font: {label}"))
+    let response = crate::ui::accessibility::label(response, tr!("Font: {label}", label = label))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let wash = if state.was_open || response.is_pointer_button_down_on() {
         kit::outline::Wash::Open
@@ -211,7 +214,7 @@ pub fn show(
                 ui,
                 search_id,
                 &mut state.search,
-                "Search fonts",
+                tr!("Search fonts"),
                 width - 16.0,
             );
             if opened {
@@ -224,14 +227,14 @@ pub fn show(
             ui.add_space(6.0);
             if !fonts_ready {
                 ui.label(kit::text(
-                    "Looking for installed fonts…",
+                    tr!("Looking for installed fonts…"),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_secondary(),
                 ));
             } else if rows.is_empty() {
                 ui.label(kit::text(
-                    "No installed monospaced font matches.",
+                    tr!("No installed monospaced font matches."),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -258,17 +261,19 @@ pub fn show(
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for index in range {
                     let (label, is_current, enabled) = match &rows[index] {
-                        Choice::System => (SYSTEM_LABEL.to_owned(), current.is_none(), true),
+                        Choice::System => (system_label().to_owned(), current.is_none(), true),
                         Choice::Family(family) => (
                             if family.eq_ignore_ascii_case(BUNDLED_FONT) {
-                                format!("{family} (default)")
+                                tr!("{family} (default)", family = family)
                             } else {
                                 (*family).to_owned()
                             },
                             current.is_some_and(|c| c.eq_ignore_ascii_case(family)),
                             true,
                         ),
-                        Choice::Missing(name) => (format!("{name} (not installed)"), true, false),
+                        Choice::Missing(name) => {
+                            (tr!("{name} (not installed)", name = name), true, false)
+                        }
                     };
                     let row = kit::menu_row(
                         ui,

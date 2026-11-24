@@ -6,6 +6,7 @@
 //! the chart paints them back to front reversed, so the row on top is the one drawn on top.
 //! Pure: the panel draws the rows and the workspace applies what the user does to them.
 
+use crate::i18n::{tr, tr_c};
 use crate::model::drawings::Drawing;
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::pine::instance::PineInstance;
@@ -41,10 +42,10 @@ pub enum Section {
 impl Section {
     fn title(self) -> &'static str {
         match self {
-            Self::Symbol => "Symbol",
-            Self::Overlays => "Compared symbols",
-            Self::Indicators => "Indicators",
-            Self::Drawings => "Drawings",
+            Self::Symbol => tr!("Symbol"),
+            Self::Overlays => tr!("Compared symbols"),
+            Self::Indicators => tr!("Indicators"),
+            Self::Drawings => tr!("Drawings"),
         }
     }
 }
@@ -74,9 +75,6 @@ pub struct Inputs<'a> {
     pub overlays: &'a OverlayList,
     pub drawings: &'a [Drawing],
 }
-
-/// What a drawing this version cannot read is called.
-const NEWER: &str = "From a newer version";
 
 /// The rows for `filter` (empty lists everything; otherwise a case-insensitive match on the
 /// label or detail, with only the headings that still have rows).
@@ -135,7 +133,7 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
         indicators.push(Row {
             key: Key::Indicator(IndicatorKey::BuiltIn(indicator)),
             label: indicator.chip_title(inputs.indicators),
-            detail: indicator.menu_title().to_owned(),
+            detail: indicator.display_title().to_owned(),
             shown: Some(!indicator.hidden(inputs.indicators)),
             locked: None,
             tool: None,
@@ -146,7 +144,7 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
         indicators.push(Row {
             key: Key::Indicator(IndicatorKey::Script(script.id)),
             label: script.name.clone(),
-            detail: "Script".to_owned(),
+            detail: tr!("Script").to_owned(),
             shown: Some(script.visible),
             locked: None,
             tool: None,
@@ -160,6 +158,7 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
     // just invisible: it can be deleted, nothing else.
     let mut counts: std::collections::HashMap<&'static str, usize> =
         std::collections::HashMap::new();
+    let mut unreadable = 0;
     let mut drawings: Vec<Row> = inputs
         .drawings
         .iter()
@@ -167,12 +166,11 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
             if let Drawing::Unreadable(_) = drawing {
                 // A row that is not even a drawing (no id) is not an object.
                 let id = drawing.stored_id();
-                let number = counts.entry(NEWER).or_insert(0);
-                *number += 1;
+                unreadable += 1;
                 return (id != 0).then(|| Row {
                     key: Key::Drawing(id),
-                    label: format!("{NEWER} {number}"),
-                    detail: "Update DegenView to see it".to_owned(),
+                    label: tr!("From a newer version {number}", number = unreadable),
+                    detail: tr!("Update DegenView to see it").to_owned(),
                     shown: None,
                     locked: None,
                     tool: None,
@@ -182,12 +180,17 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
             if drawing.tool().is_none() || drawing.is_ruler() {
                 return None;
             }
-            let name = drawing.tool().map_or("Drawing", |tool| tool.label());
+            let name = drawing.tool().map_or(tr!("Drawing"), |tool| tool.label());
             let number = counts.entry(name).or_insert(0);
             *number += 1;
             Some(Row {
                 key: Key::Drawing(drawing.id()),
-                label: format!("{name} {number}"),
+                label: tr_c!(
+                    "a numbered drawing, such as Trend Line 3",
+                    "{name} {number}",
+                    name = name,
+                    number = number
+                ),
                 detail: drawing
                     .summary()
                     .unwrap_or_else(|| drawing.text().to_owned()),
@@ -271,8 +274,8 @@ mod tests {
     fn indicators_scripts_and_drawings_are_listed_in_sections() {
         let mut config = IndicatorConfig::default();
         BuiltIn::Ema.set_applied(&mut config, true);
-        BuiltIn::Rsi.set_applied(&mut config, true);
-        BuiltIn::Rsi.toggle_visible(&mut config);
+        BuiltIn::Bollinger.set_applied(&mut config, true);
+        BuiltIn::Bollinger.toggle_visible(&mut config);
         let scripts = [PineInstance::new(3, None, "My script", "//@version=6")];
         let drawings = [line(1), line(2)];
         let rows = rows(&inputs(&config, &scripts, &drawings), "");
@@ -282,16 +285,16 @@ mod tests {
                 "Symbol",
                 "BTCUSDT",
                 "Indicators",
-                "RSI 14",
                 "EMA 20",
+                "BB",
                 "My script",
                 "Drawings",
                 "Trend line 2",
                 "Trend line 1",
             ]
         );
-        let rsi = rows.iter().find(|row| row.label == "RSI 14").unwrap();
-        assert_eq!(rsi.shown, Some(false), "hidden by its eye");
+        let bands = rows.iter().find(|row| row.label == "BB").unwrap();
+        assert_eq!(bands.shown, Some(false), "hidden by its eye");
         let script = rows.iter().find(|row| row.label == "My script").unwrap();
         assert_eq!(script.key, Key::Indicator(IndicatorKey::Script(3)));
         assert_eq!(script.shown, Some(true));

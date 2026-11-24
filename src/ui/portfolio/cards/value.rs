@@ -2,6 +2,7 @@
 //! a month of history faint behind it when the card is tall enough to carry it.
 
 use super::{area_under, chip, fitted, loading_pill, reveal, tone_color};
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::card::CardData;
 use crate::ui::kit;
 use crate::ui::theme;
@@ -52,7 +53,7 @@ pub(super) fn layout(area: Rect) -> Layout {
 
 pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, _pointer: Option<Pos2>) {
     if data.loading {
-        loading_pill(ui, area, "Loading market data…");
+        loading_pill(ui, area, tr!("Loading market data…"));
         return;
     }
     let layout = layout(area);
@@ -74,25 +75,17 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, _pointer: Opti
     // The number, the change chip and the caption are one block, centred in the text area when
     // the card has no history to fill the rest of it.
     let caption = if data.unpriced > 0 {
-        format!(
-            "{} {} could not be priced",
+        tr_n!(
             data.unpriced,
-            if data.unpriced == 1 {
-                "asset"
-            } else {
-                "assets"
-            }
+            "{count} asset could not be priced",
+            "{count} assets could not be priced"
         )
     } else {
-        format!(
-            "{} · {} {}",
-            data.scope_name,
+        tr_n!(
             data.holdings.len(),
-            if data.holdings.len() == 1 {
-                "asset"
-            } else {
-                "assets"
-            }
+            "{scope} · {count} asset",
+            "{scope} · {count} assets",
+            scope = data.scope_name
         )
     };
     let caption_color = if data.unpriced > 0 {
@@ -122,14 +115,16 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, _pointer: Opti
         let color = tone_color(data.formatter.tone(Some(change.amount)));
         let arrow = if change.amount >= 0.0 { "↗" } else { "↘" };
         let label = match change.percentage {
-            Some(fraction) => format!(
-                "{arrow} {} · {}  24h",
-                data.formatter.signed_money(change.amount),
-                data.formatter.signed_percent(fraction, 2)
+            Some(fraction) => tr!(
+                "{arrow} {amount} · {percent}  24h",
+                arrow = arrow,
+                amount = data.formatter.signed_money(change.amount),
+                percent = data.formatter.signed_percent(fraction, 2)
             ),
-            None => format!(
-                "{arrow} {}  24h",
-                data.formatter.signed_money(change.amount)
+            None => tr!(
+                "{arrow} {amount}  24h",
+                arrow = arrow,
+                amount = data.formatter.signed_money(change.amount)
             ),
         };
         chip(ui, Pos2::new(text.left(), y + 10.0), &label, color, width);
@@ -167,7 +162,7 @@ fn paint_sparkline(ui: &Ui, band: Rect, id: Id, data: &CardData) {
     ui.painter().text(
         Pos2::new(band.left() + 2.0, band.top() - 2.0),
         eframe::egui::Align2::LEFT_BOTTOM,
-        "Past month",
+        tr!("Past month"),
         eframe::egui::FontId::proportional(10.0),
         theme::text_tertiary(),
     );

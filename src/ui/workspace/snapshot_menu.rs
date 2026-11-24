@@ -5,6 +5,7 @@
 //! work says why instead of doing nothing: the hosted ones need a host in Settings, and every
 //! row waits while a snapshot is being made.
 
+use crate::i18n::tr;
 use crate::model::chart::snapshot::SnapshotAction;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -34,10 +35,14 @@ pub enum Pick {
 }
 
 /// The row after the separator, which opens the Snapshots page of Settings.
-const CONFIGURE_LABEL: &str = "Configure Snapshots…";
+fn configure_label() -> &'static str {
+    tr!("Configure Snapshots…")
+}
 
 /// The row that starts the selection of a portion: it takes no snapshot by itself.
-const SELECT_PORTION_LABEL: &str = "Select portion";
+fn select_portion_label() -> &'static str {
+    tr!("Select portion")
+}
 
 /// A row above the separator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,10 +61,10 @@ impl Row {
         })
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Take(action) => action.label(),
-            Self::SelectPortion => SELECT_PORTION_LABEL,
+            Self::SelectPortion => select_portion_label(),
         }
     }
 
@@ -83,7 +88,7 @@ impl Row {
             Self::Take(action) => unavailable(action, menu),
             Self::SelectPortion => menu
                 .busy
-                .then(|| "A snapshot is already being made.".to_owned()),
+                .then(|| tr!("A snapshot is already being made.").to_owned()),
         }
     }
 
@@ -109,7 +114,7 @@ const fn icon(action: SnapshotAction) -> Icon {
 /// Why `action` cannot be used now, or `None` when it can.
 fn unavailable(action: SnapshotAction, menu: &SnapshotMenu) -> Option<String> {
     if menu.busy {
-        return Some("A snapshot is already being made.".to_owned());
+        return Some(tr!("A snapshot is already being made.").to_owned());
     }
     action
         .is_hosted()
@@ -130,7 +135,7 @@ pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -
     let rows: Vec<(&str, Option<&str>)> = Row::all()
         .zip(&hints)
         .map(|(row, hint)| (row.label(), hint.as_deref()))
-        .chain([(CONFIGURE_LABEL, None)])
+        .chain([(configure_label(), None)])
         .collect();
     let width = kit::menu_width_for_rows(ui, &rows, 0.0);
     egui::Popup::menu(response)
@@ -139,7 +144,7 @@ pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -
         .show(|ui| {
             ui.set_width(width - kit::MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
-            kit::menu_heading(ui, "Chart snapshot");
+            kit::menu_heading(ui, tr!("Chart snapshot"));
             for (row, shortcut) in Row::all().zip(&hints) {
                 let blocked = row.unavailable(menu);
                 let item = kit::menu_row(
@@ -164,7 +169,7 @@ pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -
                 ui,
                 kit::MenuRow {
                     icon: Some(Icon::Sliders),
-                    ..kit::MenuRow::new(CONFIGURE_LABEL)
+                    ..kit::MenuRow::new(configure_label())
                 },
             );
             if configure.clicked() {

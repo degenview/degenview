@@ -4,8 +4,8 @@
 //!
 //! Buckets are anchored in UTC:
 //!
-//! - **Minutes and hours** restart at midnight: a `22m` day has 65 full buckets and a shorter last
-//!   one that ends at 00:00.
+//! - **Seconds, minutes and hours** restart at midnight: a `22m` day has 65 full buckets and a
+//!   shorter last one that ends at 00:00 (a `7s` day ends the same way).
 //! - **Days** count from 1970-01-01: the day number floored to a multiple of the count.
 //! - **Weeks** start on Monday: the week number (from Monday 1969-12-29) floored to a multiple of
 //!   the count.
@@ -32,7 +32,7 @@ pub fn bucket_start_ms(tf: Timeframe, t_ms: i64) -> i64 {
     let count = i64::from(tf.count());
     let days = t_ms.div_euclid(DAY_MS);
     match tf.unit() {
-        TimeUnit::Minute | TimeUnit::Hour => {
+        TimeUnit::Second | TimeUnit::Minute | TimeUnit::Hour => {
             let midnight = days * DAY_MS;
             let length = tf.nominal_ms();
             midnight + (t_ms - midnight).div_euclid(length) * length
@@ -52,7 +52,7 @@ pub fn next_bucket_start_ms(tf: Timeframe, t_ms: i64) -> i64 {
     let start = bucket_start_ms(tf, t_ms);
     match tf.unit() {
         // The last bucket of a day is cut short at midnight.
-        TimeUnit::Minute | TimeUnit::Hour => {
+        TimeUnit::Second | TimeUnit::Minute | TimeUnit::Hour => {
             let midnight = start.div_euclid(DAY_MS) * DAY_MS;
             (start + tf.nominal_ms()).min(midnight + DAY_MS)
         }
@@ -125,10 +125,13 @@ pub fn fold_base(target: Timeframe, natives: &[Timeframe]) -> Option<Timeframe> 
 fn nests_in(base: Timeframe, target: Timeframe) -> bool {
     let (base_count, target_count) = (base.count(), target.count());
     match (base.unit(), target.unit()) {
-        (TimeUnit::Minute | TimeUnit::Hour, TimeUnit::Minute | TimeUnit::Hour) => {
-            DAY_MS % base.nominal_ms() == 0 && target.nominal_ms() % base.nominal_ms() == 0
+        (
+            TimeUnit::Second | TimeUnit::Minute | TimeUnit::Hour,
+            TimeUnit::Second | TimeUnit::Minute | TimeUnit::Hour,
+        ) => DAY_MS % base.nominal_ms() == 0 && target.nominal_ms() % base.nominal_ms() == 0,
+        (TimeUnit::Second | TimeUnit::Minute | TimeUnit::Hour, _) => {
+            DAY_MS % base.nominal_ms() == 0
         }
-        (TimeUnit::Minute | TimeUnit::Hour, _) => DAY_MS % base.nominal_ms() == 0,
         (TimeUnit::Day, TimeUnit::Day) => target_count % base_count == 0,
         (TimeUnit::Day, TimeUnit::Week | TimeUnit::Month) => base_count == 1,
         (TimeUnit::Week, TimeUnit::Week) | (TimeUnit::Month, TimeUnit::Month) => {

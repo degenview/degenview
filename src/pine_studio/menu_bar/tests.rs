@@ -106,7 +106,7 @@ fn submenu<'a>(entries: &'a [Entry], label: &str) -> &'a [Entry] {
 #[test]
 fn the_file_menu_lists_new_open_and_save_then_what_can_be_done_to_the_script() {
     let entries = file::entries(&file_state());
-    let show_in = format!("Show in {}", crate::platform::file_manager());
+    let show_in = crate::platform::show_in_file_manager();
     assert_eq!(
         outline(&entries),
         [
@@ -118,7 +118,7 @@ fn the_file_menu_lists_new_open_and_save_then_what_can_be_done_to_the_script() {
             "Rename…",
             "Duplicate",
             "|",
-            &show_in,
+            show_in,
             "Export…",
             "|",
             "Add to Chart",

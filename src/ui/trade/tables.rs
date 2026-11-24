@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use degenview_brokers::{Decimal, Side};
 use eframe::egui;
 
+use crate::i18n::tr;
 use crate::trading::model::{OrderRow, RowStatus, Tone};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone as BadgeTone;
@@ -74,7 +75,7 @@ pub fn figure(value: Decimal) -> String {
 pub fn price_text(row: &OrderRow) -> String {
     match row.price {
         Some(price) => figure(price),
-        None if row.kind == "Market" => "Market".to_owned(),
+        None if row.kind == "Market" => tr!("Market").to_owned(),
         None => "—".to_owned(),
     }
 }
@@ -83,44 +84,61 @@ pub fn price_text(row: &OrderRow) -> String {
 pub fn filled_text(row: &OrderRow) -> String {
     let size = match (row.size, row.spend) {
         (Some(size), _) => figure(size),
-        (None, Some(spend)) => format!("{} (spend)", figure(spend)),
+        (None, Some(spend)) => tr!("{amount} (spend)", amount = figure(spend)),
         (None, None) => "—".to_owned(),
     };
     format!("{} / {size}", figure(row.filled))
 }
 
-const WITH_TRIGGER: [Col; 10] = [
-    col("", 30.0, 0.0, false),
-    col("Market", 130.0, 1.2, false),
-    col("Side", 64.0, 0.0, false),
-    col("Type", 120.0, 1.0, false),
-    col("Price", 110.0, 1.0, true),
-    col("Trigger", 100.0, 0.8, true),
-    col("Filled / Size", 130.0, 1.0, true),
-    col("Status", 120.0, 0.0, false),
-    col("Time", 80.0, 0.0, true),
-    col("", 76.0, 0.0, true),
-];
+/// The Side column of a table of orders or fills: 64 points, or what the BUY and SELL tags need in the
+/// language in use, whichever is more. The words are the ones `broker::chart_trading::side_tag` writes.
+pub fn side_column_width(ui: &egui::Ui) -> f32 {
+    grid::tags_width(ui, 64.0, [tr!("BUY"), tr!("SELL")])
+}
 
-const WITHOUT_TRIGGER: [Col; 9] = [
-    col("", 30.0, 0.0, false),
-    col("Market", 130.0, 1.2, false),
-    col("Side", 64.0, 0.0, false),
-    col("Type", 120.0, 1.0, false),
-    col("Price", 110.0, 1.0, true),
-    col("Filled / Size", 130.0, 1.0, true),
-    col("Status", 120.0, 0.0, false),
-    col("Time", 80.0, 0.0, true),
-    col("", 76.0, 0.0, true),
-];
+/// The Status column: `min`, or what the widest badge among `rows` needs.
+pub fn status_column_width(ui: &egui::Ui, min: f32, rows: &[OrderRow]) -> f32 {
+    grid::badges_width(ui, min, rows.iter().map(|row| row.status.label))
+}
+
+/// The columns of a table with a trigger column.
+fn with_trigger(side: f32, status: f32) -> [Col; 10] {
+    [
+        col("", 30.0, 0.0, false),
+        col(tr!("Market"), 130.0, 1.2, false),
+        col(tr!("Side"), side, 0.0, false),
+        col(tr!("Type"), 120.0, 1.0, false),
+        col(tr!("Price"), 110.0, 1.0, true),
+        col(tr!("Trigger"), 100.0, 0.8, true),
+        col(tr!("Filled / Size"), 130.0, 1.0, true),
+        col(tr!("Status"), status, 0.0, false),
+        col(tr!("Time"), 80.0, 0.0, true),
+        col("", 76.0, 0.0, true),
+    ]
+}
+
+/// The columns of a table with no trigger column.
+fn without_trigger(side: f32, status: f32) -> [Col; 9] {
+    [
+        col("", 30.0, 0.0, false),
+        col(tr!("Market"), 130.0, 1.2, false),
+        col(tr!("Side"), side, 0.0, false),
+        col(tr!("Type"), 120.0, 1.0, false),
+        col(tr!("Price"), 110.0, 1.0, true),
+        col(tr!("Filled / Size"), 130.0, 1.0, true),
+        col(tr!("Status"), status, 0.0, false),
+        col(tr!("Time"), 80.0, 0.0, true),
+        col("", 76.0, 0.0, true),
+    ]
+}
 
 /// What a venue's orders panel shows when it has no orders.
 pub fn empty_orders(ui: &mut egui::Ui) {
     empty(
         ui,
         Icon::List,
-        "No orders",
-        "Working orders rest here until they fill or are cancelled.",
+        tr!("No orders"),
+        tr!("Working orders rest here until they fill or are cancelled."),
     );
 }
 
@@ -139,10 +157,14 @@ pub fn orders(
         return Vec::new();
     }
     let trigger = rows.iter().any(|row| row.trigger.is_some());
+    let side = side_column_width(ui);
+    let status = status_column_width(ui, 120.0, rows);
+    let with_trigger = with_trigger(side, status);
+    let without_trigger = without_trigger(side, status);
     let cols: &[Col] = if trigger {
-        &WITH_TRIGGER
+        &with_trigger
     } else {
-        &WITHOUT_TRIGGER
+        &without_trigger
     };
     let mut actions = Vec::new();
     let mut toggled = None;
@@ -166,7 +188,7 @@ pub fn orders(
                 let mut on = selected.contains(&row.id);
                 if ui
                     .add(egui::Checkbox::without_text(&mut on))
-                    .on_hover_text("Select to cancel several orders at once")
+                    .on_hover_text(tr!("Select to cancel several orders at once"))
                     .changed()
                 {
                     toggled = Some(row.id.clone());
@@ -185,7 +207,11 @@ pub fn orders(
             }
             2 => grid::tag(
                 ui,
-                if row.side == Side::Buy { "BUY" } else { "SELL" },
+                if row.side == Side::Buy {
+                    tr!("BUY")
+                } else {
+                    tr!("SELL")
+                },
                 side_color(row.side),
             ),
             3 => {
@@ -215,10 +241,10 @@ pub fn orders(
             }
             8 => grid::figure(ui, &clock_time_seconds(row.created_ms), weak),
             9 if row.unconfirmed => {
-                let clicked = kit::sheet_button(ui, "Check", false, true)
-                    .on_hover_text(
-                        "Look the order up at the venue; sends it again only if it is not there",
-                    )
+                let clicked = kit::sheet_button(ui, tr!("Check"), false, true)
+                    .on_hover_text(tr!(
+                        "Look the order up at the venue; sends it again only if it is not there"
+                    ))
                     .clicked();
                 if clicked {
                     actions.push(OrderAction::Check(row.id.clone()));
@@ -234,7 +260,7 @@ pub fn orders(
                                 Icon::Pencil,
                                 20.0,
                                 theme::text_secondary(),
-                                hint.unwrap_or("Edit price or size"),
+                                hint.unwrap_or(tr!("Edit price or size")),
                             )
                         })
                         .inner;
@@ -244,7 +270,7 @@ pub fn orders(
                 }
                 let cross = ui
                     .add_enabled_ui(row.can_cancel, |ui| {
-                        icons::button(ui, Icon::Xmark, 20.0, kit::RED, "Cancel order")
+                        icons::button(ui, Icon::Xmark, 20.0, kit::RED, tr!("Cancel order"))
                     })
                     .inner;
                 if cross.clicked() {
@@ -281,12 +307,19 @@ pub fn orders_bar(ui: &mut egui::Ui, open: usize, selected: usize) -> BarAction 
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     row.spacing_mut().item_spacing.x = 10.0;
-    if kit::sheet_button(&mut row, &format!("Cancel all ({open})"), false, open > 0).clicked() {
+    if kit::sheet_button(
+        &mut row,
+        &tr!("Cancel all ({open})", open = open),
+        false,
+        open > 0,
+    )
+    .clicked()
+    {
         action.cancel_all = true;
     }
     if kit::sheet_button(
         &mut row,
-        &format!("Cancel selected ({selected})"),
+        &tr!("Cancel selected ({selected})", selected = selected),
         false,
         selected > 0,
     )
@@ -295,7 +328,7 @@ pub fn orders_bar(ui: &mut egui::Ui, open: usize, selected: usize) -> BarAction 
         action.cancel_selected = true;
     }
     row.label(kit::text(
-        format!("{open} working"),
+        tr!("{open} working", open = open),
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
         theme::text_secondary(),
@@ -303,42 +336,51 @@ pub fn orders_bar(ui: &mut egui::Ui, open: usize, selected: usize) -> BarAction 
     action
 }
 
+/// An open limit order, for the tests of the tables that show one.
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) fn sample_row() -> OrderRow {
     use crate::trading::model::RowStatus;
-
     fn d(text: &str) -> Decimal {
         text.parse().unwrap()
     }
+    OrderRow {
+        id: "1".to_owned(),
+        market: "BTC-USD".to_owned(),
+        side: Side::Buy,
+        kind: "Limit".to_owned(),
+        price: Some(d("89000.00")),
+        trigger: None,
+        filled: d("0.0004"),
+        size: Some(d("0.001")),
+        spend: None,
+        status: RowStatus {
+            label: "Open",
+            tone: Tone::Good,
+        },
+        created_ms: None,
+        working: true,
+        can_cancel: true,
+        can_edit: true,
+        note: None,
+        edit_hint: None,
+        source: None,
+        tag: None,
+        pending: false,
+        fees: Decimal::ZERO,
+        unconfirmed: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     fn row() -> OrderRow {
-        OrderRow {
-            id: "1".to_owned(),
-            market: "BTC-USD".to_owned(),
-            side: Side::Buy,
-            kind: "Limit".to_owned(),
-            price: Some(d("89000.00")),
-            trigger: None,
-            filled: d("0.0004"),
-            size: Some(d("0.001")),
-            spend: None,
-            status: RowStatus {
-                label: "Open",
-                tone: Tone::Good,
-            },
-            created_ms: None,
-            working: true,
-            can_cancel: true,
-            can_edit: true,
-            note: None,
-            edit_hint: None,
-            source: None,
-            tag: None,
-            pending: false,
-            fees: Decimal::ZERO,
-            unconfirmed: false,
-        }
+        sample_row()
+    }
+
+    fn d(text: &str) -> Decimal {
+        text.parse().unwrap()
     }
 
     #[test]
@@ -370,5 +412,71 @@ mod tests {
         spend.spend = Some(d("25"));
         spend.filled = d("0");
         assert_eq!(filled_text(&spend), "0 / 25 (spend)");
+    }
+
+    /// What `width` measures in `locale`.
+    fn in_locale(locale: crate::i18n::Locale, width: impl Fn(&egui::Ui) -> f32) -> f32 {
+        let ctx = egui::Context::default();
+        let mut measured = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            measured = crate::i18n::with_locale(locale, || width(ui));
+        });
+        output.textures_delta.clear();
+        measured
+    }
+
+    #[test]
+    fn the_side_column_holds_its_tags_in_every_language() {
+        use crate::i18n::Locale;
+        assert_eq!(
+            in_locale(Locale::ENGLISH, side_column_width),
+            64.0,
+            "English keeps its width"
+        );
+        assert!(
+            in_locale(Locale::PSEUDO, side_column_width) > 64.0,
+            "the longer tags widen the column"
+        );
+    }
+
+    #[test]
+    fn the_status_column_holds_the_widest_badge_in_every_language() {
+        use crate::i18n::Locale;
+        // Every status a venue's order can have: the longest are "Partly filled" and "Cancelling".
+        let labels = [
+            "Pending",
+            "Open",
+            "Partly filled",
+            "Filled",
+            "Cancelling",
+            "Cancelled",
+            "Rejected",
+            "Expired",
+        ];
+        let rows = |locale: Locale| {
+            crate::i18n::with_locale(locale, || {
+                labels
+                    .map(|label| {
+                        let mut row = row();
+                        row.status.label = crate::i18n::translate("order status", label);
+                        row
+                    })
+                    .to_vec()
+            })
+        };
+        let english = rows(Locale::ENGLISH);
+        let pseudo = rows(Locale::PSEUDO);
+        assert_eq!(
+            in_locale(Locale::ENGLISH, |ui| status_column_width(
+                ui, 120.0, &english
+            )),
+            120.0,
+            "English keeps its width"
+        );
+        let widened = in_locale(Locale::PSEUDO, |ui| status_column_width(ui, 120.0, &pseudo));
+        assert!(
+            widened > 140.0,
+            "{widened}: \"Partly filled\" fits its column"
+        );
     }
 }

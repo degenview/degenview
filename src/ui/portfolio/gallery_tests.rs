@@ -977,3 +977,94 @@ fn portfolio_gallery_asset_detail() {
         });
     }
 }
+
+/// A page drawn in the pseudo-locale in both themes: every word put through `tr!` shows in
+/// brackets, so a text with words and no bracket is a literal that skipped it, and a label that
+/// does not fit shows without its closing one. `data` names the texts that are data.
+fn in_pseudo_locale(
+    name: &str,
+    size: egui::Vec2,
+    data: &[&str],
+    body: impl Fn(&mut egui::Ui) + Copy,
+) {
+    use crate::i18n::{Locale, with_locale};
+    let _theme = theme::RestoreDefaultTheme;
+    with_locale(Locale::PSEUDO, || {
+        for (theme_name, app_theme) in [
+            ("dark", theme::AppTheme::Dark),
+            ("light", theme::AppTheme::Light),
+        ] {
+            let mut screen = Screen::new(size);
+            egui_extras::install_image_loaders(&screen.ctx);
+            theme::apply(&screen.ctx, app_theme);
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    ui.painter()
+                        .rect_filled(ui.max_rect(), 0.0, theme::background());
+                    body(ui);
+                }));
+            }
+            let output = last.expect("a frame");
+            let loose = crate::ui::trade::pseudo_text::untranslated(&output, data);
+            screen.save(&format!("{name}-pseudo-{theme_name}"), output);
+            assert!(
+                loose.is_empty(),
+                "{name} ({theme_name}): texts that skipped `tr!`: {loose:?}"
+            );
+        }
+    });
+}
+
+#[test]
+fn the_pages_draw_in_the_pseudo_locale() {
+    // Tickers, names and the figures the callers hand in are data; the model's range titles
+    // ("1D", "ALL") are identifiers it still writes in English.
+    let data = [
+        "BTC",
+        "ETH",
+        "SOL",
+        "LINK",
+        "ARB",
+        "DOGE",
+        "PEPE",
+        "Bitcoin",
+        "Ethereum",
+        "Solana",
+        "Chainlink",
+        "Arbitrum",
+        "Dogecoin",
+        "Pepe",
+        "Main",
+        "USD",
+        "Live market value",
+        "ALL",
+    ];
+    for (name, scene) in [
+        ("portfolio-page-overview", Scene::Overview),
+        ("portfolio-page-holdings", Scene::Holdings),
+        ("portfolio-page-transactions", Scene::Transactions),
+    ] {
+        in_pseudo_locale(name, vec2(900.0, 520.0), &data, move |ui| {
+            // The page's own copy; the buttons are given by the tab, which draws its own text.
+            empty::page(ui, scene, |_| {});
+        });
+    }
+    in_pseudo_locale("portfolio-overview", vec2(1100.0, 1000.0), &data, |ui| {
+        overview(ui, &mut OverviewState::default(), false);
+    });
+    let subtitle = |asset: &PortfolioAsset| asset.name.clone();
+    in_pseudo_locale("portfolio-holdings", vec2(1100.0, 640.0), &data, |ui| {
+        holdings::show(
+            ui,
+            &mut HoldingsState::default(),
+            &HoldingsInput {
+                holdings: &holdings(),
+                saved_sort: crate::model::portfolio::PortfolioHoldingsSort::CurrentValue,
+                formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),
+                is_loading: false,
+                subtitle: &subtitle,
+            },
+        );
+    });
+}

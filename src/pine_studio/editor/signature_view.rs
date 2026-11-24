@@ -1,6 +1,7 @@
 //! The signature panel over the caret line while the caret is inside a call.
 
 use super::{EditorState, signature};
+use crate::i18n::tr_n;
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
 use crate::ui::editor_appearance::{Appearance, EditorFont};
 use crate::ui::theme;
@@ -60,9 +61,13 @@ pub(super) fn draw_signature(
         job.append(&format!(" → {}", help.returns), 0.0, plain(dim));
     }
     if help.overloads > 0 {
-        let plural = if help.overloads == 1 { "" } else { "s" };
+        job.append("  ", 0.0, plain(dim));
         job.append(
-            &format!("  (+{} overload{plural})", help.overloads),
+            &tr_n!(
+                help.overloads,
+                "(+{count} overload)",
+                "(+{count} overloads)"
+            ),
             0.0,
             plain(dim),
         );

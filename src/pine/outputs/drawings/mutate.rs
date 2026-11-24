@@ -3,7 +3,7 @@
 use super::coordinates::{known_index, known_price, point_coordinates, x_coordinate};
 use super::names::size_of;
 use super::table::set_cell_setter;
-use super::{Arg, FromName, parse, runtime_error, unknown_function};
+use super::{Arg, FromName, bind_slots, parameters, parse, runtime_error, unknown_function};
 use crate::model::Kline;
 use crate::pine::outputs::{
     BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
@@ -22,20 +22,17 @@ pub(super) fn mutate_drawing(
     bar_seconds: f64,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let values: Vec<RuntimeValue> = args.iter().map(|arg| arg.value.clone()).collect();
-    let target = values.first().cloned().unwrap_or(RuntimeValue::Na);
-    let a = values.get(1).cloned().unwrap_or(RuntimeValue::Na);
-    let b = values.get(2).cloned().unwrap_or(RuntimeValue::Na);
     let member = name.rsplit('.').next().unwrap_or(name);
     let namespace = name.split('.').next().unwrap_or(name);
+    if namespace == "table" && member.starts_with("cell_set_") {
+        return set_cell_setter(name, args, state, range);
+    }
+    let [target, a, b] = bind_slots(args, parameters(name));
     if name == "table.delete" {
         if let RuntimeValue::Ref(RefKind::Table, id) = target {
             state.tables.remove(&id);
         }
         return Ok(RuntimeValue::Void);
-    }
-    if namespace == "table" && member.starts_with("cell_set_") {
-        return set_cell_setter(member, args, state, range);
     }
     match namespace {
         "line" => with_line(target, member, a, b, state, bar, bar_seconds, range),
@@ -302,7 +299,10 @@ fn mutate_label(
             label.text_align = parse(a.text_value(), label.text_align, label.text_align);
         }
         "set_yloc" => label.yloc = parse(a.text_value(), label.yloc, label.yloc),
-        "set_text_font_family" | "set_text_formatting" => {}
+        "set_text_font_family" => {
+            label.font_family = parse(a.text_value(), label.font_family, label.font_family);
+        }
+        "set_text_formatting" => {}
         "get_x" => return Ok(known_index(label.x)),
         "get_y" => return Ok(known_price(label.y)),
         "get_text" => return Ok(RuntimeValue::String(label.text.clone())),
@@ -364,7 +364,14 @@ fn mutate_box(
                 boxed.text_vertical_align,
             );
         }
-        "set_text_wrap" | "set_text_font_family" | "set_text_formatting" => {}
+        "set_text_font_family" => {
+            boxed.text_font_family = parse(
+                a.text_value(),
+                boxed.text_font_family,
+                boxed.text_font_family,
+            );
+        }
+        "set_text_wrap" | "set_text_formatting" => {}
         "get_left" => return Ok(known_index(boxed.left)),
         "get_right" => return Ok(known_index(boxed.right)),
         "get_top" => return Ok(known_price(boxed.top)),

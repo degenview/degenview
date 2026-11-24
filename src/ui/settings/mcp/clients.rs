@@ -2,6 +2,7 @@
 
 use super::controls::{capsule, caption, clickable_card, overview, secondary};
 use super::{Editing, McpSettingsInput, McpSettingsState};
+use crate::i18n::{tr, tr_n};
 use crate::model::mcp::McpClient;
 use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::settings::window::{card, section};
@@ -11,17 +12,17 @@ use eframe::egui::{Id, Ui};
 pub(super) fn clients_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInput) {
     section(
         ui,
-        "Clients",
-        Some(
-            "Open a client to choose what it may do, whether it can be used from other machines, or to revoke it. Revoking cuts it off at once.",
-        ),
+        tr!("Clients"),
+        Some(tr!(
+            "Open a client to choose what it may do, whether it can be used from other machines, or to revoke it. Revoking cuts it off at once."
+        )),
         |ui| {
             if input.clients.is_empty() {
                 card(ui, |ui| {
                     ui.add_space(2.0);
                     secondary(
                         ui,
-                        "No clients yet. Generate a credential above to connect one.",
+                        tr!("No clients yet. Generate a credential above to connect one."),
                     );
                     ui.add_space(2.0);
                 });
@@ -72,27 +73,29 @@ pub(super) fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInp
                     theme::text_primary(),
                 ));
                 if client.remote_allowed {
-                    capsule(ui, "Remote", Tone::Warning, None)
-                        .on_hover_text("Can be used from other machines");
+                    capsule(ui, tr!("Remote"), Tone::Warning, None)
+                        .on_hover_text(tr!("Can be used from other machines"));
                 }
             });
-            let used = client.last_used_ms.map_or_else(
-                || "never used".to_owned(),
-                |used| format!("last used {}", relative_time(input.now_ms, used)),
-            );
+            let created = relative_time(input.now_ms, client.created_at_ms);
             caption(
                 ui,
-                format!(
-                    "Created {} · {used}",
-                    relative_time(input.now_ms, client.created_at_ms)
-                ),
+                match client.last_used_ms {
+                    None => tr!("Created {created} · never used", created = created),
+                    Some(used) => tr!(
+                        "Created {created} · last used {used}",
+                        created = created,
+                        used = relative_time(input.now_ms, used)
+                    ),
+                },
             );
             overview(ui, &effective);
             if blocked > 0 {
                 ui.label(kit::text(
-                    format!(
-                        "{blocked} granted permission{} held back by the maximum",
-                        if blocked == 1 { "" } else { "s" }
+                    tr_n!(
+                        blocked,
+                        "{count} granted permission held back by the maximum",
+                        "{count} granted permissions held back by the maximum"
                     ),
                     kit::size::CAPTION,
                     kit::REGULAR,
@@ -101,9 +104,10 @@ pub(super) fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInp
             }
             if over_ceiling > 0 {
                 ui.label(kit::text(
-                    format!(
-                        "{over_ceiling} granted permission{} held back by the remote ceiling",
-                        if over_ceiling == 1 { "" } else { "s" }
+                    tr_n!(
+                        over_ceiling,
+                        "{count} granted permission held back by the remote ceiling",
+                        "{count} granted permissions held back by the remote ceiling"
                     ),
                     kit::size::CAPTION,
                     kit::REGULAR,

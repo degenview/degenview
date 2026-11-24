@@ -175,7 +175,8 @@ fn binance_has_the_documented_intervals_without_its_own_three_days() {
     assert_eq!(
         labels,
         [
-            "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1D", "1W", "1M"
+            "1s", "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1D", "1W",
+            "1M"
         ]
     );
     // Its 3d bars start on a day that is not a multiple of three since 1970, so 3D is a fold of 1D.
@@ -325,4 +326,42 @@ fn geckoterminal_pages_back_while_a_page_of_its_base_candles_is_short_of_180_day
             "{text}"
         );
     }
+}
+
+#[test]
+fn only_binance_okx_and_gate_serve_seconds_and_gate_only_those_of_ten() {
+    let serving = |text: &str| -> Vec<DataSource> {
+        CANDLE_SOURCES
+            .into_iter()
+            .filter(|source| source.serves(tf(text)))
+            .collect()
+    };
+    for text in ["1s", "5s", "15s", "45s"] {
+        assert_eq!(
+            serving(text),
+            [DataSource::Binance, DataSource::Okx],
+            "{text}"
+        );
+    }
+    for text in ["10s", "30s"] {
+        assert_eq!(
+            serving(text),
+            [DataSource::Binance, DataSource::Okx, DataSource::Gate],
+            "{text}"
+        );
+    }
+    // Gate's candle is ten seconds: nothing shorter, nothing that is not a multiple of it.
+    assert_eq!(DataSource::Gate.plan(tf("30s")).unwrap().base(), tf("10s"));
+    assert_eq!(
+        DataSource::Binance.plan(tf("45s")).unwrap().base(),
+        tf("1s")
+    );
+    for source in [
+        DataSource::CoinGecko,
+        DataSource::Polymarket,
+        DataSource::Kalshi,
+    ] {
+        assert!(!source.serves(tf("30s")), "{source:?}");
+    }
+    assert!(DataSource::Polymarket.serves(tf("1m")));
 }

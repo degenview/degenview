@@ -10,7 +10,7 @@ pub use fit::{
     fitted_context_menu, fitted_context_menu_min, fitted_menu, fitted_menu_rows, menu_fit,
     menu_fit_rows,
 };
-pub use picker::{menu_picker, menu_picker_hinted};
+pub use picker::{menu_picker, menu_picker_fitted, menu_picker_hinted};
 
 use super::{RED, REGULAR, SEMIBOLD, galley, hairline, primary, size};
 use crate::ui::icons::{self, Icon};

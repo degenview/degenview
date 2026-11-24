@@ -2,6 +2,7 @@
 //! trades as three CSV files, in the columns the Swift app wrote. Pure text; the panel asks for a
 //! folder and writes them.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::paper::PaperTradingSnapshot;
 use crate::model::portfolio::csv::format_iso8601;
 use serde::Serialize;
@@ -47,13 +48,15 @@ impl PaperExport {
 
     /// "3 orders, 2 fills and 1 closed trade".
     pub fn summary(&self) -> String {
-        let count =
-            |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-        format!(
-            "{}, {} and {}",
-            count(self.order_rows, "order", "orders"),
-            count(self.fill_rows, "fill", "fills"),
-            count(self.trade_rows, "closed trade", "closed trades")
+        tr!(
+            "{orders}, {fills} and {trades}",
+            orders = tr_n!(self.order_rows, "{count} order", "{count} orders"),
+            fills = tr_n!(self.fill_rows, "{count} fill", "{count} fills"),
+            trades = tr_n!(
+                self.trade_rows,
+                "{count} closed trade",
+                "{count} closed trades"
+            )
         )
     }
 }

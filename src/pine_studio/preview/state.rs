@@ -6,6 +6,7 @@ use super::{
     APPLY_DELAY, CANDLE_KEY, MARKET_KEY, PreviewMarket, PreviewState, RECENTS_KEY, RunIdentity,
     TIMEFRAME_KEY, YZOOM_KEY, inputs_fingerprint, inputs_path,
 };
+use crate::i18n::{tr, tr_n};
 use crate::model::pine::script::ScriptType;
 use crate::model::{Kline, Timeframe};
 use crate::pine::compiler::program::InputSchema;
@@ -246,6 +247,7 @@ impl PreviewState {
             } else {
                 crate::pine::compiler::program::ChartTheme::DARK
             },
+            timeframe_seconds: Some(crate::pine::time::bucket::seconds_of(self.timeframe)),
             label: format!("{} · {}", self.market.ticker, self.timeframe.label()),
         })
     }
@@ -301,39 +303,46 @@ impl PreviewState {
 
     pub fn status_text(&self) -> String {
         if self.script_type == Some(ScriptType::Library) {
-            return "Libraries export functions — they don't draw on a chart.".to_owned();
+            return tr!("Libraries export functions — they don't draw on a chart.").to_owned();
         }
         if self.runtime_error().is_some() {
             return if self.card.has_valid_pine_output() {
-                "Runtime failed — last valid output remains active".to_owned()
+                tr!("Runtime failed — last valid output remains active").to_owned()
             } else {
-                "Runtime failed".to_owned()
+                tr!("Runtime failed").to_owned()
             };
         }
         if self.compile_failed {
             return if self.applied_source.is_some() {
-                "Compile failed — last valid output remains active".to_owned()
+                tr!("Compile failed — last valid output remains active").to_owned()
             } else {
-                "Compile failed".to_owned()
+                tr!("Compile failed").to_owned()
             };
         }
         let Some(applied) = &self.applied_source else {
-            return "No script applied".to_owned();
+            return tr!("No script applied").to_owned();
         };
         if self.evaluating() {
-            return "Evaluating…".to_owned();
+            return tr!("Evaluating…").to_owned();
         }
         let _ = applied;
-        let live = if self.candles.is_empty() {
-            ""
+        let title = self.title_hint();
+        let bars = self.candles.len();
+        if self.candles.is_empty() {
+            tr_n!(
+                bars,
+                "Applied {title} · {count} bar",
+                "Applied {title} · {count} bars",
+                title = title
+            )
         } else {
-            " · live"
-        };
-        format!(
-            "Applied {} · {} bars{live}",
-            self.title_hint(),
-            self.candles.len()
-        )
+            tr_n!(
+                bars,
+                "Applied {title} · {count} bar · live",
+                "Applied {title} · {count} bars · live",
+                title = title
+            )
+        }
     }
 
     /// Whether the applied script has no result to show yet: the candles are still coming, or its

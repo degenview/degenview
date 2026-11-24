@@ -2,6 +2,7 @@
 //! `WebhookMessageEditor`): a toggle card that reveals selectable endpoint cards and, for price
 //! alerts, the message with one-tap placeholders and an example of what is sent.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::alert::message::{
     AlertMessageContext, DEFAULT_PRICE_ALERT_TEMPLATE, SUPPORTED_PLACEHOLDERS, render,
 };
@@ -55,7 +56,7 @@ pub fn host(url: &str) -> Option<String> {
 /// `POST · example.com`, or what is wrong with the endpoint.
 pub fn subtitle(endpoint: &WebhookEndpoint) -> String {
     if !endpoint.is_enabled {
-        return "Paused in Settings".to_owned();
+        return tr!("Paused in Settings").to_owned();
     }
     match host(&endpoint.url) {
         Some(host) => format!("{} · {host}", endpoint.method.as_str()),
@@ -97,13 +98,13 @@ pub fn send_section(
 ) -> bool {
     let picked = summary(selection, endpoints);
     let subtitle = if !*is_on {
-        "Also post this alert to your own server or bot.".to_owned()
+        tr!("Also post this alert to your own server or bot.").to_owned()
     } else if picked.selected > 0 {
-        format!("{} selected", picked.selected)
+        tr!("{count} selected", count = picked.selected)
     } else if endpoints.is_empty() {
-        "Add a webhook to choose where to post.".to_owned()
+        tr!("Add a webhook to choose where to post.").to_owned()
     } else {
-        "Choose where to post.".to_owned()
+        tr!("Choose where to post.").to_owned()
     };
     toggle_card(ui, id, is_on, &subtitle, *is_on && picked.selected > 0);
     if !*is_on {
@@ -120,14 +121,10 @@ pub fn send_section(
         ui.add_space(10.0);
         warning(
             ui,
-            &format!(
-                "{} selected webhook{} deleted and will be skipped.",
+            &tr_n!(
                 picked.dangling,
-                if picked.dangling == 1 {
-                    " was"
-                } else {
-                    "s were"
-                }
+                "{count} selected webhook was deleted and will be skipped.",
+                "{count} selected webhooks were deleted and will be skipped."
             ),
         );
     }
@@ -135,7 +132,7 @@ pub fn send_section(
         ui.add_space(10.0);
         warning(
             ui,
-            "Every selected webhook is turned off in Settings, so nothing will be sent.",
+            tr!("Every selected webhook is turned off in Settings, so nothing will be sent."),
         );
     }
     if let Some((message, context)) = message
@@ -188,7 +185,7 @@ fn toggle_card(ui: &mut Ui, id: Id, is_on: &mut bool, subtitle: &str, highlight:
     let left = icon.right() + 12.0;
     let title = kit::galley(
         ui,
-        "Send to webhooks",
+        tr!("Send to webhooks"),
         size::SUBHEADLINE + 1.0,
         SEMIBOLD,
         theme::text_primary(),
@@ -220,7 +217,7 @@ fn toggle_card(ui: &mut Ui, id: Id, is_on: &mut bool, subtitle: &str, highlight:
         vec2(32.0, 18.0),
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(switch));
-    let flipped = kit::switch(&mut child, is_on, "Send to webhooks").clicked();
+    let flipped = kit::switch(&mut child, is_on, tr!("Send to webhooks")).clicked();
     if response.clicked() && !flipped {
         *is_on = !*is_on;
     }
@@ -245,7 +242,7 @@ fn empty_state(ui: &mut Ui) -> bool {
     let left = icon.right() + 12.0;
     let title = kit::galley(
         ui,
-        "No webhooks yet",
+        tr!("No webhooks yet"),
         size::SUBHEADLINE + 1.0,
         SEMIBOLD,
         theme::text_primary(),
@@ -253,7 +250,7 @@ fn empty_state(ui: &mut Ui) -> bool {
     );
     let detail = kit::galley(
         ui,
-        "Send alerts to your own server or bot.",
+        tr!("Send alerts to your own server or bot."),
         size::CAPTION + 0.5,
         REGULAR,
         theme::text_secondary(),
@@ -273,7 +270,7 @@ fn empty_state(ui: &mut Ui) -> bool {
             .max_rect(rect.shrink2(vec2(12.0, 0.0)))
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
-    kit::push_button(&mut row, None, "Add in Settings", true).clicked()
+    kit::push_button(&mut row, None, tr!("Add in Settings"), true).clicked()
 }
 
 /// The endpoint cards alone, or the empty card when there are none, for a sheet that only chooses
@@ -331,12 +328,18 @@ fn endpoint_row(ui: &mut Ui, id: Id, endpoint: &WebhookEndpoint, selected: bool)
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = crate::ui::accessibility::label(
         response,
-        format!("{}, {}", endpoint.name, subtitle(endpoint)),
+        tr!(
+            "{name}, {detail}",
+            name = endpoint.name,
+            detail = subtitle(endpoint)
+        ),
     );
     let response = if endpoint.is_enabled {
         response
     } else {
-        response.on_hover_text("Turned off in Settings: skipped until you turn it back on")
+        response.on_hover_text(tr!(
+            "Turned off in Settings: skipped until you turn it back on"
+        ))
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     if !endpoint.is_enabled {
@@ -386,7 +389,7 @@ fn endpoint_row(ui: &mut Ui, id: Id, endpoint: &WebhookEndpoint, selected: bool)
     if !endpoint.is_enabled {
         let off = kit::galley(
             ui,
-            "Off",
+            tr!("Off"),
             size::CAPTION,
             SEMIBOLD,
             theme::text_secondary(),
@@ -448,7 +451,7 @@ fn warning(ui: &mut Ui, text: &str) {
 fn message_editor(ui: &mut Ui, id: Id, text: &mut String, context: &AlertMessageContext) {
     ui.horizontal(|ui| {
         ui.label(kit::text(
-            "Message",
+            tr!("Message"),
             size::SUBHEADLINE + 1.0,
             SEMIBOLD,
             theme::text_primary(),
@@ -458,7 +461,7 @@ fn message_editor(ui: &mut Ui, id: Id, text: &mut String, context: &AlertMessage
                 let reset = ui
                     .add(
                         egui::Label::new(kit::text(
-                            "Use default",
+                            tr!("Use default"),
                             size::CAPTION + 0.5,
                             REGULAR,
                             theme::text_secondary(),
@@ -518,7 +521,7 @@ fn message_editor(ui: &mut Ui, id: Id, text: &mut String, context: &AlertMessage
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.label(kit::text(
-            "Example",
+            tr!("Example"),
             size::CAPTION + 0.5,
             MEDIUM,
             theme::text_tertiary(),
@@ -534,9 +537,13 @@ fn message_editor(ui: &mut Ui, id: Id, text: &mut String, context: &AlertMessage
             .truncate(),
         );
         let (tint, label, tip) = if json {
-            (kit::GREEN, "JSON", "Sent as application/json")
+            (kit::GREEN, "JSON", tr!("Sent as application/json"))
         } else {
-            (theme::text_secondary(), "Text", "Sent as text/plain")
+            (
+                theme::text_secondary(),
+                tr!("Text"),
+                tr!("Sent as text/plain"),
+            )
         };
         let galley = kit::galley(ui, label, size::CAPTION, kit::BOLD, tint, 60.0);
         let (pill, response) =
@@ -549,7 +556,7 @@ fn message_editor(ui: &mut Ui, id: Id, text: &mut String, context: &AlertMessage
     });
     ui.add_space(6.0);
     ui.label(kit::text(
-        "Sent as the request body. Leave empty for the default.",
+        tr!("Sent as the request body. Leave empty for the default."),
         size::CAPTION + 0.5,
         REGULAR,
         theme::text_secondary(),
@@ -568,7 +575,7 @@ fn placeholder_chip(ui: &mut Ui, token: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(format!("Add {token} to the message"));
+        .on_hover_text(tr!("Add {token} to the message", token = token));
     let hovered = response.hovered();
     let color = if hovered {
         theme::text_primary()

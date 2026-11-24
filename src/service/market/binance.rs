@@ -147,13 +147,33 @@ pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
 }
 
+/// The market list, asking only for what the search reads. Plain `exchangeInfo` is 18 MB (every
+/// market ever listed, 3,700 of them, each with its filters and its permission sets); the
+/// `TRADING` ones without permission sets are 2.6 MB, the same pairs `parse_pairs` keeps.
+const EXCHANGE_INFO_URL: &str =
+    "https://api.binance.com/api/v3/exchangeInfo?symbolStatus=TRADING&showPermissionSets=false";
+
+/// What this one download may read: six times the 2.6 MB it is today, so listings can grow
+/// without breaking search, and far under the plain list. The shared 8 MiB limit stays for
+/// every other call.
+const EXCHANGE_INFO_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    let body = crate::service::net::http::get_text(
-        "https://api.binance.com/api/v3/exchangeInfo",
-        &[],
-        crate::service::net::http::Retry::Transient,
-    )?;
-    parse_pairs(&body)
+    download_pairs_with(|url, max_bytes| {
+        crate::service::net::http::get_text_with_limit(
+            url,
+            &[],
+            crate::service::net::http::Retry::Transient,
+            max_bytes,
+        )
+    })
+}
+
+/// `download_pairs` with the transport passed in, so a test sees the request without a network.
+fn download_pairs_with(
+    get: impl FnOnce(&str, u64) -> Result<String, crate::service::net::http::Error>,
+) -> Result<Vec<Pair>, ProviderError> {
+    parse_pairs(&get(EXCHANGE_INFO_URL, EXCHANGE_INFO_MAX_BYTES)?)
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
@@ -299,6 +319,36 @@ mod tests {
         let error = parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#)
             .expect_err("object must fail");
         assert_eq!(error, ProviderError::data("expected a candle array"));
+    }
+
+    #[test]
+    fn the_market_list_asks_for_trading_pairs_only_under_its_own_limit() {
+        use crate::service::net::http::Error;
+        let body = r#"{"symbols":[
+            {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"}
+        ]}"#;
+        let mut asked = None;
+        let pairs = download_pairs_with(|url, max_bytes| {
+            asked = Some((url.to_owned(), max_bytes));
+            Ok(body.to_owned())
+        })
+        .expect("pairs");
+        assert_eq!(pairs.len(), 1);
+
+        let (url, max_bytes) = asked.expect("one request");
+        assert!(url.starts_with("https://api.binance.com/api/v3/exchangeInfo?"));
+        assert!(url.contains("symbolStatus=TRADING"));
+        assert!(url.contains("showPermissionSets=false"));
+        // Room for the list to grow past today's 2.6 MB, but not the shared limit's job.
+        assert!(max_bytes > 8 * 1024 * 1024);
+        assert!(max_bytes <= 32 * 1024 * 1024);
+
+        // A too-large answer is still an error and not a partial list.
+        let too_big = download_pairs_with(|_, max_bytes| Err(Error::BodyTooLarge(max_bytes)));
+        assert_eq!(
+            too_big.expect_err("fails"),
+            ProviderError::from(Error::BodyTooLarge(EXCHANGE_INFO_MAX_BYTES))
+        );
     }
 
     #[test]

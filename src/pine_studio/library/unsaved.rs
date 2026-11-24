@@ -3,6 +3,7 @@
 //! The data side (`UnsavedScript`, `lines_changed`) is pure; `show` is the sheet. The Pine
 //! Studio owns the state and acts on the choice, so a failed save can keep the window open.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::pine::script::{ScriptId, ScriptType};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::dialog;
@@ -23,8 +24,10 @@ pub enum ExitReason {
 impl ExitReason {
     fn consequence(self) -> &'static str {
         match self {
-            Self::CloseTab => "Your changes will be lost if you close this tab without saving.",
-            Self::Quit => "Your changes will be lost if you quit DegenView without saving.",
+            Self::CloseTab => {
+                tr!("Your changes will be lost if you close this tab without saving.")
+            }
+            Self::Quit => tr!("Your changes will be lost if you quit DegenView without saving."),
         }
     }
 }
@@ -84,8 +87,12 @@ pub fn lines_changed(saved: &str, current: &str) -> (usize, usize) {
 
 fn title(scripts: &[UnsavedScript]) -> String {
     match scripts {
-        [one] => format!("Save changes to “{}”?", one.name),
-        many => format!("Save changes to {} scripts?", many.len()),
+        [one] => tr!("Save changes to “{name}”?", name = one.name),
+        many => tr_n!(
+            many.len(),
+            "Save changes to {count} script?",
+            "Save changes to {count} scripts?"
+        ),
     }
 }
 
@@ -99,12 +106,12 @@ pub fn show(ctx: &egui::Context, prompt: &ExitPrompt) -> Option<UnsavedChoice> {
         &title,
         prompt.reason.consequence(),
         if prompt.scripts.len() > 1 {
-            "Save All"
+            tr!("Save All")
         } else {
-            "Save"
+            tr!("Save")
         },
     );
-    spec.leading = Some("Don’t Save");
+    spec.leading = Some(tr!("Don’t Save"));
     let mut choice = dialog::show(ctx, Id::new("script-unsaved"), &spec, |ui| {
         ui.add_space(18.0);
         list(ui, &prompt.scripts);
@@ -150,7 +157,7 @@ fn list(ui: &mut Ui, scripts: &[UnsavedScript]) {
                     |ui| {
                         ui.add_space(26.0);
                         ui.label(kit::text(
-                            format!("and {rest} more"),
+                            tr!("and {rest} more", rest = rest),
                             size::SUBHEADLINE + 1.0,
                             REGULAR,
                             theme::text_secondary(),
@@ -174,7 +181,7 @@ fn row(ui: &mut Ui, script: &UnsavedScript) {
     let mut right = rect.right();
     if script.added == 0 && script.removed == 0 {
         let galley = painter.layout_no_wrap(
-            "whitespace only".to_owned(),
+            tr!("whitespace only").to_owned(),
             egui::FontId::proportional(size::SUBHEADLINE),
             theme::text_tertiary(),
         );

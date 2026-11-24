@@ -3,6 +3,7 @@
 //! host owns and reports `Save` or `Cancel`. All validation lives in `WebhookEditorState`
 //! (and in `webhook::policy`), so the sheet cannot disagree with the store.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::webhook;
 use crate::model::webhook::policy::{
     MAXIMUM_HEADERS, SECRET_TOKEN, SecretPlacement, WebhookHeaderError, WebhookSecretError,
@@ -194,18 +195,17 @@ impl WebhookEditorState {
             if self.secret.is_empty() {
                 return SecretStatus::MissingValue;
             }
-            let mut places = Vec::new();
-            if url_uses {
-                places.push("the URL".to_owned());
-            }
-            if header_uses > 0 {
-                places.push(if header_uses == 1 {
-                    "1 header".to_owned()
-                } else {
-                    format!("{header_uses} headers")
-                });
-            }
-            return SecretStatus::Used(format!("Used in {}", places.join(" and ")));
+            return SecretStatus::Used(match (url_uses, header_uses) {
+                (true, 0) => tr!("Used in the URL").to_owned(),
+                (true, headers) => tr_n!(
+                    headers,
+                    "Used in the URL and {count} header",
+                    "Used in the URL and {count} headers"
+                ),
+                (false, headers) => {
+                    tr_n!(headers, "Used in {count} header", "Used in {count} headers")
+                }
+            });
         }
         if self.secret.is_empty() {
             SecretStatus::Idle
@@ -303,9 +303,9 @@ const FIELD_OUTER: f32 = kit::FIELD_HEIGHT + 2.0;
 pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<WebhookEditorOutcome> {
     let mut outcome = None;
     let title = if state.is_new() {
-        "Add Webhook"
+        tr!("Add Webhook")
     } else {
-        "Edit Webhook"
+        tr!("Edit Webhook")
     };
     sheet::show(ctx, Id::new("webhook-editor"), FORM_WIDTH, |ui| {
         ui.add_space(24.0);
@@ -314,7 +314,7 @@ pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<Webho
             sheet::header_with(
                 ui,
                 title,
-                "Alerts post their message here over HTTP.",
+                tr!("Alerts post their message here over HTTP."),
                 |_| {},
             )
         });
@@ -334,14 +334,14 @@ pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<Webho
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 12.0;
                     let label = if state.is_new() {
-                        "Add Webhook"
+                        tr!("Add Webhook")
                     } else {
-                        "Save Changes"
+                        tr!("Save Changes")
                     };
                     if kit::sheet_button(ui, label, true, state.can_save()).clicked() {
                         outcome = state.result().map(WebhookEditorOutcome::Save);
                     }
-                    if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                    if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                         outcome = Some(WebhookEditorOutcome::Cancel);
                     }
                 });
@@ -363,13 +363,20 @@ pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<Webho
 fn form(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
     ui.spacing_mut().item_spacing.y = 0.0;
 
-    section_title(ui, "Name");
+    section_title(ui, tr!("Name"));
     ui.add_space(8.0);
     let name_id = Id::new("webhook-name");
     field(ui, name_id, false, |ui| {
         icons::inline(ui, Icon::Tag, FIELD_ICON, theme::text_secondary());
         let width = ui.available_width();
-        let response = input(ui, name_id, &mut state.name, "Trading Bot", false, width);
+        let response = input(
+            ui,
+            name_id,
+            &mut state.name,
+            tr!("Trading Bot"),
+            false,
+            width,
+        );
         if state.focus_name {
             response.request_focus();
             state.focus_name = false;
@@ -383,17 +390,14 @@ fn form(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
 
     if let Some(credential) = state.plain_credential() {
         ui.add_space(10.0);
-        let title = format!("“{}” looks like a credential", credential.name);
+        let title = tr!("“{name}” looks like a credential", name = credential.name);
         if kit::notice_card(
             ui,
             Icon::Key,
             kit::ORANGE,
             &title,
-            Some(&format!(
-                "Save it as the secret so it is kept {} instead of in plain text.",
-                crate::platform::in_secret_store()
-            )),
-            Some("Move to Secret"),
+            Some(crate::platform::webhook_move_to_secret()),
+            Some(tr!("Move to Secret")),
         ) {
             state.move_to_secret(credential.id);
         }
@@ -403,7 +407,7 @@ fn form(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
     headers_section(ui, state);
     ui.add_space(SECTION_GAP);
 
-    section_title(ui, "Description");
+    section_title(ui, tr!("Description"));
     ui.add_space(8.0);
     let description_id = Id::new("webhook-description");
     field(ui, description_id, false, |ui| {
@@ -413,7 +417,7 @@ fn form(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             ui,
             description_id,
             &mut state.description,
-            "Optional",
+            tr!("Optional"),
             false,
             width,
         );
@@ -428,7 +432,7 @@ fn form(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             ui,
             Icon::TriangleFill,
             kit::RED,
-            "This webhook couldn't be saved",
+            tr!("This webhook couldn't be saved"),
             Some(failure),
             None,
         );
@@ -452,7 +456,7 @@ fn optional_title(ui: &mut egui::Ui, text: &str, trailing: impl FnOnce(&mut egui
         ui.spacing_mut().item_spacing.x = 6.0;
         section_title(ui, text);
         ui.label(kit::text(
-            "Optional",
+            tr!("Optional"),
             size::CAPTION + 0.5,
             REGULAR,
             theme::text_tertiary(),
@@ -596,7 +600,7 @@ fn link_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> egu
 // MARK: Address
 
 fn url_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
-    section_title(ui, "Webhook URL");
+    section_title(ui, tr!("Webhook URL"));
     ui.add_space(8.0);
     let url_id = Id::new("webhook-url");
     let invalid = state.visible_url_problem().is_some();
@@ -635,7 +639,7 @@ fn url_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
                 )
                 .truncate(),
             )
-            .on_hover_text("What will be requested, with the secret hidden");
+            .on_hover_text(tr!("What will be requested, with the secret hidden"));
         });
     }
 }
@@ -649,9 +653,11 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
     );
     let size = Vec2::new(label.size().x + 5.0 + 9.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let response =
-        crate::ui::accessibility::label(response, format!("HTTP method, {}", method.as_str()))
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(
+        response,
+        tr!("HTTP method, {method}", method = method.as_str()),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand);
     let color = if response.is_pointer_button_down_on() {
         theme::with_alpha(theme::text_primary(), 0.7)
     } else {
@@ -686,44 +692,39 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
             }
         },
     );
-    response.on_hover_text("HTTP method");
+    response.on_hover_text(tr!("HTTP method"));
 }
 
 // MARK: Secret
 
 fn secret_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
-    optional_title(ui, "Secret", |ui| {
-        let button = link_button(ui, Icon::Plus, "Use secret", true)
-            .on_hover_text("Put the secret in the URL or in a header");
-        let labels = [
-            "Add to the URL as ?token=",
-            "Send as a Bearer token",
-            "Send as an X-API-Key header",
-            "Send in a custom header\u{2026}",
+    optional_title(ui, tr!("Secret"), |ui| {
+        let button = link_button(ui, Icon::Plus, tr!("Use secret"), true)
+            .on_hover_text(tr!("Put the secret in the URL or in a header"));
+        let choices = [
+            (
+                Icon::Link,
+                tr!("Add to the URL as ?token="),
+                SecretPlacement::UrlParameter("token".to_owned()),
+            ),
+            (
+                Icon::Key,
+                tr!("Send as a Bearer token"),
+                SecretPlacement::BearerToken,
+            ),
+            (
+                Icon::Key,
+                tr!("Send as an X-API-Key header"),
+                SecretPlacement::ApiKey,
+            ),
+            (
+                Icon::List,
+                tr!("Send in a custom header…"),
+                SecretPlacement::CustomHeader,
+            ),
         ];
+        let labels = choices.each_ref().map(|(_, label, _)| *label);
         kit::fitted_menu(ui, &button, egui::RectAlign::BOTTOM_END, &labels, |ui| {
-            let choices = [
-                (
-                    Icon::Link,
-                    "Add to the URL as ?token=",
-                    SecretPlacement::UrlParameter("token".to_owned()),
-                ),
-                (
-                    Icon::Key,
-                    "Send as a Bearer token",
-                    SecretPlacement::BearerToken,
-                ),
-                (
-                    Icon::Key,
-                    "Send as an X-API-Key header",
-                    SecretPlacement::ApiKey,
-                ),
-                (
-                    Icon::List,
-                    "Send in a custom header…",
-                    SecretPlacement::CustomHeader,
-                ),
-            ];
             for (index, (icon, label, choice)) in choices.into_iter().enumerate() {
                 if index == 1 {
                     kit::menu_separator(ui);
@@ -747,16 +748,16 @@ fn secret_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             ui,
             secret_id,
             &mut state.secret,
-            "API token or key",
+            tr!("API token or key"),
             state.secret_revealed,
             !state.secret_revealed,
             width,
         );
         let (slot, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
         let (icon, tip) = if state.secret_revealed {
-            (Icon::EyeSlash, "Hide")
+            (Icon::EyeSlash, tr!("Hide"))
         } else {
-            (Icon::Eye, "Show")
+            (Icon::Eye, tr!("Show"))
         };
         if kit::hover_button(ui, slot, secret_id.with("eye"), icon, tip, true, true).clicked() {
             state.secret_revealed = !state.secret_revealed;
@@ -774,23 +775,23 @@ fn secret_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             ui,
             Icon::TriangleFill,
             kit::RED,
-            &format!("Add the secret value that {SECRET_TOKEN} stands for."),
+            &tr!(
+                "Add the secret value that {token} stands for.",
+                token = SECRET_TOKEN
+            ),
         ),
         SecretStatus::Used(places) => status_line(ui, Icon::CheckCircleFill, kit::GREEN, &places),
         SecretStatus::NotUsedYet => status_line(
             ui,
             Icon::InfoCircle,
             kit::ORANGE,
-            "Not used yet. Choose where it goes with Use secret.",
+            tr!("Not used yet. Choose where it goes with Use secret."),
         ),
         SecretStatus::Idle => {
             ui.add_space(7.0);
             ui.add(
                 egui::Label::new(kit::text(
-                    format!(
-                        "Kept {} and inserted wherever you place it, in the URL or a header.",
-                        crate::platform::in_secret_store()
-                    ),
+                    crate::platform::webhook_secret_hint(),
                     size::CAPTION + 0.5,
                     REGULAR,
                     theme::text_secondary(),
@@ -820,7 +821,7 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
                 10.0,
                 theme::text_secondary(),
             );
-            section_title(ui, "Headers");
+            section_title(ui, tr!("Headers"));
             if !state.headers.is_empty() {
                 egui::Frame::new()
                     .fill(kit::primary(0.08))
@@ -839,7 +840,7 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
                 icons::inline(ui, Icon::TriangleFill, 11.0, kit::RED);
             }
             ui.label(kit::text(
-                "Optional",
+                tr!("Optional"),
                 size::CAPTION + 0.5,
                 REGULAR,
                 theme::text_tertiary(),
@@ -853,8 +854,10 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let toggle =
-        crate::ui::accessibility::label(toggle, format!("Headers, {} set", state.headers.len()));
+    let toggle = crate::ui::accessibility::label(
+        toggle,
+        tr!("Headers, {count} set", count = state.headers.len()),
+    );
     if toggle.clicked() {
         state.headers_expanded = !state.headers_expanded;
     }
@@ -865,7 +868,7 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
     ui.add_space(10.0);
     if state.headers.is_empty() {
         ui.label(kit::text(
-            "No custom headers yet.",
+            tr!("No custom headers yet."),
             size::CAPTION + 0.5,
             REGULAR,
             theme::text_secondary(),
@@ -907,14 +910,14 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
                 |ui| {
                     field(ui, value_id, value_error, |ui| {
                         let inner = ui.available_width() - 20.0 - 8.0;
-                        input(ui, value_id, &mut header.value, "Value", true, inner);
+                        input(ui, value_id, &mut header.value, tr!("Value"), true, inner);
                         let (slot, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
                         if kit::hover_button(
                             ui,
                             slot,
                             value_id.with("secret"),
                             Icon::Key,
-                            "Insert the secret",
+                            tr!("Insert the secret"),
                             true,
                             true,
                         )
@@ -931,7 +934,7 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
                 slot,
                 name_id.with("remove"),
                 Icon::Trash,
-                "Remove header",
+                tr!("Remove header"),
                 true,
                 true,
             )
@@ -954,11 +957,15 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
         state.remove_header(id);
     }
     let can_add = state.headers.len() < MAXIMUM_HEADERS;
-    let add = link_button(ui, Icon::Plus, "Add header", can_add);
+    let add = link_button(ui, Icon::Plus, tr!("Add header"), can_add);
     let add = if can_add {
-        add.on_hover_text("Add a header")
+        add.on_hover_text(tr!("Add a header"))
     } else {
-        add.on_hover_text(format!("At most {MAXIMUM_HEADERS} headers"))
+        add.on_hover_text(tr_n!(
+            MAXIMUM_HEADERS,
+            "At most {count} header",
+            "At most {count} headers"
+        ))
     };
     if can_add && add.clicked() {
         state.add_header();
@@ -1006,16 +1013,16 @@ fn enabled_card(ui: &mut egui::Ui, is_enabled: &mut bool) {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(kit::text(
-                        "Enabled",
+                        tr!("Enabled"),
                         size::SUBHEADLINE + 1.0,
                         SEMIBOLD,
                         theme::text_primary(),
                     ));
                     ui.label(kit::text(
                         if *is_enabled {
-                            "Alerts that use this webhook will post to it."
+                            tr!("Alerts that use this webhook will post to it.")
                         } else {
-                            "Paused: alerts skip this webhook."
+                            tr!("Paused: alerts skip this webhook.")
                         },
                         size::CAPTION + 0.5,
                         REGULAR,
@@ -1023,7 +1030,7 @@ fn enabled_card(ui: &mut egui::Ui, is_enabled: &mut bool) {
                     ));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    kit::switch(ui, is_enabled, "Enabled");
+                    kit::switch(ui, is_enabled, tr!("Enabled"));
                 });
             });
         });

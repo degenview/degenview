@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use super::Session;
-use crate::pine::builtins::number_format;
+use crate::pine::builtins::{number_format, ta};
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::RuntimeValue;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
@@ -14,6 +14,7 @@ impl Session {
         &mut self,
         name: &str,
         arguments: &[crate::pine::syntax::ast::Argument],
+        site: usize,
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<Option<RuntimeValue>, Diagnostic> {
@@ -138,18 +139,17 @@ impl Session {
                     RuntimeValue::String(text) => crate::pine::time::seconds_of_timeframe(&text),
                     _ => None,
                 };
-                // Inside a request the previous bar is the requested series' own, not the chart's.
-                let previous = if self.security_depth > 0 {
-                    self.series_bars.last().map(|logged| logged.bar.open_time)
-                } else {
-                    self.last_committed_open_time
-                };
                 Ok(Some(match seconds {
-                    Some(seconds) => RuntimeValue::Bool(crate::pine::time::timeframe_changed(
-                        previous,
-                        context.bar.open_time,
-                        seconds,
-                    )),
+                    Some(seconds) => {
+                        let key = self.site_key(site, context);
+                        let state = self.working.ta_states.entry(key).or_default();
+                        let open_time = context.bar.open_time;
+                        RuntimeValue::Bool(ta::previous_bar_time(open_time, state).is_some_and(
+                            |previous| {
+                                crate::pine::time::timeframe_changed(previous, open_time, seconds)
+                            },
+                        ))
+                    }
                     None => RuntimeValue::Na,
                 }))
             }

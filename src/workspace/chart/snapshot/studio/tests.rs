@@ -1,7 +1,7 @@
 //! The Studio as the workspace runs it: opened by a real selection over a real grid, driven by
 //! pointer and keyboard events and by the actions the window reports.
 
-use super::super::select_tests::{HOUR, Rig};
+use super::super::select_tests::{HOUR, Rig, wait_until};
 use super::*;
 use crate::lock::lock;
 use crate::model::Tool;
@@ -119,30 +119,22 @@ fn session(rig: &Rig) -> &StudioSession {
 
 /// Runs frames until the picture of what is wanted has been made, and drawn.
 fn picture(rig: &mut Rig) {
-    for _ in 0..3_000 {
+    wait_until("the picture was never made", || {
         rig.frame(Vec::new());
         let previews = &session(rig).previews;
-        if previews.shown().is_some() && !previews.is_busy() {
-            // The picture can land after this frame drew the preview, which then still showed
-            // "Drawing the image…": one more frame draws it, so its widget is there to find.
-            rig.frame(Vec::new());
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    panic!("the picture was never made");
+        previews.shown().is_some() && !previews.is_busy()
+    });
+    // The picture can land after the frame that drew the preview, which then still showed
+    // "Drawing the image…": one more frame draws it, so its widget is there to find.
+    rig.frame(Vec::new());
 }
 
 /// Runs frames until the snapshot job ends.
 fn finished(rig: &mut Rig) {
-    for _ in 0..3_000 {
+    wait_until("the snapshot never finished", || {
         rig.frame(Vec::new());
-        if rig.workspace.snapshot.running.is_none() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    panic!("the snapshot never finished");
+        rig.workspace.snapshot.running.is_none()
+    });
 }
 
 fn fake(rig: &mut Rig) -> Arc<Fake> {

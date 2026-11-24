@@ -388,10 +388,6 @@ struct GutterRows {
     caret_line: Option<usize>,
 }
 
-fn plural(count: usize, noun: &str) -> String {
-    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
-}
-
 /// Replaces the whole text with a script the assistant wrote, as one undo step: Cmd-Z brings back
 /// exactly what was here. The caret goes to the first line that differs, so the change is where the
 /// editor looks.

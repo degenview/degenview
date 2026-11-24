@@ -4,6 +4,7 @@
 //! comes as an [`ErrorReport`], built from the structure of the error and never by reading its prose;
 //! what is cut from view is still on the clipboard behind **Copy details**.
 
+use crate::i18n::tr;
 use crate::service::llm::report::ErrorReport;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
@@ -87,8 +88,14 @@ pub fn show(ui: &mut Ui, notice: &ErrorNotice<'_>) -> Option<ErrorEvent> {
                 });
                 if notice.dismiss {
                     ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
-                        if icons::button(ui, Icon::Xmark, 18.0, theme::text_tertiary(), "Dismiss")
-                            .clicked()
+                        if icons::button(
+                            ui,
+                            Icon::Xmark,
+                            18.0,
+                            theme::text_tertiary(),
+                            tr!("Dismiss"),
+                        )
+                        .clicked()
                         {
                             event = Some(ErrorEvent::Dismiss);
                         }
@@ -134,7 +141,7 @@ fn body(ui: &mut Ui, notice: &ErrorNotice<'_>, width: f32) {
         // An id is one long word: it breaks wherever the line ends, so all of it shows.
         let mut job = LayoutJob::default();
         job.append(
-            &format!("Request ID {id}"),
+            &tr!("Request ID {id}", id = id),
             0.0,
             TextFormat {
                 font_id: egui::FontId::monospace(kit::size::CAPTION),
@@ -165,9 +172,9 @@ fn buttons(ui: &mut Ui, notice: &ErrorNotice<'_>) -> Option<ErrorEvent> {
             .data(|data| data.get_temp::<Instant>(notice.id))
             .is_some_and(|at| at.elapsed() < COPIED);
         let (icon, label) = if copied {
-            (Icon::Check, "Copied")
+            (Icon::Check, tr!("Copied"))
         } else {
-            (Icon::CopyDoc, "Copy details")
+            (Icon::CopyDoc, tr!("Copy details"))
         };
         if kit::push_button(ui, Some(icon), label, !copied).clicked() {
             ui.ctx().copy_text(notice.report.copy_text());

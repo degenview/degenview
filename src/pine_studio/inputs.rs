@@ -3,6 +3,7 @@
 //! `ScriptPreviewInputsStore`.
 
 use crate::format::{civil_from_days, days_from_civil};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::pine::instance::StoredInput as Stored;
 use crate::pine::compiler::program::{InputControl, InputDefinition, InputSchema, InputValue};
 use crate::pine::syntax::token::ValueType;
@@ -245,7 +246,10 @@ pub fn show(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<Inpu
                     ui.add_space(12.0);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
-                            .add_enabled(!values.is_empty(), egui::Button::new("Reset to Defaults"))
+                            .add_enabled(
+                                !values.is_empty(),
+                                egui::Button::new(tr!("Reset to Defaults")),
+                            )
                             .clicked()
                         {
                             edits.push(InputEdit::Reset);
@@ -335,15 +339,13 @@ fn control(
                 .map(|(stored, _)| InputValue::String(stored.clone()))
         }
         (_, InputValue::String(value)) if input.control == InputControl::Timeframe => {
-            let labels: Vec<String> = TIMEFRAMES
-                .iter()
-                .map(|(_, label)| (*label).to_owned())
-                .collect();
-            let selected = TIMEFRAMES.iter().position(|(stored, _)| stored == value);
+            let choices = timeframes();
+            let labels: Vec<String> = choices.iter().map(|(_, label)| label.clone()).collect();
+            let selected = choices.iter().position(|(stored, _)| stored == value);
             let shown = labels_with_current(&labels, selected, value);
             let width = picker_width(ui, &shown);
             crate::ui::kit::menu_picker(ui, width, &shown, selected.unwrap_or(labels.len()), true)
-                .and_then(|index| TIMEFRAMES.get(index))
+                .and_then(|index| choices.get(index))
                 .map(|(stored, _)| InputValue::String((*stored).to_owned()))
         }
         (_, InputValue::String(value)) if input.control == InputControl::TextArea => {
@@ -376,7 +378,7 @@ fn control(
             let response = ui.add(edit);
             if invalid {
                 response.clone().on_hover_text(
-                    "Not a session. Write it as 0930-1600, with days after a colon (0930-1600:23456) or 24x7.",
+                    tr!("Not a session. Write it as 0930-1600, with days after a colon (0930-1600:23456) or 24x7."),
                 );
             }
             response.changed().then_some(InputValue::String(text))
@@ -407,23 +409,25 @@ const SOURCES: [&str; 9] = [
 
 /// The timeframes `input.timeframe` offers when the script lists none, as Pine writes them and as
 /// they read; the empty string is the chart's own.
-const TIMEFRAMES: [(&str, &str); 15] = [
-    ("", "Chart"),
-    ("1", "1 minute"),
-    ("3", "3 minutes"),
-    ("5", "5 minutes"),
-    ("15", "15 minutes"),
-    ("30", "30 minutes"),
-    ("45", "45 minutes"),
-    ("60", "1 hour"),
-    ("120", "2 hours"),
-    ("180", "3 hours"),
-    ("240", "4 hours"),
-    ("1D", "1 day"),
-    ("1W", "1 week"),
-    ("1M", "1 month"),
-    ("3M", "3 months"),
-];
+fn timeframes() -> Vec<(&'static str, String)> {
+    vec![
+        ("", tr_c!("input timeframe", "Chart").to_owned()),
+        ("1", tr_n!(1, "{count} minute", "{count} minutes")),
+        ("3", tr_n!(3, "{count} minute", "{count} minutes")),
+        ("5", tr_n!(5, "{count} minute", "{count} minutes")),
+        ("15", tr_n!(15, "{count} minute", "{count} minutes")),
+        ("30", tr_n!(30, "{count} minute", "{count} minutes")),
+        ("45", tr_n!(45, "{count} minute", "{count} minutes")),
+        ("60", tr_n!(1, "{count} hour", "{count} hours")),
+        ("120", tr_n!(2, "{count} hour", "{count} hours")),
+        ("180", tr_n!(3, "{count} hour", "{count} hours")),
+        ("240", tr_n!(4, "{count} hour", "{count} hours")),
+        ("1D", tr_n!(1, "{count} day", "{count} days")),
+        ("1W", tr_n!(1, "{count} week", "{count} weeks")),
+        ("1M", tr_n!(1, "{count} month", "{count} months")),
+        ("3M", tr_n!(3, "{count} month", "{count} months")),
+    ]
+}
 
 /// Whether a session input holds a session Pine can read (an empty one is the chart's own).
 fn session_is_valid(text: &str) -> bool {
@@ -639,9 +643,9 @@ impl NumberKind for FloatBounds {
 /// "2 to 200", "2 or more", "200 or less": a limits tooltip for whatever formats as text.
 fn limits_hint<T: std::fmt::Display>(min: Option<T>, max: Option<T>) -> Option<String> {
     match (min, max) {
-        (Some(min), Some(max)) => Some(format!("{min} to {max}")),
-        (Some(min), None) => Some(format!("{min} or more")),
-        (None, Some(max)) => Some(format!("{max} or less")),
+        (Some(min), Some(max)) => Some(tr!("{min} to {max}", min = min, max = max)),
+        (Some(min), None) => Some(tr!("{min} or more", min = min)),
+        (None, Some(max)) => Some(tr!("{max} or less", max = max)),
         (None, None) => None,
     }
 }
@@ -1242,7 +1246,7 @@ mod tests {
 
     #[test]
     fn the_standard_timeframes_are_pine_strings_and_none_repeats() {
-        let mut stored: Vec<&str> = TIMEFRAMES.iter().map(|(stored, _)| *stored).collect();
+        let mut stored: Vec<&str> = timeframes().iter().map(|(stored, _)| *stored).collect();
         for text in &stored {
             assert!(
                 text.is_empty() || crate::pine::time::seconds_of_timeframe(text).is_some(),
@@ -1254,7 +1258,7 @@ mod tests {
         stored.dedup();
         assert_eq!(stored.len(), count);
         // The chart's own is first, so it is what an empty value shows.
-        assert_eq!(TIMEFRAMES[0], ("", "Chart"));
+        assert_eq!(timeframes()[0], ("", "Chart".to_owned()));
     }
 
     #[test]

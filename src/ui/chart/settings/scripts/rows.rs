@@ -2,6 +2,7 @@
 //! with its switch, badges and settings.
 
 use super::{RowData, RowEvent};
+use crate::i18n::tr;
 use crate::model::pine::instance::VisualOrder;
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::ui::icons::{self, Icon};
@@ -65,13 +66,17 @@ fn switch_at(ui: &mut Ui, row: Rect, id: Id, on: bool, what: &str) -> egui::Resp
     let t = ui.ctx().animate_bool_with_time(id, on, 0.12);
     kit::paint_switch(ui.painter(), rect, t, false);
     let tip = if on {
-        format!("Turn {what} off — it keeps its settings")
+        tr!("Turn {what} off — it keeps its settings", what = what)
     } else {
-        format!("Turn {what} on")
+        tr!("Turn {what} on", what = what)
     };
     crate::ui::accessibility::label(
         response,
-        format!("{what}, {}", if on { "on" } else { "off" }),
+        if on {
+            tr!("{what}, on", what = what)
+        } else {
+            tr!("{what}, off", what = what)
+        },
     )
     .on_hover_cursor(CursorIcon::PointingHand)
     .on_hover_text(tip)
@@ -170,7 +175,7 @@ pub(super) fn available_row(
         meta,
         theme::text_secondary(),
     );
-    crate::ui::accessibility::label(response, format!("Turn on {}", script.name));
+    crate::ui::accessibility::label(response, tr!("Turn on {name}", name = script.name));
 }
 
 /// One applied script: what it is, how it is doing, and what can be done to it.
@@ -224,7 +229,8 @@ pub(super) fn instance_row(
         x -= 26.0;
         let response = ui.interact(
             hit,
-            Id::new(("instance-button", row.id, tip.to_owned())),
+            // The settings button and the remove button: not the tip, which is translated.
+            Id::new(("instance-button", row.id, destructive)),
             Sense::click(),
         );
         if response.hovered() {
@@ -247,7 +253,7 @@ pub(super) fn instance_row(
     let settings = button(
         ui,
         Icon::Sliders,
-        &format!("Edit {} settings", row.title),
+        &tr!("Edit {name} settings", name = row.title),
         false,
     );
     let anchor = settings.rect;
@@ -257,7 +263,7 @@ pub(super) fn instance_row(
     if button(
         ui,
         Icon::Xmark,
-        &format!("Remove {} from this chart", row.title),
+        &tr!("Remove {name} from this chart", name = row.title),
         true,
     )
     .clicked()
@@ -277,23 +283,30 @@ pub(super) fn instance_row(
     );
     let meta_text = row.failure.clone().unwrap_or_else(|| {
         if row.evaluating {
-            "Evaluating…".to_owned()
+            tr!("Evaluating…").to_owned()
         } else {
             let mut parts = vec![
                 if row.is_strategy {
-                    "Strategy"
+                    tr!("Strategy")
                 } else {
-                    "Indicator"
+                    tr!("Indicator")
                 }
                 .to_owned(),
             ];
             if !row.is_strategy
                 && let Some(overlay) = row.overlay
             {
-                parts.push(if overlay { "On chart" } else { "Own pane" }.to_owned());
+                parts.push(
+                    if overlay {
+                        tr!("On chart")
+                    } else {
+                        tr!("Own pane")
+                    }
+                    .to_owned(),
+                );
             }
             if !row.visible {
-                parts.push("Off".to_owned());
+                parts.push(tr!("Off").to_owned());
             }
             parts.join(" · ")
         }
@@ -336,23 +349,27 @@ pub(super) fn instance_row(
         .galley(pos2(left + lead, meta_top), meta, meta_color);
 
     response.context_menu(|ui| {
-        let label = if row.visible { "Turn Off" } else { "Turn On" };
+        let label = if row.visible {
+            tr!("Turn Off")
+        } else {
+            tr!("Turn On")
+        };
         if ui.button(label).clicked() {
             events.push(RowEvent::ToggleVisible(row.id));
             ui.close();
         }
-        if ui.button("Settings…").clicked() {
+        if ui.button(tr!("Settings…")).clicked() {
             events.push(RowEvent::Configure(row.id, anchor));
             ui.close();
         }
         // Where the visuals sit against the chart's own candles: only a script drawing on the
         // chart has a choice.
         if row.overlay != Some(false) {
-            ui.menu_button("Visual Order", |ui| {
+            ui.menu_button(tr!("Visual Order"), |ui| {
                 for (order, label) in [
-                    (VisualOrder::Script, "As the Script Declares"),
-                    (VisualOrder::Front, "Bring to Front"),
-                    (VisualOrder::Behind, "Send to Back"),
+                    (VisualOrder::Script, tr!("As the Script Declares")),
+                    (VisualOrder::Front, tr!("Bring to Front")),
+                    (VisualOrder::Behind, tr!("Send to Back")),
                 ] {
                     if ui.selectable_label(row.order == order, label).clicked() {
                         events.push(RowEvent::SetOrder(row.id, order));
@@ -361,20 +378,23 @@ pub(super) fn instance_row(
                 }
             });
         }
-        if ui.button("Add Another Copy").clicked() {
+        if ui.button(tr!("Add Another Copy")).clicked() {
             events.push(RowEvent::Duplicate(row.id));
             ui.close();
         }
         ui.separator();
         if ui
-            .add_enabled(row.position > 0, egui::Button::new("Move Up"))
+            .add_enabled(row.position > 0, egui::Button::new(tr!("Move Up")))
             .clicked()
         {
             events.push(RowEvent::MoveTo(row.id, row.position - 1));
             ui.close();
         }
         if ui
-            .add_enabled(row.position + 1 < row.total, egui::Button::new("Move Down"))
+            .add_enabled(
+                row.position + 1 < row.total,
+                egui::Button::new(tr!("Move Down")),
+            )
             .clicked()
         {
             events.push(RowEvent::MoveTo(row.id, row.position + 1));
@@ -382,7 +402,7 @@ pub(super) fn instance_row(
         }
         ui.separator();
         if ui
-            .button(RichText::new("Remove from Chart").color(theme::syntax::string()))
+            .button(RichText::new(tr!("Remove from Chart")).color(theme::syntax::string()))
             .clicked()
         {
             events.push(RowEvent::Remove(row.id));

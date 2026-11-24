@@ -14,8 +14,10 @@
 //! `route_of` mirrors the order of that chain, so it must be kept in step with it. The tests run
 //! every registered function both ways and compare.
 
+pub(crate) mod hoist;
 #[cfg(test)]
 pub(in crate::pine) mod tests;
+pub(crate) mod total;
 
 use std::collections::HashSet;
 

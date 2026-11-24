@@ -4,6 +4,7 @@ pub(in crate::workspace) mod logs;
 
 use super::ChartWorkspace;
 use super::chart::Chart;
+use crate::model::pine::bundled::{self, BundledIndicator};
 use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Kline, Timeframe};
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
@@ -181,6 +182,84 @@ impl ChartWorkspace {
         }
         kind.set_applied(&mut chart.indicators, false);
         Ok((RemoveOutcome::Removed, chart.indicators))
+    }
+
+    /// Applies a bundled indicator the way a built-in one is applied: once per chart, shown again
+    /// if its eye was off. An undoable step.
+    pub fn apply_bundled_indicator(
+        &mut self,
+        chart_id: u64,
+        indicator: &'static BundledIndicator,
+    ) -> Result<IndicatorOutcome, IndicatorError> {
+        let chart = self
+            .charts
+            .iter()
+            .find(|chart| chart.id == chart_id)
+            .ok_or(IndicatorError::NoSuchChart)?;
+        if !chart.takes_indicators() {
+            return Err(IndicatorError::UnsupportedOnLineChart);
+        }
+        let script_id = bundled::script_id(indicator);
+        // The picker may have added it more than once: it is on the chart when any copy is drawn.
+        let copies: Vec<(u64, bool)> = chart
+            .chart
+            .pine_instances()
+            .iter()
+            .filter(|instance| instance.script_id.as_deref() == Some(script_id.as_str()))
+            .map(|instance| (instance.id, instance.visible))
+            .collect();
+        if copies.iter().any(|(_, visible)| *visible) {
+            return Ok(IndicatorOutcome::AlreadyApplied);
+        }
+        match copies.first() {
+            Some((instance, _)) => {
+                self.change_pine_instance(chart_id, *instance, None, Some(true));
+                Ok(IndicatorOutcome::Updated)
+            }
+            None => self
+                .add_pine_instance_to(
+                    chart_id,
+                    script_id,
+                    indicator.name,
+                    indicator.source,
+                    &HashMap::new(),
+                    true,
+                )
+                .map(|_| IndicatorOutcome::Added)
+                .ok_or(IndicatorError::NoSuchChart),
+        }
+    }
+
+    /// Takes every copy of a bundled indicator off a chart, as one undo step. A hidden copy
+    /// counts as on the chart.
+    pub fn remove_bundled_indicator(
+        &mut self,
+        chart_id: u64,
+        indicator: &'static BundledIndicator,
+    ) -> Result<RemoveOutcome, IndicatorError> {
+        let chart = self
+            .charts
+            .iter()
+            .find(|chart| chart.id == chart_id)
+            .ok_or(IndicatorError::NoSuchChart)?;
+        let script_id = bundled::script_id(indicator);
+        let copies: Vec<u64> = chart
+            .chart
+            .pine_instances()
+            .iter()
+            .filter(|instance| instance.script_id.as_deref() == Some(script_id.as_str()))
+            .map(|instance| instance.id)
+            .collect();
+        if copies.is_empty() {
+            return Ok(RemoveOutcome::NotApplied);
+        }
+        self.remember_indicators(chart_id);
+        if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+            for instance in copies {
+                chart.chart.remove_pine_instance(instance);
+            }
+        }
+        Ok(RemoveOutcome::Removed)
     }
 
     /// Adds a Pine script to the focused chart, after the ones already there (the Pine
@@ -395,6 +474,7 @@ impl ChartWorkspace {
                 let (bars, run) = crate::host::pine::subscription::ChartRun::feed(
                     chart.chart.construction(chart.source),
                     &chart.candles,
+                    self.timeframe,
                     now_ms,
                 );
                 ChartFeed {
@@ -617,21 +697,29 @@ mod tests {
             .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
             .chart_id;
         assert_eq!(
-            workspace.remove_indicator(btc, BuiltIn::Rsi).unwrap().0,
+            workspace
+                .remove_indicator(btc, BuiltIn::Bollinger)
+                .unwrap()
+                .0,
             RemoveOutcome::NotApplied
         );
-        workspace.apply_indicator(btc, BuiltIn::Rsi, None).unwrap();
+        workspace
+            .apply_indicator(btc, BuiltIn::Bollinger, None)
+            .unwrap();
         // A hidden indicator is still applied, so it can be removed.
-        BuiltIn::Rsi.toggle_visible(&mut workspace.charts[0].indicators);
-        let (outcome, config) = workspace.remove_indicator(btc, BuiltIn::Rsi).unwrap();
+        BuiltIn::Bollinger.toggle_visible(&mut workspace.charts[0].indicators);
+        let (outcome, config) = workspace.remove_indicator(btc, BuiltIn::Bollinger).unwrap();
         assert_eq!(outcome, RemoveOutcome::Removed);
-        assert!(!config.show_rsi);
+        assert!(!config.show_bollinger);
         assert_eq!(
-            workspace.remove_indicator(btc, BuiltIn::Rsi).unwrap().0,
+            workspace
+                .remove_indicator(btc, BuiltIn::Bollinger)
+                .unwrap()
+                .0,
             RemoveOutcome::NotApplied
         );
         assert_eq!(
-            workspace.remove_indicator(999, BuiltIn::Rsi),
+            workspace.remove_indicator(999, BuiltIn::Bollinger),
             Err(IndicatorError::NoSuchChart)
         );
     }
@@ -644,12 +732,14 @@ mod tests {
             .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
             .chart_id;
 
-        let (outcome, config) = workspace.apply_indicator(btc, BuiltIn::Rsi, None).unwrap();
+        let (outcome, config) = workspace
+            .apply_indicator(btc, BuiltIn::Bollinger, None)
+            .unwrap();
         assert_eq!(outcome, IndicatorOutcome::Added);
-        assert!(config.show_rsi);
+        assert!(config.show_bollinger);
         assert_eq!(
             workspace
-                .apply_indicator(btc, BuiltIn::Rsi, None)
+                .apply_indicator(btc, BuiltIn::Bollinger, None)
                 .unwrap()
                 .0,
             IndicatorOutcome::AlreadyApplied
@@ -675,27 +765,242 @@ mod tests {
 
         // Only EMA takes a parameter.
         assert_eq!(
-            workspace.apply_indicator(btc, BuiltIn::Bollinger, Some(20)),
+            workspace.apply_indicator(btc, BuiltIn::TrendFlips, Some(20)),
             Err(IndicatorError::NoParameters)
         );
-        assert!(!workspace.chart_summaries()[0].indicators.show_bollinger);
+        assert!(!workspace.chart_summaries()[0].indicators.show_trend_flips);
 
         // A hidden indicator is shown again by applying it.
-        BuiltIn::Rsi.toggle_visible(&mut workspace.charts[0].indicators);
-        assert!(workspace.charts[0].indicators.hide_rsi);
+        BuiltIn::Bollinger.toggle_visible(&mut workspace.charts[0].indicators);
+        assert!(workspace.charts[0].indicators.hide_bollinger);
         assert_eq!(
             workspace
-                .apply_indicator(btc, BuiltIn::Rsi, None)
+                .apply_indicator(btc, BuiltIn::Bollinger, None)
                 .unwrap()
                 .0,
             IndicatorOutcome::Updated
         );
-        assert!(!workspace.charts[0].indicators.hide_rsi);
+        assert!(!workspace.charts[0].indicators.hide_bollinger);
 
         assert_eq!(
-            workspace.apply_indicator(999, BuiltIn::Rsi, None),
+            workspace.apply_indicator(999, BuiltIn::Bollinger, None),
             Err(IndicatorError::NoSuchChart)
         );
+    }
+
+    #[test]
+    fn rsi_is_the_bundled_pane_indicator_applied_once_and_shown_again() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let rsi = bundled::find("rsi").unwrap();
+
+        assert_eq!(
+            workspace.remove_bundled_indicator(btc, rsi),
+            Ok(RemoveOutcome::NotApplied)
+        );
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::Added)
+        );
+        let chart = &workspace.charts[0];
+        assert_eq!(chart.chart.pine_instances().len(), 1, "a pane, not a flag");
+        assert_eq!(
+            chart.chart.pine_instances()[0].script_id.as_deref(),
+            Some("builtin:rsi")
+        );
+        assert_eq!(workspace.chart_summaries()[0].bundled_shown, ["rsi"]);
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::AlreadyApplied)
+        );
+        assert_eq!(workspace.charts[0].chart.pine_instances().len(), 1);
+
+        // A hidden one is not drawn, still counts as on the chart, and applying shows it again.
+        let instance = workspace.charts[0].chart.pine_instances()[0].id;
+        workspace.charts[0].chart.set_pine_visible(instance, false);
+        assert!(workspace.chart_summaries()[0].bundled_shown.is_empty());
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::Updated)
+        );
+        assert_eq!(workspace.chart_summaries()[0].bundled_shown, ["rsi"]);
+
+        assert_eq!(
+            workspace.remove_bundled_indicator(btc, rsi),
+            Ok(RemoveOutcome::Removed)
+        );
+        assert!(workspace.charts[0].chart.pine_instances().is_empty());
+        workspace.undo(&ctx);
+        assert_eq!(workspace.charts[0].chart.pine_instances().len(), 1);
+        assert_eq!(
+            workspace.apply_bundled_indicator(999, rsi),
+            Err(IndicatorError::NoSuchChart)
+        );
+    }
+
+    #[test]
+    fn applying_a_bundled_indicator_counts_any_visible_copy() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let rsi = bundled::find("rsi").unwrap();
+        // The picker adds another copy of a bundled indicator each time it is asked.
+        assert!(
+            workspace
+                .apply_indicator_action(btc, &ui::chart::indicator_strip::Action::AddBundled(rsi))
+        );
+        assert!(
+            workspace
+                .apply_indicator_action(btc, &ui::chart::indicator_strip::Action::AddBundled(rsi))
+        );
+        let ids: Vec<u64> = workspace.charts[0]
+            .chart
+            .pine_instances()
+            .iter()
+            .map(|instance| instance.id)
+            .collect();
+        assert_eq!(ids.len(), 2);
+        let visible = |workspace: &ChartWorkspace| -> Vec<bool> {
+            workspace.charts[0]
+                .chart
+                .pine_instances()
+                .iter()
+                .map(|instance| instance.visible)
+                .collect()
+        };
+
+        workspace.charts[0].chart.set_pine_visible(ids[0], false);
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::AlreadyApplied),
+            "one is drawn: nothing to do"
+        );
+        assert_eq!(
+            visible(&workspace),
+            [false, true],
+            "the hidden one stays hidden"
+        );
+
+        workspace.charts[0].chart.set_pine_visible(ids[1], false);
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::Updated)
+        );
+        assert_eq!(
+            visible(&workspace),
+            [true, false],
+            "exactly one is shown again"
+        );
+        assert_eq!(workspace.charts[0].chart.pine_instances().len(), 2);
+    }
+
+    #[test]
+    fn rsi_is_added_beside_the_panes_a_chart_already_has() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        for id in ["stochastic", "rsi", "macd"] {
+            workspace
+                .apply_bundled_indicator(btc, bundled::find(id).unwrap())
+                .unwrap();
+        }
+        let ids: Vec<_> = workspace.charts[0]
+            .chart
+            .pine_instances()
+            .iter()
+            .filter_map(|instance| instance.script_id.clone())
+            .collect();
+        assert_eq!(ids, ["builtin:stochastic", "builtin:rsi", "builtin:macd"]);
+    }
+
+    /// A workspace restored from what `saved` holds, as a restart does.
+    fn reopened(
+        workspace: &ChartWorkspace,
+        saved: crate::workspace::PersistedWorkspace,
+        ctx: &egui::Context,
+    ) -> ChartWorkspace {
+        ChartWorkspace::restored(
+            saved,
+            workspace.watchlist.clone(),
+            workspace.quote_book.clone(),
+            workspace.quote_coordinator.clone(),
+            workspace.store.clone(),
+            ctx,
+        )
+    }
+
+    #[test]
+    fn a_layout_saved_with_the_old_rsi_flag_opens_with_the_rsi_pane() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        workspace.add_pine_instance_to(
+            btc,
+            "script".into(),
+            "Mine",
+            "//@version=6\nindicator(\"Mine\")\nplot(close)",
+            &HashMap::new(),
+            true,
+        );
+        let mut saved = workspace.persisted();
+        saved.charts[0].indicators.show_rsi = true;
+        saved.charts[0].indicators.show_ema = true;
+
+        let restored = reopened(&workspace, saved, &ctx);
+        let chart = &restored.charts[0];
+        let scripts: Vec<_> = chart
+            .chart
+            .pine_instances()
+            .iter()
+            .map(|instance| (instance.script_id.clone().unwrap(), instance.visible))
+            .collect();
+        assert_eq!(
+            scripts,
+            [
+                ("script".to_owned(), true),
+                ("builtin:rsi".to_owned(), true)
+            ],
+            "the user's script is kept and the RSI is a pane beside it"
+        );
+        assert!(!chart.indicators.show_rsi, "the flag is spent");
+        assert!(chart.indicators.show_ema, "the other built-ins stay");
+
+        // Saved again it holds the pane and no flag, so the next open adds nothing.
+        let saved_again = restored.persisted();
+        assert!(!saved_again.charts[0].indicators.show_rsi);
+        let reopened_again = reopened(&restored, saved_again, &ctx);
+        assert_eq!(reopened_again.charts[0].chart.pine_instances().len(), 2);
+
+        // A flag another build wrote back beside the pane does not add a second one.
+        let mut mixed = restored.persisted();
+        mixed.charts[0].indicators.show_rsi = true;
+        let reopened_mixed = reopened(&restored, mixed, &ctx);
+        assert_eq!(reopened_mixed.charts[0].chart.pine_instances().len(), 2);
+    }
+
+    #[test]
+    fn an_rsi_hidden_with_its_eye_opens_as_a_hidden_pane() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
+        let mut saved = workspace.persisted();
+        saved.charts[0].indicators.show_rsi = true;
+        saved.charts[0].indicators.hide_rsi = true;
+
+        let restored = reopened(&workspace, saved, &ctx);
+        let instances = restored.charts[0].chart.pine_instances();
+        assert_eq!(instances.len(), 1);
+        assert!(!instances[0].visible);
+        assert!(!restored.charts[0].indicators.hide_rsi);
     }
 
     #[test]
@@ -788,14 +1093,14 @@ mod tests {
         assert!(scripts(&workspace, a).is_empty());
 
         // A native one flips its flag, and takes it off again.
-        assert!(workspace.apply_indicator_action(a, &Action::Add(BuiltIn::Rsi)));
-        assert!(workspace.charts[0].indicators.show_rsi);
-        assert!(workspace.apply_indicator_action(a, &Action::Remove(BuiltIn::Rsi)));
-        assert!(!workspace.charts[0].indicators.show_rsi);
+        assert!(workspace.apply_indicator_action(a, &Action::Add(BuiltIn::Bollinger)));
+        assert!(workspace.charts[0].indicators.show_bollinger);
+        assert!(workspace.apply_indicator_action(a, &Action::Remove(BuiltIn::Bollinger)));
+        assert!(!workspace.charts[0].indicators.show_bollinger);
 
         // Actions that are not add/remove are left to the caller; a missing chart changes nothing.
         assert!(!workspace.apply_indicator_action(a, &Action::OpenIndicatorSettings));
-        assert!(!workspace.apply_indicator_action(999, &Action::Add(BuiltIn::Rsi)));
+        assert!(!workspace.apply_indicator_action(999, &Action::Add(BuiltIn::Bollinger)));
         assert!(!workspace.apply_indicator_action(999, &Action::AddBundled(macd)));
 
         // A line chart takes nothing.
@@ -806,12 +1111,12 @@ mod tests {
             )
             .chart_id;
         assert!(!workspace.apply_indicator_action(line, &Action::AddBundled(macd)));
-        assert!(!workspace.apply_indicator_action(line, &Action::Add(BuiltIn::Rsi)));
+        assert!(!workspace.apply_indicator_action(line, &Action::Add(BuiltIn::Bollinger)));
         assert!(
             !workspace
                 .charts
                 .iter()
-                .any(|c| c.id == line && c.indicators.show_rsi)
+                .any(|c| c.id == line && c.indicators.show_bollinger)
         );
     }
 }

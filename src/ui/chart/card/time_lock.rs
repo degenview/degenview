@@ -5,7 +5,6 @@
 //! plot and to each script pane. It is neither a drawing nor part of linked-chart navigation.
 
 use super::{ChartCard, Projection};
-use crate::format;
 use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::chart::canvas::{self, CanvasStyle};
 use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Vec2};
@@ -48,7 +47,7 @@ impl ChartCard {
                 canvas::vertical(painter, x, (pane.top(), pane.bottom()), line);
             }
         }
-        let width = 116.0 * style.time_size / 9.0;
+        let width = self.time_tag_width(style);
         let tag = Rect::from_center_size(
             Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
             Vec2::new(width, style.time_axis_height() - 6.0),
@@ -61,7 +60,7 @@ impl ChartCard {
         painter.text(
             tag.center(),
             Align2::CENTER_CENTER,
-            format::timestamp(time_ms),
+            self.time_text(time_ms),
             style.time_font(),
             Color32::WHITE,
         );

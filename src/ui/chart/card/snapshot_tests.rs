@@ -176,7 +176,6 @@ fn comparison_overlays_snapshot_as_they_draw() {
 pub(super) fn everything_on() -> IndicatorConfig {
     IndicatorConfig {
         show_volume: true,
-        show_rsi: true,
         show_ema: true,
         show_bollinger: true,
         show_trend_flips: true,
@@ -764,6 +763,42 @@ fn gallery_of_the_lines_channels_and_pitchforks() {
         }
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// RSI beside the panes a chart already has, as pictures of the chart: Stochastic and RSI (the
+/// chart where RSI was drawn over the candles), then MACD under them.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_rsi -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_rsi_in_its_own_pane() {
+    use super::canvas_tests::add_bundled;
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let picture = |harness: &mut Harness, name: &str| {
+        settled(harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let scene = harness
+            .card
+            .snapshot_scene(&input(harness, false), dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
+        std::fs::write(dir.join(format!("{name}.png")), png).expect("written");
+    };
+    let mut alone = Harness::new(ChartCanvas::default());
+    add_bundled(&mut alone, "rsi");
+    picture(&mut alone, "rsi-1-alone");
+
+    let mut harness = Harness::new(ChartCanvas::default());
+    add_bundled(&mut harness, "stochastic");
+    add_bundled(&mut harness, "rsi");
+    picture(&mut harness, "rsi-2-after-stochastic");
+    add_bundled(&mut harness, "macd");
+    picture(&mut harness, "rsi-3-then-macd");
 }
 
 /// One drawing's worth of pivots for every pattern, Elliott wave and cycle tool, in the last stretch
@@ -1794,4 +1829,89 @@ fn a_snapshot_never_holds_what_the_demonstration_cursor_marked() {
         before,
         "and the snapshot does not know them"
     );
+}
+
+// MARK: A script on a real market
+
+/// A script run over candles read from a file, written as a PNG: what the chart draws for it, to
+/// put beside the same script on another charting platform.
+///
+/// `DEGENVIEW_GALLERY_DIR=<dir> DEGENVIEW_SCRIPT=<file.pine> DEGENVIEW_CANDLES=<file.csv> cargo test
+/// --lib gallery_of_a_script -- --ignored`, with `DEGENVIEW_VISIBLE=<bars>` to set how many bars
+/// are on screen. The candles are `open_time_ms,open,high,low,close,volume` lines, oldest first.
+#[test]
+#[ignore = "writes an image for a person to look at"]
+fn gallery_of_a_script() {
+    let (Some(dir), Some(script), Some(candles)) = (
+        std::env::var_os("DEGENVIEW_GALLERY_DIR"),
+        std::env::var_os("DEGENVIEW_SCRIPT"),
+        std::env::var_os("DEGENVIEW_CANDLES"),
+    ) else {
+        return;
+    };
+    let source = std::fs::read_to_string(script).expect("the script");
+    let rows = std::fs::read_to_string(candles).expect("the candles");
+    let times: Vec<i64> = rows
+        .lines()
+        .filter_map(|line| line.split(',').next()?.trim().parse().ok())
+        .take(2)
+        .collect();
+    assert!(times.len() == 2, "the candles need at least two rows");
+    let step = times[1] - times[0];
+    assert!(
+        step > 0 && step % 60_000 == 0,
+        "the candles must be a whole number of minutes apart, oldest first"
+    );
+    let bars: Vec<Kline> = rows
+        .lines()
+        .filter_map(|line| {
+            let v: Vec<f64> = line
+                .split(',')
+                .filter_map(|v| v.trim().parse().ok())
+                .collect();
+            let [time, open, high, low, close, volume] = v[..] else {
+                return None;
+            };
+            Some(Kline {
+                open_time: time as i64,
+                close_time: time as i64 + step - 1,
+                open,
+                high,
+                low,
+                close,
+                volume,
+            })
+        })
+        .collect();
+    assert!(!bars.is_empty(), "candles were read");
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness.candles = bars;
+    harness
+        .card
+        .set_timeframe(Timeframe::parse(&format!("{}m", step / 60_000)).expect("a timeframe"));
+    if let Some(count) = std::env::var("DEGENVIEW_VISIBLE")
+        .ok()
+        .and_then(|count| count.parse().ok())
+    {
+        harness.card.set_visible_candles(count);
+    }
+    let id = harness.card.add_pine_instance(None, "Script", &source);
+    // A real script over thousands of bars takes far longer than the card tests' few seconds.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+    while harness.card.pine_status(id).is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the script never finished"
+        );
+        harness.frame();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if let Some(error) = harness.card.pine_status(id).and_then(|status| status.error) {
+        panic!("the script failed: {error:?}");
+    }
+    settled(&mut harness);
+    let image = crate::service::snapshot::raster::rasterize(&scene_of(&harness, SnapshotScale::X2))
+        .expect("drawn");
+    let png = crate::service::snapshot::export::encode_png(&image).expect("a PNG");
+    std::fs::write(std::path::PathBuf::from(dir).join("script.png"), png).expect("written");
 }

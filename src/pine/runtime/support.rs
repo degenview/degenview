@@ -174,6 +174,7 @@ impl LibraryLinkage {
                             .map(|p| self.canonical(p, key, &declared_types))
                             .collect(),
                         body.clone(),
+                        statement.range().start.offset,
                     );
                     function.scope = Some(key.to_owned());
                     function.is_exported = library.exported_names.contains(name);

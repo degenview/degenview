@@ -641,22 +641,20 @@ pub struct PineEditResult {
     pub compile_warning: Option<String>,
 }
 
-/// The built-in indicators the app actually has, from the same list the chart menu uses.
+/// The indicators `degenview_add_indicator` takes: the built-ins and RSI, the bundled one that
+/// stands with them.
 pub fn indicator_catalog() -> Vec<IndicatorSpecInfo> {
     use crate::model::{
         BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, BuiltIn, EMA_DEFAULT_PERIOD, EMA_PERIODS,
-        RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD, SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
+        SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
     };
-    BuiltIn::ALL
+    let mut specs: Vec<IndicatorSpecInfo> = BuiltIn::ALL
         .into_iter()
         .map(|kind| IndicatorSpecInfo {
             id: kind.id().to_owned(),
             title: kind.menu_title().to_owned(),
             description: match kind {
                 BuiltIn::Volume => "Traded volume bars under the price.".to_owned(),
-                BuiltIn::Rsi => format!(
-                    "Relative Strength Index over {RSI_PERIOD} periods, with {RSI_OVERSOLD}/{RSI_OVERBOUGHT} levels. Fixed settings."
-                ),
                 BuiltIn::Ema => "Exponential moving average of closes.".to_owned(),
                 BuiltIn::Bollinger => format!(
                     "Bollinger Bands: {BOLLINGER_PERIOD}-period average with bands {BOLLINGER_MULTIPLIER} standard deviations out. Fixed settings."
@@ -686,7 +684,21 @@ pub fn indicator_catalog() -> Vec<IndicatorSpecInfo> {
                 Vec::new()
             },
         })
-        .collect()
+        .collect();
+    // RSI is a bundled Pine indicator with a pane of its own, listed where it always was.
+    specs.insert(
+        1,
+        IndicatorSpecInfo {
+            id: "rsi".to_owned(),
+            title: "RSI".to_owned(),
+            description: "Relative Strength Index over 14 periods, with 30/70 levels, in a pane of its own. Fixed settings."
+                .to_owned(),
+            placement: IndicatorPlacement::Pane,
+            chart_types: vec!["candles".to_owned(), "line".to_owned()],
+            parameters: Vec::new(),
+        },
+    );
+    specs
 }
 
 #[cfg(test)]

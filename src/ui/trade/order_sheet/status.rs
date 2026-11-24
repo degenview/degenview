@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use super::state::SheetState;
+use crate::i18n::tr;
 use crate::trading::draft::{DraftCheck, DraftField};
 use crate::trading::model::VenueInfo;
 use crate::ui::icons::{self, Icon};
@@ -68,7 +69,7 @@ pub(super) fn line(
     match gate {
         PreviewGate::Waiting | PreviewGate::Stale => {
             ui.label(kit::text(
-                format!("Checking with {}…", info.name),
+                tr!("Checking with {name}…", name = info.name),
                 kit::size::CAPTION + 1.0,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -77,11 +78,15 @@ pub(super) fn line(
         PreviewGate::Failed(text) => {
             note(
                 ui,
-                &format!("{} could not check this order: {text}", info.name),
+                &tr!(
+                    "{name} could not check this order: {text}",
+                    name = info.name,
+                    text = text
+                ),
                 true,
             );
             ui.add_space(6.0);
-            if kit::sheet_button(ui, "Try again", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Try again"), false, true).clicked() {
                 state.preview.retry(now);
             }
         }
@@ -112,7 +117,7 @@ pub(super) fn why_not(
     replay: bool,
 ) -> Option<String> {
     if replay {
-        return Some("Not available during replay.".to_owned());
+        return Some(tr!("Not available during replay.").to_owned());
     }
     if let Some(text) = paused {
         return Some(text.to_owned());
@@ -123,19 +128,21 @@ pub(super) fn why_not(
     if let Some(field) = check.missing.first() {
         return Some(
             match field {
-                DraftField::Size => "Enter an amount.",
-                DraftField::Price => "Enter a price.",
-                DraftField::StopPrice => "Enter a stop price.",
-                _ => "The order is not complete.",
+                DraftField::Size => tr!("Enter an amount."),
+                DraftField::Price => tr!("Enter a price."),
+                DraftField::StopPrice => tr!("Enter a stop price."),
+                _ => tr!("The order is not complete."),
             }
             .to_owned(),
         );
     }
     match gate {
         PreviewGate::Ready => None,
-        PreviewGate::Waiting | PreviewGate::Stale => Some("Checking the order first.".to_owned()),
-        PreviewGate::Failed(_) => Some("The order could not be checked.".to_owned()),
-        PreviewGate::Blocked => Some("The venue would refuse this order.".to_owned()),
+        PreviewGate::Waiting | PreviewGate::Stale => {
+            Some(tr!("Checking the order first.").to_owned())
+        }
+        PreviewGate::Failed(_) => Some(tr!("The order could not be checked.").to_owned()),
+        PreviewGate::Blocked => Some(tr!("The venue would refuse this order.").to_owned()),
     }
 }
 

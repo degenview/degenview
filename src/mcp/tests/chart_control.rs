@@ -119,12 +119,15 @@ fn a_refused_timeframe_says_why_and_what_is_accepted() {
         &url,
         "tok",
         "degenview_set_timeframe",
-        json!({"workspace_id": "1", "timeframe": "30s"}),
+        json!({"workspace_id": "1", "timeframe": "60s"}),
     );
     assert_eq!(error_code(&result), "INVALID_ARGUMENT");
     let message = result["structuredContent"]["message"].as_str().unwrap();
-    assert!(message.contains("Seconds aren't supported"), "{message}");
-    assert!(message.contains("m minutes, h hours"), "{message}");
+    assert!(message.contains("Seconds go from 1 to 59"), "{message}");
+    assert!(
+        message.contains("s seconds, m minutes, h hours"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -134,7 +137,7 @@ fn bad_arguments_never_reach_the_app() {
     for (tool, arguments) in [
         (
             "degenview_set_timeframe",
-            json!({"workspace_id": "1", "timeframe": "30s"}),
+            json!({"workspace_id": "1", "timeframe": "60s"}),
         ),
         (
             "degenview_set_timeframe",

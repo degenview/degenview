@@ -27,6 +27,9 @@ pub mod taker_flow;
 pub mod watchlist;
 pub mod webhook;
 
+#[cfg(test)]
+mod i18n_tests;
+
 pub use chart::appearance::ChartAppearance;
 pub use chart::canvas::ChartCanvas;
 pub use chart::kind::{ChartKind, ChartStyle, ChartType};
@@ -48,8 +51,8 @@ pub use drawings::{
 };
 pub use indicators::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, BollingerSeries, BuiltIn, EMA_DEFAULT_PERIOD,
-    EMA_PERIODS, IndicatorConfig, IndicatorSeries, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD,
-    SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
+    EMA_PERIODS, IndicatorConfig, IndicatorSeries, RSI_PERIOD, SUPERTREND_MULTIPLIER,
+    SUPERTREND_PERIOD,
 };
 pub use indicators::{bollinger, ema, rsi, supertrend_flips};
 pub use market::instrument::InstrumentId;

@@ -5,6 +5,7 @@
 use degenview_brokers::{Decimal, Side};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Ui, Vec2, pos2, vec2};
 
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::trading::model::OrderClass;
 use crate::ui::icons::{self, Icon};
@@ -248,8 +249,10 @@ pub fn number_field(ui: &mut Ui, text: &mut String, input: &NumberInput, is_erro
         );
         inner.spacing_mut().item_spacing.x = 4.0;
         // Right to left: + is the last button, − sits before it.
-        for (icon, direction, hint) in [(Icon::Plus, 1, "Increase"), (Icon::Minus, -1, "Decrease")]
-        {
+        for (icon, direction, hint) in [
+            (Icon::Plus, 1, tr!("Increase")),
+            (Icon::Minus, -1, tr!("Decrease")),
+        ] {
             if step_button(&mut inner, icon, hint) {
                 let current = parse_decimal(text).ok().flatten().or(start);
                 if let Some(current) = current {
@@ -355,8 +358,8 @@ pub fn side_tabs(ui: &mut Ui, side: &mut Side) {
         egui::StrokeKind::Inside,
     );
     for (index, (value, label, tint)) in [
-        (Side::Buy, "Buy", theme::UP),
-        (Side::Sell, "Sell", theme::DOWN),
+        (Side::Buy, tr!("Buy"), theme::UP),
+        (Side::Sell, tr!("Sell"), theme::DOWN),
     ]
     .into_iter()
     .enumerate()
@@ -366,7 +369,7 @@ pub fn side_tabs(ui: &mut Ui, side: &mut Side) {
             vec2(half, HEIGHT),
         );
         let response = ui
-            .interact(tab, Id::new(("trade-side-tab", label)), Sense::click())
+            .interact(tab, Id::new(("trade-side-tab", index)), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let response = crate::ui::accessibility::label(response, label);
         let chosen = *side == value;
@@ -430,7 +433,7 @@ pub fn class_tiles(
             vec2(width, HEIGHT),
         );
         let response = ui
-            .interact(tile, Id::new(("trade-class-tile", *label)), Sense::click())
+            .interact(tile, Id::new(("trade-class-tile", index)), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let response = crate::ui::accessibility::label(response, *label);
         let chosen = *class == *value;

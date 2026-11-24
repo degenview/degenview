@@ -229,7 +229,17 @@ pub enum Statement {
     },
 }
 
+/// Starts the name of a declaration the session adds to its own copy of the program
+/// (`call_binding::hoist`). No script can write it, and nothing that shows names, stops at
+/// statements or times them (the debugger, the profiler) includes such a declaration.
+pub const SYNTHETIC: char = '\u{1}';
+
 impl Statement {
+    /// Whether the session added this statement: it is not in the script's text.
+    pub fn is_synthetic(&self) -> bool {
+        matches!(self, Self::Declaration { name, .. } if name.starts_with(SYNTHETIC))
+    }
+
     /// Where the statement starts, as the parser ranged it. Ranges are start-anchored: a
     /// declaration is ranged at its name, a block statement at its keyword, an expression
     /// statement at its first token.

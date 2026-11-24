@@ -45,8 +45,8 @@ fn indicators_hidden_in_the_chart_and_hidden_drawings_do_not_count() {
         .drawings
         .iter_mut()
         .for_each(|drawing| drawing.set_hidden(true));
-    hidden_parts.indicators.show_rsi = true;
-    hidden_parts.indicators.hide_rsi = true;
+    hidden_parts.indicators.show_ema = true;
+    hidden_parts.indicators.hide_ema = true;
     let capture = ChartCapture::new(fixture.card(), hidden_parts, 1.0, None).expect("captured");
     assert!(!capture.has_drawings(), "a hidden drawing is not drawn");
     assert!(

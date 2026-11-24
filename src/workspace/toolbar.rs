@@ -2,6 +2,7 @@
 
 use super::alerts::AlertRequest;
 use super::{ChartWorkspace, WorkspaceAction};
+use crate::i18n::tr;
 use crate::model::{ChartType, DataSource, Timeframe};
 use crate::ui::chart::settings::ChartSettingsState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
@@ -57,7 +58,7 @@ impl ChartWorkspace {
             timeframe: self.timeframe,
             pinned: &pinned,
             sources: &sources,
-            layout_name: self.layout.active_view_name().unwrap_or("Unnamed"),
+            layout_name: self.layout.active_view_name().unwrap_or(tr!("Unnamed")),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
             // nothing is going to save it.
             unsaved: dirty && !(autosave_on && !self.layout.autosave_failed()),

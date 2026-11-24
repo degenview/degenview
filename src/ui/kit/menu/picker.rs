@@ -24,6 +24,44 @@ pub fn menu_picker(
     menu_picker_hinted(ui, width, labels, selected, enabled, "")
 }
 
+/// `menu_picker` whose trigger is wide enough to show every choice whole, and never narrower than
+/// `min_width`: for a picker whose choices are words the app writes, which a translation can
+/// lengthen. A trigger of a fixed width suits a choice the user types, which is cut with an
+/// ellipsis there.
+pub fn menu_picker_fitted(
+    ui: &mut Ui,
+    min_width: f32,
+    labels: &[String],
+    selected: usize,
+    enabled: bool,
+) -> Option<usize> {
+    let widest = labels
+        .iter()
+        .map(|label| {
+            galley(
+                ui,
+                label,
+                size::BODY,
+                REGULAR,
+                theme::text_primary(),
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        })
+        .fold(0.0_f32, f32::max);
+    menu_picker(
+        ui,
+        min_width.max(widest.ceil() + TRIGGER_INSET),
+        labels,
+        selected,
+        enabled,
+    )
+}
+
+/// The room a picker's trigger keeps beside its text: the left padding and the chevron.
+const TRIGGER_INSET: f32 = 30.0;
+
 /// `menu_picker` that shows `hint`, quietly, while `selected` is not one of `labels`.
 pub fn menu_picker_hinted(
     ui: &mut Ui,
@@ -40,11 +78,18 @@ pub fn menu_picker_hinted(
         theme::text_tertiary()
     };
     let current = chosen_label.unwrap_or(hint);
-    let text = galley(ui, current, size::BODY, REGULAR, color, width - 30.0);
+    let text = galley(
+        ui,
+        current,
+        size::BODY,
+        REGULAR,
+        color,
+        width - TRIGGER_INSET,
+    );
     let truncated = galley(ui, current, size::BODY, REGULAR, color, f32::INFINITY)
         .size()
         .x
-        > width - 30.0 + 0.5;
+        > width - TRIGGER_INSET + 0.5;
     let sense = if enabled {
         Sense::click()
     } else {

@@ -1,6 +1,7 @@
 //! The value range strip: where the value stands between its lowest and highest point.
 
 use super::{RANGE_HEIGHT, StatisticsInput};
+use crate::i18n::tr;
 use crate::model::portfolio::statistics::PortfolioStatistics;
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, time_text::date_text};
 use crate::ui::portfolio::blocks::{caption_color, card_frame, text_at};
@@ -19,7 +20,7 @@ pub(super) fn range_strip(ui: &mut Ui, input: &StatisticsInput, stats: &Portfoli
         ui,
         pos2(left, rect.top() + 13.0),
         Align2::LEFT_TOP,
-        "Value Range",
+        tr!("Value Range"),
         kit::size::CAPTION,
         REGULAR,
         secondary,
@@ -37,7 +38,10 @@ pub(super) fn range_strip(ui: &mut Ui, input: &StatisticsInput, stats: &Portfoli
             ui,
             pos2(right, rect.top() + 13.0),
             Align2::RIGHT_TOP,
-            &format!("{:.0}% of the way up", position * 100.0),
+            &tr!(
+                "{percent}% of the way up",
+                percent = format!("{:.0}", position * 100.0)
+            ),
             kit::size::CAPTION,
             REGULAR,
             secondary,
@@ -63,14 +67,16 @@ pub(super) fn range_strip(ui: &mut Ui, input: &StatisticsInput, stats: &Portfoli
     }
 
     let with_date = rect.width() >= 480.0;
-    for (extreme, label, anchor, align) in [
-        (stats.low, "Low", left, Align2::LEFT_TOP),
-        (stats.high, "High", right, Align2::RIGHT_TOP),
+    for (extreme, is_low, anchor, align) in [
+        (stats.low, true, left, Align2::LEFT_TOP),
+        (stats.high, false, right, Align2::RIGHT_TOP),
     ] {
         let money = extreme.map_or("—".to_owned(), |e| f.money(e.value));
-        let note = match extreme {
-            Some(e) if with_date => format!("{label} \u{00B7} {}", on(e.timestamp)),
-            _ => label.to_owned(),
+        let note = match (extreme, is_low) {
+            (Some(e), true) if with_date => tr!("Low · {date}", date = on(e.timestamp)),
+            (Some(e), false) if with_date => tr!("High · {date}", date = on(e.timestamp)),
+            (_, true) => tr!("Low").to_owned(),
+            (_, false) => tr!("High").to_owned(),
         };
         let top = rect.top() + 58.0;
         let figure = text_at(

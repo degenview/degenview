@@ -2,6 +2,7 @@
 //! trades and the journal, plus the account metrics strip. Pure views over plain values that
 //! return actions; the host owns the store and the engine.
 
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::paper::format::{self as fmt, BadgeTone, PnlTone, pnl_tone};
 use crate::model::paper::{
     PaperClosedTrade, PaperCurrency, PaperInstrument, PaperJournalEntry, PaperOrderEvent,
@@ -63,11 +64,11 @@ impl PaperTab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Positions => "Positions",
-            Self::Orders => "Orders",
-            Self::History => "History",
-            Self::Trades => "Trades",
-            Self::Journal => "Journal",
+            Self::Positions => tr!("Positions"),
+            Self::Orders => tr!("Orders"),
+            Self::History => tr!("History"),
+            Self::Trades => tr!("Trades"),
+            Self::Journal => tr!("Journal"),
         }
     }
 }
@@ -191,6 +192,33 @@ fn empty_stack(
     small_button(ui, label, true).clicked()
 }
 
+/// The Side column of the positions and closed-trades tables: 72 points, or what the LONG and SHORT
+/// tags need in the language in use, whichever is more.
+fn side_column_width(ui: &egui::Ui) -> f32 {
+    grid::tags_width(
+        ui,
+        72.0,
+        [
+            PaperPositionSide::Long.badge_text(),
+            PaperPositionSide::Short.badge_text(),
+        ],
+    )
+}
+
+/// The width of a `small_button` with `label`.
+fn small_button_width(ui: &egui::Ui, label: &str) -> f32 {
+    kit::galley(
+        ui,
+        label,
+        11.5,
+        kit::MEDIUM,
+        theme::text_primary(),
+        f32::INFINITY,
+    )
+    .size()
+    .x + 20.0
+}
+
 /// `.controlSize(.small)` push button.
 pub fn small_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
     let color = if enabled {
@@ -200,7 +228,7 @@ pub fn small_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Resp
     };
     let galley = kit::galley(ui, label, 11.5, kit::MEDIUM, color, f32::INFINITY);
     let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(galley.size().x + 20.0, 22.0),
+        egui::vec2(small_button_width(ui, label), 22.0),
         if enabled {
             egui::Sense::click()
         } else {
@@ -279,27 +307,33 @@ pub fn positions_table(
         empty(
             ui,
             Icon::ChartUptrend,
-            "No open positions",
-            "Use BUY or SELL in a chart's header to open one.",
+            tr!("No open positions"),
+            tr!("Use BUY or SELL in a chart's header to open one."),
         );
         return actions;
     }
     let currency = input.ctx.currency;
-    const COLS: [Col; 9] = [
-        col("Symbol", 130.0, 1.4, false),
-        col("Side", 72.0, 0.0, false),
-        col("Size", 90.0, 1.0, true),
-        col("Entry", 100.0, 1.0, true),
-        col("Mark", 100.0, 1.0, true),
-        col("Unrealized", 110.0, 1.0, true),
-        col("Return", 80.0, 0.8, true),
-        col("Realized", 100.0, 1.0, true),
-        col("", 104.0, 0.0, true),
+    let cols: [Col; 9] = [
+        col(tr!("Symbol"), 130.0, 1.4, false),
+        col(tr!("Side"), side_column_width(ui), 0.0, false),
+        col(tr!("Size"), 90.0, 1.0, true),
+        col(tr!("Entry"), 100.0, 1.0, true),
+        col(tr!("Mark"), 100.0, 1.0, true),
+        col(tr!("Unrealized"), 110.0, 1.0, true),
+        col(tr!("Return"), 80.0, 0.8, true),
+        col(tr!("Realized"), 100.0, 1.0, true),
+        // The "more" button, the gap and Close, which grows with its translation.
+        col(
+            "",
+            (24.0 + 4.0 + small_button_width(ui, tr!("Close")) + 2.0 * grid::CELL_PAD).max(104.0),
+            0.0,
+            true,
+        ),
     ];
     grid::show(
         ui,
         "paper-positions",
-        &COLS,
+        &cols,
         input.positions.len(),
         |ui, row, column| {
             let position = &input.positions[row];
@@ -363,31 +397,26 @@ pub fn positions_table(
                         rect,
                         more,
                         Icon::Ellipsis,
-                        "More actions",
+                        tr!("More actions"),
                         true,
                         true,
                     );
+                    let reverse = tr!("Reverse\u{2026}");
                     kit::fitted_menu(
                         ui,
                         &response,
                         egui::RectAlign::BOTTOM_END,
-                        &["Reverse\u{2026}"],
+                        &[reverse],
                         |ui| {
-                            if kit::menu_item(
-                                ui,
-                                Icon::ArrowLeftRight,
-                                "Reverse\u{2026}",
-                                true,
-                                false,
-                            ) {
+                            if kit::menu_item(ui, Icon::ArrowLeftRight, reverse, true, false) {
                                 state.pending_reverse =
                                     Some((position.account_id, position.instrument.key.clone()));
                                 ui.close();
                             }
                         },
                     );
-                    if small_button(ui, "Close", true)
-                        .on_hover_text("Close at market")
+                    if small_button(ui, tr!("Close"), true)
+                        .on_hover_text(tr!("Close at market"))
                         .clicked()
                     {
                         actions.push(PaperTableAction::ClosePosition {
@@ -419,7 +448,10 @@ fn reverse_dialog(
         state.pending_reverse = None;
         return;
     };
-    let title = format!("Reverse {} position?", position.instrument.symbol);
+    let title = tr!(
+        "Reverse {symbol} position?",
+        symbol = position.instrument.symbol
+    );
     let message = reverse_message(position.side());
     let result = kit::confirm(
         ctx,
@@ -428,7 +460,7 @@ fn reverse_dialog(
             icon: Icon::ArrowLeftRight,
             title: &title,
             message: &message,
-            destructive: "Reverse Position",
+            destructive: tr!("Reverse Position"),
         },
     );
     if result == Some(ConfirmOutcome::Confirmed) {
@@ -444,11 +476,11 @@ fn reverse_dialog(
 
 /// "Closes the long and opens an equal short at market."
 pub fn reverse_message(side: PaperPositionSide) -> String {
-    format!(
-        "Closes the {} and opens an equal {} at market.",
-        side.label().to_lowercase(),
-        if side.is_long() { "short" } else { "long" }
-    )
+    if side.is_long() {
+        tr!("Closes the long and opens an equal short at market.").to_owned()
+    } else {
+        tr!("Closes the short and opens an equal long at market.").to_owned()
+    }
 }
 
 // MARK: Working orders
@@ -467,22 +499,24 @@ pub fn history_table(ui: &mut egui::Ui, events: &[PaperOrderEvent], ctx: Context
         empty(
             ui,
             Icon::Clock,
-            "No order history",
-            "Placed, filled and canceled orders are logged here.",
+            tr!("No order history"),
+            tr!("Placed, filled and canceled orders are logged here."),
         );
         return;
     }
     let sorted = newest_first_events(events);
-    const COLS: [Col; 4] = [
-        col("Time", 140.0, 0.0, false),
-        col("Symbol", 130.0, 0.0, false),
-        col("Event", 130.0, 0.0, false),
-        col("Details", 200.0, 1.0, false),
+    // The Event column holds a status badge, which is wider in some languages.
+    let event_width = grid::badges_width(ui, 130.0, sorted.iter().map(|event| event.kind.label()));
+    let cols: [Col; 4] = [
+        col(tr!("Time"), 140.0, 0.0, false),
+        col(tr!("Symbol"), 130.0, 0.0, false),
+        col(tr!("Event"), event_width, 0.0, false),
+        col(tr!("Details"), 200.0, 1.0, false),
     ];
     grid::show(
         ui,
         "paper-history",
-        &COLS,
+        &cols,
         sorted.len(),
         |ui, row, column| {
             let event = sorted[row];
@@ -506,7 +540,11 @@ pub fn history_table(ui: &mut egui::Ui, events: &[PaperOrderEvent], ctx: Context
                         ))
                         .truncate(),
                     )
-                    .on_hover_text(format!("{}\nOrder {}", event.message, event.order_id));
+                    .on_hover_text(tr!(
+                        "{message}\nOrder {id}",
+                        message = event.message,
+                        id = event.order_id
+                    ));
                 }
             }
         },
@@ -538,28 +576,28 @@ pub fn trades_table(ui: &mut egui::Ui, trades: &[PaperClosedTrade], ctx: Context
         empty(
             ui,
             Icon::CheckmarkSeal,
-            "No closed trades",
-            "A trade appears here once a position is closed.",
+            tr!("No closed trades"),
+            tr!("A trade appears here once a position is closed."),
         );
         return;
     }
     let sorted = newest_first_trades(trades);
     let currency = ctx.currency;
-    const COLS: [Col; 9] = [
-        col("Symbol", 130.0, 1.2, false),
-        col("Side", 72.0, 0.0, false),
-        col("Size", 90.0, 1.0, true),
-        col("Entry", 100.0, 1.0, true),
-        col("Exit", 100.0, 1.0, true),
-        col("Gross", 100.0, 1.0, true),
-        col("Fees", 80.0, 0.8, true),
-        col("Net", 105.0, 1.0, true),
-        col("Closed", 140.0, 0.0, true),
+    let cols: [Col; 9] = [
+        col(tr!("Symbol"), 130.0, 1.2, false),
+        col(tr!("Side"), side_column_width(ui), 0.0, false),
+        col(tr!("Size"), 90.0, 1.0, true),
+        col(tr!("Entry"), 100.0, 1.0, true),
+        col(tr!("Exit"), 100.0, 1.0, true),
+        col(tr!("Gross"), 100.0, 1.0, true),
+        col(tr!("Fees"), 80.0, 0.8, true),
+        col(tr!("Net"), 105.0, 1.0, true),
+        col(tr!("Closed"), 140.0, 0.0, true),
     ];
     grid::show(
         ui,
         "paper-trades",
-        &COLS,
+        &cols,
         sorted.len(),
         |ui, row, column| {
             let trade = sorted[row];
@@ -627,20 +665,20 @@ pub fn journal_table(ui: &mut egui::Ui, entries: &[PaperJournalEntry], ctx: Cont
         empty(
             ui,
             Icon::Books,
-            "The journal is empty",
-            "Fills, rejections and account changes are written here.",
+            tr!("The journal is empty"),
+            tr!("Fills, rejections and account changes are written here."),
         );
         return;
     }
     let sorted = newest_first_journal(entries);
-    const COLS: [Col; 2] = [
-        col("Time", 140.0, 0.0, false),
-        col("Entry", 240.0, 1.0, false),
+    let cols: [Col; 2] = [
+        col(tr!("Time"), 140.0, 0.0, false),
+        col(tr_c!("journal entry", "Entry"), 240.0, 1.0, false),
     ];
     grid::show(
         ui,
         "paper-journal",
-        &COLS,
+        &cols,
         sorted.len(),
         |ui, row, column| {
             let entry = sorted[row];
@@ -681,50 +719,48 @@ pub struct FooterFacts<'a> {
 
 /// The one-line summary under a section's table ("2 open · Unrealized +$12.00").
 pub fn footer_note(tab: PaperTab, facts: &FooterFacts) -> String {
-    let count = |value: usize, singular: &str, plural: &str| {
-        format!("{value} {}", if value == 1 { singular } else { plural })
-    };
     let currency = facts.currency;
     match tab {
         PaperTab::Positions => {
             if facts.positions.is_empty() {
-                "No open positions".to_owned()
+                tr!("No open positions").to_owned()
             } else {
-                format!(
-                    "{} open · Unrealized {}",
-                    facts.positions.len(),
-                    fmt::signed_money(facts.unrealized_total, currency)
+                tr!(
+                    "{count} open · Unrealized {pnl}",
+                    count = facts.positions.len(),
+                    pnl = fmt::signed_money(facts.unrealized_total, currency)
                 )
             }
         }
         PaperTab::Orders => {
             if facts.working_orders == 0 {
-                "No working orders".to_owned()
+                tr!("No working orders").to_owned()
             } else {
-                format!("{} working", facts.working_orders)
+                tr!("{count} working", count = facts.working_orders)
             }
         }
         PaperTab::History => {
             if facts.events == 0 {
-                "No order events".to_owned()
+                tr!("No order events").to_owned()
             } else {
-                count(facts.events, "event", "events")
+                tr_n!(facts.events, "{count} event", "{count} events")
             }
         }
         PaperTab::Trades => match win_rate(facts.trades) {
-            None => "No closed trades".to_owned(),
-            Some(rate) => format!(
-                "{} · Win rate {}% · Net {}",
-                count(facts.trades.len(), "trade", "trades"),
-                (rate * 100.0).round() as i64,
-                fmt::signed_money(net_pnl(facts.trades), currency)
+            None => tr!("No closed trades").to_owned(),
+            Some(rate) => tr_n!(
+                facts.trades.len(),
+                "{count} trade · Win rate {rate}% · Net {net}",
+                "{count} trades · Win rate {rate}% · Net {net}",
+                rate = (rate * 100.0).round() as i64,
+                net = fmt::signed_money(net_pnl(facts.trades), currency)
             ),
         },
         PaperTab::Journal => {
             if facts.journal_entries == 0 {
-                "No journal entries".to_owned()
+                tr!("No journal entries").to_owned()
             } else {
-                count(facts.journal_entries, "entry", "entries")
+                tr_n!(facts.journal_entries, "{count} entry", "{count} entries")
             }
         }
     }
@@ -735,6 +771,25 @@ mod tests {
     use super::*;
     use crate::model::DataSource;
     use crate::model::paper::{PaperOrder, PaperOrderEventKind, PaperOrderRole, PaperOrderStatus};
+
+    #[test]
+    fn the_side_column_holds_its_tags_in_every_language() {
+        use crate::i18n::{Locale, with_locale};
+        let width = |locale: Locale| {
+            let ctx = egui::Context::default();
+            let mut width = 0.0;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                width = with_locale(locale, || side_column_width(ui));
+            });
+            output.textures_delta.clear();
+            width
+        };
+        assert_eq!(width(Locale::ENGLISH), 72.0, "English keeps its width");
+        assert!(
+            width(Locale::PSEUDO) > 72.0,
+            "the longer tags widen the column"
+        );
+    }
 
     fn instrument() -> PaperInstrument {
         let mut instrument = PaperInstrument::chart("BTCUSDT", "Bitcoin", DataSource::Binance);

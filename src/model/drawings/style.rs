@@ -5,6 +5,7 @@
 //! Colours are straight `[r, g, b, a]` bytes where the alpha is the opacity (as in the chart
 //! canvas), and every struct decodes from an older or partial row through `#[serde(default)]`.
 
+use crate::i18n::tr;
 use crate::model::chart::kind::{LineDash, PriceSource, Rgba};
 use crate::model::fib::style::FibStyle;
 use crate::model::forecast::style::{
@@ -73,11 +74,11 @@ pub enum HorizontalAlign {
 impl HorizontalAlign {
     pub const ALL: [Self; 3] = [Self::Left, Self::Center, Self::Right];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Left => "Left",
-            Self::Center => "Center",
-            Self::Right => "Right",
+            Self::Left => tr!("Left"),
+            Self::Center => tr!("Center"),
+            Self::Right => tr!("Right"),
         }
     }
 }
@@ -94,11 +95,11 @@ pub enum VerticalAlign {
 impl VerticalAlign {
     pub const ALL: [Self; 3] = [Self::Top, Self::Middle, Self::Bottom];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Top => "Top",
-            Self::Middle => "Middle",
-            Self::Bottom => "Bottom",
+            Self::Top => tr!("Top"),
+            Self::Middle => tr!("Middle"),
+            Self::Bottom => tr!("Bottom"),
         }
     }
 }
@@ -160,10 +161,10 @@ pub enum LineEnd {
 impl LineEnd {
     pub const ALL: [Self; 2] = [Self::Plain, Self::Arrow];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Plain => "Plain",
-            Self::Arrow => "Arrow",
+            Self::Plain => tr!("Plain"),
+            Self::Arrow => tr!("Arrow"),
         }
     }
 }
@@ -201,11 +202,11 @@ pub enum StatsPosition {
 impl StatsPosition {
     pub const ALL: [Self; 3] = [Self::Left, Self::Center, Self::Right];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Left => "Left",
-            Self::Center => "Center",
-            Self::Right => "Right",
+            Self::Left => tr!("Left"),
+            Self::Center => tr!("Center"),
+            Self::Right => tr!("Right"),
         }
     }
 }
@@ -358,34 +359,34 @@ impl Emoji {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Star => "Star",
-            Self::StarOutline => "Outlined star",
-            Self::Flag => "Flag",
-            Self::WhiteFlag => "White flag",
-            Self::Skull => "Skull",
-            Self::Radiation => "Radiation",
-            Self::Scales => "Scales",
-            Self::Crown => "Crown",
-            Self::Dollar => "Dollar",
-            Self::Euro => "Euro",
-            Self::Pound => "Pound",
-            Self::Yen => "Yen",
-            Self::Swords => "Swords",
-            Self::Infinity => "Infinity",
-            Self::Comet => "Comet",
-            Self::Gear => "Gear",
-            Self::Atom => "Atom",
-            Self::Cycle => "Cycle",
-            Self::Pickaxe => "Pickaxe",
-            Self::Umbrella => "Umbrella",
-            Self::Snowman => "Snowman",
-            Self::Clover => "Clover",
-            Self::Peace => "Peace",
-            Self::YinYang => "Yin and yang",
-            Self::Circle => "Circle",
-            Self::Square => "Square",
+            Self::Star => tr!("Star"),
+            Self::StarOutline => tr!("Outlined star"),
+            Self::Flag => tr!("Flag"),
+            Self::WhiteFlag => tr!("White flag"),
+            Self::Skull => tr!("Skull"),
+            Self::Radiation => tr!("Radiation"),
+            Self::Scales => tr!("Scales"),
+            Self::Crown => tr!("Crown"),
+            Self::Dollar => tr!("Dollar"),
+            Self::Euro => tr!("Euro"),
+            Self::Pound => tr!("Pound"),
+            Self::Yen => tr!("Yen"),
+            Self::Swords => tr!("Swords"),
+            Self::Infinity => tr!("Infinity"),
+            Self::Comet => tr!("Comet"),
+            Self::Gear => tr!("Gear"),
+            Self::Atom => tr!("Atom"),
+            Self::Cycle => tr!("Cycle"),
+            Self::Pickaxe => tr!("Pickaxe"),
+            Self::Umbrella => tr!("Umbrella"),
+            Self::Snowman => tr!("Snowman"),
+            Self::Clover => tr!("Clover"),
+            Self::Peace => tr!("Peace"),
+            Self::YinYang => tr!("Yin and yang"),
+            Self::Circle => tr!("Circle"),
+            Self::Square => tr!("Square"),
         }
     }
 }
@@ -806,7 +807,8 @@ impl DrawingStyle {
 }
 
 /// The switches a drawing's visibility has: each is a group of timeframes, so a drawing needs no
-/// setting per length. A quarter row is 3 to 6 months, a year row 7 to 12.
+/// setting per length. The minutes row holds seconds too (the saved mask has no bit left for a
+/// row of their own). A quarter row is 3 to 6 months, a year row 7 to 12.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VisibilityRow {
     Minutes,
@@ -833,7 +835,7 @@ impl VisibilityRow {
     /// The row a timeframe is shown under.
     pub const fn of(timeframe: Timeframe) -> Self {
         match (timeframe.unit(), timeframe.count()) {
-            (TimeUnit::Minute, _) => Self::Minutes,
+            (TimeUnit::Second | TimeUnit::Minute, _) => Self::Minutes,
             (TimeUnit::Hour, _) => Self::Hours,
             (TimeUnit::Day, _) => Self::Days,
             (TimeUnit::Week, _) => Self::Weeks,
@@ -843,15 +845,15 @@ impl VisibilityRow {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Minutes => "Minute candles",
-            Self::Hours => "Hourly candles",
-            Self::Days => "Daily candles",
-            Self::Weeks => "Weekly candles",
-            Self::Months => "Monthly candles",
-            Self::Quarters => "Quarterly candles",
-            Self::Years => "Yearly candles",
+            Self::Minutes => tr!("Second and minute candles"),
+            Self::Hours => tr!("Hourly candles"),
+            Self::Days => tr!("Daily candles"),
+            Self::Weeks => tr!("Weekly candles"),
+            Self::Months => tr!("Monthly candles"),
+            Self::Quarters => tr!("Quarterly candles"),
+            Self::Years => tr!("Yearly candles"),
         }
     }
 
@@ -963,6 +965,7 @@ mod tests {
         let tf = |count, unit| Timeframe::new(count, unit).unwrap();
         let cases = [
             (Timeframe::MINUTE_1, Minutes),
+            (tf(30, TimeUnit::Second), Minutes),
             (tf(22, TimeUnit::Minute), Minutes),
             (Timeframe::HOUR_1, Hours),
             (tf(24, TimeUnit::Hour), Hours),

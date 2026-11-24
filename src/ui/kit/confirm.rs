@@ -2,6 +2,7 @@
 
 use super::RED;
 use super::dialog::{self, Dialog};
+use crate::i18n::tr;
 use crate::ui::icons::Icon;
 use eframe::egui::{self, Color32, Id};
 
@@ -86,7 +87,7 @@ pub fn notice_with(
     spec: &Notice,
     body: impl FnOnce(&mut egui::Ui),
 ) -> bool {
-    let mut dialog = Dialog::new(spec.icon, spec.tint, spec.title, spec.message, "OK");
+    let mut dialog = Dialog::new(spec.icon, spec.tint, spec.title, spec.message, tr!("OK"));
     dialog.dismiss = "";
     dialog::show(ctx, id, &dialog, body).is_some()
 }

@@ -3,9 +3,10 @@
 
 use super::names::size_of;
 use super::{
-    Arg, OPAQUE_BLACK, allocate, bind, count, force_overlay, parse, runtime_error, width_or,
+    Arg, OPAQUE_BLACK, allocate, bind, count, force_overlay, parameters, parse, runtime_error,
+    width_or,
 };
-use crate::pine::outputs::{Size, TableCell, TableOutput, TablePosition, TextAlign};
+use crate::pine::outputs::{FontFamily, Size, TableCell, TableOutput, TablePosition, TextAlign};
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue, color_value};
 use crate::pine::syntax::token::{Diagnostic, SourceRange};
@@ -14,20 +15,7 @@ pub(super) fn new_table(
     args: &[Arg],
     state: &mut RuntimeState,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(
-        args,
-        &[
-            "position",
-            "columns",
-            "rows",
-            "bgcolor",
-            "frame_color",
-            "frame_width",
-            "border_color",
-            "border_width",
-            "force_overlay",
-        ],
-    );
+    let b = bind(args, parameters("table.new"));
     let id = allocate(state);
     state.tables.insert(
         id,
@@ -57,25 +45,7 @@ pub(super) fn set_table_cell(
     state: &mut RuntimeState,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(
-        args,
-        &[
-            "table_id",
-            "column",
-            "row",
-            "text",
-            "width",
-            "height",
-            "text_color",
-            "text_halign",
-            "text_valign",
-            "text_size",
-            "bgcolor",
-            "tooltip",
-            "text_font_family",
-            "text_formatting",
-        ],
-    );
+    let b = bind(args, parameters("table.cell"));
     let Some(RuntimeValue::Ref(RefKind::Table, id)) = b.get("table_id") else {
         return Ok(RuntimeValue::Void);
     };
@@ -113,7 +83,7 @@ pub(super) fn set_table_cell(
 }
 
 /// The cell properties `table.cell` takes, by argument name; `table.cell_set_<name>` changes one.
-const CELL_PROPERTIES: [&str; 9] = [
+const CELL_PROPERTIES: [&str; 10] = [
     "text",
     "width",
     "height",
@@ -123,6 +93,7 @@ const CELL_PROPERTIES: [&str; 9] = [
     "text_size",
     "bgcolor",
     "tooltip",
+    "text_font_family",
 ];
 
 /// A cell `table.cell` was given nothing for.
@@ -134,6 +105,7 @@ fn blank_cell(column: usize, row: usize) -> TableCell {
         text_color: OPAQUE_BLACK,
         background_color: None,
         text_size: Size::Normal,
+        text_font_family: FontFamily::Default,
         column_span: 1,
         row_span: 1,
         text_horizontal_align: TextAlign::Center,
@@ -164,6 +136,10 @@ fn set_cell_property(cell: &mut TableCell, property: &str, value: &RuntimeValue)
                 parse(value.text_value(), TextAlign::Center, TextAlign::Center);
         }
         "text_size" => cell.text_size = size_of(Some(value), Size::Normal),
+        "text_font_family" => {
+            cell.text_font_family =
+                parse(value.text_value(), FontFamily::Default, FontFamily::Default);
+        }
         "tooltip" => {
             cell.tooltip = value
                 .text_value()
@@ -179,13 +155,13 @@ fn set_cell_property(cell: &mut TableCell, property: &str, value: &RuntimeValue)
 /// so the setter does not lose what it was given. `cell_set_text_font_family` and
 /// `cell_set_text_formatting` change nothing the chart draws; a script is warned at compile time.
 pub(super) fn set_cell_setter(
-    member: &str,
+    name: &str,
     args: &[Arg],
     state: &mut RuntimeState,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let property = member.strip_prefix("cell_set_").unwrap_or(member);
-    let b = bind(args, &["table_id", "column", "row", property]);
+    let property = name.strip_prefix("table.cell_set_").unwrap_or(name);
+    let b = bind(args, parameters(name));
     let Some(RuntimeValue::Ref(RefKind::Table, id)) = b.get("table_id") else {
         return Ok(RuntimeValue::Void);
     };
@@ -202,7 +178,7 @@ pub(super) fn set_cell_setter(
         return Err(runtime_error(
             "PINE4013",
             format!(
-                "table.{member} position is outside the table's {}×{} grid.",
+                "{name} position is outside the table's {}×{} grid.",
                 table.columns, table.rows
             ),
             range,
@@ -231,16 +207,7 @@ pub(super) fn merge_table_cells(
     state: &mut RuntimeState,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(
-        args,
-        &[
-            "table_id",
-            "start_column",
-            "start_row",
-            "end_column",
-            "end_row",
-        ],
-    );
+    let b = bind(args, parameters("table.merge_cells"));
     let Some(RuntimeValue::Ref(RefKind::Table, id)) = b.get("table_id") else {
         return Ok(RuntimeValue::Void);
     };
@@ -278,21 +245,7 @@ pub(super) fn merge_table_cells(
         .iter()
         .find(|cell| cell.column == start_column as usize && cell.row == start_row as usize)
         .cloned()
-        .unwrap_or_else(|| TableCell {
-            column: start_column as usize,
-            row: start_row as usize,
-            text: String::new(),
-            text_color: OPAQUE_BLACK,
-            background_color: None,
-            text_size: Size::Normal,
-            column_span: 1,
-            row_span: 1,
-            text_horizontal_align: TextAlign::Center,
-            text_vertical_align: TextAlign::Center,
-            width: 0.0,
-            height: 0.0,
-            tooltip: None,
-        });
+        .unwrap_or_else(|| blank_cell(start_column as usize, start_row as usize));
     anchor.column_span = (end_column - start_column + 1) as usize;
     anchor.row_span = (end_row - start_row + 1) as usize;
     table.cells.retain(|cell| {
@@ -308,16 +261,7 @@ pub(super) fn clear_table_cells(
     args: &[Arg],
     state: &mut RuntimeState,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(
-        args,
-        &[
-            "table_id",
-            "start_column",
-            "start_row",
-            "end_column",
-            "end_row",
-        ],
-    );
+    let b = bind(args, parameters("table.clear"));
     let Some(RuntimeValue::Ref(RefKind::Table, id)) = b.get("table_id") else {
         return Ok(RuntimeValue::Void);
     };

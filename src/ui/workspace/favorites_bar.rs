@@ -9,6 +9,7 @@
 //! position in egui's memory until the pointer is let go, and only then reports `Moved` for the
 //! caller to save.
 
+use crate::i18n::tr;
 use crate::model::drawings::favorites::{BarPrefs, Favorite, Region};
 use crate::model::{CursorMode, Tool};
 use crate::ui::workspace::cursor_menu;
@@ -241,7 +242,7 @@ fn bar_body(
         } else {
             CursorIcon::Grab
         });
-    let grip = crate::ui::accessibility::label(grip, "Move favorites toolbar");
+    let grip = crate::ui::accessibility::label(grip, tr!("Move favorites toolbar"));
     if grip.drag_started_by(PointerButton::Primary) {
         // The drag starts once the pointer has moved a little: take that distance with it.
         let (pressed_at, now) = ui
@@ -317,10 +318,10 @@ fn bar_body(
     }
 
     // A right-click lands on a button or the grip, whichever is under the pointer.
-    let rows = [(HIDE_LABEL, None)];
+    let rows = [(hide_label(), None)];
     for response in &responses {
         kit::fitted_context_menu(ui, response, &rows, |ui| {
-            if kit::menu_item(ui, icons::Icon::EyeSlash, HIDE_LABEL, true, false) {
+            if kit::menu_item(ui, icons::Icon::EyeSlash, hide_label(), true, false) {
                 actions.push(FavoritesBarAction::Hide);
                 ui.close();
             }
@@ -363,7 +364,9 @@ pub fn close_menu_on_escape(ctx: &Context, bar: Id) -> bool {
     false
 }
 
-const HIDE_LABEL: &str = "Hide favorites toolbar";
+fn hide_label() -> &'static str {
+    tr!("Hide favorites toolbar")
+}
 
 #[cfg(test)]
 mod tests {
