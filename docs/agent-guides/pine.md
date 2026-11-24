@@ -145,7 +145,14 @@
   timeframe the chart is set to (`ExecutionController::with_timeframe_seconds`, `time::bucket::seconds_of`,
   Pine's 30-day month); a price-based chart's candle length (`with_bar_seconds`, which also turns the
   footprint's intrabars off) comes first; only a caller that passes neither (tests) infers the length.
-  A chart bar's intrabars end at the bar's own close (`Session::chart_bar_end`), not at `open + length`.
+  `bar_seconds` is a length (`timeframe.in_seconds()`, comparisons between timeframes), never an extent: where a
+  time-based bar ends is its own close (`Session::bar_end`: `close_time + 1`), which `time_close`, a bar's
+  intrabar window and the completion of a higher-timeframe bar all use. Pine's month is 30 days and a real one
+  has up to 31, and a `59s` day ends in a 24 s bucket. A price-based chart's bars have no close of their own, so
+  they use the length.
+  What the provider could not give for a series (`Session::security_series`, `SeriesAnswer`) is only how things
+  stood: it is asked for again after `security_retry_after` (15 s) and at once after a rebuild, while what it did
+  give (even an empty list) is kept for the session.
 - `strategy.*` statistics: `strategy_builtins::statistic`, computed from the broker per read (trade
   lists) except equity extremes, kept by `Broker` as bars arrive (`EquityExtremes`, rolled back with
   state) and merged with the running bar. Losses negative in averages (`avg_losing_trade`), positive

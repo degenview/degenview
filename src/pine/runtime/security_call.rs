@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use super::fast_hash::FastMap;
 use super::security_slice;
-use super::session::Session;
+use super::session::{SeriesAnswer, Session};
 use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
@@ -280,19 +280,6 @@ impl Session {
 }
 
 impl Session {
-    /// Where the chart bar opening at `bar.open_time` ends: its length on, but not past the bar's
-    /// own close. A bucket cut short (the last of a day when the timeframe does not divide it) is
-    /// shorter than the chart's length, and the next bar's candles are not its own. A price-based
-    /// chart's bars have no close of their own to cut at.
-    fn chart_bar_end(&self, bar: &Kline) -> i64 {
-        let by_length = bar.open_time + (self.bar_seconds * 1000.0).round() as i64;
-        if self.fixed_bar_seconds.is_none() && bar.close_time >= bar.open_time {
-            by_length.min(bar.close_time + 1)
-        } else {
-            by_length
-        }
-    }
-
     /// Reads the call's arguments; `expression` stays unevaluated. None when the symbol or timeframe
     /// cannot be served and the script passed `ignore_invalid_*`.
     /// Whether `symbol` names the series the chart itself runs on. On a price-based chart the
@@ -393,15 +380,22 @@ impl Session {
         }))
     }
 
-    /// The provider's candles for `key`, asked once per run.
+    /// The provider's candles for `key`: asked once while it answers, and again once
+    /// [`Session::security_retry_after`] has passed if it did not (a series it could not give is a
+    /// moment, not a fact; see [`SeriesAnswer`]).
     pub(in crate::pine) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
-        if let Some(known) = self.security_series.get(&key) {
-            return known.clone();
+        if let Some(known) = self.security_series.get(&key)
+            && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
+        {
+            return known.candles.clone();
         }
         let span = match (self.first_bar_time, self.last_bar_time) {
             (Some(start_ms), Some(last)) if self.bar_seconds > 0.0 => Some(ChartSpan {
                 start_ms,
-                end_ms: last + (self.bar_seconds * 1000.0).round() as i64,
+                // Only bounds the fetch, so it errs long: the nominal length of a month is 30 days
+                // and a month is up to 31.
+                end_ms: (last + (self.bar_seconds * 1000.0).round() as i64)
+                    .max(time::bucket::end(last, self.bar_seconds)),
                 spacing_ms: (self.bar_seconds * 1000.0).round() as i64,
             }),
             _ => None,
@@ -419,7 +413,13 @@ impl Session {
         if let Some(deadline) = self.deadline_at.as_mut() {
             *deadline += asked.elapsed();
         }
-        self.security_series.insert(key, answer.clone());
+        self.security_series.insert(
+            key,
+            SeriesAnswer {
+                candles: answer.clone(),
+                asked: std::time::Instant::now(),
+            },
+        );
         answer
     }
 
@@ -713,7 +713,7 @@ impl Session {
         }
         let mut fresh = false;
         if context.flags.is_confirmed {
-            let chart_close = self.chart_bar_end(&bar);
+            let chart_close = self.bar_end(&bar);
             while state.completed_candles < candles.len() {
                 let candle = &candles[state.completed_candles];
                 if time::bucket::end(candle.open_time, request.interval) > chart_close {
@@ -778,7 +778,7 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let end = self.chart_bar_end(&bar);
+        let end = self.bar_end(&bar);
         let mut low = 0usize;
         let mut high = candles.len();
         while low < high {
@@ -2014,7 +2014,12 @@ mod tests {
             Some(Box::new(SpanOnlyProvider { seen: seen.clone() })),
             None,
         );
-        let chart = [bar(0, 10.0), bar(60_000, 11.0)];
+        // Minute bars that close when a minute ends: a bar's intrabars are the ones inside it.
+        let minute = |open_time: i64, close: f64| Kline {
+            close_time: open_time + 59_999,
+            ..bar(open_time, close)
+        };
+        let chart = [minute(0, 10.0), minute(60_000, 11.0)];
         assert!(session.load_history(&chart, false, None).is_ok());
         let output = session.output();
         assert_eq!(output.plots[0].values, [Some(0.0), Some(3.0)]);

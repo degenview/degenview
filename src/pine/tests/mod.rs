@@ -1,6 +1,8 @@
 //! End-to-end tests of the engine that belong to no single module.
 
 #[cfg(test)]
+pub(in crate::pine) mod bar_end;
+#[cfg(test)]
 pub(in crate::pine) mod bench;
 #[cfg(test)]
 pub(in crate::pine) mod chart_type;

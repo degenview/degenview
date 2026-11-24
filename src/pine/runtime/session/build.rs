@@ -162,6 +162,7 @@ impl Session {
             linkage,
             security_data,
             security_series: HashMap::new(),
+            security_retry_after: super::SECURITY_RETRY_AFTER,
             library_constants: FastMap::default(),
             constants_in_progress: HashSet::new(),
             committed: RuntimeState::default(),

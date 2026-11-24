@@ -11,7 +11,8 @@ pub mod subscription;
 use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
-use crate::model::{DataSource, Kline};
+use crate::model::market::bucket::{self, FoldPlan};
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::runtime::session::{RunError, Session};
@@ -76,6 +77,7 @@ impl KlineSecurityDataProvider {
         if key.recent_bars > 0 {
             start = start.max(chart.end_ms - chart.spacing_ms * key.recent_bars as i64);
         }
+        let start = intrabar_start(target, start);
         let candles = while_transient(&INTRABAR_RETRY_DELAYS, || {
             crate::service::fetch_klines_range(
                 source,
@@ -89,7 +91,7 @@ impl KlineSecurityDataProvider {
         if candles.is_empty() {
             return Ok(None);
         }
-        Ok(Some(construct(modifier, plan.fold(candles, false))))
+        Ok(Some(construct(modifier, fold_intrabars(plan, candles))))
     }
 
     fn series(key: &SecurityKey, chart: Option<ChartSpan>) -> Option<Vec<Kline>> {
@@ -136,6 +138,22 @@ impl SecurityDataProvider for KlineSecurityDataProvider {
         Self::remember(cache_key, &candles);
         Some(candles)
     }
+}
+
+/// Where the fetch of `target`'s intrabars starts: the opening of the bucket that holds `start_ms`.
+/// The chart's first bar and the window `MAX_INTRABAR_CANDLES` allows do not sit on the target's
+/// grid (a `59s` bucket opens 2 s before 02:00:00), so asking from them would make the first bucket
+/// a fragment whenever the history reaches further back.
+fn intrabar_start(target: Timeframe, start_ms: i64) -> i64 {
+    bucket::bucket_start_ms(target, start_ms)
+}
+
+/// The target candles of `plan` from `candles`, base candles that start where the request did and
+/// not necessarily where the market did (a history cap, the window). A first bucket the series
+/// starts inside of is a fragment with its first seconds missing and stamped as a whole candle:
+/// it is dropped. A native plan has nothing to fold.
+fn fold_intrabars(plan: FoldPlan, candles: Vec<Kline>) -> Vec<Kline> {
+    plan.fold(candles, true)
 }
 
 /// The intrabars when there are some. Nothing to build them from (`Ok(None)`): the source's own
@@ -261,6 +279,40 @@ mod tests {
             close: 1.0,
             volume: 1.0,
         }
+    }
+
+    const TWO_AM: i64 = 7_200_000;
+
+    fn seconds(start: i64, count: i64) -> Vec<Kline> {
+        (0..count).map(|index| bar(start + index * 1_000)).collect()
+    }
+
+    #[test]
+    fn the_fetch_starts_where_the_target_bucket_that_holds_the_window_opens() {
+        let fifty_nine = Timeframe::new(59, crate::model::TimeUnit::Second).unwrap();
+        // 7,200 s is 2 s into a bucket that opened at 7,198 s.
+        assert_eq!(intrabar_start(fifty_nine, TWO_AM), 7_198_000);
+        assert_eq!(intrabar_start(fifty_nine, 7_198_000), 7_198_000);
+    }
+
+    #[test]
+    fn a_history_that_starts_inside_a_bucket_loses_that_fragment_not_its_first_seconds() {
+        let fifty_nine = Timeframe::new(59, crate::model::TimeUnit::Second).unwrap();
+        let plan = DataSource::Okx.plan(fifty_nine).unwrap();
+        // OKX's 1 s history begins at 02:00:00, 2 s after the bucket that holds it opened.
+        let folded = fold_intrabars(plan, seconds(TWO_AM, 200));
+        assert_eq!(folded[0].open_time, 7_257_000, "the first whole bucket");
+        assert!(folded.iter().all(|candle| candle.open_time >= 7_257_000));
+        // From the start of its bucket the first one is whole and stays.
+        let whole = fold_intrabars(plan, seconds(7_198_000, 200));
+        assert_eq!(whole[0].open_time, 7_198_000);
+    }
+
+    #[test]
+    fn a_source_with_the_length_itself_has_nothing_to_fold() {
+        let plan = DataSource::Okx.plan(Timeframe::MINUTE_1).unwrap();
+        let minutes: Vec<Kline> = (0..5).map(|index| bar(TWO_AM + index * 60_000)).collect();
+        assert_eq!(fold_intrabars(plan, minutes.clone()), minutes);
     }
 
     #[test]

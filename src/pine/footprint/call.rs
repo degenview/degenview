@@ -244,6 +244,7 @@ impl Session {
         };
         if let Some(held) = self.security_series.get(&key) {
             let covered = held
+                .candles
                 .as_ref()
                 .is_some_and(|candles| !inside(candles).is_empty());
             if realtime {
