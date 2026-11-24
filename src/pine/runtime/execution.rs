@@ -252,11 +252,16 @@ impl ExecutionController {
         let mut error = None;
         let last_is_live = bars.last().is_some_and(|bar| !is_closed(bar, now_ms));
         let history_len = bars.len().saturating_sub(usize::from(last_is_live));
+        // The live bar's own open, not an estimate from the history: a calendar bar has no fixed length.
+        let live_open = bars
+            .last()
+            .filter(|_| last_is_live)
+            .map(|bar| bar.open_time);
         let history = &bars[..history_len];
         let seed = bars
             .last()
             .map(|bar| (bar.close_time - bar.open_time).max(0) as f64 / 1000.0);
-        if let Err(run_error) = self.session.load_history(history, last_is_live, seed) {
+        if let Err(run_error) = self.session.load_history(history, live_open, seed) {
             error = script_error(run_error);
         } else if last_is_live {
             let live = bars.last().cloned().expect("live bar");

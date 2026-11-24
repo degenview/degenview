@@ -267,7 +267,7 @@ fn realtime_ticks_do_not_advance_committed_ta_history() {
                 close: 10.0,
                 ..hourly(0)
             }],
-            true,
+            Some(3_600_000),
             None,
         )
         .unwrap();
@@ -314,6 +314,28 @@ fn realtime_ticks_do_not_advance_committed_ta_history() {
 }
 
 #[test]
+fn a_live_bar_with_no_history_before_it_is_the_chart_s_first_and_last_bar() {
+    let program = crate::pine::compiler::compile(
+        "//@version=6\nindicator(\"T\")\nplot(close)",
+        Limits::default(),
+        &crate::pine::compiler::NoLibraries,
+    );
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.load_history(&[], Some(7_200_000), None).unwrap();
+    assert_eq!(session.last_bar_time, Some(7_200_000));
+    assert_eq!(session.first_bar_time, Some(7_200_000));
+    assert_eq!(session.last_bar_index, 0);
+}
+
+#[test]
 fn once_stays_active_through_realtime_ticks_and_finishes_when_the_bar_closes() {
     let program = crate::pine::compiler::compile(
         "//@version=6\nindicator(\"T\")\nvarip int runs = 0\n\
@@ -330,7 +352,9 @@ fn once_stays_active_through_realtime_ticks_and_finishes_when_the_bar_closes() {
         None,
         None,
     );
-    session.load_history(&[hourly(0)], true, None).unwrap();
+    session
+        .load_history(&[hourly(0)], Some(3_600_000), None)
+        .unwrap();
     let runs_after = |session: &mut Session, phase: BarPhase, open_time: i64| {
         session
             .execute(

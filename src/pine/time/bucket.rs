@@ -75,6 +75,26 @@ pub fn end(start: i64, seconds: f64) -> i64 {
     }
 }
 
+/// Where the bar that opens at `open_time` closes (exclusive), for a bar length in seconds: the end of
+/// its bucket. A month, quarter or year is the calendar's, not `seconds` (Pine's nominal 30 days)
+/// long, and a length that does not divide the day is cut at midnight.
+pub fn bar_end(open_time: i64, seconds: f64) -> i64 {
+    end(start(open_time, seconds), seconds)
+}
+
+/// `time_close` of the bar that opens at `open_time`, for a bar length in seconds. A month, quarter
+/// or year closes where the calendar's does (TradingView, BTCUSDT 1M: October's bar is 31 days and
+/// February's 28, and the next bar opens at the close); any other bar closes `seconds` after it
+/// opens, as a stock's :30 hourly bar does off the UTC grid its bucket is cut on.
+pub fn close_time(open_time: i64, seconds: f64) -> i64 {
+    let month = (30 * DAY) as f64;
+    if seconds >= month && (seconds / month).fract() == 0.0 {
+        bar_end(open_time, seconds)
+    } else {
+        open_time + (seconds * 1_000.0) as i64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +143,35 @@ mod tests {
         let last = ms(2024, 1, 11, 20);
         assert_eq!(start(ms(2024, 1, 11, 23), 18_000.0), last);
         assert_eq!(end(last, 18_000.0), ms(2024, 1, 12, 0));
+    }
+
+    #[test]
+    fn a_calendar_bar_closes_where_the_calendar_does() {
+        let day = 86_400_000;
+        let month = 2_592_000.0;
+        // TradingView (BTCUSDT 1M): October 31 days, February 28 (2026), the next bar opens at the close.
+        assert_eq!(close_time(ms(2026, 10, 1, 0), month), ms(2026, 11, 1, 0));
+        assert_eq!(
+            close_time(ms(2026, 2, 1, 0), month),
+            ms(2026, 2, 1, 0) + 28 * day
+        );
+        assert_eq!(
+            close_time(ms(2026, 1, 1, 0), 3.0 * month),
+            ms(2026, 4, 1, 0)
+        );
+        // Any other bar: its length after it opens, also off the UTC grid.
+        assert_eq!(
+            close_time(ms(2026, 10, 1, 20), 5.0 * 3600.0),
+            ms(2026, 10, 2, 1)
+        );
+        assert_eq!(
+            close_time(ms(2026, 10, 1, 0) + 1_800_000, 3600.0),
+            ms(2026, 10, 1, 1) + 1_800_000
+        );
+        assert_eq!(
+            close_time(ms(2026, 10, 5, 0), 604_800.0),
+            ms(2026, 10, 12, 0)
+        );
     }
 
     #[test]

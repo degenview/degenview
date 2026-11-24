@@ -102,10 +102,7 @@ impl ChartBar {
         let last_end = flags
             .is_last
             .then_some(end)
-            .or_else(|| {
-                last_bar_time
-                    .map(|open| time::bucket::end(time::bucket::start(open, seconds), seconds))
-            })
+            .or_else(|| last_bar_time.map(|open| time::bucket::bar_end(open, seconds)))
             .unwrap_or(i64::MIN);
         Self {
             start: bar.open_time,
@@ -149,7 +146,7 @@ impl ChartBar {
     /// Where the bar closes: the end of its bucket, which is not `open_time + seconds` for a length
     /// that does not divide the day (a 5h bar opened at 20:00 closes at midnight) or a calendar month.
     fn end_of(bar: &Kline, seconds: f64) -> i64 {
-        time::bucket::end(time::bucket::start(bar.open_time, seconds), seconds)
+        time::bucket::bar_end(bar.open_time, seconds)
     }
 
     /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
@@ -569,12 +566,20 @@ impl Session {
         if let Some(known) = self.security_series.get(&key) {
             return known.clone();
         }
+        // The chart covers up to where its last bar closes, exclusive as a provider's range is. That
+        // is the later of the bar's calendar end (a 31-day month closes a day after "open + 30
+        // days": cut there the provider never sends that day's candle) and its open plus the chart's
+        // length (a stock's hourly bar opens at :30, off the UTC grid its bucket is cut on). The
+        // spacing is the nominal length a request's timeframe is compared with.
         let span = match (self.first_bar_time, self.last_bar_time) {
-            (Some(start_ms), Some(last)) if self.bar_seconds > 0.0 => Some(ChartSpan {
-                start_ms,
-                end_ms: last + (self.bar_seconds * 1000.0).round() as i64,
-                spacing_ms: (self.bar_seconds * 1000.0).round() as i64,
-            }),
+            (Some(start_ms), Some(last)) if self.bar_seconds > 0.0 => {
+                let spacing_ms = (self.bar_seconds * 1000.0).round() as i64;
+                Some(ChartSpan {
+                    start_ms,
+                    end_ms: time::bucket::bar_end(last, self.bar_seconds).max(last + spacing_ms),
+                    spacing_ms,
+                })
+            }
             _ => None,
         };
         // Waiting for the provider is not the script's running time.
@@ -1895,7 +1900,7 @@ mod tests {
             None,
         );
         session.fixed_bar_seconds = Some(2_592_000.0);
-        session.load_history(chart, false, None).expect("runs");
+        session.load_history(chart, None, None).expect("runs");
         session.output().plots[0].values.clone()
     }
 
@@ -1936,6 +1941,56 @@ mod tests {
         assert_eq!(year[11], Some(0.0), "Dec 2022 closes 2022");
         assert_eq!(year[22], Some(0.0), "Nov 2023 still reads 2022");
         assert_eq!(year[23], Some(1.0), "Dec 2023 closes 2023");
+    }
+
+    /// The open of the month `year`-`month`.
+    fn month_start(year: i64, month: i64) -> i64 {
+        crate::pine::time::calendar::make(year, month, 1, 0, 0, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn a_live_months_real_open_says_which_quarter_is_the_last() {
+        // October 2023 to March 2024 as history, April's live bar after it. The chart's length is
+        // Pine's 30 days, so "March 1 + 30 days" (how the live bar's open was once estimated) lies
+        // inside March and made January-March the last quarter. April-June is.
+        let live = Kline {
+            open_time: month_start(2024, 4),
+            close_time: month_start(2024, 5),
+            ..bar(0, 10.0)
+        };
+        let plots = loaded(
+            "plot(request.security(syminfo.tickerid, \"3M\", barstate.islast ? 1.0 : 0.0))\n\
+             plot(request.security(syminfo.tickerid, \"3M\", barstate.islast ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))\n\
+             plot(last_bar_time)",
+            TestProvider::default(),
+            &monthly_chart(2023, 10, 6),
+            2_592_000.0,
+            Some((live, month_start(2024, 4) + 10 * 86_400_000)),
+        );
+        assert_eq!(
+            plots[0][5],
+            Some(0.0),
+            "March closes Q1, which is not the last"
+        );
+        assert_eq!(
+            plots[1][6],
+            Some(1.0),
+            "on the live bar April-June is the last"
+        );
+        let april = month_start(2024, 4) as f64;
+        assert_eq!(
+            plots[2][3],
+            Some(april),
+            "the live bar's open, from the first bar on"
+        );
+    }
+
+    #[test]
+    fn a_monthly_bar_closes_when_the_next_one_opens() {
+        // TradingView (BTCUSDT 1M): `time_close` of October's bar is November 1, not October 31.
+        let closes = plotted_on_a_monthly_chart("plot(time_close)", &monthly_chart(2026, 9, 3));
+        let at = |month: i64| Some(month_start(2026, month) as f64);
+        assert_eq!(closes, [at(10), at(11), at(12)]);
     }
 
     #[test]
@@ -1983,7 +2038,7 @@ mod tests {
             None,
         );
         session
-            .load_history(&hourly_chart(0, 5), true, Some(3600.0))
+            .load_history(&hourly_chart(0, 5), Some(5 * 3_600_000), Some(3600.0))
             .expect("runs");
         let _ = session.execute(
             BarEvent {
@@ -2655,7 +2710,7 @@ mod tests {
             None,
         );
         let chart = [bar(0, 10.0), bar(60_000, 11.0)];
-        assert!(session.load_history(&chart, false, None).is_ok());
+        assert!(session.load_history(&chart, None, None).is_ok());
         let output = session.output();
         assert_eq!(output.plots[0].values, [Some(0.0), Some(3.0)]);
         // From the first bar's open to the end of the last (60 s spacing), asked once per run.
@@ -2667,6 +2722,78 @@ mod tests {
                 spacing_ms: 60_000
             }]
         );
+    }
+
+    /// Serves the candles that open in `[start, end)` of the chart's span, as a provider with a time
+    /// range endpoint does (`MarketSource::fetch_klines_range`).
+    struct RangeProvider {
+        candles: Vec<Kline>,
+    }
+
+    impl SecurityDataProvider for RangeProvider {
+        fn candles(&self, _key: &SecurityKey) -> Option<Vec<Kline>> {
+            None
+        }
+
+        fn candles_over(&self, _key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
+            Some(
+                self.candles
+                    .iter()
+                    .filter(|candle| {
+                        candle.open_time >= chart.start_ms && candle.open_time < chart.end_ms
+                    })
+                    .cloned()
+                    .collect(),
+            )
+        }
+    }
+
+    /// One daily candle per day from `first_day` for `days` days.
+    fn daily_range(first_day: i64, days: i64) -> RangeProvider {
+        RangeProvider {
+            candles: (0..days)
+                .map(|day| bar(first_day + day * 86_400_000, day as f64))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_monthly_chart_asks_the_provider_for_its_last_months_last_day() {
+        // September and October 2026 on a monthly chart whose length is Pine's 30 days: "October 1 +
+        // 30 days" ends the range on October 31 at 00:00, exclusive, and the provider never sends the
+        // 31st. The bar closes on November 1 (TradingView probe R5).
+        let days_per_bar =
+            "plot(array.size(request.security_lower_tf(syminfo.tickerid, \"D\", close)))";
+        let sep = month_start(2026, 9);
+        let plots = loaded(
+            days_per_bar,
+            daily_range(sep, 92),
+            &monthly_chart(2026, 9, 2),
+            2_592_000.0,
+            None,
+        );
+        assert_eq!(plots[0], [Some(30.0), Some(31.0)]);
+    }
+
+    #[test]
+    fn a_live_monthly_bar_asks_the_provider_for_the_whole_month() {
+        // The live bar's range ends where its month does (November 1 + 30 days is November 30, a day
+        // short): a provider that already holds the month's days sends all of them.
+        let days_per_bar =
+            "plot(array.size(request.security_lower_tf(syminfo.tickerid, \"D\", close)))";
+        let live = Kline {
+            open_time: month_start(2026, 11),
+            close_time: month_start(2026, 12),
+            ..bar(0, 10.0)
+        };
+        let plots = loaded(
+            days_per_bar,
+            daily_range(month_start(2026, 9), 92 + 30),
+            &monthly_chart(2026, 9, 2),
+            2_592_000.0,
+            Some((live, month_start(2026, 11) + 10 * 86_400_000)),
+        );
+        assert_eq!(plots[0], [Some(30.0), Some(31.0), Some(30.0)]);
     }
 
     #[test]
@@ -2748,7 +2875,7 @@ mod tests {
     /// bar ticking after it.
     fn loaded(
         source: &str,
-        provider: TestProvider,
+        provider: impl SecurityDataProvider + 'static,
         chart: &[Kline],
         seconds: f64,
         live: Option<(Kline, i64)>,
@@ -2767,7 +2894,11 @@ mod tests {
         session.fixed_bar_seconds = Some(seconds);
         session.now_ms = live.as_ref().map(|(_, now)| *now);
         session
-            .load_history(chart, live.is_some(), Some(seconds))
+            .load_history(
+                chart,
+                live.as_ref().map(|(candle, _)| candle.open_time),
+                Some(seconds),
+            )
             .expect("runs");
         if let Some((candle, _)) = live {
             let _ = session.execute(
