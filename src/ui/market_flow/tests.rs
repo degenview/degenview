@@ -658,3 +658,29 @@ fn gallery_of_the_book_menus() {
         }
     }
 }
+
+/// The close button never lies over the last mode tab: words longer than English's give it a row
+/// of its own.
+#[test]
+fn the_close_button_gets_its_own_row_when_the_mode_tabs_do_not_fit_beside_it() {
+    use crate::i18n::{Locale, with_locale};
+    let tabs = || {
+        [
+            kit::Segment::new(Mode::Liquidations, tr!("Liquidations")),
+            kit::Segment::new(Mode::TakerFlow, tr!("Taker flow")),
+            kit::Segment::new(Mode::Book, tr!("Book")),
+        ]
+    };
+    let mut screen = Screen::new(vec2(340.0, 200.0));
+    for _ in 0..3 {
+        screen.run(Vec::new(), |ui| {
+            let english = kit::segments_width(ui, &tabs());
+            let pseudo = with_locale(Locale::PSEUDO, || kit::segments_width(ui, &tabs()));
+            assert!(pseudo > english, "{english} {pseudo}");
+            // A panel the English tabs share with the button, and the pseudo-locale's do not.
+            let width = MARGIN + english + CLOSE_ROOM + 20.0;
+            assert!(tabs_fit_beside_close(english, width));
+            assert!(!tabs_fit_beside_close(pseudo, width));
+        });
+    }
+}

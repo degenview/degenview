@@ -126,40 +126,80 @@ fn liquidations(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
     footnote(ui, liquidations_footnote());
 }
 
+/// The room the close button takes at the right of the header, with the space before it.
+const CLOSE_ROOM: f32 = 26.0 + MARGIN - 2.0 + 8.0;
+/// The row the close button has to itself when the mode tabs do not fit beside it.
+const CLOSE_ROW_HEIGHT: f32 = 32.0;
+
+/// Whether the mode tabs and the close button share a row. Measured from the tabs' words, so a
+/// language whose words are longer than English drops the close button to a row of its own
+/// instead of laying it over the last tab.
+fn tabs_fit_beside_close(tabs: f32, width: f32) -> bool {
+    MARGIN + tabs + CLOSE_ROOM <= width
+}
+
 fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>) {
     let width = ui.available_width();
-    ui.allocate_ui_with_layout(
-        vec2(width, HEADER_HEIGHT),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-            ui.add_space(MARGIN);
-            kit::segmented(
-                ui,
-                egui::Id::new("market-flow-mode"),
-                &[
-                    (Mode::Liquidations, tr!("Liquidations")),
-                    (Mode::TakerFlow, tr!("Taker flow")),
-                    (Mode::Book, tr!("Book")),
-                ],
-                &mut state.mode,
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_space(MARGIN - 2.0);
-                if icons::button(
-                    ui,
-                    Icon::Xmark,
-                    26.0,
-                    theme::text_secondary(),
-                    tr!("Close market flow"),
-                )
-                .clicked()
-                {
-                    *action = Some(Action::Close);
-                }
-            });
-        },
-    );
+    let modes = [
+        kit::Segment::new(Mode::Liquidations, tr!("Liquidations")),
+        kit::Segment::new(Mode::TakerFlow, tr!("Taker flow")),
+        kit::Segment::new(Mode::Book, tr!("Book")),
+    ];
+    let id = egui::Id::new("market-flow-mode");
+    if tabs_fit_beside_close(kit::segments_width(ui, &modes), width) {
+        ui.allocate_ui_with_layout(
+            vec2(width, HEADER_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
+                ui.add_space(MARGIN);
+                mode_tabs(ui, id, &modes, state);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    close_button(ui, action)
+                });
+            },
+        );
+    } else {
+        ui.allocate_ui_with_layout(
+            vec2(width, CLOSE_ROW_HEIGHT),
+            Layout::right_to_left(Align::Center),
+            |ui| close_button(ui, action),
+        );
+        ui.allocate_ui_with_layout(
+            vec2(width, HEADER_HEIGHT - 8.0),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.add_space(MARGIN);
+                mode_tabs(ui, id, &modes, state);
+            },
+        );
+    }
+}
+
+fn mode_tabs(
+    ui: &mut Ui,
+    id: egui::Id,
+    modes: &[kit::Segment<'_, Mode>],
+    state: &mut MarketFlowState,
+) {
+    if let Some(mode) = kit::segments(ui, id, modes, state.mode, true) {
+        state.mode = mode;
+    }
+}
+
+fn close_button(ui: &mut Ui, action: &mut Option<Action>) {
+    ui.add_space(MARGIN - 2.0);
+    if icons::button(
+        ui,
+        Icon::Xmark,
+        26.0,
+        theme::text_secondary(),
+        tr!("Close market flow"),
+    )
+    .clicked()
+    {
+        *action = Some(Action::Close);
+    }
 }
 
 /// The last minute, five minutes and hour side by side, each with its total and how it splits
