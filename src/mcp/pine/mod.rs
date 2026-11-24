@@ -25,7 +25,7 @@ pub use inputs::{InputArgs, script_inputs};
 pub use scripts::{compile_script, diagnostic_info, get_script, list_scripts, script_status};
 
 use crate::mcp::bridge::McpError;
-use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::confirm::{Confirm, Gate, Operation};
 use crate::mcp::tools::{
     ADD_PINE_TO_CHART, REMOVE_PINE_INSTANCE, SAVE_PINE_SCRIPT, UPDATE_PINE_INSTANCE,
     UPDATE_PINE_SCRIPT,
@@ -118,17 +118,15 @@ impl Confirm for PineCommand {
         }
     }
 
-    fn plain_summary(&self) -> Option<(String, String)> {
+    fn plain_summary(&self) -> Option<(Operation, String)> {
         Some(match self {
-            Self::AddInstance { script, .. } => {
-                ("Apply a script to a chart".to_owned(), script.name.clone())
-            }
-            Self::UpdateInstance { .. } => ("Change a script on a chart".to_owned(), String::new()),
+            Self::AddInstance { script, .. } => (Operation::ApplyScript, script.name.clone()),
+            Self::UpdateInstance { .. } => (Operation::ChangeScript, String::new()),
             Self::EditScript {
                 script_id,
                 source: Some(_),
                 ..
-            } => ("Write a script draft".to_owned(), script_id.clone()),
+            } => (Operation::WriteScriptDraft, script_id.clone()),
             _ => return None,
         })
     }

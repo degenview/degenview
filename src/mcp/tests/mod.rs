@@ -273,10 +273,13 @@ impl Harness {
                                 origin.remote,
                                 &command,
                                 || {
-                                    let tool = crate::mcp::confirm::tool_of(&command)
-                                        .unwrap_or("a request");
+                                    use crate::mcp::confirm::Operation;
+                                    let operation = match crate::mcp::confirm::tool_of(&command) {
+                                        Some("degenview_remove_chart") => Operation::RemoveChart,
+                                        _ => Operation::DeleteAlert,
+                                    };
                                     Ok(crate::mcp::confirm::Summary::new(
-                                        format!("Run {tool}"),
+                                        operation,
                                         "the stub's target",
                                     ))
                                 },
