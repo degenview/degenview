@@ -4,6 +4,7 @@
 //! is ever shown: no avatar, counts or text are made up to fill the card.
 
 use crate::format;
+use crate::i18n::tr;
 use crate::model::annotation::link_card::{LinkCard, SERVICE};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
@@ -33,7 +34,7 @@ impl CardText {
         let fetched_title = meta
             .map(|meta| meta.title.clone())
             .filter(|t| !t.is_empty());
-        let title = fetched_title.unwrap_or_else(|| format!("Post {}", link.id));
+        let title = fetched_title.unwrap_or_else(|| tr!("Post {id}", id = link.id));
         let mut footer = Vec::new();
         match meta {
             // With the author's picture the handle is already beside it.
@@ -43,7 +44,7 @@ impl CardText {
                     footer.push(meta.author.clone());
                 }
             }
-            None => footer.push("Preview not fetched".to_owned()),
+            None => footer.push(tr!("Preview not fetched").to_owned()),
         }
         if let Some(time) = link.time_ms() {
             footer.push(format::timestamp(time));

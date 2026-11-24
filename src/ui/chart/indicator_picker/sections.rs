@@ -1,5 +1,6 @@
 //! What the picker lists for a sidebar choice. Pure: entries in, blocks of entries out.
 
+use crate::i18n::tr;
 use crate::model::indicators::catalog::{CatalogEntry, EntryKey, Family, Origin};
 use crate::ui::icons::Icon;
 use std::collections::HashSet;
@@ -26,12 +27,12 @@ pub const LIBRARY: [Section; 2] = [Section::Discover, Section::All];
 impl Section {
     pub fn title(self) -> &'static str {
         match self {
-            Self::Favorites => "Favorites",
-            Self::MyScripts => "My scripts",
-            Self::Overlays => "Overlays",
-            Self::Panes => "Separate pane",
-            Self::Discover => "Discover",
-            Self::All => "All indicators",
+            Self::Favorites => tr!("Favorites"),
+            Self::MyScripts => tr!("My scripts"),
+            Self::Overlays => tr!("Overlays"),
+            Self::Panes => tr!("Separate pane"),
+            Self::Discover => tr!("Discover"),
+            Self::All => tr!("All indicators"),
             Self::Family(family) => family.title(),
         }
     }
@@ -55,9 +56,9 @@ impl Section {
     /// What the grid says when this section has nothing in it.
     pub fn empty_message(self) -> &'static str {
         match self {
-            Self::Favorites => "No favorites yet. Star an indicator to keep it here.",
-            Self::MyScripts => "No saved scripts yet. Open Pine Studio to write one.",
-            _ => "Nothing here.",
+            Self::Favorites => tr!("No favorites yet. Star an indicator to keep it here."),
+            Self::MyScripts => tr!("No saved scripts yet. Open Pine Studio to write one."),
+            _ => tr!("Nothing here."),
         }
     }
 
@@ -85,7 +86,7 @@ pub struct Block {
 
 /// The stored keys of the indicators Discover leads with, when they exist.
 const POPULAR: [&str; 8] = [
-    "native:rsi",
+    "bundled:rsi",
     "native:ema",
     "native:bollinger",
     "bundled:macd",
@@ -137,11 +138,11 @@ pub fn blocks(
     rest.sort_by_key(|entry| scramble(shuffle, &entry.key));
     vec![
         Block {
-            heading: Some("Popular"),
+            heading: Some(tr!("Popular")),
             entries: popular,
         },
         Block {
-            heading: Some("More to explore"),
+            heading: Some(tr!("More to explore")),
             entries: rest,
         },
     ]
@@ -150,7 +151,7 @@ pub fn blocks(
 /// The results of a search across everything, as one block.
 pub fn search_blocks(all: &[CatalogEntry], query: &str) -> Vec<Block> {
     vec![Block {
-        heading: Some("Results"),
+        heading: Some(tr!("Results")),
         entries: crate::model::indicators::catalog::search(all, query),
     }]
 }

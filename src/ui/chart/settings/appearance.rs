@@ -2,6 +2,7 @@
 //! and the line colours with their preview.
 
 use super::{ChartSettingsAction, ChartSettingsContext, templates};
+use crate::i18n::{tr, tr_n};
 use crate::model::chart::price_format::MAX_DECIMALS;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::{ChartAppearance, PriceFormat, SmallPrices};
@@ -44,25 +45,29 @@ pub(super) fn appearance_page(
 pub(super) fn scale_hint(mode: PriceScaleMode) -> &'static str {
     match mode {
         PriceScaleMode::Regular => {
-            "The axis reads prices; equal price differences are equally tall."
+            tr!("The axis reads prices; equal price differences are equally tall.")
         }
         PriceScaleMode::Percent => {
-            "The change from the first bar shown, so 0% is that bar's close."
+            tr!("The change from the first bar shown, so 0% is that bar's close.")
         }
         PriceScaleMode::IndexedTo100 => {
-            "The first bar shown reads 100; the rest are 100 plus their change."
+            tr!("The first bar shown reads 100; the rest are 100 plus their change.")
         }
         PriceScaleMode::Logarithmic => {
-            "The axis reads prices; equal price ratios are equally tall."
+            tr!("The axis reads prices; equal price ratios are equally tall.")
         }
     }
 }
 
-/// The prices the example writes, each with what it stands for.
-pub(super) const PRICE_SAMPLES: [(&str, f64); 3] = [
-    ("Large", 67_432.19),
-    ("Small", 0.123_456),
-    ("Tiny", 0.000_002_78),
+/// The words that name a sample price, read in the language in use.
+type Caption = fn() -> &'static str;
+
+/// The prices the example writes, each with what it stands for (the caption is a function so it
+/// is read in the language in use).
+pub(super) const PRICE_SAMPLES: [(Caption, f64); 3] = [
+    (|| tr!("Large"), 67_432.19),
+    (|| tr!("Small"), 0.123_456),
+    (|| tr!("Tiny"), 0.000_002_78),
 ];
 
 /// How the chart writes a price (axis, crosshair, readouts, rulers): how many decimal places, and
@@ -79,8 +84,10 @@ pub(super) fn price_axis(
     let (decimals, small) = (appearance.axis_decimals, appearance.axis_small_prices);
     card::section_title(
         ui,
-        "Price axis",
-        Some("How prices are written on the axis, the crosshair and the readouts."),
+        tr!("Price axis"),
+        Some(tr!(
+            "How prices are written on the axis, the crosshair and the readouts."
+        )),
     );
     // The section title tightens the spacing for its own subtitle; the cards keep the page's.
     ui.spacing_mut().item_spacing.y = 8.0;
@@ -88,7 +95,7 @@ pub(super) fn price_axis(
     card::card(
         ui,
         Icon::PriceScale,
-        "Scale",
+        tr!("Scale"),
         Some(scale_hint(mode)),
         |ui| {
             let labels: Vec<String> = PriceScaleMode::ALL
@@ -107,10 +114,10 @@ pub(super) fn price_axis(
     card::card(
         ui,
         Icon::Hash,
-        "Decimal places",
+        tr!("Decimal places"),
         Some(&decimals_hint(decimals)),
         |ui| {
-            let labels: Vec<String> = std::iter::once("Auto".to_owned())
+            let labels: Vec<String> = std::iter::once(tr!("Auto").to_owned())
                 .chain((0..=MAX_DECIMALS).map(|places| places.to_string()))
                 .collect();
             let selected = decimals.map_or(0, |places| usize::from(places) + 1);
@@ -124,7 +131,7 @@ pub(super) fn price_axis(
     card::card_reserving(
         ui,
         Icon::Sliders,
-        "Small prices",
+        tr!("Small prices"),
         Some(&small_prices_hint(small)),
         200.0,
         |ui| {
@@ -147,22 +154,27 @@ pub(super) fn price_axis(
 
 pub(super) fn decimals_hint(decimals: Option<u8>) -> String {
     match decimals {
-        None => "Picks the precision from the price: 67,432, 12.35, 0.5864, 0.05864.".to_owned(),
-        Some(places) => format!(
-            "Shows {places} decimal place{} on the price axis.",
-            if places == 1 { "" } else { "s" }
+        None => {
+            tr!("Picks the precision from the price: 67,432, 12.35, 0.5864, 0.05864.").to_owned()
+        }
+        Some(places) => tr_n!(
+            places,
+            "Shows {count} decimal place on the price axis.",
+            "Shows {count} decimal places on the price axis."
         ),
     }
 }
 
 pub(super) fn small_prices_hint(style: SmallPrices) -> String {
     match style {
-        SmallPrices::ZeroCount => "Below 0.001 the small number counts the zeros after the \
-            point: 0.0₅278 is 0.00000278, whatever the decimal places."
-            .to_owned(),
-        SmallPrices::Decimals => "Below 0.001 every zero is written out. Automatic places keep \
-            three digits after them."
-            .to_owned(),
+        SmallPrices::ZeroCount => tr!(
+            "Below 0.001 the small number counts the zeros after the point: 0.0₅278 is 0.00000278, whatever the decimal places."
+        )
+        .to_owned(),
+        SmallPrices::Decimals => tr!(
+            "Below 0.001 every zero is written out. Automatic places keep three digits after them."
+        )
+        .to_owned(),
     }
 }
 
@@ -182,13 +194,13 @@ fn price_preview(ui: &mut Ui, format: PriceFormat) {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 3.0;
                 ui.label(kit::text(
-                    "Example",
+                    tr!("Example"),
                     12.0,
                     kit::SEMIBOLD,
                     theme::text_primary(),
                 ));
                 ui.label(kit::text(
-                    "The same prices, written the way this chart will show them.",
+                    tr!("The same prices, written the way this chart will show them."),
                     10.5,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -201,6 +213,7 @@ fn price_preview(ui: &mut Ui, format: PriceFormat) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = TILE_GAP;
             for (caption, sample) in PRICE_SAMPLES {
+                let caption = caption();
                 let (tile, _) =
                     ui.allocate_exact_size(vec2(tile_width, TILE_HEIGHT), Sense::hover());
                 kit::paint_well(ui, tile, 10.0);
@@ -229,21 +242,25 @@ fn price_preview(ui: &mut Ui, format: PriceFormat) {
 /// The colours of a market drawn as a line (prediction markets, CoinMarketCap): where it rises
 /// and where it falls, with a preview and "Reset Colors".
 fn line_colors(ui: &mut Ui, c: &mut ChartSettingsContext, templates: &mut TemplateState) {
-    card::section_title(ui, "Colors", Some("Used for rising and falling prices."));
+    card::section_title(
+        ui,
+        tr!("Colors"),
+        Some(tr!("Used for rising and falling prices.")),
+    );
     ui.spacing_mut().item_spacing.y = 8.0;
     card::card(
         ui,
         Icon::ArrowUpRight,
-        "Line up",
-        Some("Stretches where the price rises."),
-        |ui| color_well(ui, "bullish", &mut c.card.appearance_mut().bullish),
+        tr!("Line up"),
+        Some(tr!("Stretches where the price rises.")),
+        |ui| color_well(ui, tr!("bullish"), &mut c.card.appearance_mut().bullish),
     );
     card::card(
         ui,
         Icon::ArrowDownRight,
-        "Line down",
-        Some("Stretches where the price falls."),
-        |ui| color_well(ui, "bearish", &mut c.card.appearance_mut().bearish),
+        tr!("Line down"),
+        Some(tr!("Stretches where the price falls.")),
+        |ui| color_well(ui, tr!("bearish"), &mut c.card.appearance_mut().bearish),
     );
     preview_row(ui, c.card, c.store, templates);
 }
@@ -284,13 +301,13 @@ fn preview_row(
                 // Centre the two lines against the well.
                 ui.add_space(((well.height() - block) / 2.0).max(0.0));
                 ui.label(kit::text(
-                    "Preview",
+                    tr!("Preview"),
                     title_size,
                     kit::SEMIBOLD,
                     theme::text_primary(),
                 ));
                 ui.label(kit::text(
-                    "The chart behind this window updates as you pick.",
+                    tr!("The chart behind this window updates as you pick."),
                     detail_size,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -299,7 +316,7 @@ fn preview_row(
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 // Right to left: Templates first puts it after Reset Colors.
                 templates::menu(ui, templates, store, card);
-                if kit::push_button(ui, None, "Reset Colors", true).clicked() {
+                if kit::push_button(ui, None, tr!("Reset Colors"), true).clicked() {
                     let defaults = ChartAppearance::default();
                     let appearance = card.appearance_mut();
                     appearance.bullish = defaults.bullish;

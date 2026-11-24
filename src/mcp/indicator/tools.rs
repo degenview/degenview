@@ -186,7 +186,7 @@ impl DegenViewMcp {
                 ChartCommand::RemoveIndicator {
                     workspace_id,
                     chart_id,
-                    indicator: params.indicator.built_in(),
+                    indicator: params.indicator,
                 },
                 REQUEST_TIMEOUT,
             )

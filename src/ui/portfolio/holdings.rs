@@ -4,6 +4,7 @@
 //! that the saved sort has a case for writes it back. Double-click (or Return) opens the
 //! asset's transactions. Pure over `PortfolioHolding`s: the host prices them and persists.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioHoldingsSort};
 use crate::ui::accessibility;
@@ -47,14 +48,14 @@ impl HoldingsColumn {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Asset => "Asset",
-            Self::Price => "Price",
-            Self::DayChange => "24h %",
-            Self::Quantity => "Quantity",
-            Self::AverageCost => "Avg Cost",
-            Self::Value => "Value",
-            Self::Allocation => "Allocation",
-            Self::ProfitLoss => "P&L",
+            Self::Asset => tr!("Asset"),
+            Self::Price => tr!("Price"),
+            Self::DayChange => tr!("24h %"),
+            Self::Quantity => tr!("Quantity"),
+            Self::AverageCost => tr!("Avg Cost"),
+            Self::Value => tr!("Value"),
+            Self::Allocation => tr!("Allocation"),
+            Self::ProfitLoss => tr!("P&L"),
         }
     }
 
@@ -267,7 +268,7 @@ pub fn show(
             ui,
             search_id,
             &mut state.search,
-            "Search asset or name",
+            tr!("Search asset or name"),
             246.0,
         );
     });
@@ -286,7 +287,7 @@ pub fn show(
     let outer = grid::allocate_table(ui);
     grid::paint_page_frame(ui, outer);
     if input.is_loading && !input.holdings.is_empty() {
-        grid::loading_message(ui, grid::body_rect(outer), "Loading prices\u{2026}");
+        grid::loading_message(ui, grid::body_rect(outer), tr!("Loading prices\u{2026}"));
     } else if shown.is_empty() {
         let body = grid::body_rect(outer);
         if input.holdings.is_empty() {
@@ -294,16 +295,19 @@ pub fn show(
                 ui,
                 body,
                 empty::Scene::Holdings,
-                "No Holdings",
-                "Positions appear once a transaction leaves you holding an asset.",
+                tr!("No Holdings"),
+                tr!("Positions appear once a transaction leaves you holding an asset."),
             );
         } else {
             charts::empty_message(
                 ui,
                 body,
                 Icon::Magnifier,
-                &format!("No Results for \u{201C}{}\u{201D}", state.search.trim()),
-                "Check the spelling or try a new search.",
+                &tr!(
+                    "No Results for \u{201C}{search}\u{201D}",
+                    search = state.search.trim()
+                ),
+                tr!("Check the spelling or try a new search."),
             );
         }
     } else {
@@ -313,10 +317,19 @@ pub fn show(
     grid::footer(
         ui,
         outer,
-        &table::count_text(shown.len(), input.holdings.len(), ("asset", "assets")),
-        &format!(
-            "Values in {} \u{00B7} Double-click a row for its transactions",
-            input.formatter.currency.code()
+        &if shown.len() == input.holdings.len() {
+            tr_n!(input.holdings.len(), "{count} asset", "{count} assets")
+        } else {
+            tr_n!(
+                input.holdings.len(),
+                "{shown} of {count} asset",
+                "{shown} of {count} assets",
+                shown = shown.len()
+            )
+        },
+        &tr!(
+            "Values in {currency} \u{00B7} Double-click a row for its transactions",
+            currency = input.formatter.currency.code()
         ),
     );
     actions
@@ -372,7 +385,7 @@ fn summary_band(ui: &mut egui::Ui, input: &HoldingsInput) {
         ui,
         inner.left_top(),
         Align2::LEFT_TOP,
-        "Total Value",
+        tr!("Total Value"),
         kit::size::CAPTION,
         REGULAR,
         secondary,
@@ -446,7 +459,7 @@ fn summary_band(ui: &mut egui::Ui, input: &HoldingsInput) {
         ui,
         area.left_top(),
         Align2::LEFT_TOP,
-        "Allocation",
+        tr!("Allocation"),
         kit::size::CAPTION,
         REGULAR,
         secondary,
@@ -456,7 +469,11 @@ fn summary_band(ui: &mut egui::Ui, input: &HoldingsInput) {
             ui,
             area.right_top(),
             Align2::RIGHT_TOP,
-            &format!("Largest \u{00B7} {} {}", top.label, f.percent(top.share, 1)),
+            &tr!(
+                "Largest \u{00B7} {name} {share}",
+                name = top.label,
+                share = f.percent(top.share, 1)
+            ),
             kit::size::CAPTION,
             REGULAR,
             secondary,
@@ -787,7 +804,7 @@ fn holding_row(
         ui,
         cells[7],
         egui::Id::new(("portfolio-holding-menu", item.key())),
-        &format!("Actions for {ticker_text}"),
+        &tr!("Actions for {ticker}", ticker = ticker_text),
         |ui| row_menu(ui, item.key(), actions),
     );
     if row.response.double_clicked() {
@@ -796,22 +813,29 @@ fn holding_row(
     egui::Popup::context_menu(row.response)
         .frame(kit::menu_frame())
         .show(|ui| row_menu(ui, item.key(), actions));
-    let spoken = format!(
-        "{ticker_text}, {}, {}",
-        item.subtitle,
-        holding.current_value.map_or_else(dash, |v| f.money(v)),
+    let spoken = tr!(
+        "{ticker}, {name}, {value}",
+        ticker = ticker_text,
+        name = item.subtitle,
+        value = holding.current_value.map_or_else(dash, |v| f.money(v)),
     );
     accessibility::label_as(row.response.clone(), egui::WidgetType::Button, spoken);
 }
 
 fn row_menu(ui: &mut egui::Ui, key: &str, actions: &mut Vec<HoldingsAction>) {
-    grid::fit_menu(ui, &["View Transactions", "Remap Asset\u{2026}"]);
+    grid::fit_menu(ui, &[tr!("View Transactions"), tr!("Remap Asset\u{2026}")]);
     ui.spacing_mut().item_spacing.y = 0.0;
-    if kit::menu_item(ui, Icon::List, "View Transactions", true, false) {
+    if kit::menu_item(ui, Icon::List, tr!("View Transactions"), true, false) {
         actions.push(HoldingsAction::Open(key.to_owned()));
         ui.close();
     }
-    if kit::menu_item(ui, Icon::ArrowLeftRight, "Remap Asset\u{2026}", true, false) {
+    if kit::menu_item(
+        ui,
+        Icon::ArrowLeftRight,
+        tr!("Remap Asset\u{2026}"),
+        true,
+        false,
+    ) {
         actions.push(HoldingsAction::Remap(key.to_owned()));
         ui.close();
     }

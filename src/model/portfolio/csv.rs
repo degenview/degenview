@@ -8,6 +8,7 @@
 //! non-empty records, header = line 1, as before.
 
 use crate::format::{civil_from_days, days_from_civil};
+use crate::i18n::{tr, tr_n};
 use crate::model::DataSource;
 use crate::model::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioHolding, PortfolioSnapshot,
@@ -387,7 +388,7 @@ fn decimal(text: &str) -> Option<f64> {
 pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPreview {
     let records = parse_records(csv);
     let Some(header) = records.first() else {
-        return CsvPreview::failed("The CSV is empty.");
+        return CsvPreview::failed(tr!("The CSV is empty."));
     };
     let mut indexes: HashMap<String, usize> = HashMap::new();
     for (index, name) in header.iter().enumerate() {
@@ -398,7 +399,10 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
         .filter(|name| !indexes.contains_key(*name))
         .collect();
     if !missing.is_empty() {
-        return CsvPreview::failed(format!("Missing columns: {}.", missing.join(", ")));
+        return CsvPreview::failed(tr!(
+            "Missing columns: {columns}.",
+            columns = missing.join(", ")
+        ));
     }
     let mut result = CsvPreview::default();
     for (offset, record) in records.iter().skip(1).enumerate() {
@@ -416,14 +420,15 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
         let Some(portfolio) = named.next() else {
             result
                 .errors
-                .push(format!("Line {line}: unknown portfolio."));
+                .push(tr!("Line {line}: unknown portfolio.", line = line));
             continue;
         };
         if named.next().is_some() {
             // Which one the rows belong to cannot be told from the name.
-            result.errors.push(format!(
-                "Line {line}: more than one portfolio is named \"{}\".",
-                value("portfolio")
+            result.errors.push(tr!(
+                "Line {line}: more than one portfolio is named \"{name}\".",
+                line = line,
+                name = value("portfolio")
             ));
             continue;
         }
@@ -436,28 +441,31 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
         );
         let (Some(source), Some(kind), Some(quantity), Some(currency), Some(timestamp)) = fields
         else {
-            result.errors.push(format!(
-                "Line {line}: invalid source, type, quantity, currency, or ISO-8601 date."
+            result.errors.push(tr!(
+                "Line {line}: invalid source, type, quantity, currency, or ISO-8601 date.",
+                line = line
             ));
             continue;
         };
         if value("asset_id").trim().is_empty() {
             result
                 .errors
-                .push(format!("Line {line}: missing asset_id."));
+                .push(tr!("Line {line}: missing asset_id.", line = line));
             continue;
         }
         let price = decimal(value("price")).filter(|price| *price >= 0.0);
         if price.is_none() && !value("price").trim().is_empty() {
-            result.errors.push(format!(
-                "Line {line}: the price is not a number of zero or more."
+            result.errors.push(tr!(
+                "Line {line}: the price is not a number of zero or more.",
+                line = line
             ));
             continue;
         }
         let fee = decimal(value("fee")).filter(|fee| *fee >= 0.0);
         if fee.is_none() && !value("fee").trim().is_empty() {
-            result.errors.push(format!(
-                "Line {line}: the fee is not a number of zero or more."
+            result.errors.push(tr!(
+                "Line {line}: the fee is not a number of zero or more.",
+                line = line
             ));
             continue;
         }
@@ -492,8 +500,9 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
             updated_at: mint.now_ms,
         };
         if transaction.external_transaction_id.is_none() {
-            result.warnings.push(format!(
-                "Line {line}: no external_id; repeat imports cannot be deduplicated reliably."
+            result.warnings.push(tr!(
+                "Line {line}: no external_id; repeat imports cannot be deduplicated reliably.",
+                line = line
             ));
         }
         result.transactions.push(transaction);
@@ -561,10 +570,11 @@ impl CmcPreview {
             let mut symbols: Vec<&str> = skipped.iter().map(|row| row.token.as_str()).collect();
             symbols.sort();
             symbols.dedup();
-            warnings.push(format!(
-                "Skipped {} transactions for unmapped tickers: {}. Only mapped tickers will be imported.",
+            warnings.push(tr_n!(
                 skipped.len(),
-                symbols.join(", ")
+                "Skipped {count} transactions for unmapped tickers: {tickers}. Only mapped tickers will be imported.",
+                "Skipped {count} transactions for unmapped tickers: {tickers}. Only mapped tickers will be imported.",
+                tickers = symbols.join(", ")
             ));
         }
         let mut transactions = Vec::new();
@@ -584,10 +594,10 @@ impl CmcPreview {
                     .copied()
                     .filter(|rate| *rate > 0.0)
                 else {
-                    errors.push(format!(
-                        "Line {}: supply the historical {} → USD rate or skip this transaction.",
-                        row.line,
-                        fee_currency.code()
+                    errors.push(tr!(
+                        "Line {line}: supply the historical {currency} → USD rate or skip this transaction.",
+                        line = row.line,
+                        currency = fee_currency.code()
                     ));
                     continue;
                 };
@@ -676,7 +686,7 @@ pub fn preview_coinmarketcap(csv: &str) -> CmcPreview {
     let records = parse_records(csv);
     let Some(header) = records.first() else {
         return CmcPreview {
-            errors: vec!["The CoinMarketCap CSV is empty.".to_owned()],
+            errors: vec![tr!("The CoinMarketCap CSV is empty.").to_owned()],
             ..CmcPreview::default()
         };
     };
@@ -709,7 +719,9 @@ pub fn preview_coinmarketcap(csv: &str) -> CmcPreview {
     ) = columns
     else {
         return CmcPreview {
-            errors: vec!["This is not a recognized CoinMarketCap transaction export.".to_owned()],
+            errors: vec![
+                tr!("This is not a recognized CoinMarketCap transaction export.").to_owned(),
+            ],
             ..CmcPreview::default()
         };
     };
@@ -730,28 +742,32 @@ pub fn preview_coinmarketcap(csv: &str) -> CmcPreview {
             cmc_decimal(field(total_index)),
         );
         let (Some(kind), Some(timestamp), Some(price), Some(amount), Some(total)) = parsed else {
-            result.errors.push(format!(
-                "Line {line}: invalid date, token, type, price, amount, or total value."
+            result.errors.push(tr!(
+                "Line {line}: invalid date, token, type, price, amount, or total value.",
+                line = line
             ));
             continue;
         };
         if token.is_empty() {
-            result.errors.push(format!(
-                "Line {line}: invalid date, token, type, price, amount, or total value."
+            result.errors.push(tr!(
+                "Line {line}: invalid date, token, type, price, amount, or total value.",
+                line = line
             ));
             continue;
         }
         let fee = cmc_decimal(field(fee_index)).unwrap_or(0.0);
         let fee_currency = parse_currency(&field(fee_currency_index).to_uppercase());
         if fee != 0.0 && fee_currency.is_none() {
-            result.errors.push(format!(
-                "Line {line}: fee currency is missing or unsupported."
+            result.errors.push(tr!(
+                "Line {line}: fee currency is missing or unsupported.",
+                line = line
             ));
             continue;
         }
         if (price * amount - total).abs() > f64::max(0.02, total * 0.001) {
-            result.warnings.push(format!(
-                "Line {line}: total value differs from price × amount."
+            result.warnings.push(tr!(
+                "Line {line}: total value differs from price × amount.",
+                line = line
             ));
         }
         let id = format!(
@@ -775,7 +791,7 @@ pub fn preview_coinmarketcap(csv: &str) -> CmcPreview {
     if offset.is_none() {
         result
             .warnings
-            .push("The date header had no usable UTC offset; UTC was used.".to_owned());
+            .push(tr!("The date header had no usable UTC offset; UTC was used.").to_owned());
     }
     result
 }

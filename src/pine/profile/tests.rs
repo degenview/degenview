@@ -79,7 +79,19 @@ fn assert_consistent(report: &ProfileReport) {
             stats.inclusive_ns
         );
         assert!(stats.inclusive_ns <= summary.total_ns);
-        assert!(stats.slowest_ns <= stats.inclusive_ns.max(stats.slowest_ns));
+        assert!(
+            stats.slowest_ns <= stats.inclusive_ns,
+            "region {index}: slowest {} over inclusive {}",
+            stats.slowest_ns,
+            stats.inclusive_ns
+        );
+        assert!(
+            stats.slowest_ns * stats.executions >= stats.inclusive_ns || stats.executions == 0,
+            "region {index}: slowest {} under the average of {} over {}",
+            stats.slowest_ns,
+            stats.inclusive_ns,
+            stats.executions
+        );
         let region = report.table.get(index as u32).unwrap();
         if let Some(parent) = region.parent {
             assert!(parent < index as u32, "a parent comes first");
@@ -198,6 +210,94 @@ fn a_branch_counts_only_when_it_runs() {
         report.branch_executions(branch.region),
         vec![Some(up), Some(60 - up)]
     );
+    assert_consistent(&report);
+}
+
+#[test]
+fn a_call_the_session_runs_ahead_of_its_statement_is_not_a_region_of_its_own() {
+    // `ta.sma(close, 3)[1]` is the first thing its arm runs, and the session runs the call ahead
+    // of the whole statement: the line still counts what the script's text says.
+    let data = bars(40, 60_000);
+    let body = "up = close > open\nx = if up\n    ta.sma(close, 3)[1]\nelse\n    na\nplot(x)\n";
+    let report = profile(&script(body), &data);
+    let plain = profile(&script(&body.replace("[1]", "")), &data);
+    let counts = |report: &ProfileReport| {
+        report
+            .lines()
+            .into_iter()
+            .map(|line| (line.line, line.executions))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(counts(&report), counts(&plain));
+    assert_consistent(&report);
+}
+
+#[test]
+fn what_the_session_runs_ahead_of_a_statement_is_time_of_that_statement() {
+    // The call runs before the statement, on every bar, but it is the statement's cost: the line
+    // spends one more clock tick than without the `[1]`, and still counts one execution per bar.
+    let data = bars(20, 60_000);
+    let body = "up = close > open\nx = up ? ta.sma(close, 3)[1] : na\nplot(x)\n";
+    let ahead = profile(&script(body), &data);
+    let plain = profile(&script(&body.replace("[1]", "")), &data);
+    let statement = FIRST_LINE + 1;
+    assert_eq!(line(&ahead, statement).executions, 20);
+    assert_eq!(
+        line(&ahead, statement).line_time_ns,
+        line(&plain, statement).line_time_ns + 20 * STEP,
+        "the moved call is charged to its statement"
+    );
+    // The longest execution takes the moved call with it, as the total does: it cannot be shorter
+    // than the average.
+    let stats = ahead.stats_of(line(&ahead, statement).region);
+    assert!(
+        stats.slowest_ns * stats.executions >= stats.inclusive_ns,
+        "{stats:?}"
+    );
+    assert_consistent(&ahead);
+}
+
+#[test]
+fn a_function_whose_first_statement_has_a_call_run_ahead_is_still_in_the_profile() {
+    // The session puts the moved call ahead of the function's only statement. The function is named
+    // by its declaration, so that does not hide it: its header and its call are measured.
+    let data = bars(20, 60_000);
+    let report = profile(
+        &script("f(up) =>\n    up ? ta.sma(close, 3)[1] : na\nx = f(close > open)\nplot(x)\n"),
+        &data,
+    );
+    let function = line(&report, FIRST_LINE);
+    assert_eq!(function.kind, RegionKind::Function);
+    assert_eq!(function.executions, 20);
+    assert_eq!(line(&report, FIRST_LINE + 1).executions, 20);
+    assert_eq!(report.call_sites_of(function.region).len(), 1);
+    assert_consistent(&report);
+}
+
+#[test]
+fn run_ahead_time_whose_statement_never_started_is_an_execution_of_its_own() {
+    // The bar is cut after the call ran ahead and before its statement began: the time is in the
+    // statement's total, so the statement has an execution to divide it by, and its slowest covers it.
+    let source = script("up = close > open\nx = up ? ta.sma(close, 3) : na\n");
+    let call = source.find("ta.sma").unwrap();
+    let table = Arc::new(RegionTable::build(&compiler::compile(
+        &source,
+        Limits::default(),
+        &NoLibraries,
+    )));
+    let mut runtime = ProfileRuntime::with_clock(table, Box::new(SteppingClock::new(STEP)));
+    runtime.begin_bar();
+    assert!(runtime.enter_run_ahead(call));
+    runtime.exit();
+    runtime.end_bar(BarOutcome::Cut, false);
+    let report = runtime.finish(Completeness::Complete);
+    let stats = report
+        .stats
+        .iter()
+        .find(|stats| stats.inclusive_ns > 0)
+        .unwrap();
+    assert_eq!(stats.executions, 1);
+    assert_eq!(stats.slowest_ns, stats.inclusive_ns);
     assert_consistent(&report);
 }
 
@@ -836,19 +936,47 @@ fn identities_are_offsets_so_unicode_and_comments_do_not_move_them() {
 }
 
 #[test]
-fn functions_are_found_by_their_first_body_statement() {
+fn functions_are_found_by_their_declaration() {
     let table = table("f(x) =>\n    x + 1\ng(x) =>\n    x + 2\nplot(f(close) + g(close))\n");
     let f = table
         .regions()
         .iter()
         .position(|r| r.name.as_deref() == Some("f"))
         .unwrap();
+    assert_eq!(table.function_at(table.regions()[f].offset), Some(f as u32));
+    // Not by what is in its body, and not a statement that is not a function.
     let first = table.regions()[f].blocks[0].unwrap();
     assert_eq!(
-        table.function_with_body(table.regions()[first as usize].offset),
-        Some(f as u32)
+        table.function_at(table.regions()[first as usize].offset),
+        None
     );
-    assert_eq!(table.function_with_body(0), None);
+    assert_eq!(table.function_at(0), None);
+}
+
+#[test]
+fn a_call_run_ahead_belongs_to_the_statement_written_in_the_open_region() {
+    let source = "up = close > open\nx = if up\n    ta.sma(close, 3)[1]\nelse\n    na\n\
+                  f(c) =>\n    c ? ta.ema(close, 3)[1] : na\nplot(f(up))\n";
+    let table = table(source);
+    let call = |text: &str| script(source).find(text).unwrap();
+    let region_of = |text: &str| table.at_offset(call(text)).unwrap();
+    // Written inside an arm of `x = if …`, run ahead of the whole of it.
+    assert_eq!(
+        table.statement_around(call("ta.sma"), None),
+        Some(region_of("x = if"))
+    );
+    // Inside a function: the statement of its body, with the function open around it.
+    let f = region_of("f(c) =>");
+    assert_eq!(
+        table.statement_around(call("ta.ema"), Some(f)),
+        Some(region_of("c ? ta.ema"))
+    );
+    // Nothing written directly in a region that does not contain it.
+    assert_eq!(table.statement_around(call("ta.ema"), None), Some(f));
+    assert_eq!(
+        table.statement_around(call("ta.ema"), Some(region_of("up = "))),
+        None
+    );
 }
 
 // MARK: Library code and untimed frames

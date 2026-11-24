@@ -64,7 +64,7 @@ fn profile_on(tag: &str) -> Rig {
 
 /// The Executions row of a line's tooltip.
 fn executions(rig: &Rig, line: usize) -> String {
-    let marks = &rig.manager.profiler.profile().unwrap().marks;
+    let marks = rig.manager.profiler.profile().unwrap().marks();
     marks
         .mark(line)
         .unwrap()
@@ -115,7 +115,7 @@ fn turning_it_on_profiles_the_open_script_and_marks_its_lines() {
     assert!(profile.label.contains('\u{b7}'), "{}", profile.label);
     // The loop (line 6), its body (7), the function (3) and its body (4) all ran.
     for line in [3, 4, 5, 6, 7, 8] {
-        assert!(profile.marks.mark(line).is_some(), "line {line}");
+        assert!(profile.marks().mark(line).is_some(), "line {line}");
     }
     assert_eq!(executions(&rig, 7), "800");
     match column(&rig) {
@@ -296,7 +296,7 @@ fn cancelling_keeps_what_was_measured_and_says_it_is_partial() {
     assert!(profile.report.summary.bars < 40);
     assert!(
         profile
-            .marks
+            .marks()
             .caveat
             .as_deref()
             .unwrap()

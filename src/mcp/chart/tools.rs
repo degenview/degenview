@@ -278,7 +278,7 @@ impl DegenViewMcp {
                 ChartCommand::ApplyIndicator {
                     workspace_id,
                     chart_id,
-                    indicator: params.indicator.built_in(),
+                    indicator: params.indicator,
                     ema_period,
                 },
                 REQUEST_TIMEOUT,

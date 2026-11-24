@@ -2,6 +2,7 @@
 //! through the matches, Esc closes it. Stands in for the native `NSTextFinder` bar Swift's editor uses; matching is
 //! plain-text and case-insensitive, like its default.
 
+use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::shortcut;
 use crate::ui::theme;
@@ -93,7 +94,7 @@ pub fn show(ui: &mut Ui, rect: Rect, state: &mut FindState, count: usize) -> Fin
     let field = inner.add(
         egui::TextEdit::singleline(&mut state.query)
             .id(id)
-            .hint_text("Find")
+            .hint_text(tr!("Find"))
             .desired_width(220.0)
             .margin(Margin::symmetric(6, 3)),
     );
@@ -115,9 +116,13 @@ pub fn show(ui: &mut Ui, rect: Rect, state: &mut FindState, count: usize) -> Fin
     let summary = if state.query.is_empty() {
         String::new()
     } else if count == 0 {
-        "No results".to_owned()
+        tr!("No results").to_owned()
     } else {
-        format!("{} of {count}", state.current.min(count - 1) + 1)
+        tr!(
+            "{current} of {count}",
+            current = state.current.min(count - 1) + 1,
+            count = count
+        )
     };
     inner.label(
         RichText::new(summary)
@@ -129,7 +134,7 @@ pub fn show(ui: &mut Ui, rect: Rect, state: &mut FindState, count: usize) -> Fin
         Icon::ChevronUp,
         24.0,
         theme::text_primary(),
-        &shortcut::FIND_PREVIOUS.hint("Previous match"),
+        &shortcut::FIND_PREVIOUS.hint(tr!("Previous match")),
     )
     .clicked()
     {
@@ -140,14 +145,14 @@ pub fn show(ui: &mut Ui, rect: Rect, state: &mut FindState, count: usize) -> Fin
         Icon::ChevronDown,
         24.0,
         theme::text_primary(),
-        &shortcut::FIND_NEXT.hint("Next match"),
+        &shortcut::FIND_NEXT.hint(tr!("Next match")),
     )
     .clicked()
     {
         event = FindEvent::Next;
     }
     inner.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if icons::button(ui, Icon::Xmark, 24.0, theme::text_secondary(), "Close").clicked() {
+        if icons::button(ui, Icon::Xmark, 24.0, theme::text_secondary(), tr!("Close")).clicked() {
             event = FindEvent::Close;
         }
     });

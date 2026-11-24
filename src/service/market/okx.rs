@@ -41,7 +41,7 @@ pub(crate) fn bar(timeframe: Timeframe) -> Option<String> {
     let token = timeframe.interval();
     let (count, unit) = token.split_at(token.len() - 1);
     Some(match unit {
-        "m" => token,
+        "s" | "m" => token,
         "h" if count.parse::<u16>().ok()? < 6 => format!("{count}H"),
         _ => format!("{count}{}utc", unit.to_uppercase()),
     })
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(
             bars,
             [
-                "1m", "3m", "5m", "15m", "30m", "1H", "2H", "4H", "6Hutc", "12Hutc", "1Dutc",
+                "1s", "1m", "3m", "5m", "15m", "30m", "1H", "2H", "4H", "6Hutc", "12Hutc", "1Dutc",
                 "1Wutc", "1Mutc", "3Mutc"
             ]
         );
@@ -260,6 +260,7 @@ mod tests {
         // A request for 500 candles also asks for the one the start cuts.
         assert_eq!(base_of("1h"), ("1H".to_owned(), 500));
         assert_eq!(base_of("22m"), ("1m".to_owned(), 501 * 22));
+        assert_eq!(base_of("45s"), ("1s".to_owned(), 501 * 45));
         assert_eq!(base_of("3h"), ("1H".to_owned(), 501 * 3));
         assert_eq!(base_of("8h"), ("4H".to_owned(), 501 * 2));
         assert_eq!(base_of("3D"), ("1Dutc".to_owned(), 501 * 3));

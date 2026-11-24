@@ -7,6 +7,7 @@
 //! a tooltip. It is drawn with the crosshair, so a snapshot never has it.
 
 use super::*;
+use crate::i18n::tr_c;
 use crate::pine::outputs::DISPLAY_DATA_WINDOW;
 use crate::ui::pine::geometry::series_index;
 use std::time::Duration;
@@ -131,7 +132,7 @@ impl ChartCard {
             let change = candle.close - previous;
             let sign = if change < 0.0 { "−" } else { "+" };
             rows.push((
-                "Chg".to_owned(),
+                tr_c!("readout label", "Chg").to_owned(),
                 format!(
                     "{sign}{} ({sign}{:.2}%)",
                     price_format.format(change.abs()),
@@ -150,20 +151,21 @@ impl ChartCard {
         }
         if let Some(bands) = &series.bollinger {
             for (name, values) in [
-                ("BB upper", &bands.upper),
-                ("BB basis", &bands.middle),
-                ("BB lower", &bands.lower),
+                (tr!("BB upper"), &bands.upper),
+                (tr!("BB basis"), &bands.middle),
+                (tr!("BB lower"), &bands.lower),
             ] {
                 if let Some(value) = at(values) {
                     rows.push((name.to_owned(), price_format.format(value)));
                 }
             }
         }
-        if let Some(value) = at(&series.rsi) {
-            rows.push(("RSI".to_owned(), format!("{value:.2}")));
-        }
         if let Some(flip) = series.trend_flips.get(index).copied().flatten() {
-            let name = if flip { "Bullish flip" } else { "Bearish flip" };
+            let name = if flip {
+                tr!("Bullish flip")
+            } else {
+                tr!("Bearish flip")
+            };
             rows.push(("Supertrend".to_owned(), name.to_owned()));
         }
         // The scripts' plots that ask for the data window, on the chart and in their panes, at the
@@ -184,7 +186,7 @@ impl ChartCard {
                     .title
                     .clone()
                     .filter(|title| !title.is_empty())
-                    .unwrap_or_else(|| "Plot".to_owned());
+                    .unwrap_or_else(|| tr!("Plot").to_owned());
                 let row = (name, price_format.format(value));
                 if !rows.contains(&row) {
                     rows.push(row);
@@ -210,7 +212,7 @@ impl ChartCard {
         let (rows, bar_rows) = self.values_rows(info, index, candle, previous_close, show_volume);
         let font = FontId::monospace(11.0);
         let header = painter.layout_no_wrap(
-            format::timestamp(candle.open_time),
+            self.time_text(candle.open_time),
             font.clone(),
             theme::text_secondary(),
         );
@@ -285,7 +287,7 @@ impl ChartCard {
         if hidden > 0 && used + ROW_GAP + row_height <= spare {
             used += ROW_GAP + row_height;
             cells.push((
-                cut(format!("+{hidden} more")),
+                cut(tr!("+{hidden} more", hidden = hidden)),
                 painter.layout_no_wrap(String::new(), font.clone(), theme::text_primary()),
                 row_height,
             ));

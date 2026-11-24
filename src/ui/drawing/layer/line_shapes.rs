@@ -8,6 +8,7 @@ use super::edit::Part;
 use super::shape::{
     AngleMark, Band, EndLabel, HandleSpot, Readout, Screen, Styled, Tag, TextPlace, with_heads,
 };
+use crate::i18n::tr;
 use crate::model::drawings;
 use crate::model::drawings::style::{DrawingStyle, LineEnd};
 use crate::model::{Anchor, Geometry};
@@ -497,7 +498,7 @@ fn regression_trend(
     {
         screen.readout = Some(Readout {
             at: *end,
-            text: format!("Pearson's R: {:.2}", fit.r),
+            text: tr!("Pearson's R: {value}", value = format!("{:.2}", fit.r)),
         });
     }
     let handle_at = |time_ms: i64| {

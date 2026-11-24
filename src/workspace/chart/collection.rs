@@ -3,7 +3,9 @@
 use super::{Chart, displayed_candles};
 use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::host::trading::TradingHub;
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::pine::bundled;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{
@@ -37,6 +39,8 @@ pub struct ChartSummary {
     pub indicators: IndicatorConfig,
     /// `(instance id, script name)` of each applied Pine script.
     pub pine_instances: Vec<(u64, String)>,
+    /// The ids of the bundled indicators drawn on the chart: applied, with their eye on.
+    pub bundled_shown: Vec<&'static str>,
 }
 
 /// What the MCP candle and drawing tools read off one market chart. Borrowed from the workspace,
@@ -96,6 +100,19 @@ impl ChartWorkspace {
                     .pine_instances()
                     .iter()
                     .map(|instance| (instance.id, instance.name.clone()))
+                    .collect(),
+                bundled_shown: chart
+                    .chart
+                    .pine_instances()
+                    .iter()
+                    .filter(|instance| instance.visible)
+                    .filter_map(|instance| {
+                        let id = instance
+                            .script_id
+                            .as_deref()?
+                            .strip_prefix(bundled::SCRIPT_ID_PREFIX)?;
+                        bundled::find(id).map(|indicator| indicator.id)
+                    })
                     .collect(),
             })
             .collect()
@@ -303,15 +320,17 @@ impl ChartWorkspace {
             self.removing_chart = None;
             return;
         };
-        let title = format!("Remove {}?", chart.display_title());
+        let title = tr!("Remove {chart}?", chart = chart.display_title());
         let result = crate::ui::kit::confirm(
             ctx,
             egui::Id::new("remove-chart"),
             &crate::ui::kit::Confirm {
                 icon: crate::ui::icons::Icon::Trash,
                 title: &title,
-                message: "The chart leaves this tab. You can add it again from the symbol search.",
-                destructive: "Remove",
+                message: tr!(
+                    "The chart leaves this tab. You can add it again from the symbol search."
+                ),
+                destructive: tr!("Remove"),
             },
         );
         if result == Some(crate::ui::kit::ConfirmOutcome::Confirmed) {

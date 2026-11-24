@@ -4,6 +4,7 @@
 //! toolbar, the properties dialog and the interaction layer never grow a per-tool `if` ladder.
 //! Pure: no egui types.
 
+use crate::i18n::tr;
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::style::{
     ArrowStats, DrawingStyle, HorizontalAlign, LineEnd, StatsPosition, TextOrientation,
@@ -151,26 +152,26 @@ impl ToolGroup {
     /// The groups listed in the Fibonacci and Gann tile's menu, in order.
     pub const FIB_MENU: [Self; 2] = [Self::Fibonacci, Self::Gann];
 
-    pub const fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
-            Self::Pointer => "Cursor",
-            Self::TrendLines => "Lines",
-            Self::Fibonacci => "Fibonacci",
-            Self::Gann => "Gann",
-            Self::Measure => "Measure",
-            Self::Brushes => "Brushes",
-            Self::Arrows => "Arrows",
-            Self::Shapes => "Shapes",
-            Self::Channels => "Channels",
-            Self::Pitchforks => "Pitchforks",
-            Self::TextNotes => "Text and notes",
-            Self::Content => "Content",
-            Self::ChartPatterns => "Chart patterns",
-            Self::ElliottWaves => "Elliott waves",
-            Self::Cycles => "Cycles",
-            Self::Forecasting => "Forecasting and measurement",
-            Self::VolumeBased => "Volume-based",
-            Self::Measurers => "Measurers",
+            Self::Pointer => tr!("Cursor"),
+            Self::TrendLines => tr!("Lines"),
+            Self::Fibonacci => tr!("Fibonacci"),
+            Self::Gann => tr!("Gann"),
+            Self::Measure => tr!("Measure"),
+            Self::Brushes => tr!("Brushes"),
+            Self::Arrows => tr!("Arrows"),
+            Self::Shapes => tr!("Shapes"),
+            Self::Channels => tr!("Channels"),
+            Self::Pitchforks => tr!("Pitchforks"),
+            Self::TextNotes => tr!("Text and notes"),
+            Self::Content => tr!("Content"),
+            Self::ChartPatterns => tr!("Chart patterns"),
+            Self::ElliottWaves => tr!("Elliott waves"),
+            Self::Cycles => tr!("Cycles"),
+            Self::Forecasting => tr!("Forecasting and measurement"),
+            Self::VolumeBased => tr!("Volume-based"),
+            Self::Measurers => tr!("Measurers"),
         }
     }
 }
@@ -278,15 +279,13 @@ impl Caps {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ToolSpec {
-    pub label: &'static str,
     pub group: ToolGroup,
     pub placement: Placement,
     pub caps: Caps,
 }
 
-const fn spec(label: &'static str, group: ToolGroup, placement: Placement, caps: Caps) -> ToolSpec {
+const fn spec(group: ToolGroup, placement: Placement, caps: Caps) -> ToolSpec {
     ToolSpec {
-        label,
         group,
         placement,
         caps,
@@ -306,11 +305,11 @@ pub enum MagnetMode {
 }
 
 impl MagnetMode {
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Off => "Magnet off",
-            Self::Weak => "Weak magnet",
-            Self::Strong => "Strong magnet",
+            Self::Off => tr!("Magnet off"),
+            Self::Weak => tr!("Weak magnet"),
+            Self::Strong => tr!("Strong magnet"),
         }
     }
 
@@ -487,31 +486,15 @@ impl Tool {
             .with(Caps::TEXT)
             .with(Caps::AUTO_TEXT);
         match self {
-            Self::Cursor => spec("Crosshair", Pointer, Single, Caps::NONE),
-            Self::TrendLine => spec("Trend line", TrendLines, Points(2), line),
-            Self::Ray => spec("Ray", TrendLines, Points(2), line),
-            Self::InfoLine => spec("Info line", TrendLines, Points(2), line),
-            Self::ExtendedLine => spec("Extended line", TrendLines, Points(2), line),
-            Self::TrendAngle => spec(
-                "Trend angle",
-                TrendLines,
-                Points(2),
-                line.without(Caps::ENDS),
-            ),
-            Self::HorizontalLine => spec(
-                "Horizontal line",
-                TrendLines,
-                Single,
-                level_line.without(Caps::ORIENTATION),
-            ),
-            Self::HorizontalRay => spec(
-                "Horizontal ray",
-                TrendLines,
-                Single,
-                level_line.without(Caps::ORIENTATION),
-            ),
+            Self::Cursor => spec(Pointer, Single, Caps::NONE),
+            Self::TrendLine => spec(TrendLines, Points(2), line),
+            Self::Ray => spec(TrendLines, Points(2), line),
+            Self::InfoLine => spec(TrendLines, Points(2), line),
+            Self::ExtendedLine => spec(TrendLines, Points(2), line),
+            Self::TrendAngle => spec(TrendLines, Points(2), line.without(Caps::ENDS)),
+            Self::HorizontalLine => spec(TrendLines, Single, level_line.without(Caps::ORIENTATION)),
+            Self::HorizontalRay => spec(TrendLines, Single, level_line.without(Caps::ORIENTATION)),
             Self::VerticalLine => spec(
-                "Vertical line",
                 TrendLines,
                 Single,
                 level_line
@@ -519,70 +502,51 @@ impl Tool {
                     .with(Caps::TIME_LABEL),
             ),
             Self::Crossline => spec(
-                "Crossline",
                 TrendLines,
                 Single,
                 Caps::LINE.with(Caps::PRICE_LABELS).with(Caps::TIME_LABEL),
             ),
             Self::ParallelChannel => spec(
-                "Parallel channel",
                 Channels,
                 Points(3),
                 channel.with(Caps::MIDDLE_LINE).with(Caps::LEVELS),
             ),
             Self::RegressionTrend => spec(
-                "Regression trend",
                 Channels,
                 Points(2),
                 Caps::FILL.with(Caps::EXTEND).with(Caps::REGRESSION),
             ),
-            Self::FlatChannel => spec(
-                "Flat top/bottom",
-                Channels,
-                Points(3),
-                channel.with(Caps::PRICE_LABELS),
-            ),
-            Self::DisjointChannel => spec(
-                "Disjoint channel",
-                Channels,
-                Points(3),
-                channel.with(Caps::PRICE_LABELS),
-            ),
-            Self::Pitchfork => spec("Pitchfork", Pitchforks, Points(3), fork),
-            Self::SchiffPitchfork => spec("Schiff pitchfork", Pitchforks, Points(3), fork),
-            Self::ModifiedSchiffPitchfork => {
-                spec("Modified Schiff pitchfork", Pitchforks, Points(3), fork)
-            }
-            Self::InsidePitchfork => spec("Inside pitchfork", Pitchforks, Points(3), fork),
-            Self::Text => spec("Text", TextNotes, Single, note.with(Caps::TEXT_FIRST)),
-            Self::Comment => spec("Comment", TextNotes, Single, note.with(Caps::TEXT_FIRST)),
+            Self::FlatChannel => spec(Channels, Points(3), channel.with(Caps::PRICE_LABELS)),
+            Self::DisjointChannel => spec(Channels, Points(3), channel.with(Caps::PRICE_LABELS)),
+            Self::Pitchfork => spec(Pitchforks, Points(3), fork),
+            Self::SchiffPitchfork => spec(Pitchforks, Points(3), fork),
+            Self::ModifiedSchiffPitchfork => spec(Pitchforks, Points(3), fork),
+            Self::InsidePitchfork => spec(Pitchforks, Points(3), fork),
+            Self::Text => spec(TextNotes, Single, note.with(Caps::TEXT_FIRST)),
+            Self::Comment => spec(TextNotes, Single, note.with(Caps::TEXT_FIRST)),
             Self::PriceLabel => spec(
-                "Price label",
                 TextNotes,
                 Single,
                 Caps::BOX.with(Caps::FILL).with(Caps::AUTO_TEXT),
             ),
-            Self::FlagMark => spec("Flag mark", TextNotes, Single, Caps::COLOR),
+            Self::FlagMark => spec(TextNotes, Single, Caps::COLOR),
             Self::Pin => spec(
-                "Pin",
                 TextNotes,
                 Single,
                 note.with(Caps::COLOR).with(Caps::COLLAPSIBLE),
             ),
             Self::Note => spec(
-                "Note",
                 TextNotes,
                 Points(2),
                 note.with(Caps::STROKE)
                     .with(Caps::DASH)
                     .with(Caps::TEXT_FIRST),
             ),
-            Self::PriceNote => spec("Price note", TextNotes, Points(2), note.with(Caps::COLOR)),
-            Self::Callout => spec("Callout", TextNotes, Points(2), note.with(Caps::TEXT_FIRST)),
-            Self::Image => spec("Image", Content, Single, Caps::CONTENT),
-            Self::Post => spec("Post", Content, Single, Caps::CONTENT),
+            Self::PriceNote => spec(TextNotes, Points(2), note.with(Caps::COLOR)),
+            Self::Callout => spec(TextNotes, Points(2), note.with(Caps::TEXT_FIRST)),
+            Self::Image => spec(Content, Single, Caps::CONTENT),
+            Self::Post => spec(Content, Single, Caps::CONTENT),
             Self::Table => spec(
-                "Table",
                 TextNotes,
                 Single,
                 Caps::BOX
@@ -591,7 +555,6 @@ impl Tool {
                     .with(Caps::TABLE),
             ),
             Self::Signpost => spec(
-                "Signpost",
                 TextNotes,
                 Points(2),
                 Caps::FILL
@@ -600,67 +563,26 @@ impl Tool {
                     .with(Caps::TEXT_FIRST)
                     .with(Caps::EMOJI),
             ),
-            Self::FibRetracement => spec(
-                "Fib retracement",
-                Fibonacci,
-                Points(2),
-                fib_levels.with(Caps::EXTEND),
-            ),
-            Self::FibExtension => spec(
-                "Trend-based fib extension",
-                Fibonacci,
-                Points(3),
-                fib_levels.with(Caps::EXTEND),
-            ),
-            Self::FibChannel => spec(
-                "Fib channel",
-                Fibonacci,
-                Points(3),
-                fib_levels.with(Caps::EXTEND),
-            ),
-            Self::FibTimeZone => spec("Fib time zone", Fibonacci, Points(2), fib_levels),
-            Self::FibSpeedFan => spec(
-                "Fib speed resistance fan",
-                Fibonacci,
-                Points(2),
-                Caps::FILL.with(Caps::FIB),
-            ),
-            Self::FibTrendTime => spec("Trend-based fib time", Fibonacci, Points(3), fib_levels),
-            Self::FibCircles => spec("Fib circles", Fibonacci, Points(2), fib_levels),
-            Self::FibSpiral => spec(
-                "Fib spiral",
-                Fibonacci,
-                Points(2),
-                Caps::LINE.with(Caps::FIB),
-            ),
-            Self::FibSpeedArcs => spec(
-                "Fib speed resistance arcs",
-                Fibonacci,
-                Points(2),
-                fib_levels,
-            ),
-            Self::FibWedge => spec("Fib wedge", Fibonacci, Points(3), fib_levels),
-            Self::Pitchfan => spec("Pitchfan", Fibonacci, Points(3), fib_levels),
-            Self::GannBox => spec("Gann box", Gann, Points(2), Caps::FILL.with(Caps::FIB)),
-            Self::GannSquareFixed => spec(
-                "Gann square fixed",
-                Gann,
-                Points(2),
-                Caps::FILL.with(Caps::FIB),
-            ),
-            Self::GannSquare => spec("Gann square", Gann, Points(2), Caps::FILL.with(Caps::FIB)),
-            Self::GannFan => spec("Gann fan", Gann, Points(2), Caps::FILL.with(Caps::FIB)),
-            Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
-            Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
-            Self::Highlighter => spec("Highlighter", Brushes, Freehand, Caps::STROKE),
-            Self::ArrowMarker => spec(
-                "Arrow marker",
-                Arrows,
-                Points(2),
-                Caps::STROKE.with(Caps::TEXT),
-            ),
+            Self::FibRetracement => spec(Fibonacci, Points(2), fib_levels.with(Caps::EXTEND)),
+            Self::FibExtension => spec(Fibonacci, Points(3), fib_levels.with(Caps::EXTEND)),
+            Self::FibChannel => spec(Fibonacci, Points(3), fib_levels.with(Caps::EXTEND)),
+            Self::FibTimeZone => spec(Fibonacci, Points(2), fib_levels),
+            Self::FibSpeedFan => spec(Fibonacci, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::FibTrendTime => spec(Fibonacci, Points(3), fib_levels),
+            Self::FibCircles => spec(Fibonacci, Points(2), fib_levels),
+            Self::FibSpiral => spec(Fibonacci, Points(2), Caps::LINE.with(Caps::FIB)),
+            Self::FibSpeedArcs => spec(Fibonacci, Points(2), fib_levels),
+            Self::FibWedge => spec(Fibonacci, Points(3), fib_levels),
+            Self::Pitchfan => spec(Fibonacci, Points(3), fib_levels),
+            Self::GannBox => spec(Gann, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::GannSquareFixed => spec(Gann, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::GannSquare => spec(Gann, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::GannFan => spec(Gann, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::Ruler => spec(Measure, Points(2), Caps::NONE),
+            Self::Brush => spec(Brushes, Freehand, Caps::STROKE),
+            Self::Highlighter => spec(Brushes, Freehand, Caps::STROKE),
+            Self::ArrowMarker => spec(Arrows, Points(2), Caps::STROKE.with(Caps::TEXT)),
             Self::Arrow => spec(
-                "Arrow",
                 Arrows,
                 Points(2),
                 Caps::LINE
@@ -670,20 +592,9 @@ impl Tool {
                     .with(Caps::STATS)
                     .with(Caps::TEXT),
             ),
-            Self::ArrowMarkUp => spec(
-                "Arrow mark up",
-                Arrows,
-                Single,
-                Caps::COLOR.with(Caps::TEXT),
-            ),
-            Self::ArrowMarkDown => spec(
-                "Arrow mark down",
-                Arrows,
-                Single,
-                Caps::COLOR.with(Caps::TEXT),
-            ),
+            Self::ArrowMarkUp => spec(Arrows, Single, Caps::COLOR.with(Caps::TEXT)),
+            Self::ArrowMarkDown => spec(Arrows, Single, Caps::COLOR.with(Caps::TEXT)),
             Self::Rectangle => spec(
-                "Rectangle",
                 Shapes,
                 Points(2),
                 shape_line
@@ -691,123 +602,153 @@ impl Tool {
                     .with(Caps::EXTEND)
                     .with(Caps::MIDDLE_LINE),
             ),
-            Self::RotatedRectangle => spec("Rotated rectangle", Shapes, Points(3), shape_line),
+            Self::RotatedRectangle => spec(Shapes, Points(3), shape_line),
             Self::Path => spec(
-                "Path",
                 Shapes,
                 Open { closable: false },
                 Caps::LINE.with(Caps::ENDS),
             ),
-            Self::Circle => spec("Circle", Shapes, Points(2), shape_line.with(Caps::TEXT)),
-            Self::Ellipse => spec("Ellipse", Shapes, Points(2), shape_line.with(Caps::TEXT)),
-            Self::Polyline => spec("Polyline", Shapes, Open { closable: true }, shape_line),
-            Self::Triangle => spec("Triangle", Shapes, Points(3), shape_line),
-            Self::Arc => spec("Arc", Shapes, Points(3), shape_line),
+            Self::Circle => spec(Shapes, Points(2), shape_line.with(Caps::TEXT)),
+            Self::Ellipse => spec(Shapes, Points(2), shape_line.with(Caps::TEXT)),
+            Self::Polyline => spec(Shapes, Open { closable: true }, shape_line),
+            Self::Triangle => spec(Shapes, Points(3), shape_line),
+            Self::Arc => spec(Shapes, Points(3), shape_line),
             Self::Curve => spec(
-                "Curve",
                 Shapes,
                 Points(3),
                 shape_line.with(Caps::ENDS).with(Caps::EXTEND),
             ),
             Self::DoubleCurve => spec(
-                "Double curve",
                 Shapes,
                 Points(4),
                 shape_line.with(Caps::ENDS).with(Caps::EXTEND),
             ),
-            Self::XabcdPattern => spec("XABCD pattern", ChartPatterns, Points(5), pattern),
-            Self::CypherPattern => spec("Cypher pattern", ChartPatterns, Points(5), pattern),
-            Self::HeadAndShoulders => spec("Head and shoulders", ChartPatterns, Points(7), pattern),
-            Self::AbcdPattern => spec(
-                "ABCD pattern",
-                ChartPatterns,
-                Points(4),
-                pattern.without(Caps::FILL),
-            ),
-            Self::TrianglePattern => spec("Triangle pattern", ChartPatterns, Points(4), pattern),
-            Self::ThreeDrivesPattern => {
-                spec("Three drives pattern", ChartPatterns, Points(6), pattern)
-            }
-            Self::ElliottImpulse => spec(
-                "Elliott impulse wave (1\u{b7}2\u{b7}3\u{b7}4\u{b7}5)",
-                ElliottWaves,
-                Points(6),
-                wave,
-            ),
-            Self::ElliottCorrection => spec(
-                "Elliott correction wave (A\u{b7}B\u{b7}C)",
-                ElliottWaves,
-                Points(4),
-                wave,
-            ),
-            Self::ElliottTriangle => spec(
-                "Elliott triangle wave (A\u{b7}B\u{b7}C\u{b7}D\u{b7}E)",
-                ElliottWaves,
-                Points(6),
-                wave,
-            ),
-            Self::ElliottDoubleCombo => spec(
-                "Elliott double combo wave (W\u{b7}X\u{b7}Y)",
-                ElliottWaves,
-                Points(4),
-                wave,
-            ),
-            Self::ElliottTripleCombo => spec(
-                "Elliott triple combo wave (W\u{b7}X\u{b7}Y\u{b7}X\u{b7}Z)",
-                ElliottWaves,
-                Points(6),
-                wave,
-            ),
-            Self::CyclicLines => spec("Cyclic lines", Cycles, Points(2), Caps::LINE),
-            Self::TimeCycles => spec(
-                "Time cycles",
-                Cycles,
-                Points(2),
-                Caps::LINE.with(Caps::FILL),
-            ),
-            Self::SineLine => spec("Sine line", Cycles, Points(2), Caps::LINE),
-            Self::LongPosition => spec("Long position", Forecasting, Single, position),
-            Self::ShortPosition => spec("Short position", Forecasting, Single, position),
+            Self::XabcdPattern => spec(ChartPatterns, Points(5), pattern),
+            Self::CypherPattern => spec(ChartPatterns, Points(5), pattern),
+            Self::HeadAndShoulders => spec(ChartPatterns, Points(7), pattern),
+            Self::AbcdPattern => spec(ChartPatterns, Points(4), pattern.without(Caps::FILL)),
+            Self::TrianglePattern => spec(ChartPatterns, Points(4), pattern),
+            Self::ThreeDrivesPattern => spec(ChartPatterns, Points(6), pattern),
+            Self::ElliottImpulse => spec(ElliottWaves, Points(6), wave),
+            Self::ElliottCorrection => spec(ElliottWaves, Points(4), wave),
+            Self::ElliottTriangle => spec(ElliottWaves, Points(6), wave),
+            Self::ElliottDoubleCombo => spec(ElliottWaves, Points(4), wave),
+            Self::ElliottTripleCombo => spec(ElliottWaves, Points(6), wave),
+            Self::CyclicLines => spec(Cycles, Points(2), Caps::LINE),
+            Self::TimeCycles => spec(Cycles, Points(2), Caps::LINE.with(Caps::FILL)),
+            Self::SineLine => spec(Cycles, Points(2), Caps::LINE),
+            Self::LongPosition => spec(Forecasting, Single, position),
+            Self::ShortPosition => spec(Forecasting, Single, position),
             Self::PositionForecast => spec(
-                "Position forecast",
                 Forecasting,
                 Points(2),
                 Caps::LINE.with(Caps::AUTO_TEXT).with(Caps::FORECAST),
             ),
-            Self::BarsPattern => spec(
-                "Bars pattern",
-                Forecasting,
-                Points(3),
-                Caps::COLOR.with(Caps::BARS),
-            ),
-            Self::GhostFeed => spec("Ghost feed", Forecasting, Points(2), Caps::GHOST),
-            Self::Sector => spec("Sector", Forecasting, Points(3), shape_line),
-            Self::AnchoredVwap => spec(
-                "Anchored VWAP",
-                VolumeBased,
-                Single,
-                Caps::LINE.with(Caps::VWAP),
-            ),
-            Self::FixedRangeVolumeProfile => spec(
-                "Fixed range volume profile",
-                VolumeBased,
-                Points(2),
-                Caps::PROFILE,
-            ),
-            Self::AnchoredVolumeProfile => spec(
-                "Anchored volume profile",
-                VolumeBased,
-                Single,
-                Caps::PROFILE,
-            ),
-            Self::PriceRange => spec("Price range", Measurers, Points(2), measure),
-            Self::DateRange => spec("Date range", Measurers, Points(2), measure),
-            Self::DateAndPriceRange => spec("Date and price range", Measurers, Points(2), measure),
+            Self::BarsPattern => spec(Forecasting, Points(3), Caps::COLOR.with(Caps::BARS)),
+            Self::GhostFeed => spec(Forecasting, Points(2), Caps::GHOST),
+            Self::Sector => spec(Forecasting, Points(3), shape_line),
+            Self::AnchoredVwap => spec(VolumeBased, Single, Caps::LINE.with(Caps::VWAP)),
+            Self::FixedRangeVolumeProfile => spec(VolumeBased, Points(2), Caps::PROFILE),
+            Self::AnchoredVolumeProfile => spec(VolumeBased, Single, Caps::PROFILE),
+            Self::PriceRange => spec(Measurers, Points(2), measure),
+            Self::DateRange => spec(Measurers, Points(2), measure),
+            Self::DateAndPriceRange => spec(Measurers, Points(2), measure),
         }
     }
 
-    pub const fn label(self) -> &'static str {
-        self.spec().label
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Cursor => tr!("Crosshair"),
+            Self::TrendLine => tr!("Trend line"),
+            Self::Ray => tr!("Ray"),
+            Self::InfoLine => tr!("Info line"),
+            Self::ExtendedLine => tr!("Extended line"),
+            Self::TrendAngle => tr!("Trend angle"),
+            Self::HorizontalLine => tr!("Horizontal line"),
+            Self::HorizontalRay => tr!("Horizontal ray"),
+            Self::VerticalLine => tr!("Vertical line"),
+            Self::Crossline => tr!("Crossline"),
+            Self::ParallelChannel => tr!("Parallel channel"),
+            Self::RegressionTrend => tr!("Regression trend"),
+            Self::FlatChannel => tr!("Flat top/bottom"),
+            Self::DisjointChannel => tr!("Disjoint channel"),
+            Self::Pitchfork => tr!("Pitchfork"),
+            Self::SchiffPitchfork => tr!("Schiff pitchfork"),
+            Self::ModifiedSchiffPitchfork => tr!("Modified Schiff pitchfork"),
+            Self::InsidePitchfork => tr!("Inside pitchfork"),
+            Self::Text => tr!("Text"),
+            Self::Comment => tr!("Comment"),
+            Self::PriceLabel => tr!("Price label"),
+            Self::FlagMark => tr!("Flag mark"),
+            Self::Pin => tr!("Pin"),
+            Self::Note => tr!("Note"),
+            Self::PriceNote => tr!("Price note"),
+            Self::Callout => tr!("Callout"),
+            Self::Image => tr!("Image"),
+            Self::Post => tr!("Post"),
+            Self::Table => tr!("Table"),
+            Self::Signpost => tr!("Signpost"),
+            Self::FibRetracement => tr!("Fib retracement"),
+            Self::FibExtension => tr!("Trend-based fib extension"),
+            Self::FibChannel => tr!("Fib channel"),
+            Self::FibTimeZone => tr!("Fib time zone"),
+            Self::FibSpeedFan => tr!("Fib speed resistance fan"),
+            Self::FibTrendTime => tr!("Trend-based fib time"),
+            Self::FibCircles => tr!("Fib circles"),
+            Self::FibSpiral => tr!("Fib spiral"),
+            Self::FibSpeedArcs => tr!("Fib speed resistance arcs"),
+            Self::FibWedge => tr!("Fib wedge"),
+            Self::Pitchfan => tr!("Pitchfan"),
+            Self::GannBox => tr!("Gann box"),
+            Self::GannSquareFixed => tr!("Gann square fixed"),
+            Self::GannSquare => tr!("Gann square"),
+            Self::GannFan => tr!("Gann fan"),
+            Self::Ruler => tr!("Ruler"),
+            Self::Brush => tr!("Brush"),
+            Self::Highlighter => tr!("Highlighter"),
+            Self::ArrowMarker => tr!("Arrow marker"),
+            Self::Arrow => tr!("Arrow"),
+            Self::ArrowMarkUp => tr!("Arrow mark up"),
+            Self::ArrowMarkDown => tr!("Arrow mark down"),
+            Self::Rectangle => tr!("Rectangle"),
+            Self::RotatedRectangle => tr!("Rotated rectangle"),
+            Self::Path => tr!("Path"),
+            Self::Circle => tr!("Circle"),
+            Self::Ellipse => tr!("Ellipse"),
+            Self::Polyline => tr!("Polyline"),
+            Self::Triangle => tr!("Triangle"),
+            Self::Arc => tr!("Arc"),
+            Self::Curve => tr!("Curve"),
+            Self::DoubleCurve => tr!("Double curve"),
+            Self::XabcdPattern => tr!("XABCD pattern"),
+            Self::CypherPattern => tr!("Cypher pattern"),
+            Self::HeadAndShoulders => tr!("Head and shoulders"),
+            Self::AbcdPattern => tr!("ABCD pattern"),
+            Self::TrianglePattern => tr!("Triangle pattern"),
+            Self::ThreeDrivesPattern => tr!("Three drives pattern"),
+            Self::ElliottImpulse => tr!("Elliott impulse wave (1\u{b7}2\u{b7}3\u{b7}4\u{b7}5)"),
+            Self::ElliottCorrection => tr!("Elliott correction wave (A\u{b7}B\u{b7}C)"),
+            Self::ElliottTriangle => tr!("Elliott triangle wave (A\u{b7}B\u{b7}C\u{b7}D\u{b7}E)"),
+            Self::ElliottDoubleCombo => tr!("Elliott double combo wave (W\u{b7}X\u{b7}Y)"),
+            Self::ElliottTripleCombo => {
+                tr!("Elliott triple combo wave (W\u{b7}X\u{b7}Y\u{b7}X\u{b7}Z)")
+            }
+            Self::CyclicLines => tr!("Cyclic lines"),
+            Self::TimeCycles => tr!("Time cycles"),
+            Self::SineLine => tr!("Sine line"),
+            Self::LongPosition => tr!("Long position"),
+            Self::ShortPosition => tr!("Short position"),
+            Self::PositionForecast => tr!("Position forecast"),
+            Self::BarsPattern => tr!("Bars pattern"),
+            Self::GhostFeed => tr!("Ghost feed"),
+            Self::Sector => tr!("Sector"),
+            Self::AnchoredVwap => tr!("Anchored VWAP"),
+            Self::FixedRangeVolumeProfile => tr!("Fixed range volume profile"),
+            Self::AnchoredVolumeProfile => tr!("Anchored volume profile"),
+            Self::PriceRange => tr!("Price range"),
+            Self::DateRange => tr!("Date range"),
+            Self::DateAndPriceRange => tr!("Date and price range"),
+        }
     }
 
     pub const fn caps(self) -> Caps {

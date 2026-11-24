@@ -7,6 +7,7 @@
 //! once per destination before the first upload. The providers are rows drawn from their
 //! descriptors (`service::snapshot::providers`), so this page does not change for a new one.
 
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
 use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot::providers::{self, Readiness};
@@ -91,11 +92,11 @@ pub fn body(
 
     section(
         ui,
-        "Hosting",
-        Some(
+        tr!("Hosting"),
+        Some(tr!(
             "Where Copy link, Open in new tab and Tweet image upload a snapshot. Turn one on to \
-             share; only one is used at a time.",
-        ),
+             share; only one is used at a time."
+        )),
         |ui| {
             let card_input = CardInput {
                 prefs: input.prefs,
@@ -109,7 +110,7 @@ pub fn body(
                 ui.add_space(10.0);
             }
             if let Some(status) = &state.status {
-                status_message(ui, &status.text, status.is_error);
+                status_message(ui, &status.text(), status.is_error);
             }
         },
     );
@@ -117,26 +118,26 @@ pub fn body(
         ui,
         Icon::InfoCircle,
         theme::text_secondary(),
-        "Nothing is uploaded until you turn a host on",
-        Some(
+        tr!("Nothing is uploaded until you turn a host on"),
+        Some(tr!(
             "Saving or copying an image never uploads anything. Sharing uploads the image to the \
              host that is on, and DegenView asks once before the first upload to each. A host's \
-             Test button sends a one-pixel image to check the settings.",
-        ),
+             Test button sends a one-pixel image to check the settings."
+        )),
         None,
     );
     ui.add_space(18.0);
 
-    section(ui, "Images", None, |ui| {
+    section(ui, tr!("Images"), None, |ui| {
         let mut include = input.prefs.include_trading;
         card::card(
             ui,
             Icon::Briefcase,
-            "Include orders, executions and positions in snapshots",
-            Some(
+            tr!("Include orders, executions and positions in snapshots"),
+            Some(tr!(
                 "Draws your paper-trading orders and positions on the picture, with their sizes, \
-                 entry prices and open profit. Off, a shared chart shows nothing of your account.",
-            ),
+                 entry prices and open profit. Off, a shared chart shows nothing of your account."
+            )),
             |ui| {
                 if card::switch(ui, &mut include) {
                     actions.push(SnapshotsAction::IncludeTrading(include));
@@ -147,8 +148,10 @@ pub fn body(
         card::card_reserving(
             ui,
             Icon::Camera,
-            "Resolution",
-            Some("Images are drawn again at the scale, not enlarged, so text stays sharp."),
+            tr!("Resolution"),
+            Some(tr!(
+                "Images are drawn again at the scale, not enlarged, so text stays sharp."
+            )),
             260.0,
             |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
@@ -162,15 +165,16 @@ pub fn body(
         );
     });
 
-    section(ui, "Privacy", None, |ui| {
+    section(ui, tr!("Privacy"), None, |ui| {
         let count = input.prefs.consented.len();
-        card::card(
+        card::card_reserving(
             ui,
             Icon::LockFill,
-            "Approved destinations",
+            tr!("Approved destinations"),
             Some(&approved_hint(&input.prefs.consented)),
+            kit::sheet_button_width(ui, tr!("Forget"), false),
             |ui| {
-                if kit::sheet_button(ui, "Forget", false, count > 0).clicked() {
+                if kit::sheet_button(ui, tr!("Forget"), false, count > 0).clicked() {
                     actions.push(SnapshotsAction::ForgetConsent);
                 }
             },
@@ -190,11 +194,11 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
             // Chosen with a newer version of DegenView: there is no row for it here to act on.
             kit::status_badge(
                 ui,
-                "This version does not know the selected host",
+                tr!("This version does not know the selected host"),
                 Tone::Warning,
             );
         } else {
-            kit::status_badge(ui, "Sharing is off", Tone::Neutral);
+            kit::status_badge(ui, tr!("Sharing is off"), Tone::Neutral);
         }
         return;
     };
@@ -202,16 +206,16 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
     let settings = input.prefs.settings_of(id);
     let present = input.secrets.presence(provider);
     if present.is_pending() {
-        kit::status_badge(ui, "Checking the saved key", Tone::Neutral);
+        kit::status_badge(ui, tr!("Checking the saved key"), Tone::Neutral);
         return;
     }
     let (label, tone) = match provider.readiness(&settings, &present) {
         Readiness::Ready => (
-            format!("Sharing to {}", provider.label(&settings)),
+            tr!("Sharing to {host}", host = provider.label(&settings)),
             Tone::Good,
         ),
         Readiness::Needs(_) => (
-            format!("{} needs setting up", provider.descriptor().name),
+            tr!("{host} needs setting up", host = provider.descriptor().name),
             Tone::Warning,
         ),
     };
@@ -221,11 +225,12 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
 /// The privacy card's words: which destinations the user has agreed to upload to.
 fn approved_hint(consented: &[String]) -> String {
     if consented.is_empty() {
-        "DegenView asks before the first upload to a host, and never uploads on its own.".to_owned()
+        tr!("DegenView asks before the first upload to a host, and never uploads on its own.")
+            .to_owned()
     } else {
-        format!(
-            "You agreed to upload to {}. DegenView asks again for any other host.",
-            consented.join(", ")
+        tr!(
+            "You agreed to upload to {hosts}. DegenView asks again for any other host.",
+            hosts = consented.join(", ")
         )
     }
 }
@@ -344,8 +349,8 @@ mod tests {
                 .forms
                 .get("self_hosted")
                 .and_then(|form| form.status.as_ref())
-                .map(|status| status.text.as_str()),
-            Some("Could not save it")
+                .map(|status| status.text().into_owned()),
+            Some("Could not save it".to_owned())
         );
         state.say_for("not-a-provider", Some(StatusMessage::error("x")));
     }

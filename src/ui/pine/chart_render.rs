@@ -16,15 +16,15 @@ use crate::model::Kline;
 use crate::model::chart::look::drawn_extremes;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerLocation, MarkerShape, PlotOutput, PlotStyle,
-    TableOutput, YLocation,
+    DISPLAY_PANE, FontFamily, LabelOutput, LabelStyle, MarkerLocation, MarkerOutput, MarkerShape,
+    PlotOutput, PlotStyle, Size, TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
 use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
 use crate::ui::pine::geometry::{
-    self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
-    candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
-    polyline_points, rgba, series_index, shape_radius,
+    self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, block_font_size,
+    box_text_placement, candle_index_for_bar, dash_pattern, extended_line, faded, is_visible,
+    label_font_size, label_layout, polyline_points, rgba, series_index, shape_radius,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -40,8 +40,6 @@ const CROSS_HALF_SIZE: f32 = 3.0;
 const MARKER_OFFSET: f32 = 8.0;
 /// The room between a marker's near edge and the candle (or pane edge) it hangs off.
 const MARKER_GAP: f32 = 3.0;
-const LABEL_POINTER: f32 = 5.0;
-const LABEL_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 
 /// A place a script gave a tooltip: a label, or a table cell. `rect` is what was drawn, so the
 /// hover and the picture agree.
@@ -181,15 +179,23 @@ fn stroke_path(painter: &Painter, points: &[Pos2], stroke: Stroke, dashes: &[f32
     }
 }
 
-fn text_at(painter: &Painter, text: &str, size: f32, color: Color32, at: Pos2, anchor: Align2) {
-    let galley = painter.layout_no_wrap(text.to_owned(), FontId::proportional(size), color);
+/// The face a script asked for its text (`font.family_*`), at `size` points.
+fn font_id(size: f32, family: FontFamily) -> FontId {
+    match family {
+        FontFamily::Default => FontId::proportional(size),
+        FontFamily::Monospace => FontId::monospace(size),
+    }
+}
+
+fn text_at(painter: &Painter, text: &str, font: FontId, color: Color32, at: Pos2, anchor: Align2) {
+    let galley = painter.layout_no_wrap(text.to_owned(), font, color);
     let rect = anchor.anchor_size(at, galley.size());
     painter.galley(rect.min, galley, color);
 }
 
-fn measure(painter: &Painter, text: &str, size: f32) -> Vec2 {
+fn measure(painter: &Painter, text: &str, font: FontId) -> Vec2 {
     painter
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
+        .layout_no_wrap(text.to_owned(), font, Color32::WHITE)
         .size()
 }
 
@@ -742,10 +748,13 @@ impl PineLayer<'_> {
                     item.text_vertical_align,
                     4.0,
                 );
+                // TradingView lets a box's text run past the box's sides (a `size.huge` `0123` in a
+                // narrow box is wider than it); only its top and bottom hold it.
+                let clip = Rect::from_x_y_ranges(painter.clip_rect().x_range(), rect.y_range());
                 text_at(
-                    &painter.with_clip_rect(rect.intersect(painter.clip_rect())),
+                    &painter.with_clip_rect(clip.intersect(painter.clip_rect())),
                     &item.text,
-                    font_size(item.text_size),
+                    font_id(block_font_size(item.text_size), item.text_font_family),
                     rgba(item.text_color),
                     point,
                     anchor,
@@ -895,7 +904,7 @@ impl PineLayer<'_> {
             let Some(layout) = self.label_geometry(painter, label) else {
                 continue;
             };
-            let size = font_size(label.size);
+            let font = font_id(label_font_size(label.size), label.font_family);
             let text = rgba(label.text_color);
             if let Some(fill) = label.color.filter(|c| is_visible(*c)) {
                 draw_label_shape(painter, &layout, rgba(fill));
@@ -903,7 +912,7 @@ impl PineLayer<'_> {
             text_at(
                 painter,
                 &label.text,
-                size,
+                font,
                 text,
                 layout.body.center(),
                 Align2::CENTER_CENTER,
@@ -920,12 +929,13 @@ impl PineLayer<'_> {
     ) -> Option<geometry::LabelLayout> {
         let y = self.label_y(label)?;
         let anchor = Pos2::new(self.x_bar(label.x), y);
-        let measured = measure(painter, &label.text, font_size(label.size));
+        let font = label_font_size(label.size);
+        let measured = measure(painter, &label.text, font_id(font, label.font_family));
         Some(label_layout(
             label.style,
             anchor,
-            measured + LABEL_PADDING,
-            LABEL_POINTER,
+            measured + geometry::label_padding(font),
+            geometry::label_pointer(font),
         ))
     }
 
@@ -973,6 +983,12 @@ impl PineLayer<'_> {
                     continue;
                 }
                 let x = self.x_at(i);
+                if marker.character.is_none()
+                    && matches!(marker.style, MarkerShape::LabelUp | MarkerShape::LabelDown)
+                {
+                    self.draw_label_shape_marker(painter, marker, i, x);
+                    continue;
+                }
                 let radius = shape_radius(marker.style, marker.size);
                 let reach = match &marker.character {
                     Some(_) => 6.0,
@@ -983,7 +999,14 @@ impl PineLayer<'_> {
                 let centre = Pos2::new(x, y);
                 let half_height = match &marker.character {
                     Some(glyph) => {
-                        text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
+                        text_at(
+                            painter,
+                            glyph,
+                            FontId::proportional(12.0),
+                            color,
+                            centre,
+                            Align2::CENTER_CENTER,
+                        );
                         6.0
                     }
                     // Drawn, not typeset: "▲" and "▼" are in no font bundled with egui, so
@@ -1009,13 +1032,80 @@ impl PineLayer<'_> {
                     text_at(
                         painter,
                         text,
-                        font_size(marker.size),
+                        FontId::proportional(label_font_size(marker.size)),
                         text_color,
                         at,
                         anchor,
                     );
                 }
             }
+        }
+    }
+
+    /// A `shape.labelup` / `shape.labeldown` marker: a bubble around its `text`, its pointer's tip
+    /// where `location` puts it (the price for `location.absolute`, else a size's gap from the bar).
+    fn draw_label_shape_marker(&self, painter: &Painter, marker: &MarkerOutput, i: usize, x: f32) {
+        let metrics = geometry::shape_label(marker.size);
+        let text = self
+            .visible(&marker.texts, i)
+            .and_then(|text| text.as_deref())
+            .unwrap_or("");
+        let font = FontId::proportional(label_font_size(Size::Normal));
+        let measured = measure(painter, text, font.clone());
+        let tip = Pos2::new(
+            x,
+            self.marker_tip_y(marker.location, &marker.prices, i, metrics.gap),
+        );
+        let style = if marker.style.points_down() {
+            LabelStyle::LabelDown
+        } else {
+            LabelStyle::LabelUp
+        };
+        let layout = label_layout(style, tip, measured + metrics.padding, metrics.pointer);
+        let fill = rgba(self.visible_opt(&marker.colors, i).unwrap_or(marker.color));
+        draw_label_shape(painter, &layout, fill);
+        if !text.is_empty() {
+            let text_color = rgba(
+                self.visible_opt(&marker.text_colors, i)
+                    .unwrap_or(marker.color),
+            );
+            text_at(
+                painter,
+                text,
+                font,
+                text_color,
+                layout.body.center(),
+                Align2::CENTER_CENTER,
+            );
+        }
+    }
+
+    /// Where the tip of a label shape stands: `gap` away from the bar's low (below) or high
+    /// (above), or at the price for `location.absolute`; pinned to the pane's edges in a pane.
+    fn marker_tip_y(
+        &self,
+        location: MarkerLocation,
+        prices: &[Option<f64>],
+        i: usize,
+        gap: f32,
+    ) -> f32 {
+        if location == MarkerLocation::Absolute
+            && let Some(price) = self.visible_opt(prices, i)
+        {
+            return self.y(price);
+        }
+        if self.in_pane {
+            return if location.is_below() {
+                self.plot.max.y - gap
+            } else {
+                self.plot.min.y + gap
+            };
+        }
+        let candle = &self.candles[i];
+        if location.is_below() {
+            self.y(candle.low) + gap
+        } else {
+            self.y(candle.high) - gap
         }
     }
 
@@ -1123,8 +1213,8 @@ impl PineLayer<'_> {
             .iter()
             .filter(|t| t.columns > 0 && t.rows > 0 && !t.cells.is_empty())
             .map(|table| {
-                let layout = geometry::measure_table(table, area.size(), &|text, size| {
-                    measure(painter, text, size)
+                let layout = geometry::measure_table(table, area.size(), &|text, size, family| {
+                    measure(painter, text, font_id(size, family))
                 });
                 let origin = geometry::table_origin(layout.size(), table.position, area);
                 (table, layout, origin)
@@ -1443,12 +1533,12 @@ fn draw_table(
             rect,
             cell.text_horizontal_align,
             cell.text_vertical_align,
-            geometry::CELL_PADDING.x / 2.0,
+            geometry::cell_padding(block_font_size(cell.text_size)).x / 2.0,
         );
         text_at(
             painter,
             &cell.text,
-            font_size(cell.text_size),
+            font_id(block_font_size(cell.text_size), cell.text_font_family),
             rgba(cell.text_color),
             point,
             anchor,
@@ -1707,6 +1797,7 @@ mod tests {
             text: "zone".into(),
             text_color: 0xFFFF_FFFF,
             text_size: Size::Small,
+            text_font_family: FontFamily::Default,
             text_horizontal_align: TextAlign::Left,
             text_vertical_align: TextAlign::Top,
             time_anchored: false,
@@ -1721,6 +1812,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: None,
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
@@ -1744,6 +1836,58 @@ mod tests {
         incomplete.lines.push(output.lines[1].clone());
         let layer = self::layer(&incomplete, &candles, &x, &y);
         assert_eq!(shapes_drawn(|painter| layer.draw_lines(painter)), 0);
+    }
+
+    #[test]
+    fn a_boxs_text_runs_past_its_sides_but_not_its_top_or_bottom() {
+        let candles = candles(4);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = empty();
+        output.boxes.push(BoxOutput {
+            id: 1,
+            left: 1,
+            top: 120.0,
+            right: 2,
+            bottom: 100.0,
+            border_color: None,
+            border_width: 0,
+            background_color: Some(0x0000_FFFF),
+            border_style: LineStyle::Solid,
+            extend: LineExtend::None,
+            text: "0123456789".into(),
+            text_color: 0xFFFF_FFFF,
+            text_size: Size::Huge,
+            text_font_family: FontFamily::Default,
+            text_horizontal_align: TextAlign::Center,
+            text_vertical_align: TextAlign::Center,
+            time_anchored: false,
+            force_overlay: false,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let ctx = egui::Context::default();
+        let mut run = ctx.run_ui(egui::RawInput::default(), |ui| {
+            layer.draw_boxes(ui.painter())
+        });
+        run.textures_delta.clear();
+        let text = run
+            .shapes
+            .iter()
+            .find(|clipped| matches!(clipped.shape, Shape::Text(_)))
+            .expect("the box's text");
+        let rect = Rect::from_min_max(
+            Pos2::new(x_of(1), y_of(120.0)),
+            Pos2::new(x_of(2), y_of(100.0)),
+        );
+        assert_eq!(
+            text.clip_rect.y_range(),
+            rect.y_range(),
+            "held top and bottom"
+        );
+        assert!(
+            text.clip_rect.left() < rect.left() && text.clip_rect.right() > rect.right(),
+            "free at the sides: {:?} against {rect:?}",
+            text.clip_rect
+        );
     }
 
     #[test]
@@ -1823,6 +1967,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: None,
             text_align: TextAlign::Center,
             yloc,
@@ -2301,6 +2446,7 @@ mod tests {
                     text_color: 0xFFFF_FFFF,
                     background_color: None,
                     text_size: Size::Normal,
+                    text_font_family: FontFamily::Default,
                     column_span: 1,
                     row_span: 1,
                     text_horizontal_align: TextAlign::Center,
@@ -2319,6 +2465,7 @@ mod tests {
                         text_color: 0xFFFF_FFFF,
                         background_color: Some(0x0000_00FF),
                         text_size: Size::Normal,
+                        text_font_family: FontFamily::Default,
                         column_span: 1,
                         row_span: 1,
                         text_horizontal_align: TextAlign::Center,
@@ -2539,6 +2686,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: tooltip.map(str::to_owned),
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
@@ -2555,6 +2703,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             background_color: None,
             text_size: Size::Normal,
+            text_font_family: FontFamily::Default,
             column_span: 1,
             row_span: 1,
             text_horizontal_align: TextAlign::Center,
@@ -2664,8 +2813,12 @@ mod tests {
         let mut label = tip_label(9, 200.0 - cell.center().y as f64, "L", Some("label of B"));
         label.style = LabelStyle::LabelCenter;
         b.labels.push(label);
-        let over = Pos2::new(x_of(9), cell.center().y);
-        assert!(cell.contains(over), "the label is over the cell: {cell:?}");
+        // The cell's centre, under the bubble of the label at the last bar.
+        let over = cell.center();
+        assert!(
+            (over.x - x_of(9)).abs() < 12.0,
+            "the label is over the cell: {cell:?}"
+        );
         let hovered = |layers: &[(PineLayer, bool)]| {
             with_painter(|painter| {
                 target_at(&hover_targets_in_order(layers, painter), over).map(|t| t.text.clone())

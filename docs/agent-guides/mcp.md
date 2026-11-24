@@ -15,8 +15,8 @@
 
 - Timeframes: a tool's `timeframe` is a string read by `Timeframe::parse` through
   `chart::control::parse_timeframe`: a count and a unit (`m` minutes, `h` hours, `D` days, `W` weeks,
-  `M` months, or `1Y`; `15m`, `4h`, `1D`, `2W`, `3M`), and the old `1H` still reads. A refused one is
-  an `INVALID_ARGUMENT` with the parse message (`Seconds aren't supported`, `Minutes go from 1 to
+  `M` months, `s` seconds, or `1Y`; `30s`, `15m`, `4h`, `1D`, `2W`, `3M`), and the old `1H` still reads. A refused one is
+  an `INVALID_ARGUMENT` with the parse message (`Seconds go from 1 to 59`, `Minutes go from 1 to
   1440`) and the grammar (`TIMEFRAME_GRAMMAR`, which the tool descriptions repeat). Results write the
   app's label (`Timeframe::label`: `1h`, `22m`, `2D`). A source with no such candle builds it from
   finer ones or the chart shows why it cannot (see [Market data](market-data.md#timeframes)).

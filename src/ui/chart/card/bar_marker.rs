@@ -30,13 +30,15 @@ pub enum Scrolled {
     NoBars,
 }
 
-/// The label a marked bar carries: the date for a daily or longer bar, the date and time below.
+/// The label a marked bar carries: the date for a daily or longer bar, the date and time below,
+/// with seconds on a candle shorter than a minute.
 pub fn marker_label(open_time_ms: i64, timeframe: Option<Timeframe>) -> String {
     let full = format::timestamp(open_time_ms);
     match timeframe {
         Some(timeframe) if !timeframe.is_intraday() => {
             full.split(' ').next().unwrap_or(&full).to_owned()
         }
+        Some(timeframe) if timeframe.is_subminute() => format::timestamp_seconds(open_time_ms),
         _ => full,
     }
 }
@@ -274,6 +276,17 @@ mod tests {
     }
 
     #[test]
+    fn a_chart_of_seconds_writes_its_times_with_seconds() {
+        let time = 1_700_000_022_000;
+        let mut card = ChartCard::default();
+        assert_eq!(card.time_text(time), "2023-11-14 22:13");
+        card.set_timeframe(Timeframe::MINUTE_1);
+        assert_eq!(card.time_text(time), "2023-11-14 22:13");
+        card.set_timeframe(Timeframe::SECOND_30);
+        assert_eq!(card.time_text(time), "2023-11-14 22:13:42");
+    }
+
+    #[test]
     fn the_label_has_the_detail_of_the_timeframe() {
         let time = 1_700_000_000_000;
         assert_eq!(
@@ -283,5 +296,9 @@ mod tests {
         assert_eq!(marker_label(time, Some(Timeframe::DAY_1)), "2023-11-14");
         assert_eq!(marker_label(time, Some(Timeframe::MONTH_1)), "2023-11-14");
         assert_eq!(marker_label(time, None), "2023-11-14 22:13");
+        assert_eq!(
+            marker_label(time + 22_000, Some(Timeframe::SECOND_15)),
+            "2023-11-14 22:13:42"
+        );
     }
 }

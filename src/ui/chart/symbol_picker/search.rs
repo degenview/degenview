@@ -9,6 +9,7 @@
 //! order inside it.
 
 use super::PickMode;
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::market::search_rank::{self, is_dollar_quote};
 use crate::service::work_queue::{self, Pending};
@@ -68,12 +69,12 @@ impl Scope {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::All => "All",
-            Self::Stocks => "Stocks",
-            Self::Crypto => "Crypto",
-            Self::Predictions => "Predictions",
-            Self::Dashboards => "Dashboards",
-            Self::Watchlists => "Watchlists",
+            Self::All => tr!("All"),
+            Self::Stocks => tr!("Stocks"),
+            Self::Crypto => tr!("Crypto"),
+            Self::Predictions => tr!("Predictions"),
+            Self::Dashboards => tr!("Dashboards"),
+            Self::Watchlists => tr!("Watchlists"),
         }
     }
 
@@ -125,10 +126,10 @@ impl Scope {
     /// The text the search box asks for.
     pub fn placeholder(self) -> &'static str {
         match self {
-            Self::Predictions => "Search markets (e.g. Bitcoin, Fed, election)",
-            Self::Dashboards => "Filter indices and portfolio views",
-            Self::Watchlists => "Filter your watchlists",
-            Self::All | Self::Stocks | Self::Crypto => "Search symbol…",
+            Self::Predictions => tr!("Search markets (e.g. Bitcoin, Fed, election)"),
+            Self::Dashboards => tr!("Filter indices and portfolio views"),
+            Self::Watchlists => tr!("Filter your watchlists"),
+            Self::All | Self::Stocks | Self::Crypto => tr!("Search symbol…"),
         }
     }
 }
@@ -149,10 +150,10 @@ pub fn popular() -> Vec<SearchResult> {
 /// What kind of market a provider lists, as the list's right-hand column says it.
 pub fn market_kind(source: DataSource) -> &'static str {
     match source {
-        DataSource::Alpaca => "Stock",
-        DataSource::Polymarket | DataSource::Kalshi => "Prediction",
-        DataSource::CoinMarketCap => "Index",
-        _ => "Crypto",
+        DataSource::Alpaca => tr!("Stock"),
+        DataSource::Polymarket | DataSource::Kalshi => tr!("Prediction"),
+        DataSource::CoinMarketCap => tr!("Index"),
+        _ => tr!("Crypto"),
     }
 }
 
@@ -165,10 +166,10 @@ pub fn trading_kind(source: DataSource) -> &'static str {
         | DataSource::Kraken
         | DataSource::Bybit
         | DataSource::Gate
-        | DataSource::Mexc => "Spot",
-        DataSource::DexScreener => "DEX",
-        DataSource::CoinGecko => "Aggregate",
-        DataSource::Alpaca => "Stock",
+        | DataSource::Mexc => tr!("Spot"),
+        DataSource::DexScreener => tr!("DEX"),
+        DataSource::CoinGecko => tr!("Aggregate"),
+        DataSource::Alpaca => tr!("Stock"),
         _ => "",
     }
 }
@@ -176,7 +177,9 @@ pub fn trading_kind(source: DataSource) -> &'static str {
 type Answer = Result<Vec<SearchResult>, ProviderError>;
 
 /// What a search that ended without an answer (its worker panicked) shows for its provider.
-const STOPPED: &str = "The search stopped unexpectedly.";
+fn stopped() -> &'static str {
+    tr!("The search stopped unexpectedly.")
+}
 
 /// Where the answers come from: the providers, or canned ones under test.
 #[derive(Clone, Copy)]
@@ -253,7 +256,7 @@ impl SymbolSearch {
     ) -> Listing {
         let answers = &mut self.answers;
         self.pending.retain(|slot, search| {
-            let Some(answer) = search.poll_or(|| Err(ProviderError::other(STOPPED))) else {
+            let Some(answer) = search.poll_or(|| Err(ProviderError::other(stopped()))) else {
                 return true;
             };
             answers.insert(slot.clone(), answer);

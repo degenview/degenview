@@ -27,7 +27,6 @@ impl ChartWorkspace {
                 title: &title,
                 symbol: &chart.symbol,
                 source: chart.source,
-                loaded_candles: chart.candles.len(),
                 indicators: &mut chart.indicators,
                 card: &mut chart.chart,
                 scale_mode: chart.scale_mode,

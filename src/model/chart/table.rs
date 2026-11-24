@@ -7,6 +7,7 @@
 //! feed, the view draws it.
 
 use crate::format;
+use crate::i18n::tr;
 use crate::model::watchlist::quote::compact_number;
 use crate::model::{Kline, PriceFormat};
 
@@ -67,6 +68,9 @@ pub struct TableFeed {
     /// Whether the bars have an open, high and low of their own (a line chart's do not).
     pub ohlc: bool,
     pub volume: bool,
+    /// Whether the bars are shorter than a minute, so the Time column writes their seconds: two
+    /// bars of one minute must not read as one time.
+    pub seconds: bool,
     /// The bars the chart draws, oldest first.
     pub bars: Vec<Kline>,
     pub extras: Vec<Extra>,
@@ -97,12 +101,12 @@ impl TableFeed {
 
     pub fn title(&self, column: Column) -> String {
         match column {
-            Column::Time => "Time".to_owned(),
-            Column::Open => "Open".to_owned(),
-            Column::High => "High".to_owned(),
-            Column::Low => "Low".to_owned(),
-            Column::Close => "Close".to_owned(),
-            Column::Volume => "Volume".to_owned(),
+            Column::Time => tr!("Time").to_owned(),
+            Column::Open => tr!("Open").to_owned(),
+            Column::High => tr!("High").to_owned(),
+            Column::Low => tr!("Low").to_owned(),
+            Column::Close => tr!("Close").to_owned(),
+            Column::Volume => tr!("Volume").to_owned(),
             Column::Extra(index) => self
                 .extras
                 .get(index)
@@ -128,6 +132,7 @@ impl TableFeed {
             return String::new();
         };
         match column {
+            Column::Time if self.seconds => format::timestamp_seconds(kline.open_time),
             Column::Time => format::timestamp(kline.open_time),
             Column::Open => price.format(kline.open),
             Column::High => price.format(kline.high),
@@ -143,8 +148,8 @@ impl TableFeed {
                     Some(value) => match extra.kind {
                         ValueKind::Price => price.format(value),
                         ValueKind::Plain => format!("{value:.2}"),
-                        ValueKind::Flip if value > 0.0 => "Bullish".to_owned(),
-                        ValueKind::Flip => "Bearish".to_owned(),
+                        ValueKind::Flip if value > 0.0 => tr!("Bullish").to_owned(),
+                        ValueKind::Flip => tr!("Bearish").to_owned(),
                     },
                 }
             }
@@ -187,6 +192,7 @@ mod tests {
             bars_label: "Candles".to_owned(),
             ohlc: true,
             volume: true,
+            seconds: false,
             bars: vec![
                 bar(0, 100.0, 101.0),
                 bar(60_000, 101.0, 99.5),
@@ -210,6 +216,18 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn the_time_column_writes_seconds_for_bars_shorter_than_a_minute() {
+        let mut feed = feed();
+        feed.bars[1].open_time = 1_000;
+        let cell = |feed: &TableFeed, bar| feed.cell(bar, Column::Time, PriceFormat::default());
+        // A minute chart's cells read the minute: the two bars cannot be told apart by seconds.
+        assert_eq!(cell(&feed, 0), cell(&feed, 1));
+        feed.seconds = true;
+        assert_eq!(cell(&feed, 0), "1970-01-01 00:00:00");
+        assert_eq!(cell(&feed, 1), "1970-01-01 00:00:01");
     }
 
     #[test]

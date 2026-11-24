@@ -46,6 +46,7 @@ fn frame<'a>(bars: &'a [Kline], symbol: &'a SymbolInfo) -> ChartFrame<'a> {
         bars,
         symbol,
         bar_seconds: None,
+        timeframe_seconds: None,
         theme: ChartTheme::DARK,
         visible_range: None,
     }

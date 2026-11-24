@@ -2,6 +2,7 @@
 //! image's summary and the two ways to export it.
 
 use super::{Action, Export, Input, Output, PAD};
+use crate::i18n::tr;
 use crate::model::chart::snapshot::framing::{Dial, MAX, MIN, Step, multiplier_text};
 use crate::ui::icons::Icon;
 use crate::ui::kit::ruler::{Ruler, RulerEvent, ruler};
@@ -15,7 +16,6 @@ pub(super) const BAR_HEIGHT: f32 = 62.0;
 const RULER_WIDTH: f32 = 42.0 + 8.0 + 128.0 + 8.0 + 46.0;
 const RULER_GAP: f32 = 36.0;
 const BUTTON_HEIGHT: f32 = 32.0;
-const NOT_FOR_LAYOUTS: &str = "Not available for several charts";
 
 /// Width and Height, centred; Reset view at the right while the framing is not the capture's own.
 pub(super) fn framing(ui: &mut Ui, input: &Input<'_>, width: f32, output: &mut Output) {
@@ -26,7 +26,7 @@ pub(super) fn framing(ui: &mut Ui, input: &Input<'_>, width: f32, output: &mut O
         row.center().x - (2.0 * RULER_WIDTH + RULER_GAP) / 2.0,
         row.center().y - 11.0,
     );
-    for (index, (dial, label)) in [(Dial::Width, "Width"), (Dial::Height, "Height")]
+    for (index, (dial, label)) in [(Dial::Width, tr!("Width")), (Dial::Height, tr!("Height"))]
         .into_iter()
         .enumerate()
     {
@@ -49,7 +49,7 @@ pub(super) fn framing(ui: &mut Ui, input: &Input<'_>, width: f32, output: &mut O
                 home: 1.0,
                 readout: &readout,
                 enabled: input.reframable,
-                hint: NOT_FOR_LAYOUTS,
+                hint: tr!("Not available for several charts"),
             },
         );
         output.interacting |= result.dragging;
@@ -80,12 +80,14 @@ pub(super) fn framing(ui: &mut Ui, input: &Input<'_>, width: f32, output: &mut O
 fn dial_hint(dial: Dial) -> &'static str {
     match dial {
         Dial::Width => {
-            "How much of the time axis the image shows. Drag the ruler left to zoom in, right to \
-             zoom out; double-click to reset."
+            tr!(
+                "How much of the time axis the image shows. Drag the ruler left to zoom in, right to zoom out; double-click to reset."
+            )
         }
         Dial::Height => {
-            "How much of the price axis the image shows. Drag the ruler left to zoom in, right to \
-             zoom out; double-click to reset."
+            tr!(
+                "How much of the price axis the image shows. Drag the ruler left to zoom in, right to zoom out; double-click to reset."
+            )
         }
     }
 }
@@ -94,7 +96,7 @@ fn dial_hint(dial: Dial) -> &'static str {
 fn reset_button(ui: &mut Ui, row: Rect) -> egui::Response {
     let label = kit::galley(
         ui,
-        "Reset view",
+        tr!("Reset view"),
         size::SUBHEADLINE + 1.0,
         REGULAR,
         theme::text_primary(),
@@ -107,9 +109,9 @@ fn reset_button(ui: &mut Ui, row: Rect) -> egui::Response {
     );
     let response = ui
         .interact(rect, Id::new("studio-reset-view"), Sense::click())
-        .on_hover_text("Back to the view the capture started with")
+        .on_hover_text(tr!("Back to the view the capture started with"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let response = crate::ui::accessibility::label(response, "Reset view");
+    let response = crate::ui::accessibility::label(response, tr!("Reset view"));
     let painter = ui.painter();
     if response.is_pointer_button_down_on() {
         painter.rect_filled(rect, 7.0, kit::primary(0.14));
@@ -158,8 +160,8 @@ pub(super) fn bar(ui: &mut Ui, input: &Input<'_>, width: f32, output: &mut Outpu
     let can = input.can_export && busy.is_none();
     // Right to left: the main action first, so it ends the row.
     for (export, label, prominent) in [
-        (Export::Download, "Download PNG", true),
-        (Export::CopyImage, "Copy image", false),
+        (Export::Download, tr!("Download PNG"), true),
+        (Export::CopyImage, tr!("Copy image"), false),
     ] {
         let mut child = ui.new_child(
             egui::UiBuilder::new()

@@ -282,6 +282,11 @@ the replay cursor, so it cannot reach a bar replay has not shown.
 Keep drawing (on by default, which is how the tools always behaved here) stays on the tool after
 a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped tile's tool persist.
 
+The ruler is read after it is placed, so with Keep drawing off it stays armed and on screen until
+the next click or drag, which puts the tool down and takes the measurement with it (`ends_measurement`
+in the layer, `ChartWorkspace::disarm_tool`). On, that click starts another measurement. The report
+asked for this; it was not observed on TradingView.
+
 The cursor menu on the strip's first tile has an Eraser that removes drawings by clicking or
 sweeping over them; see [Chart cursors](chart-cursors.md).
 
@@ -339,11 +344,13 @@ anchor; per-timeframe visibility is only a predicate on what is shown.
 
 Visibility is a `u8` mask with one fixed bit per `VisibilityRow` (Hours 0, Days 1, Weeks 2, Months 3,
 Quarters 4, Years 5, Minutes 6); a timeframe is shown under its row (`VisibilityRow::of`: minutes,
-hours, days, weeks, 1-2M Months, 3-6M Quarters, 7-12M Years), and the page lists the seven rows in
+hours, days, weeks, 1-2M Months, 3-6M Quarters, 7-12M Years; seconds share the Minutes row, since the
+mask has no bit left, and its label reads "Second and minute candles"), and the page lists the seven rows in
 the order Minutes, Hours, Days, Weeks, Months, Quarters, Years. Bit 7 marks a mask written with
 the Minutes bit. A mask without it was saved before minutes existed (the old "every timeframe" is
 `63`): its minutes follow its Hours bit, so such a drawing is still visible wherever it was and
 on minutes if it showed on hours. The last visible row cannot be hidden.
+An anchor's time is edited through the shared date picker (`kit::date_picker`), which steps hours and minutes: on a chart of seconds an anchor nobody touched keeps its exact time, and one the user picks again lands on a whole minute. The picker has no seconds stepper.
 
 Drawings are main-pane only. Indicator panes are separate coordinate spaces and a drawing is never
 reinterpreted as a pane value.

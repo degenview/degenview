@@ -17,6 +17,7 @@ use eframe::egui;
 
 impl DegenViewApp {
     pub(super) fn process_commands(&mut self, ctx: &egui::Context) {
+        native_bridge::follow_language();
         native_bridge::set_edit_menu(
             self.with_focused_pine_studio(|pine| pine.edit_menu())
                 .unwrap_or_default(),

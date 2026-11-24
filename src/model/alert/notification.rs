@@ -3,6 +3,7 @@
 //! settings applied, and the delivery state machine (pending → delivered, or failed with
 //! a growing back-off until it is given up on). Pure: the OS call itself is the host's.
 
+use crate::i18n::tr;
 use crate::model::alert::{
     AlertDeliveryRecord, AlertDeliveryState, AlertEventOrigin, AlertNotificationSettings,
     AlertTriggerEvent,
@@ -40,15 +41,18 @@ pub fn banners_enabled(settings: &AlertNotificationSettings) -> bool {
 pub fn price_alert_title(event: &AlertTriggerEvent) -> String {
     let symbol = &event.asset.symbol;
     if event.origin == AlertEventOrigin::CatchUp {
-        format!("Delayed {symbol} price alert")
+        tr!("Delayed {symbol} price alert", symbol = symbol)
     } else {
-        format!("{symbol} price alert")
+        tr!("{symbol} price alert", symbol = symbol)
     }
 }
 
 /// "Reached $70,000.00".
 pub fn price_alert_body(event: &AlertTriggerEvent) -> String {
-    format!("Reached {}", event.currency.format_price(event.target))
+    tr!(
+        "Reached {price}",
+        price = event.currency.format_price(event.target)
+    )
 }
 
 pub fn price_alert_content(
@@ -79,7 +83,7 @@ pub fn script_alert_content(
     NotificationContent {
         title: title.to_owned(),
         body: if message.is_empty() {
-            "Alert".to_owned()
+            tr!("Alert").to_owned()
         } else {
             message.to_owned()
         },

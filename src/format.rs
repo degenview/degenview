@@ -50,15 +50,24 @@ pub(crate) fn group_thousands(text: &str) -> String {
     }
 }
 
+/// `YYYY-MM-DD HH:MM` in UTC.
 pub fn timestamp(epoch_ms: i64) -> String {
+    let mut text = timestamp_seconds(epoch_ms);
+    text.truncate("YYYY-MM-DD HH:MM".len());
+    text
+}
+
+/// `YYYY-MM-DD HH:MM:SS` in UTC, for candles shorter than a minute.
+pub fn timestamp_seconds(epoch_ms: i64) -> String {
     let seconds = epoch_ms.div_euclid(1_000);
     let days = seconds.div_euclid(86_400);
     let remainder = seconds.rem_euclid(86_400);
     let (year, month, day) = civil_from_days(days);
     format!(
-        "{year:04}-{month:02}-{day:02} {:02}:{:02}",
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
         remainder / 3_600,
-        remainder % 3_600 / 60
+        remainder % 3_600 / 60,
+        remainder % 60
     )
 }
 
@@ -212,6 +221,14 @@ mod tests {
                 "{ms}"
             );
         }
+    }
+
+    #[test]
+    fn a_timestamp_may_carry_its_seconds() {
+        let ms = 1_700_000_022_000;
+        assert_eq!(super::timestamp(ms), "2023-11-14 22:13");
+        assert_eq!(super::timestamp_seconds(ms), "2023-11-14 22:13:42");
+        assert_eq!(super::parse_timestamp("2023-11-14 22:13:42"), Some(ms));
     }
 
     #[test]

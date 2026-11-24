@@ -6,8 +6,9 @@
 
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape, PlotStyle, Size,
-    TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation, index_is_known,
+    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape,
+    PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation,
+    index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
@@ -74,16 +75,85 @@ pub fn shape_radius(shape: MarkerShape, size: Size) -> f32 {
     }
 }
 
-/// Point size of label and table text.
-pub fn font_size(size: Size) -> f32 {
+/// Point size of the text in a table cell or a box. TradingView's named sizes are 8, 10, 14, 20 and
+/// 36 pixels: a table of one cell per size on a 2x screen drew digits 12, 14, 20, 28 and 51 pixels
+/// tall in rows 27, 34, 47, 67 and 120 pixels high, and a box holding `0123` drew its digits 12,
+/// 14, 20, 28 and 52 pixels tall (this font's digits are 0.73 of its size, as the 0.7 of
+/// TradingView's, so the sizes carry over as they are).
+pub fn block_font_size(size: Size) -> f32 {
     match size {
         Size::Tiny => 8.0,
         Size::Small => 10.0,
-        Size::Large => 15.0,
-        Size::Huge => 20.0,
+        Size::Large => 20.0,
+        Size::Huge => 36.0,
+        Size::Normal | Size::Auto => 14.0,
+        Size::Points(points) => f32::from(points),
+    }
+}
+
+/// Point size of label text, measured the same way as [`block_font_size`] with labels holding
+/// `0123` at every size: digits 10, 14, 17 and 26 pixels tall on a 2x screen for tiny to large, and
+/// a bubble 50 pixels high at `size.huge`. Labels are set smaller than the text of a table or a box
+/// of the same name.
+pub fn label_font_size(size: Size) -> f32 {
+    match size {
+        Size::Tiny => 7.0,
+        Size::Small => 9.0,
+        Size::Large => 18.0,
+        Size::Huge => 24.0,
         Size::Normal | Size::Auto => 12.0,
-        // TradingView's `size.normal` is 14 points and is 12 here.
+        // TradingView's `size.normal` is 14 points and labels draw it at 12.
         Size::Points(points) => f32::from(points) * 12.0 / 14.0,
+    }
+}
+
+/// What a label adds around its text, as a multiple of the text's size: both sides together, so a
+/// bubble is 1.55 font sizes wider and 0.9 taller than its text (the bubble is 2.1 font sizes
+/// high at every size, measured on TradingView: 14.4, 18, 25, 37 and 51 points).
+const LABEL_PADDING_EM: Vec2 = Vec2::new(1.55, 0.9);
+
+/// A label bubble's pointer, half its base and its length, in font sizes.
+const LABEL_POINTER_EM: f32 = 0.5;
+
+/// The padding added to the text of a label set at `font` points.
+pub fn label_padding(font: f32) -> Vec2 {
+    LABEL_PADDING_EM * font
+}
+
+/// The half-base and length of the pointer of a label set at `font` points.
+pub fn label_pointer(font: f32) -> f32 {
+    LABEL_POINTER_EM * font
+}
+
+/// How a `plotshape` label shape (`shape.labelup`, `shape.labeldown`) is built around its text.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShapeLabel {
+    /// What the bubble adds around its text, both sides together.
+    pub padding: Vec2,
+    /// The half-base and length of the pointer.
+    pub pointer: f32,
+    /// How far the pointer's tip stands from the bar it marks (`location.abovebar` and
+    /// `belowbar`).
+    pub gap: f32,
+}
+
+/// The size of a `plotshape` label shape. Its `size` scales the bubble and its gap to the bar, never
+/// the text, which is drawn at [`label_font_size`]'s normal whatever the size. Measured on
+/// TradingView, which drew `0123` in bubbles 41 x 31, 47 x 40, 55 x 52 and 63 x 64 points for small
+/// to huge (22 high for tiny), with the tip 23, 38, 56 and 75 points from the bar's low, 11 for tiny
+/// (the pointer is the label's half font size, as for `label.new`).
+pub fn shape_label(size: Size) -> ShapeLabel {
+    let (width, height, gap) = match size {
+        Size::Tiny => (7.0, 4.1, 11.0),
+        Size::Small => (13.0, 12.1, 23.0),
+        Size::Large => (27.0, 28.6, 56.0),
+        Size::Huge => (35.0, 37.6, 75.0),
+        Size::Normal | Size::Auto | Size::Points(_) => (19.0, 19.6, 38.0),
+    };
+    ShapeLabel {
+        padding: Vec2::new(width, height),
+        pointer: label_pointer(label_font_size(size)),
+        gap,
     }
 }
 
@@ -443,9 +513,18 @@ fn marker_layout(style: LabelStyle, anchor: Pos2, size: Vec2, text_above: bool) 
 
 // MARK: Tables
 
-/// The padding a table cell adds around its text, and the gap to the plot's edge.
-pub const CELL_PADDING: Vec2 = Vec2::new(12.0, 6.0);
-pub const TABLE_MARGIN: f32 = 8.0;
+/// What a table cell adds around its text, as a multiple of the text's size: both sides together.
+/// A cell is 1.68 font sizes high (a line of this font is 1.2) and its text is 0.58 sizes from its
+/// widest neighbour's edges, measured on TradingView for every size.
+const CELL_PADDING_EM: Vec2 = Vec2::new(0.58, 0.48);
+
+/// The gap from a table to the plot's edge.
+pub const TABLE_MARGIN: f32 = 10.0;
+
+/// The padding a table cell of text set at `font` points adds around it.
+pub fn cell_padding(font: f32) -> Vec2 {
+    CELL_PADDING_EM * font
+}
 
 /// A table's cells measured, with the column widths and row heights they imply.
 #[derive(Clone, Debug, PartialEq)]
@@ -482,12 +561,12 @@ impl TableLayout {
     }
 }
 
-/// Sizes the grid to its cell text. `measure(text, font_size)` is the text's size; a cell's
+/// Sizes the grid to its cell text. `measure(text, font_size, family)` is the text's size; a cell's
 /// `width` and `height` are minimums, as a percentage of the plot area.
 pub fn measure_table(
     table: &TableOutput,
     area: Vec2,
-    measure: &dyn Fn(&str, f32) -> Vec2,
+    measure: &dyn Fn(&str, f32, FontFamily) -> Vec2,
 ) -> TableLayout {
     let mut layout = TableLayout {
         widths: vec![0.0; table.columns],
@@ -497,9 +576,10 @@ pub fn measure_table(
         if cell.column >= table.columns || cell.row >= table.rows {
             continue;
         }
-        let size = measure(&cell.text, font_size(cell.text_size));
-        let width = (size.x + CELL_PADDING.x).max(area.x * cell.width as f32 / 100.0);
-        let height = (size.y + CELL_PADDING.y).max(area.y * cell.height as f32 / 100.0);
+        let font = block_font_size(cell.text_size);
+        let size = measure(&cell.text, font, cell.text_font_family) + cell_padding(font);
+        let width = size.x.max(area.x * cell.width as f32 / 100.0);
+        let height = size.y.max(area.y * cell.height as f32 / 100.0);
         if cell.column_span == 1 {
             layout.widths[cell.column] = layout.widths[cell.column].max(width);
         }
@@ -515,13 +595,14 @@ pub fn measure_table(
         {
             continue;
         }
-        let size = measure(&cell.text, font_size(cell.text_size));
+        let font = block_font_size(cell.text_size);
+        let size = measure(&cell.text, font, cell.text_font_family) + cell_padding(font);
         let last = (cell.column + cell.column_span).min(table.columns) - 1;
         let last_row = (cell.row + cell.row_span).min(table.rows) - 1;
         let span_width: f32 = layout.widths[cell.column..=last].iter().sum();
         let span_height: f32 = layout.heights[cell.row..=last_row].iter().sum();
-        layout.widths[last] += (size.x + CELL_PADDING.x - span_width).max(0.0);
-        layout.heights[last_row] += (size.y + CELL_PADDING.y - span_height).max(0.0);
+        layout.widths[last] += (size.x - span_width).max(0.0);
+        layout.heights[last_row] += (size.y - span_height).max(0.0);
     }
     layout
 }
@@ -846,14 +927,17 @@ mod tests {
         );
         assert!(is_visible(0x1234_5601) && !is_visible(0x1234_5600));
         assert_eq!(faded(0xFF00_00FF, 0.5).a(), 128);
-        assert_eq!(font_size(Size::Auto), 12.0);
-        assert_eq!(font_size(Size::Huge), 20.0);
+        assert_eq!(block_font_size(Size::Auto), 14.0);
+        assert_eq!(block_font_size(Size::Huge), 36.0);
+        assert_eq!(block_font_size(Size::Points(14)), 14.0);
+        assert_eq!(label_font_size(Size::Auto), 12.0);
+        assert_eq!(label_font_size(Size::Huge), 24.0);
         assert_eq!(
-            font_size(Size::Points(14)),
+            label_font_size(Size::Points(14)),
             12.0,
             "size.normal is 14 points in Pine"
         );
-        assert_eq!(font_size(Size::Points(28)), 24.0);
+        assert_eq!(label_font_size(Size::Points(28)), 24.0);
         assert_eq!(marker_radius(Size::Tiny), 3.0);
         assert_eq!(marker_radius(Size::Auto), 5.0);
         assert_eq!(triangle_radius(Size::Tiny), 4.5);
@@ -1108,6 +1192,7 @@ mod tests {
             text_color: 0,
             background_color: None,
             text_size: Size::Normal,
+            text_font_family: FontFamily::Default,
             column_span: 1,
             row_span: 1,
             text_horizontal_align: TextAlign::Center,
@@ -1118,7 +1203,7 @@ mod tests {
         }
     }
 
-    fn measure(text: &str, font: f32) -> Vec2 {
+    fn measure(text: &str, font: f32, _family: FontFamily) -> Vec2 {
         Vec2::new(text.chars().count() as f32 * font / 2.0, font)
     }
 
@@ -1135,9 +1220,14 @@ mod tests {
             ],
         );
         let layout = measure_table(&t, Vec2::new(400.0, 300.0), &measure);
-        assert_eq!(layout.widths, [24.0 + 12.0, 6.0 + 12.0]);
-        assert_eq!(layout.heights, [12.0 + 6.0, 12.0 + 6.0]);
-        assert_eq!(layout.size(), Vec2::new(54.0, 36.0));
+        // The cells are `size.normal`, 14 points: the stand-in measures 7 per character.
+        let pad = cell_padding(14.0);
+        assert_eq!(layout.widths, [28.0 + pad.x, 7.0 + pad.x]);
+        assert_eq!(layout.heights, [14.0 + pad.y, 14.0 + pad.y]);
+        assert_eq!(
+            layout.size(),
+            Vec2::new(35.0 + 2.0 * pad.x, 28.0 + 2.0 * pad.y)
+        );
         let wide = TableCell {
             width: 50.0,
             height: 10.0,
@@ -1159,14 +1249,15 @@ mod tests {
         };
         let t = table(2, 1, vec![merged.clone()]);
         let layout = measure_table(&t, Vec2::new(400.0, 300.0), &measure);
-        assert_eq!(layout.widths, [0.0, 21.0 * 6.0 + 12.0]);
+        let pad = cell_padding(14.0);
+        assert_eq!(layout.widths, [0.0, 21.0 * 7.0 + pad.x]);
         let roomy = table(2, 1, vec![merged, cell(0, 0, "x")]);
-        let roomy_layout = measure_table(&roomy, Vec2::new(400.0, 300.0), &|_, _| {
+        let roomy_layout = measure_table(&roomy, Vec2::new(400.0, 300.0), &|_, _, _| {
             Vec2::new(10.0, 12.0)
         });
         assert_eq!(
             roomy_layout.widths,
-            [22.0, 0.0 + 0.0],
+            [10.0 + pad.x, 0.0],
             "text already fits: nothing widens"
         );
         let rect = layout.rect_of(&t.cells[0], Pos2::new(5.0, 5.0));
@@ -1383,5 +1474,73 @@ mod tests {
             "the histogram baseline is not an overlay value"
         );
         assert_eq!(overlay_extent(&[], 5), OverlayExtent::default());
+    }
+    /// What `block_font_size`, `cell_padding`, `label_padding` and `shape_label` were fitted to:
+    /// heights read from TradingView's canvas, with this font's line 1.2 sizes high.
+    #[test]
+    fn cells_bubbles_and_label_shapes_are_as_tall_as_measured_on_tradingview() {
+        let line = |font: f32| font * 1.2;
+        let near = |got: f32, want: f32, what: &str| {
+            assert!((got - want).abs() <= 1.5, "{what}: {got} against {want}");
+        };
+        // A one-cell table's height in 2x pixels, tiny to huge.
+        for (size, measured) in [
+            (Size::Tiny, 27.0),
+            (Size::Small, 34.0),
+            (Size::Normal, 47.0),
+            (Size::Large, 67.0),
+            (Size::Huge, 120.0),
+        ] {
+            let font = block_font_size(size);
+            near(
+                2.0 * (line(font) + cell_padding(font).y),
+                measured,
+                &format!("a {size:?} table cell"),
+            );
+        }
+        // The digits of a box's text in 2x pixels, which are 0.73 of the font's size.
+        for (size, measured) in [
+            (Size::Tiny, 12.0),
+            (Size::Small, 14.0),
+            (Size::Normal, 20.0),
+            (Size::Large, 28.0),
+            (Size::Huge, 52.0),
+        ] {
+            near(
+                2.0 * 0.73 * block_font_size(size),
+                measured,
+                &format!("{size:?} box text"),
+            );
+        }
+        // A label's bubble is 2.1 font sizes high at every size.
+        for size in [
+            Size::Tiny,
+            Size::Small,
+            Size::Normal,
+            Size::Large,
+            Size::Huge,
+        ] {
+            let font = label_font_size(size);
+            let height = line(font) + label_padding(font).y;
+            assert!((height / font - 2.1).abs() < 1e-4, "{size:?}");
+        }
+        // A label shape's bubble and pointer in points, and the tip's distance from the bar: the
+        // text is always at the normal size, whatever the shape's.
+        let text = line(label_font_size(Size::Normal));
+        for (size, height, gap) in [
+            (Size::Tiny, 22.0, 11.0),
+            (Size::Small, 31.0, 23.0),
+            (Size::Normal, 40.0, 38.0),
+            (Size::Large, 52.0, 56.0),
+            (Size::Huge, 64.0, 75.0),
+        ] {
+            let shape = shape_label(size);
+            near(
+                text + shape.padding.y + shape.pointer,
+                height,
+                &format!("a {size:?} label shape"),
+            );
+            assert_eq!(shape.gap, gap, "{size:?}");
+        }
     }
 }

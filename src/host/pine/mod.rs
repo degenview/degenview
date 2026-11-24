@@ -11,7 +11,7 @@ pub mod subscription;
 use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
-use crate::model::market::bucket;
+use crate::model::market::bucket::{self, FoldPlan};
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
@@ -21,9 +21,12 @@ use crate::pine::runtime::support::{
 };
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
 use crate::pine::time::bucket::timeframe_of;
+use crate::service::ProviderError;
+use crate::service::market::retry::while_transient;
 use crate::store::scripts::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 /// Fetches `request.security` series through the REST kline service, so a script can read a symbol
 /// the chart does not carry. `candles` is blocking: one synchronous request per distinct key, which
@@ -32,21 +35,13 @@ pub struct KlineSecurityDataProvider;
 
 /// ~30 s TTL so repeated runs do not re-fetch a foreign symbol each bar.
 const SECURITY_CACHE_TTL_MS: i64 = 30_000;
+/// How long an intrabar fetch waits before asking again after a failure that may pass (a busy
+/// provider, a dropped connection); the script waits for it, so the wait is short.
+const INTRABAR_RETRY_DELAYS: [Duration; 2] =
+    [Duration::from_millis(500), Duration::from_millis(1_500)];
 type SecurityCache = HashMap<(SecurityKey, Option<ChartSpan>), (Vec<Kline>, i64)>;
 static SECURITY_CACHE: LazyLock<Mutex<SecurityCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// The candle sizes the intrabar series are built from: a series of `request.security_lower_tf`
-/// is folded from the coarsest of these that nests in its length (12 minutes from 1-minute
-/// candles, 4 hours from 1-hour ones).
-const INTRABAR_BASES: [Timeframe; 6] = [
-    Timeframe::DAY_1,
-    Timeframe::HOUR_1,
-    Timeframe::MINUTE_30,
-    Timeframe::MINUTE_15,
-    Timeframe::MINUTE_5,
-    Timeframe::MINUTE_1,
-];
 
 impl KlineSecurityDataProvider {
     fn cached(key: &(SecurityKey, Option<ChartSpan>)) -> Option<Vec<Kline>> {
@@ -60,34 +55,43 @@ impl KlineSecurityDataProvider {
     }
 
     /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).
-    fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
-        let target = timeframe_of(key.interval)?;
-        let base = bucket::fold_base(target, &INTRABAR_BASES)?;
+    /// `Ok(None)` when there is nothing to build them from (the source has no candles that fold to
+    /// the length, or none in the span); an error when the source has them and did not answer.
+    fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Result<Option<Vec<Kline>>, ProviderError> {
+        let Some(target) = timeframe_of(key.interval) else {
+            return Ok(None);
+        };
         let (plain, modifier) = ticker::split(&key.symbol);
-        let (source, symbol) = resolve_symbol(plain)?;
-        let base_ms = base.nominal_ms();
+        let Some((source, symbol)) = resolve_symbol(plain) else {
+            return Ok(None);
+        };
+        // The candles the source itself has that `target` folds from, so a length it serves only
+        // by folding (30 s on Gate.io, from its 10 s) is asked for in a length it can answer.
+        let Some(plan) = source.plan(target) else {
+            return Ok(None);
+        };
+        let base_ms = plan.base().nominal_ms();
         let mut start = chart
             .start_ms
             .max(chart.end_ms - base_ms * MAX_INTRABAR_CANDLES as i64);
         if key.recent_bars > 0 {
             start = start.max(chart.end_ms - chart.spacing_ms * key.recent_bars as i64);
         }
-        let candles = crate::service::fetch_klines_range(
-            source,
-            &symbol,
-            base,
-            start,
-            chart.end_ms,
-            MAX_INTRABAR_CANDLES,
-        )
-        .ok()
-        .filter(|candles| !candles.is_empty())?;
-        let candles = if base == target {
-            candles
-        } else {
-            bucket::fold(&candles, target, false)
-        };
-        Some(construct(modifier, candles))
+        let start = intrabar_start(target, start);
+        let candles = while_transient(&INTRABAR_RETRY_DELAYS, || {
+            crate::service::fetch_klines_range(
+                source,
+                &symbol,
+                plan.base(),
+                start,
+                chart.end_ms,
+                MAX_INTRABAR_CANDLES,
+            )
+        })?;
+        if candles.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(construct(modifier, fold_intrabars(plan, candles))))
     }
 
     fn series(key: &SecurityKey, chart: Option<ChartSpan>) -> Option<Vec<Kline>> {
@@ -125,12 +129,45 @@ impl SecurityDataProvider for KlineSecurityDataProvider {
         }
         let finer = (key.interval * 1_000.0) < chart.spacing_ms as f64;
         let candles = if finer {
-            Self::intrabars(key, chart).or_else(|| Self::series(key, Some(chart)))?
+            intrabars_or_series(Self::intrabars(key, chart), || {
+                Self::series(key, Some(chart))
+            })?
         } else {
             Self::series(key, Some(chart))?
         };
         Self::remember(cache_key, &candles);
         Some(candles)
+    }
+}
+
+/// Where the fetch of `target`'s intrabars starts: the opening of the bucket that holds `start_ms`.
+/// The chart's first bar and the window `MAX_INTRABAR_CANDLES` allows do not sit on the target's
+/// grid (a `59s` bucket opens 2 s before 02:00:00), so asking from them would make the first bucket
+/// a fragment whenever the history reaches further back.
+fn intrabar_start(target: Timeframe, start_ms: i64) -> i64 {
+    bucket::bucket_start_ms(target, start_ms)
+}
+
+/// The target candles of `plan` from `candles`, base candles that start where the request did and
+/// not necessarily where the market did (a history cap, the window). A first bucket the series
+/// starts inside of is a fragment with its first seconds missing and stamped as a whole candle:
+/// it is dropped. A native plan has nothing to fold.
+fn fold_intrabars(plan: FoldPlan, candles: Vec<Kline>) -> Vec<Kline> {
+    plan.fold(candles, true)
+}
+
+/// The intrabars when there are some. Nothing to build them from (`Ok(None)`): the source's own
+/// series of that length, which is the best there is. The source has them and did not answer, even
+/// asked again: nothing. Its newest candles of that length would leave every older bar without
+/// intrabars and no word of why, and with no answer the run reports it and the next run asks again.
+fn intrabars_or_series(
+    intrabars: Result<Option<Vec<Kline>>, ProviderError>,
+    series: impl FnOnce() -> Option<Vec<Kline>>,
+) -> Option<Vec<Kline>> {
+    match intrabars {
+        Ok(Some(intrabars)) => Some(intrabars),
+        Ok(None) => series(),
+        Err(_) => None,
     }
 }
 
@@ -231,6 +268,73 @@ pub fn run_script_checked_in_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bar(open_time: i64) -> Kline {
+        Kline {
+            open_time,
+            close_time: open_time + 999,
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1.0,
+        }
+    }
+
+    const TWO_AM: i64 = 7_200_000;
+
+    fn seconds(start: i64, count: i64) -> Vec<Kline> {
+        (0..count).map(|index| bar(start + index * 1_000)).collect()
+    }
+
+    #[test]
+    fn the_fetch_starts_where_the_target_bucket_that_holds_the_window_opens() {
+        let fifty_nine = Timeframe::new(59, crate::model::TimeUnit::Second).unwrap();
+        // 7,200 s is 2 s into a bucket that opened at 7,198 s.
+        assert_eq!(intrabar_start(fifty_nine, TWO_AM), 7_198_000);
+        assert_eq!(intrabar_start(fifty_nine, 7_198_000), 7_198_000);
+    }
+
+    #[test]
+    fn a_history_that_starts_inside_a_bucket_loses_that_fragment_not_its_first_seconds() {
+        let fifty_nine = Timeframe::new(59, crate::model::TimeUnit::Second).unwrap();
+        let plan = DataSource::Okx.plan(fifty_nine).unwrap();
+        // OKX's 1 s history begins at 02:00:00, 2 s after the bucket that holds it opened.
+        let folded = fold_intrabars(plan, seconds(TWO_AM, 200));
+        assert_eq!(folded[0].open_time, 7_257_000, "the first whole bucket");
+        assert!(folded.iter().all(|candle| candle.open_time >= 7_257_000));
+        // From the start of its bucket the first one is whole and stays.
+        let whole = fold_intrabars(plan, seconds(7_198_000, 200));
+        assert_eq!(whole[0].open_time, 7_198_000);
+    }
+
+    #[test]
+    fn a_source_with_the_length_itself_has_nothing_to_fold() {
+        let plan = DataSource::Okx.plan(Timeframe::MINUTE_1).unwrap();
+        let minutes: Vec<Kline> = (0..5).map(|index| bar(TWO_AM + index * 60_000)).collect();
+        assert_eq!(fold_intrabars(plan, minutes.clone()), minutes);
+    }
+
+    #[test]
+    fn intrabars_that_arrived_are_used_without_asking_for_the_series() {
+        let got = intrabars_or_series(Ok(Some(vec![bar(0)])), || {
+            panic!("the series is not asked for")
+        });
+        assert_eq!(got.map(|bars| bars.len()), Some(1));
+    }
+
+    #[test]
+    fn a_source_with_nothing_to_build_them_from_gives_its_own_series() {
+        let got = intrabars_or_series(Ok(None), || Some(vec![bar(0), bar(1_000)]));
+        assert_eq!(got.map(|bars| bars.len()), Some(2));
+    }
+
+    #[test]
+    fn a_source_that_did_not_answer_gives_nothing_not_its_newest_candles() {
+        let failed = ProviderError::from(crate::service::net::http::Error::Status(503));
+        let got = intrabars_or_series(Err(failed), || panic!("the series is not asked for"));
+        assert_eq!(got, None);
+    }
 
     /// A run at the script's default inputs.
     fn run_script(source: &str, bars: &[Kline], symbol: &SymbolInfo) -> VisualOutput {
@@ -590,7 +694,7 @@ mod call_site_tests {
         assert_eq!(
             changes,
             Some(39.0),
-            "every daily bar after the first opens a new day"
+            "every daily bar opens a new day but the first, which has no earlier call to compare with"
         );
     }
 }

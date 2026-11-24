@@ -4,9 +4,10 @@
 //! the inline rename box and the keys that open them.
 
 use super::*;
+use crate::i18n::{tr, tr_n};
 use crate::native_bridge::EditMenu;
 use crate::pine_studio::editor::call_sites::{self, CallSite};
-use crate::pine_studio::editor::symbols::{self, SymbolId, SymbolTable};
+use crate::pine_studio::editor::symbols::{self, Kind, SymbolId, SymbolTable};
 use eframe::egui::Galley;
 use std::ops::Range;
 
@@ -52,7 +53,7 @@ pub(super) struct CallList {
 
 pub(super) struct RenameBox {
     symbol: SymbolId,
-    kind: &'static str,
+    kind: Kind,
     original: String,
     /// Where the name starts (where the box hangs from) and where the caret was.
     at: usize,
@@ -213,7 +214,7 @@ impl EditorState {
         let symbol = table.symbol(id);
         self.nav.rename = Some(RenameBox {
             symbol: id,
-            kind: symbol.kind.label(),
+            kind: symbol.kind,
             original: symbol.name.clone(),
             at: range.start,
             caret: index,
@@ -452,12 +453,12 @@ pub(super) fn context_menu(
         kit::menu_fit_rows(
             ui,
             &[
-                ("Cut", Some(&cut)),
-                ("Copy", Some(&copy)),
-                ("Paste", Some(&paste)),
-                ("Go to Definition", Some(&definition_hint)),
-                ("Find Usages", None),
-                ("Rename Symbol…", Some(&rename_hint)),
+                (tr!("Cut"), Some(&cut)),
+                (tr!("Copy"), Some(&copy)),
+                (tr!("Paste"), Some(&paste)),
+                (tr!("Go to Definition"), Some(&definition_hint)),
+                (tr!("Find Usages"), None),
+                (tr!("Rename Symbol…"), Some(&rename_hint)),
             ],
         );
         let selected = TextEditState::load(ctx, state.id)
@@ -466,21 +467,21 @@ pub(super) fn context_menu(
         for (icon, label, shortcut, enabled, chosen) in [
             (
                 Some(Icon::Scissors),
-                "Cut",
+                tr!("Cut"),
                 shortcut::CUT.label(),
                 selected,
                 MenuAction::Cut,
             ),
             (
                 Some(Icon::CopyDoc),
-                "Copy",
+                tr!("Copy"),
                 shortcut::COPY.label(),
                 selected,
                 MenuAction::Copy,
             ),
             (
                 Some(Icon::Clipboard),
-                "Paste",
+                tr!("Paste"),
                 shortcut::PASTE.label(),
                 true,
                 MenuAction::Paste,
@@ -501,7 +502,7 @@ pub(super) fn context_menu(
         if kit::menu_item_with_shortcut(
             ui,
             Icon::ArrowUpRight,
-            "Go to Definition",
+            tr!("Go to Definition"),
             Some(&shortcut::GO_TO_DEFINITION.label()),
             definition.is_some(),
             false,
@@ -509,15 +510,21 @@ pub(super) fn context_menu(
             action = definition.map(MenuAction::Definition);
             ui.close();
         }
-        if kit::menu_item_with_shortcut(ui, Icon::Magnifier, "Find Usages", None, has_usages, false)
-        {
+        if kit::menu_item_with_shortcut(
+            ui,
+            Icon::Magnifier,
+            tr!("Find Usages"),
+            None,
+            has_usages,
+            false,
+        ) {
             action = target.map(MenuAction::FindUsages);
             ui.close();
         }
         if kit::menu_item_with_shortcut(
             ui,
             Icon::Pencil,
-            "Rename Symbol…",
+            tr!("Rename Symbol…"),
             Some(&shortcut::RENAME_SYMBOL.label()),
             named,
             false,
@@ -618,6 +625,8 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
     let secondary = theme::text_secondary();
     let primary = theme::text_primary();
     let tertiary = theme::text_tertiary();
+    // The function a call sits in, the same words measured and drawn.
+    let in_context = |context: &str| tr!("in {context}", context = context);
     let painter = ui.painter();
     let widest = list
         .sites
@@ -640,7 +649,7 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
         .filter_map(|site| site.context.as_ref())
         .map(|context| {
             painter
-                .layout_no_wrap(format!("in {context}"), hint_font.clone(), tertiary)
+                .layout_no_wrap(in_context(context), hint_font.clone(), tertiary)
                 .size()
                 .x
         })
@@ -681,7 +690,7 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
                     ui.painter().text(
                         egui::pos2(header.left() + 8.0 + title_width + 8.0, header.center().y),
                         Align2::LEFT_CENTER,
-                        format!("{calls} calls"),
+                        tr_n!(calls, "{count} call", "{count} calls"),
                         hint_font.clone(),
                         tertiary,
                     );
@@ -742,7 +751,7 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
                                     let width = ui
                                         .painter()
                                         .layout_no_wrap(
-                                            format!("in {context}"),
+                                            in_context(context),
                                             hint_font.clone(),
                                             tertiary,
                                         )
@@ -783,7 +792,7 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
                                     ui.painter().text(
                                         egui::pos2(rect.right() - 10.0, rect.center().y),
                                         Align2::RIGHT_CENTER,
-                                        format!("in {context}"),
+                                        in_context(context),
                                         hint_font.clone(),
                                         tertiary,
                                     );
@@ -804,7 +813,7 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
                     ui.painter().text(
                         egui::pos2(footer.left() + 8.0, footer.center().y),
                         Align2::LEFT_CENTER,
-                        "↑↓  navigate      ↵  open      esc  close",
+                        tr!("↑↓  navigate      ↵  open      esc  close"),
                         hint_font.clone(),
                         tertiary,
                     );
@@ -868,7 +877,7 @@ pub(super) fn rename_box(ctx: &egui::Context, state: &mut EditorState) -> bool {
                 .show(ui, |ui| {
                     ui.set_width(240.0);
                     ui.label(
-                        RichText::new(format!("Rename {} {}", rename.kind, rename.original))
+                        RichText::new(rename_title(rename.kind, &rename.original))
                             .size(11.0)
                             .color(theme::text_secondary()),
                     );
@@ -918,6 +927,20 @@ pub(super) fn rename_box(ctx: &egui::Context, state: &mut EditorState) -> bool {
 }
 
 /// Renames, as one undo step, and puts the caret back on the name it was on.
+/// The rename box's heading. One message per kind of name, so a language can word each one whole.
+fn rename_title(kind: Kind, name: &str) -> String {
+    match kind {
+        Kind::Variable => tr!("Rename variable {name}", name = name),
+        Kind::Parameter => tr!("Rename parameter {name}", name = name),
+        Kind::LoopVariable => tr!("Rename loop variable {name}", name = name),
+        Kind::Function => tr!("Rename function {name}", name = name),
+        Kind::Method => tr!("Rename method {name}", name = name),
+        Kind::Type => tr!("Rename type {name}", name = name),
+        Kind::Enum => tr!("Rename enum {name}", name = name),
+        Kind::ImportAlias => tr!("Rename import alias {name}", name = name),
+    }
+}
+
 fn finish(ctx: &egui::Context, state: &mut EditorState, rename: &RenameBox) -> bool {
     ctx.memory_mut(|memory| memory.request_focus(state.id));
     if rename.text == rename.original {

@@ -11,6 +11,7 @@ use super::review::Review;
 use super::review_view::{self, ReviewAction};
 use super::tools::ToolBox;
 use super::{Notice, auto_apply_check};
+use crate::i18n::{tr, tr_n};
 use crate::pine::compiler;
 use crate::pine::syntax::token::{Diagnostic, Limits};
 use crate::pine_studio::drawer;
@@ -80,11 +81,14 @@ impl PineStudio {
         let kind = prefs.provider;
         let model = prefs.model(kind);
         let problem = if kind.needs_key() && !key_available(kind) {
-            Some(format!("Add your {} API key to start", kind.title()))
+            Some(tr!(
+                "Add your {provider} API key to start",
+                provider = kind.title()
+            ))
         } else if kind == ProviderKind::Compatible && prefs.base_url(kind).is_empty() {
-            Some("Enter your server's address to start".to_owned())
+            Some(tr!("Enter your server's address to start").to_owned())
         } else if model.is_empty() {
-            Some("Choose a model to start".to_owned())
+            Some(tr!("Choose a model to start").to_owned())
         } else {
             None
         };
@@ -95,9 +99,9 @@ impl PineStudio {
             .map(|open| {
                 let lines = open.editor.source.lines().count();
                 format!(
-                    "{} · {lines} {} · {}",
+                    "{} · {} · {}",
                     open.name,
-                    if lines == 1 { "line" } else { "lines" },
+                    tr_n!(lines, "{count} line", "{count} lines"),
                     drawer::problems_summary(&open.editor.diagnostics)
                 )
             })
@@ -283,9 +287,9 @@ impl PineStudio {
         }
         let source = open.editor.source.clone();
         if source.chars().count() > MAX_SOURCE_CHARS {
-            self.ai.notice = Some(Notice::error(
-                "This script is too long to send to the assistant.",
-            ));
+            self.ai.notice = Some(Notice::error(tr!(
+                "This script is too long to send to the assistant."
+            )));
             return;
         }
         self.ai_reload_prefs();
@@ -438,9 +442,9 @@ impl PineStudio {
         if open.editor.source != proposal.base {
             self.ai.review = None;
             self.ai.proposal = None;
-            self.ai.notice = Some(Notice::error(
-                "The script changed while the assistant was writing. Ask again to base the change on the current text.",
-            ));
+            self.ai.notice = Some(Notice::error(tr!(
+                "The script changed while the assistant was writing. Ask again to base the change on the current text."
+            )));
             return;
         }
         let merged = review.merged(&proposal.base, proposal.changes.hunks());
@@ -449,9 +453,14 @@ impl PineStudio {
         self.ai.review = None;
         self.ai.proposal = None;
         self.ai.notice = Some(Notice::info(if selected == total {
-            "Applied all changes. Undo brings the old script back.".to_owned()
+            tr!("Applied all changes. Undo brings the old script back.").to_owned()
         } else {
-            format!("Applied {selected} of {total} changes. Undo brings the old script back.")
+            tr_n!(
+                total,
+                "Applied {selected} of {count} change. Undo brings the old script back.",
+                "Applied {selected} of {count} changes. Undo brings the old script back.",
+                selected = selected
+            )
         }));
     }
 
@@ -470,7 +479,7 @@ impl PineStudio {
         match auto_apply_check(proposal, &open.editor.source) {
             Ok(()) => self.apply_proposal(ctx, Applied::Auto),
             Err(reason) => {
-                let held = format!("Not applied automatically: {reason}");
+                let held = tr!("Not applied automatically: {reason}", reason = reason);
                 proposal.note = Some(match proposal.note.take() {
                     Some(note) => format!("{note} {held}"),
                     None => held,
@@ -491,9 +500,9 @@ impl PineStudio {
         };
         if open.editor.source != proposal.base {
             self.ai.proposal = None;
-            self.ai.notice = Some(Notice::error(
-                "The script changed while the assistant was writing. Ask again to base the change on the current text.",
-            ));
+            self.ai.notice = Some(Notice::error(tr!(
+                "The script changed while the assistant was writing. Ask again to base the change on the current text."
+            )));
             return;
         }
         let (changes, added, removed) = (
@@ -506,10 +515,13 @@ impl PineStudio {
         self.ai.proposal = None;
         self.ai.review = None;
         self.ai.notice = Some(Notice::info(match how {
-            Applied::Manual => "Applied. Undo brings the old script back.".to_owned(),
-            Applied::Auto => format!(
-                "Applied automatically \u{b7} {changes} change{} (+{added} \u{2212}{removed}). Undo brings the old script back.",
-                if changes == 1 { "" } else { "s" }
+            Applied::Manual => tr!("Applied. Undo brings the old script back.").to_owned(),
+            Applied::Auto => tr_n!(
+                changes,
+                "Applied automatically · {count} change (+{added} −{removed}). Undo brings the old script back.",
+                "Applied automatically · {count} changes (+{added} −{removed}). Undo brings the old script back.",
+                added = added,
+                removed = removed
             ),
         }));
     }

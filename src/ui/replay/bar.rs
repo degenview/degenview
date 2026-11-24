@@ -2,6 +2,7 @@
 //! resolution, the timeline, the cursor's clock and the way back to live. Pure view:
 //! it reads the engine and returns `ReplayBarAction`s for the workspace to apply.
 
+use crate::i18n::tr;
 use crate::model::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
 use crate::service::system::timezone::local_utc_offset_secs;
 use crate::ui::accessibility;
@@ -92,15 +93,15 @@ pub fn tint(status: ReplayStatus, preparing: bool) -> Color32 {
 
 pub fn title(status: ReplayStatus, preparing: bool) -> &'static str {
     if preparing {
-        return "Loading history";
+        return tr!("Loading history");
     }
     match status {
-        ReplayStatus::Inactive => "Off",
-        ReplayStatus::Ready => "Choose a start",
-        ReplayStatus::SelectingStart => "Pick a start",
-        ReplayStatus::Paused => "Paused",
-        ReplayStatus::Playing => "Playing",
-        ReplayStatus::Completed => "Ended",
+        ReplayStatus::Inactive => tr!("Off"),
+        ReplayStatus::Ready => tr!("Choose a start"),
+        ReplayStatus::SelectingStart => tr!("Pick a start"),
+        ReplayStatus::Paused => tr!("Paused"),
+        ReplayStatus::Playing => tr!("Playing"),
+        ReplayStatus::Completed => tr!("Ended"),
     }
 }
 
@@ -172,7 +173,9 @@ fn interval_text(engine: &ReplayEngine, resolved: Option<ReplayInterval>) -> Str
         .as_ref()
         .map_or(ReplayInterval::Automatic, |session| session.interval);
     match (chosen, resolved) {
-        (ReplayInterval::Automatic, Some(resolved)) => format!("Auto · {}", resolved.label()),
+        (ReplayInterval::Automatic, Some(resolved)) => {
+            tr!("Auto · {interval}", interval = resolved.label())
+        }
         _ => chosen.label().to_owned(),
     }
 }
@@ -359,7 +362,7 @@ fn selecting_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Re
             if ui.available_width() > 130.0 {
                 kit::keycap::keycap(ui, "Esc");
                 ui.label(kit::text(
-                    "to cancel",
+                    tr!("to cancel"),
                     kit::size::SUBHEADLINE + 0.5,
                     REGULAR,
                     theme::text_tertiary(),
@@ -368,7 +371,7 @@ fn selecting_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Re
         },
         |ui, actions| {
             close_button(ui, actions);
-            if pill_button(ui, "Cancel", "Cancel (Esc)").clicked() {
+            if pill_button(ui, tr!("Cancel"), tr!("Cancel (Esc)")).clicked() {
                 actions.push(ReplayBarAction::CancelSelection);
             }
         },
@@ -381,7 +384,7 @@ fn selecting_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Re
 fn header(ui: &mut egui::Ui, input: &ReplayBarInput, show_name: bool) {
     let name = kit::galley(
         ui,
-        "Replay",
+        tr!("Replay"),
         kit::size::HEADLINE - 0.5,
         SEMIBOLD,
         theme::text_primary(),
@@ -405,7 +408,7 @@ fn header(ui: &mut egui::Ui, input: &ReplayBarInput, show_name: bool) {
             theme::text_primary(),
         );
     }
-    response.on_hover_text("Historical replay");
+    response.on_hover_text(tr!("Historical replay"));
     state_pill(ui, input.engine.status, input.is_preparing);
 }
 
@@ -455,7 +458,7 @@ fn state_pill(ui: &mut egui::Ui, status: ReplayStatus, preparing: bool) {
         text,
         theme::text_secondary(),
     );
-    response.on_hover_text(format!("Historical replay, {label}"));
+    response.on_hover_text(tr!("Historical replay, {state}", state = label));
 }
 
 fn divider(ui: &mut egui::Ui) {
@@ -611,7 +614,7 @@ fn transport(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Replay
             ui,
             Glyph::Restart,
             !busy && engine.session.is_some(),
-            "Back to start",
+            tr!("Back to start"),
         )
         .clicked()
         {
@@ -621,7 +624,7 @@ fn transport(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Replay
             ui,
             Glyph::StepBack,
             !busy && can_step_back(engine),
-            "Step Back (Shift–Left Arrow)",
+            tr!("Step Back (Shift–Left Arrow)"),
         )
         .clicked()
         {
@@ -632,7 +635,7 @@ fn transport(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Replay
             ui,
             Glyph::StepForward,
             !busy && can_advance(engine),
-            "Step Forward (Shift–Right Arrow)",
+            tr!("Step Forward (Shift–Right Arrow)"),
         )
         .clicked()
         {
@@ -647,12 +650,12 @@ fn play_button(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Repl
     let enabled = can_toggle(engine, input.is_preparing);
     let ended = engine.status == ReplayStatus::Completed;
     let playing = engine.status == ReplayStatus::Playing;
-    let verb = if ended {
-        "Replay Again"
+    let (verb, tip) = if ended {
+        (tr!("Replay Again"), tr!("Replay Again (Shift–Down Arrow)"))
     } else if playing {
-        "Pause"
+        (tr!("Pause"), tr!("Pause (Shift–Down Arrow)"))
     } else {
-        "Play"
+        (tr!("Play"), tr!("Play (Shift–Down Arrow)"))
     };
     let (rect, response) = ui.allocate_exact_size(
         Vec2::splat(30.0),
@@ -717,7 +720,7 @@ fn play_button(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Repl
         ));
     }
     if response
-        .on_hover_text(format!("{verb} (Shift–Down Arrow)"))
+        .on_hover_text(tip)
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
         && enabled
@@ -733,9 +736,9 @@ fn pickers(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<ReplayBa
     if let Some(index) = picker_chip(
         ui,
         PickerChip {
-            caption: "Speed",
+            caption: tr!("Speed"),
             value: speed.unwrap_or(ReplaySpeed::Normal).label(),
-            tip: "Playback speed",
+            tip: tr!("Playback speed"),
             options: &labels,
             selected: speed.and_then(|s| ReplaySpeed::ALL.iter().position(|o| *o == s)),
             enabled: true,
@@ -749,9 +752,11 @@ fn pickers(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<ReplayBa
     if let Some(index) = picker_chip(
         ui,
         PickerChip {
-            caption: "Bars",
+            caption: tr!("Bars"),
             value: &interval_text(engine, input.resolved_interval),
-            tip: "Replay resolution. Auto picks the finest history that fits; 1 bar steps whole chart bars.",
+            tip: tr!(
+                "Replay resolution. Auto picks the finest history that fits; 1 bar steps whole chart bars."
+            ),
             options: &labels,
             selected: chosen.and_then(|c| intervals.iter().position(|o| *o == c)),
             enabled: !input.is_preparing,
@@ -983,10 +988,19 @@ fn scrubber(
                 .timeline
                 .get(index)
                 .map_or_else(String::new, |ms| compact_text(*ms));
-            response.on_hover_text_at_pointer(format!("{when}  ·  Step {} of {count}", index + 1));
+            response.on_hover_text_at_pointer(tr!(
+                "{when}  ·  Step {number} of {count}",
+                when = when,
+                number = index + 1,
+                count = count
+            ));
         }
         _ => {
-            response.on_hover_text(format!("Step {number} of {count}"));
+            response.on_hover_text(tr!(
+                "Step {number} of {count}",
+                number = number,
+                count = count
+            ));
         }
     }
 }
@@ -1041,17 +1055,17 @@ fn clock(ui: &mut egui::Ui, engine: &ReplayEngine, compact: bool) {
             theme::text_secondary(),
         );
     }
-    response.on_hover_text("Time of the replay cursor, in your time zone");
+    response.on_hover_text(tr!("Time of the replay cursor, in your time zone"));
 }
 
 fn close_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
-    if glyph_button(ui, Glyph::Close, true, "Close Replay").clicked() {
+    if glyph_button(ui, Glyph::Close, true, tr!("Close Replay")).clicked() {
         actions.push(ReplayBarAction::ReturnToLive);
     }
 }
 
 fn change_start_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
-    if glyph_button(ui, Glyph::Scope, true, "Choose a new starting point").clicked() {
+    if glyph_button(ui, Glyph::Scope, true, tr!("Choose a new starting point")).clicked() {
         actions.push(ReplayBarAction::ChangeStart);
     }
 }
@@ -1060,7 +1074,7 @@ fn change_start_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
 fn live_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
     let label = kit::galley(
         ui,
-        "Live",
+        tr!("Live"),
         kit::size::SUBHEADLINE + 0.5,
         SEMIBOLD,
         theme::text_primary(),
@@ -1085,8 +1099,8 @@ fn live_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
         label,
         theme::text_primary(),
     );
-    if accessibility::label(response, "Return to live market")
-        .on_hover_text("Leave replay and return to the live market")
+    if accessibility::label(response, tr!("Return to live market"))
+        .on_hover_text(tr!("Leave replay and return to the live market"))
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
@@ -1215,26 +1229,28 @@ struct StartChoice {
     action: ReplayBarAction,
 }
 
-const START_CHOICES: [StartChoice; 3] = [
-    StartChoice {
-        title: "Date & Time",
-        tip: "Pick a date and time to start from",
-        icon: StartIcon::Calendar,
-        action: ReplayBarAction::ChooseDate,
-    },
-    StartChoice {
-        title: "Random",
-        tip: "Start from a random bar, leaving room to play forward",
-        icon: StartIcon::Dice,
-        action: ReplayBarAction::RandomBar,
-    },
-    StartChoice {
-        title: "First Bar",
-        tip: "Start from the first bar the chart has loaded",
-        icon: StartIcon::FirstBar,
-        action: ReplayBarAction::FirstBar,
-    },
-];
+fn start_choices() -> [StartChoice; 3] {
+    [
+        StartChoice {
+            title: tr!("Date & Time"),
+            tip: tr!("Pick a date and time to start from"),
+            icon: StartIcon::Calendar,
+            action: ReplayBarAction::ChooseDate,
+        },
+        StartChoice {
+            title: tr!("Random"),
+            tip: tr!("Start from a random bar, leaving room to play forward"),
+            icon: StartIcon::Dice,
+            action: ReplayBarAction::RandomBar,
+        },
+        StartChoice {
+            title: tr!("First Bar"),
+            tip: tr!("Start from the first bar the chart has loaded"),
+            icon: StartIcon::FirstBar,
+            action: ReplayBarAction::FirstBar,
+        },
+    ]
+}
 
 /// How much room the start row has decides how much of it is spelled out.
 /// `armed`: the replay is waiting for a click on a chart; the other ways to start stay open.
@@ -1244,13 +1260,13 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: b
         let response = primary_button(
             ui,
             Glyph::Play,
-            "Start",
+            tr!("Start"),
             true,
-            "Choose where the replay starts",
+            tr!("Choose where the replay starts"),
             false,
         );
-        let mut entries = vec![("Select Bar on Chart", ReplayBarAction::SelectOnChart)];
-        entries.extend(START_CHOICES.iter().map(|c| (c.title, c.action)));
+        let mut entries = vec![(tr!("Select Bar on Chart"), ReplayBarAction::SelectOnChart)];
+        entries.extend(start_choices().iter().map(|c| (c.title, c.action)));
         let titles: Vec<&str> = entries.iter().map(|(title, _)| *title).collect();
         let width = kit::menu_width_for(ui, &titles, 0.0);
         kit::menu_popup(&response).width(width).show(|ui| {
@@ -1273,10 +1289,10 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: b
     }
     let labels = room >= 650.0;
     let label = match (armed, labels) {
-        (true, true) => "Click a candle",
-        (true, false) => "Picking",
-        (false, true) => "Select bar on chart",
-        (false, false) => "Select",
+        (true, true) => tr!("Click a candle"),
+        (true, false) => tr!("Picking"),
+        (false, true) => tr!("Select bar on chart"),
+        (false, false) => tr!("Select"),
     };
     if primary_button(
         ui,
@@ -1284,9 +1300,9 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: b
         label,
         false,
         if armed {
-            "Click a candle on a chart to start the replay there (Esc cancels)"
+            tr!("Click a candle on a chart to start the replay there (Esc cancels)")
         } else {
-            "Click a candle on a chart to start the replay there"
+            tr!("Click a candle on a chart to start the replay there")
         },
         armed,
     )
@@ -1296,7 +1312,7 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: b
     }
     if labels {
         ui.label(kit::text(
-            "or",
+            tr!("or"),
             kit::size::SUBHEADLINE,
             REGULAR,
             theme::text_tertiary(),
@@ -1307,7 +1323,8 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: b
 
 /// Date & Time, Random and First Bar as one capsule of three segments.
 fn start_group(ui: &mut egui::Ui, labels: bool, actions: &mut Vec<ReplayBarAction>) {
-    let galleys: Vec<_> = START_CHOICES
+    let choices = start_choices();
+    let galleys: Vec<_> = choices
         .iter()
         .map(|choice| {
             kit::galley(
@@ -1335,7 +1352,7 @@ fn start_group(ui: &mut egui::Ui, labels: bool, actions: &mut Vec<ReplayBarActio
         Sense::hover(),
     );
     let mut x = track.left() + 2.0;
-    for ((choice, galley), width) in START_CHOICES.iter().zip(galleys).zip(widths) {
+    for (index, ((choice, galley), width)) in choices.iter().zip(galleys).zip(widths).enumerate() {
         let segment = Rect::from_min_size(
             Pos2::new(x, track.top() + 2.0),
             Vec2::new(width, track.height() - 4.0),
@@ -1343,7 +1360,7 @@ fn start_group(ui: &mut egui::Ui, labels: bool, actions: &mut Vec<ReplayBarActio
         x += width;
         let response = ui.interact(
             segment,
-            ui.id().with(("replay-start", choice.title)),
+            ui.id().with(("replay-start", index)),
             Sense::click(),
         );
         let hovered = response.hovered();
@@ -1423,7 +1440,7 @@ fn notice_chip(ui: &mut egui::Ui, message: &str, actions: &mut Vec<ReplayBarActi
                     theme::text_secondary(),
                 ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if glyph_button(ui, Glyph::Close, true, "Dismiss").clicked() {
+                    if glyph_button(ui, Glyph::Close, true, tr!("Dismiss")).clicked() {
                         actions.push(ReplayBarAction::DismissNotice);
                     }
                 });
@@ -1433,7 +1450,7 @@ fn notice_chip(ui: &mut egui::Ui, message: &str, actions: &mut Vec<ReplayBarActi
 
 /// Small text badge used on a replaying chart's plot.
 pub fn badge(painter: &egui::Painter, top_right: Pos2) {
-    let text = "Replay";
+    let text = tr!("Replay");
     let font = FontId::proportional(10.5);
     let galley = painter.layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE);
     let size = galley.size() + Vec2::new(14.0, 6.0);

@@ -1,5 +1,6 @@
 //! The chips the picker lists, and how the arrow keys move between them. Pure: no drawing.
 
+use crate::i18n::tr;
 use crate::model::{Section, Timeframe};
 
 /// Chips in one row.
@@ -21,20 +22,25 @@ pub(super) struct Grid {
 
 impl Grid {
     pub(super) fn new(pinned: &[Timeframe]) -> Self {
-        let sections = [Section::Minutes, Section::Hours, Section::DaysAndUp]
-            .into_iter()
-            .map(|section| {
-                let mut shown: Vec<Timeframe> = Vec::new();
-                for timeframe in Timeframe::PRESETS.iter().chain(pinned) {
-                    if timeframe.section() == section && !shown.contains(timeframe) {
-                        shown.push(*timeframe);
-                    }
+        let sections = [
+            Section::Seconds,
+            Section::Minutes,
+            Section::Hours,
+            Section::DaysAndUp,
+        ]
+        .into_iter()
+        .map(|section| {
+            let mut shown: Vec<Timeframe> = Vec::new();
+            for timeframe in Timeframe::PRESETS.iter().chain(pinned) {
+                if timeframe.section() == section && !shown.contains(timeframe) {
+                    shown.push(*timeframe);
                 }
-                // Stable: lengths that tie (`7D` and `1W`) keep the order they were met in.
-                shown.sort_by_key(|timeframe| timeframe.nominal_ms());
-                (section, shown)
-            })
-            .collect();
+            }
+            // Stable: lengths that tie (`7D` and `1W`) keep the order they were met in.
+            shown.sort_by_key(|timeframe| timeframe.nominal_ms());
+            (section, shown)
+        })
+        .collect();
         Self { sections }
     }
 
@@ -96,8 +102,9 @@ impl Grid {
 /// A section's heading.
 pub(super) fn title(section: Section) -> &'static str {
     match section {
-        Section::Minutes => "Minutes",
-        Section::Hours => "Hours",
-        Section::DaysAndUp => "Days and up",
+        Section::Seconds => tr!("Seconds"),
+        Section::Minutes => tr!("Minutes"),
+        Section::Hours => tr!("Hours"),
+        Section::DaysAndUp => tr!("Days and up"),
     }
 }

@@ -4,7 +4,7 @@
 //! fetching historical FX rates, the "Match…" asset picker) and feeds results back through the
 //! state's methods.
 
-use crate::format::plural;
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::{self, Icon};
@@ -204,47 +204,45 @@ pub enum CmcImportAction {
 pub fn subtitle(preview: &CmcPreview) -> String {
     format!(
         "{} · {}",
-        plural(preview.rows.len(), "transaction", "transactions"),
-        plural(preview.symbols().len(), "asset", "assets")
+        tr_n!(
+            preview.rows.len(),
+            "{count} transaction",
+            "{count} transactions"
+        ),
+        tr_n!(preview.symbols().len(), "{count} asset", "{count} assets")
     )
 }
 
 pub fn csv_error_title(count: usize) -> String {
-    format!(
-        "{count} CSV {}",
-        if count == 1 {
-            "error requires attention"
-        } else {
-            "errors require attention"
-        }
+    tr_n!(
+        count,
+        "{count} CSV error requires attention",
+        "{count} CSV errors require attention"
     )
 }
 
 pub fn search_note(currency: PortfolioCurrency) -> String {
-    format!(
-        "Finding {} markets — Binance, then Coinbase, CoinGecko and DEXScreener…",
-        currency.code()
+    tr!(
+        "Finding {currency} markets — Binance, then Coinbase, CoinGecko and DEXScreener…",
+        currency = currency.code()
     )
 }
 
 pub fn restore_title(count: usize) -> String {
-    format!(
-        "Restore {count} individually skipped {}",
-        if count == 1 {
-            "transaction"
-        } else {
-            "transactions"
-        }
+    tr_n!(
+        count,
+        "Restore {count} individually skipped transaction",
+        "Restore {count} individually skipped transactions"
     )
 }
 
 pub fn fee_row_title(row: &CmcRow) -> String {
-    format!(
-        "Line {} · {} · {} {}",
-        row.line,
-        row.token,
-        row.fee,
-        row.fee_currency.map_or("", |currency| currency.code())
+    tr!(
+        "Line {line} · {token} · {fee} {currency}",
+        line = row.line,
+        token = row.token,
+        fee = row.fee,
+        currency = row.fee_currency.map_or("", |currency| currency.code())
     )
 }
 
@@ -320,20 +318,32 @@ pub fn tally(state: &CmcImportState, preview: &CmcPreview) -> Tally {
 
 /// The big figure of the progress band: how many of the tickers have a market.
 pub fn matched_title(tally: &Tally) -> String {
-    format!("{} of {}", tally.matched, tally.total)
+    tr!(
+        "{matched} of {total}",
+        matched = tally.matched,
+        total = tally.total
+    )
 }
 
 /// The legend under the progress bar; only the groups that have tickers.
 pub fn tally_legend(tally: &Tally) -> Vec<(TallyKind, String)> {
     [
-        (TallyKind::Matched, tally.matched, "matched"),
-        (TallyKind::Searching, tally.resolving, "searching"),
-        (TallyKind::Unmatched, tally.unmatched, "to match"),
-        (TallyKind::Skipped, tally.skipped, "skipped"),
+        (TallyKind::Matched, tally.matched),
+        (TallyKind::Searching, tally.resolving),
+        (TallyKind::Unmatched, tally.unmatched),
+        (TallyKind::Skipped, tally.skipped),
     ]
     .into_iter()
-    .filter(|(_, count, _)| *count > 0)
-    .map(|(kind, count, word)| (kind, format!("{count} {word}")))
+    .filter(|(_, count)| *count > 0)
+    .map(|(kind, count)| {
+        let text = match kind {
+            TallyKind::Matched => tr!("{count} matched", count = count),
+            TallyKind::Searching => tr!("{count} searching", count = count),
+            TallyKind::Unmatched => tr!("{count} to match", count = count),
+            TallyKind::Skipped => tr!("{count} skipped", count = count),
+        };
+        (kind, text)
+    })
     .collect()
 }
 
@@ -382,7 +392,7 @@ pub fn show(
             widgets::header(
                 ui,
                 art::Scene::CoinMarketCap,
-                "Import from CoinMarketCap",
+                tr!("Import from CoinMarketCap"),
                 &subtitle(preview),
             );
             ui.add_space(16.0);
@@ -408,7 +418,7 @@ pub fn show(
                 let enabled = state.can_continue(preview);
                 if kit::footer_button(
                     ui,
-                    "Continue to Preview",
+                    tr!("Continue to Preview"),
                     kit::FooterButton::Primary,
                     enabled,
                     150.0,
@@ -417,7 +427,7 @@ pub fn show(
                 {
                     actions.push(CmcImportAction::Continue);
                 }
-                if kit::footer_button(ui, "Cancel", kit::FooterButton::Secondary, true, 0.0)
+                if kit::footer_button(ui, tr!("Cancel"), kit::FooterButton::Secondary, true, 0.0)
                     .clicked()
                 {
                     actions.push(CmcImportAction::Cancel);
@@ -449,11 +459,7 @@ fn progress_band(ui: &mut Ui, tally: &Tally) {
     );
     let caption = kit::galley(
         ui,
-        if tally.total == 1 {
-            "ticker matched"
-        } else {
-            "tickers matched"
-        },
+        &tr_n!(tally.total, "ticker matched", "tickers matched"),
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
         secondary,
@@ -628,10 +634,14 @@ fn tokens_section(
     let searching = (!state.did_auto_map).then(|| search_note(input.portfolio_currency));
     section_heading(
         ui,
-        "Match tokens to markets",
-        "Only transactions for matched tickers are imported. Skip a ticker to leave all of its \
-         transactions out.",
-        searching.is_some().then_some("Searching exchanges\u{2026}"),
+        tr!("Match tokens to markets"),
+        tr!(
+            "Only transactions for matched tickers are imported. Skip a ticker to leave all of its \
+             transactions out."
+        ),
+        searching
+            .is_some()
+            .then_some(tr!("Searching exchanges\u{2026}")),
     );
     if let Some(note) = searching {
         ui.add(egui::Label::new(kit::text(
@@ -794,7 +804,7 @@ fn token_row(
     );
     let caption = kit::galley(
         ui,
-        &plural(count, "transaction", "transactions"),
+        &tr_n!(count, "{count} transaction", "{count} transactions"),
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
         secondary,
@@ -838,26 +848,41 @@ fn token_row(
     match &status {
         TokenStatus::Resolving => {}
         TokenStatus::Mapped { .. } => {
-            let (left, clicked) =
-                button(ui, "change", right, "Change\u{2026}", ButtonStyle::Bordered);
+            let (left, clicked) = button(
+                ui,
+                "change",
+                right,
+                tr!("Change\u{2026}"),
+                ButtonStyle::Bordered,
+            );
             clicked_match = clicked;
-            let (left, clicked) = button(ui, "reset", left - 6.0, "Reset", ButtonStyle::Quiet);
+            let (left, clicked) = button(ui, "reset", left - 6.0, tr!("Reset"), ButtonStyle::Quiet);
             reset = clicked;
             right = left;
         }
         TokenStatus::Skipped => {
-            let (left, clicked) =
-                button(ui, "match", right, "Match\u{2026}", ButtonStyle::Bordered);
+            let (left, clicked) = button(
+                ui,
+                "match",
+                right,
+                tr!("Match\u{2026}"),
+                ButtonStyle::Bordered,
+            );
             clicked_match = clicked;
-            let (left, clicked) = button(ui, "reset", left - 6.0, "Reset", ButtonStyle::Quiet);
+            let (left, clicked) = button(ui, "reset", left - 6.0, tr!("Reset"), ButtonStyle::Quiet);
             reset = clicked;
             right = left;
         }
         TokenStatus::NotMatched => {
-            let (left, clicked) =
-                button(ui, "match", right, "Match\u{2026}", ButtonStyle::Prominent);
+            let (left, clicked) = button(
+                ui,
+                "match",
+                right,
+                tr!("Match\u{2026}"),
+                ButtonStyle::Prominent,
+            );
             clicked_match = clicked;
-            let (left, clicked) = button(ui, "skip", left - 6.0, "Skip", ButtonStyle::Quiet);
+            let (left, clicked) = button(ui, "skip", left - 6.0, tr!("Skip"), ButtonStyle::Quiet);
             skip = clicked;
             right = left;
         }
@@ -874,7 +899,7 @@ fn token_row(
             );
             let label = kit::galley(
                 ui,
-                "Searching exchanges\u{2026}",
+                tr!("Searching exchanges\u{2026}"),
                 kit::size::BODY,
                 kit::REGULAR,
                 secondary,
@@ -929,17 +954,23 @@ fn token_row(
                     ui,
                     ticker_right + 8.0,
                     top + ticker.size().y / 2.0,
-                    "Auto-matched",
+                    tr!("Auto-matched"),
                     theme::text_secondary(),
                 );
             }
         }
         TokenStatus::Skipped => {
-            let end = pill(ui, target, middle - 9.0, "Skipped", theme::text_tertiary());
+            let end = pill(
+                ui,
+                target,
+                middle - 9.0,
+                tr!("Skipped"),
+                theme::text_tertiary(),
+            );
             let _ = end;
             let line = kit::galley(
                 ui,
-                "Won\u{2019}t be imported",
+                tr!("Won\u{2019}t be imported"),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 secondary,
@@ -952,10 +983,10 @@ fn token_row(
             );
         }
         TokenStatus::NotMatched => {
-            pill(ui, target, middle - 9.0, "Not matched", theme::REPLAY);
+            pill(ui, target, middle - 9.0, tr!("Not matched"), theme::REPLAY);
             let line = kit::galley(
                 ui,
-                "Skipped unless you match it",
+                tr!("Skipped unless you match it"),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 secondary,
@@ -996,11 +1027,11 @@ fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
     let fees = rows.len();
     section_heading(
         ui,
-        "Fee exchange rates",
-        &format!(
-            "{} in a currency other than USD {} a historical rate to be converted.",
-            plural(fees, "fee is", "fees are"),
-            if fees == 1 { "needs" } else { "need" }
+        tr!("Fee exchange rates"),
+        &tr_n!(
+            fees,
+            "{count} fee is in a currency other than USD needs a historical rate to be converted.",
+            "{count} fees are in a currency other than USD need a historical rate to be converted."
         ),
         None,
     );
@@ -1018,7 +1049,7 @@ fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
                     ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
                 let label = kit::galley(
                     ui,
-                    "Fetching historical exchange rates\u{2026}",
+                    tr!("Fetching historical exchange rates\u{2026}"),
                     kit::size::SUBHEADLINE + 1.0,
                     kit::REGULAR,
                     secondary,
@@ -1066,7 +1097,7 @@ fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
                 );
                 let label = kit::galley(
                     ui,
-                    "Historical exchange rates loaded",
+                    tr!("Historical exchange rates loaded"),
                     kit::size::SUBHEADLINE + 1.0,
                     kit::MEDIUM,
                     theme::UP,
@@ -1092,7 +1123,7 @@ fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
                     Id::new(("cmc-fee-skip", &id)),
                     row.right(),
                     middle,
-                    "Skip Item",
+                    tr!("Skip Item"),
                     ButtonStyle::Bordered,
                 );
                 if clicked {
@@ -1138,9 +1169,10 @@ fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
         } else {
             theme::text_tertiary()
         },
-        &format!(
-            "{} to import",
-            plural(mapped, "transaction", "transactions")
+        &tr_n!(
+            mapped,
+            "{count} transaction to import",
+            "{count} transactions to import"
         ),
         kit::MEDIUM,
         theme::text_primary(),
@@ -1151,7 +1183,7 @@ fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
         status_dot(
             ui,
             theme::text_tertiary(),
-            &format!("{skipped} skipped"),
+            &tr!("{count} skipped", count = skipped),
             kit::REGULAR,
             theme::text_secondary(),
         );

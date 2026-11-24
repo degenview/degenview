@@ -8,6 +8,7 @@ use super::list::{related_row, subtitle};
 use super::search::{market_kind, trading_kind};
 use super::{Item, predictions};
 use crate::format;
+use crate::i18n::{tr, tr_n};
 use crate::model::DataSource;
 use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::service::EventStats;
@@ -104,7 +105,7 @@ fn market(ui: &mut Ui, area: Rect, result: &SearchResult, detail: &Detail) -> Op
         Some(related) => {
             let heading = kit::galley(
                 ui,
-                "ALSO TRADES AS",
+                tr!("ALSO TRADES AS"),
                 11.5,
                 SEMIBOLD,
                 theme::text_tertiary(),
@@ -196,11 +197,16 @@ fn prediction(
             .galley(pos2(inner.left(), y), galley, theme::text_primary());
         y += height + 4.0;
         let caption = match head {
-            Some(head) => format!("chance of {} · {} choices", result.symbol, head.choices),
+            Some(head) => tr_n!(
+                head.choices,
+                "chance of {symbol} · {count} choice",
+                "chance of {symbol} · {count} choices",
+                symbol = result.symbol
+            ),
             None if result.symbol != result.event.as_ref().map_or("", |e| e.title.as_str()) => {
-                format!("chance of {}", result.symbol)
+                tr!("chance of {symbol}", symbol = result.symbol)
             }
-            None => "chance".to_owned(),
+            None => tr!("chance").to_owned(),
         };
         let galley = kit::galley(
             ui,
@@ -241,15 +247,15 @@ fn stat_rows(stats: &EventStats) -> Vec<(&'static str, String)> {
             rows.push((label, compact_money(value)));
         }
     };
-    money("Volume", stats.volume);
-    money("24h volume", stats.volume_24h);
-    money("Liquidity", stats.liquidity);
-    money("Open interest", stats.open_interest);
+    money(tr!("Volume"), stats.volume);
+    money(tr!("24h volume"), stats.volume_24h);
+    money(tr!("Liquidity"), stats.liquidity);
+    money(tr!("Open interest"), stats.open_interest);
     if let Some(ends) = stats.ends_at_ms {
-        rows.push(("Ends", date_text(ends)));
+        rows.push((tr!("Ends"), date_text(ends)));
     }
     if let Some(category) = &stats.category {
-        rows.push(("Category", category.clone()));
+        rows.push((tr!("Category"), category.clone()));
     }
     rows
 }
@@ -293,7 +299,7 @@ fn stat_row(ui: &Ui, at: Pos2, width: f32, label: &str, value: &str) -> f32 {
 fn about_text(ui: &Ui, area: Rect, inner: Rect, top: f32, about: &str) {
     let heading = kit::galley(
         ui,
-        "ABOUT",
+        tr!("ABOUT"),
         11.5,
         SEMIBOLD,
         theme::text_tertiary(),
@@ -363,7 +369,7 @@ fn tile_panel(ui: &mut Ui, area: Rect, tile: &Tile) {
             let scope = tile.scope.as_deref().unwrap_or_default();
             let galley = kit::galley(
                 ui,
-                &format!("Portfolio · {scope}"),
+                &tr!("Portfolio · {scope}", scope = scope),
                 14.0,
                 REGULAR,
                 theme::text_secondary(),
@@ -386,8 +392,10 @@ fn price_line(
     let Some(last) = quote.and_then(|quote| quote.last) else {
         let text = match quote {
             Some(quote) if quote.note.is_some() => quote.note.as_deref().unwrap_or_default(),
-            Some(quote) if quote.freshness == Freshness::Unsupported => "No quotes for this market",
-            _ => "Loading price…",
+            Some(quote) if quote.freshness == Freshness::Unsupported => {
+                tr!("No quotes for this market")
+            }
+            _ => tr!("Loading price…"),
         };
         let galley = kit::galley(ui, text, 15.0, MEDIUM, theme::text_secondary(), width);
         let height = galley.size().y;
@@ -429,11 +437,11 @@ fn price_line(
 fn status_line(ui: &Ui, at: Pos2, result: &SearchResult, quote: Option<&WatchlistQuote>) -> f32 {
     let (text, open) = match result.source {
         DataSource::Alpaca => match quote.map(|quote| quote.freshness) {
-            Some(Freshness::Live) => ("Market open", true),
-            Some(Freshness::MarketClosed) => ("Market closed", false),
+            Some(Freshness::Live) => (tr!("Market open"), true),
+            Some(Freshness::MarketClosed) => (tr!("Market closed"), false),
             _ => return 0.0,
         },
-        _ => ("Open 24/7", true),
+        _ => (tr!("Open 24/7"), true),
     };
     let galley = kit::galley(
         ui,
@@ -462,7 +470,11 @@ fn venue_line(ui: &Ui, at: Pos2, result: &SearchResult) -> f32 {
         "" => market_kind(result.source),
         kind => kind,
     };
-    let text = format!("{} · {kind}", result.source.display_name());
+    let text = tr!(
+        "{venue} · {kind}",
+        venue = result.source.display_name(),
+        kind = kind
+    );
     let galley = kit::galley(
         ui,
         &text,

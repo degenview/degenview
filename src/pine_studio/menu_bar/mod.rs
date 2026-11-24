@@ -25,6 +25,7 @@ use super::commands::Cmd;
 use super::editor::EditorMenuState;
 use super::editor::status::ProblemsChip;
 use crate::host::editor_theme::EditorThemeHost;
+use crate::i18n::tr;
 use crate::ui::kit::{self, size};
 use crate::ui::theme;
 use eframe::egui::{self, Id, Popup, Rect, Response, Sense, Ui, pos2, vec2};
@@ -41,7 +42,7 @@ const PADDING: f32 = 10.0;
 const INSET: f32 = 6.0;
 const RADIUS: f32 = 6.0;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Menu {
     File,
     Edit,
@@ -54,10 +55,10 @@ impl Menu {
 
     fn title(self) -> &'static str {
         match self {
-            Self::File => "File",
-            Self::Edit => "Edit",
-            Self::View => "View",
-            Self::Theme => "Theme",
+            Self::File => tr!("File"),
+            Self::Edit => tr!("Edit"),
+            Self::View => tr!("View"),
+            Self::Theme => tr!("Theme"),
         }
     }
 }
@@ -112,9 +113,15 @@ fn titles_and_menus(
         paint_title(ui, *menu, response);
     }
     let strip = ui.max_rect();
-    state
-        .problems
-        .show(ui, strip.right() - PADDING, strip.center().y);
+    let after_titles = titles
+        .last()
+        .map_or(strip.left(), |(_, response)| response.rect.right());
+    state.problems.show(
+        ui,
+        after_titles + PADDING,
+        strip.right() - PADDING,
+        strip.center().y,
+    );
     let up = titles
         .iter()
         .any(|(_, response)| wanted(ui.ctx(), response));
@@ -199,7 +206,7 @@ fn place_titles(ui: &mut Ui) -> Vec<(Menu, Response)> {
 }
 
 fn title_id(ui: &Ui, menu: Menu) -> Id {
-    ui.id().with(menu.title())
+    ui.id().with(menu)
 }
 
 fn popup_id(response: &Response) -> Id {

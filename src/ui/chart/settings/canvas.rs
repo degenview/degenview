@@ -7,6 +7,7 @@
 //! stays through theme changes until "Reset" hands it back.
 
 use super::style::{color_control, int_row, number_field};
+use crate::i18n::tr;
 use crate::model::ChartCanvas;
 use crate::model::chart::canvas::{
     BackgroundMode, ButtonVisibility, ChartMargins, LINE_WIDTHS, LineAppearance, ScaleTextSize,
@@ -59,14 +60,16 @@ pub fn show(
 
     section_title(
         ui,
-        "Chart basic styles",
-        Some("The page the chart is drawn on. Colors you leave alone follow the app theme."),
+        tr!("Chart basic styles"),
+        Some(tr!(
+            "The page the chart is drawn on. Colors you leave alone follow the app theme."
+        )),
     );
     background_row(ui, canvas, &defaults);
     grid_row(
         ui,
-        "Vertical grid lines",
-        "Drawn on the time axis' labels.",
+        tr!("Vertical grid lines"),
+        tr!("Drawn on the time axis' labels."),
         Icon::SplitColumns,
         &mut canvas.vertical_grid,
         swatch(
@@ -77,8 +80,8 @@ pub fn show(
     );
     grid_row(
         ui,
-        "Horizontal grid lines",
-        "Drawn on the price axis' labels.",
+        tr!("Horizontal grid lines"),
+        tr!("Drawn on the price axis' labels."),
         Icon::List,
         &mut canvas.horizontal_grid,
         swatch(
@@ -108,28 +111,34 @@ pub fn show(
     readout_row(ui, &mut canvas.ohlc_readout);
 
     ui.add_space(16.0);
-    section_title(ui, "Scales", Some("The price and time axes."));
+    section_title(ui, tr!("Scales"), Some(tr!("The price and time axes.")));
     scales_rows(ui, canvas, &defaults);
 
     ui.add_space(16.0);
     section_title(
         ui,
-        "Buttons",
-        Some(
-            "Hiding a button group hides only the buttons: the wheel, the trackpad and the keyboard still work.",
-        ),
+        tr!("Buttons"),
+        Some(tr!(
+            "Hiding a button group hides only the buttons: the wheel, the trackpad and the keyboard still work."
+        )),
     );
     button_rows(ui, canvas);
 
     ui.add_space(16.0);
-    section_title(ui, "Margins", Some("The room around the price range."));
+    section_title(
+        ui,
+        tr!("Margins"),
+        Some(tr!("The room around the price range.")),
+    );
     margin_rows(ui, id, &mut canvas.margins);
 
     ui.add_space(12.0);
     let changed = *canvas != ChartCanvas::default();
     ui.horizontal(|ui| {
-        if kit::push_button(ui, Some(Icon::Undo), "Reset Canvas to Defaults", changed)
-            .on_hover_text("Puts every setting on this page back. Candle colors and the chart type are not touched.")
+        if kit::push_button(ui, Some(Icon::Undo), tr!("Reset Canvas to Defaults"), changed)
+            .on_hover_text(tr!(
+                "Puts every setting on this page back. Candle colors and the chart type are not touched."
+            ))
             .clicked()
         {
             card.appearance_mut().canvas = ChartCanvas::default();
@@ -163,17 +172,17 @@ fn background_row(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle)
     card::card_reserving(
         ui,
         Icon::Palette,
-        "Background",
-        Some(
-            "One color, or a gradient from top to bottom, behind the plot, its scales and every pane.",
-        ),
+        tr!("Background"),
+        Some(tr!(
+            "One color, or a gradient from top to bottom, behind the plot, its scales and every pane."
+        )),
         WIDE,
         |ui| {
             let custom = match background.mode {
                 BackgroundMode::Solid => background.solid.is_some(),
                 BackgroundMode::Gradient => background.top.is_some() || background.bottom.is_some(),
             };
-            if custom && kit::push_button(ui, None, "Reset", true).clicked() {
+            if custom && kit::push_button(ui, None, tr!("Reset"), true).clicked() {
                 match background.mode {
                     BackgroundMode::Solid => background.solid = None,
                     BackgroundMode::Gradient => {
@@ -184,17 +193,17 @@ fn background_row(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle)
             }
             match background.mode {
                 BackgroundMode::Solid => {
-                    well(ui, "Background color", &mut background.solid, surface);
+                    well(ui, tr!("Background color"), &mut background.solid, surface);
                 }
                 BackgroundMode::Gradient => {
                     // Right to left: the bottom stop first, so the top reads first.
                     well(
                         ui,
-                        "Gradient bottom color",
+                        tr!("Gradient bottom color"),
                         &mut background.bottom,
                         bottom_default,
                     );
-                    well(ui, "Gradient top color", &mut background.top, surface);
+                    well(ui, tr!("Gradient top color"), &mut background.top, surface);
                 }
             }
             let selected = BackgroundMode::ALL
@@ -216,8 +225,8 @@ fn fill_preview(ui: &mut Ui, fill: Fill) {
         response,
         egui::WidgetType::Image,
         match fill {
-            Fill::Solid(_) => "Background preview, one color",
-            Fill::Gradient { .. } => "Background preview, a gradient",
+            Fill::Solid(_) => tr!("Background preview, one color"),
+            Fill::Gradient { .. } => tr!("Background preview, a gradient"),
         },
     );
     let painter = ui.painter().with_clip_rect(rect);
@@ -284,15 +293,15 @@ fn separator_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba, 
         card::card(
             ui,
             Icon::Layers,
-            "Pane separators",
-            Some(
-                "The line between the price chart and a script's pane. It appears once a script with its own pane is on the chart.",
-            ),
+            tr!("Pane separators"),
+            Some(tr!(
+                "The line between the price chart and a script's pane. It appears once a script with its own pane is on the chart."
+            )),
             |ui| {
                 ui.add_enabled(
                     false,
                     egui::Label::new(crate::ui::kit::text(
-                        "No panes",
+                        tr!("No panes"),
                         11.0,
                         kit::REGULAR,
                         crate::ui::theme::text_tertiary(),
@@ -305,15 +314,17 @@ fn separator_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba, 
     card::card_reserving(
         ui,
         Icon::Layers,
-        "Pane separators",
-        Some("The line between the price chart and each script pane."),
+        tr!("Pane separators"),
+        Some(tr!(
+            "The line between the price chart and each script pane."
+        )),
         WIDE + 80.0,
         |ui| {
             card::switch(ui, &mut line.visible);
             if line.visible {
                 width_stepper(ui, id.with("separator-width"), &mut line.width);
                 dash_picker(ui, &mut line.dash);
-                color_control(ui, "Pane separators", &mut line.color, default);
+                color_control(ui, tr!("Pane separators"), &mut line.color, default);
             }
         },
     );
@@ -323,14 +334,16 @@ fn crosshair_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba) 
     card::card_reserving(
         ui,
         Icon::Plus,
-        "Crosshair",
-        Some("The lines that follow the pointer. Color, opacity, thickness and style."),
+        tr!("Crosshair"),
+        Some(tr!(
+            "The lines that follow the pointer. Color, opacity, thickness and style."
+        )),
         WIDE + 80.0,
         |ui| {
             ui.add_space(SWITCH_COLUMN + ui.spacing().item_spacing.x);
             width_stepper(ui, id.with("crosshair-width"), &mut line.width);
             dash_picker(ui, &mut line.dash);
-            color_control(ui, "Crosshair", &mut line.color, default);
+            color_control(ui, tr!("Crosshair"), &mut line.color, default);
         },
     );
 }
@@ -360,16 +373,16 @@ fn watermark_row(ui: &mut Ui, canvas: &mut ChartCanvas, default: Rgba) {
         .position(|(mode, _)| *mode == watermark.mode)
         .unwrap_or(0);
     let hint = match watermark.mode {
-        WatermarkMode::Hidden => "A faint market name behind the candles. Off.",
-        WatermarkMode::Symbol => "The market and its timeframe, behind the candles.",
+        WatermarkMode::Hidden => tr!("A faint market name behind the candles. Off."),
+        WatermarkMode::Symbol => tr!("The market and its timeframe, behind the candles."),
         WatermarkMode::Replay => {
-            "The market and its timeframe, behind the candles while a replay is running."
+            tr!("The market and its timeframe, behind the candles while a replay is running.")
         }
     };
-    card::card_reserving(ui, Icon::Tag, "Watermark", Some(hint), 250.0, |ui| {
+    card::card_reserving(ui, Icon::Tag, tr!("Watermark"), Some(hint), 250.0, |ui| {
         ui.add_space(SWITCH_COLUMN + ui.spacing().item_spacing.x);
         if watermark.mode != WatermarkMode::Hidden {
-            color_control(ui, "Watermark", &mut watermark.color, default);
+            color_control(ui, tr!("Watermark"), &mut watermark.color, default);
         }
         if let Some(index) = kit::menu_picker(ui, 120.0, &labels, selected, true) {
             watermark.mode = options[index].0;
@@ -382,11 +395,11 @@ fn watermark_row(ui: &mut Ui, canvas: &mut ChartCanvas, default: Rgba) {
 /// The box of values under the crosshair, on or off. The crosshair lines and tags stay either way.
 fn readout_row(ui: &mut Ui, on: &mut bool) {
     let hint = if *on {
-        "Open, high, low and close under the crosshair, with volume where the market has it."
+        tr!("Open, high, low and close under the crosshair, with volume where the market has it.")
     } else {
-        "The values box under the crosshair is hidden. The crosshair itself stays."
+        tr!("The values box under the crosshair is hidden. The crosshair itself stays.")
     };
-    card::card(ui, Icon::Eye, "OHLC values", Some(hint), |ui| {
+    card::card(ui, Icon::Eye, tr!("OHLC values"), Some(hint), |ui| {
         card::switch(ui, on);
     });
 }
@@ -403,13 +416,13 @@ fn scales_rows(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle) {
     card::card_reserving(
         ui,
         Icon::TextFormat,
-        "Text",
-        Some("The size and color of the price and time labels."),
+        tr!("Text"),
+        Some(tr!("The size and color of the price and time labels.")),
         WIDE - 80.0,
         |ui| {
             color_control(
                 ui,
-                "Scale text",
+                tr!("Scale text"),
                 &mut scales.text_color,
                 swatch(defaults.text_color),
             );
@@ -421,12 +434,12 @@ fn scales_rows(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle) {
     card::card(
         ui,
         Icon::LineDiagonal,
-        "Lines",
-        Some("The lines that bound the price and time axes."),
+        tr!("Lines"),
+        Some(tr!("The lines that bound the price and time axes.")),
         |ui| {
             color_control(
                 ui,
-                "Scale lines",
+                tr!("Scale lines"),
                 &mut scales.line_color,
                 swatch(defaults.scale_line),
             );
@@ -440,15 +453,15 @@ fn button_rows(ui: &mut Ui, canvas: &mut ChartCanvas) {
     visibility_row(
         ui,
         Icon::ArrowLeftRight,
-        "Navigation",
-        "Zoom, scroll and reset, at the foot of the chart.",
+        tr!("Navigation"),
+        tr!("Zoom, scroll and reset, at the foot of the chart."),
         &mut canvas.buttons.navigation,
     );
     visibility_row(
         ui,
         Icon::Layers,
-        "Pane",
-        "Move, collapse, maximize and remove, on each script pane.",
+        tr!("Pane"),
+        tr!("Move, collapse, maximize and remove, on each script pane."),
         &mut canvas.buttons.pane,
     );
 }
@@ -486,8 +499,10 @@ fn margin_rows(ui: &mut Ui, id: Id, margins: &mut ChartMargins) {
         ui,
         id.with("margin-top"),
         Icon::Percent,
-        "Top",
-        Some("Percent of the chart's height kept free above the highest price."),
+        tr!("Top"),
+        Some(tr!(
+            "Percent of the chart's height kept free above the highest price."
+        )),
         &mut top,
         0..=i64::from(top_room),
     ) {
@@ -501,8 +516,10 @@ fn margin_rows(ui: &mut Ui, id: Id, margins: &mut ChartMargins) {
         ui,
         id.with("margin-bottom"),
         Icon::Percent,
-        "Bottom",
-        Some("Percent of the chart's height kept free below the lowest price."),
+        tr!("Bottom"),
+        Some(tr!(
+            "Percent of the chart's height kept free below the lowest price."
+        )),
         &mut bottom,
         0..=i64::from(bottom_room),
     ) {
@@ -513,8 +530,8 @@ fn margin_rows(ui: &mut Ui, id: Id, margins: &mut ChartMargins) {
         ui,
         id.with("margin-right"),
         Icon::Hash,
-        "Right",
-        Some("Bars of empty space after the newest bar."),
+        tr!("Right"),
+        Some(tr!("Bars of empty space after the newest bar.")),
         &mut right,
         0..=i64::from(ChartMargins::MAX_RIGHT),
     ) {

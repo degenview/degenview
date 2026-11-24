@@ -2,6 +2,7 @@
 //! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
 use super::cursor_menu::{self, CursorMenuAction};
+use crate::i18n::tr;
 use crate::model::drawings::favorites::Favorite;
 use crate::model::{ChartSyncSettings, CursorMode, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
@@ -206,26 +207,28 @@ impl Menu {
 
     fn corner_label(self) -> &'static str {
         match self {
-            Self::Lines => "More lines, channels and pitchforks",
-            Self::Fib => "More Fibonacci and Gann tools",
-            Self::Patterns => "More chart patterns, Elliott waves and cycles",
-            Self::Forecast => "More forecasting, volume and measurement tools",
-            Self::Shapes => "More brushes, arrows and shapes",
-            Self::Notes => "More text and notes",
+            Self::Lines => tr!("More lines, channels and pitchforks"),
+            Self::Fib => tr!("More Fibonacci and Gann tools"),
+            Self::Patterns => tr!("More chart patterns, Elliott waves and cycles"),
+            Self::Forecast => tr!("More forecasting, volume and measurement tools"),
+            Self::Shapes => tr!("More brushes, arrows and shapes"),
+            Self::Notes => tr!("More text and notes"),
         }
     }
 }
 
-const SLOTS: [Slot; 8] = [
-    Slot::Cursor,
-    Slot::Menu(Menu::Lines),
-    Slot::Menu(Menu::Fib),
-    Slot::Menu(Menu::Patterns),
-    Slot::Menu(Menu::Forecast),
-    Slot::Menu(Menu::Shapes),
-    Slot::Menu(Menu::Notes),
-    Slot::Tool(Tool::Ruler, Icon::Ruler, "Ruler"),
-];
+fn slots() -> [Slot; 8] {
+    [
+        Slot::Cursor,
+        Slot::Menu(Menu::Lines),
+        Slot::Menu(Menu::Fib),
+        Slot::Menu(Menu::Patterns),
+        Slot::Menu(Menu::Forecast),
+        Slot::Menu(Menu::Shapes),
+        Slot::Menu(Menu::Notes),
+        Slot::Tool(Tool::Ruler, Icon::Ruler, tr!("Ruler")),
+    ]
+}
 
 /// The height of one row of a menu.
 const ROW_HEIGHT: f32 = 30.0;
@@ -332,7 +335,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
 
     let x = strip.center().x - BUTTON / 2.0;
     let mut y = strip.top() + 10.0;
-    for slot in SLOTS {
+    for slot in slots() {
         let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
         match slot {
             Slot::Cursor => cursor_tile(ui, rect, input, strip.right(), &mut actions),
@@ -388,14 +391,20 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         Active::Off
     };
     if rect.bottom() <= limit
-        && tile_button(ui, rect, &zoom(Icon::ZoomIn, "Zoom in", lit), strip.right()).clicked()
+        && tile_button(
+            ui,
+            rect,
+            &zoom(Icon::ZoomIn, tr!("Zoom in"), lit),
+            strip.right(),
+        )
+        .clicked()
     {
         actions.push(ToolSidebarAction::ToggleZoomIn);
     }
     y += BUTTON + SPACING;
     if input.can_zoom_out && y + BUTTON <= limit {
         let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
-        let tile = zoom(Icon::ZoomOut, "Zoom out", Active::Off);
+        let tile = zoom(Icon::ZoomOut, tr!("Zoom out"), Active::Off);
         if tile_button(ui, rect, &tile, strip.right()).clicked() {
             actions.push(ToolSidebarAction::ZoomOut);
         }
@@ -432,7 +441,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         (
             toggle(
                 Icon::Magnet,
-                "Magnet",
+                tr!("Magnet"),
                 input.magnet.label(),
                 "magnet",
                 input.magnet != MagnetMode::Off,
@@ -448,11 +457,11 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         (
             toggle(
                 Icon::KeepDrawing,
-                "Keep drawing",
+                tr!("Keep drawing"),
                 if input.keep_drawing {
-                    "Keep drawing: on (stay on the tool)"
+                    tr!("Keep drawing: on (stay on the tool)")
                 } else {
-                    "Keep drawing: off (back to the crosshair)"
+                    tr!("Keep drawing: off (back to the crosshair)")
                 },
                 "keep",
                 input.keep_drawing,
@@ -468,11 +477,11 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
                 } else {
                     Icon::LockOpen
                 },
-                "Lock all drawings",
+                tr!("Lock all drawings"),
                 if input.all_locked {
-                    "Unlock all drawings"
+                    tr!("Unlock all drawings")
                 } else {
-                    "Lock all drawings"
+                    tr!("Lock all drawings")
                 },
                 "lock",
                 input.all_locked,
@@ -488,11 +497,11 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
                 } else {
                     Icon::Eye
                 },
-                "Hide all drawings",
+                tr!("Hide all drawings"),
                 if input.hide_all {
-                    "Show all drawings"
+                    tr!("Show all drawings")
                 } else {
-                    "Hide all drawings"
+                    tr!("Hide all drawings")
                 },
                 "hide",
                 input.hide_all,
@@ -533,9 +542,12 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
     let mut y = strip.bottom() - 10.0 - BUTTON;
     let bell = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
     let bell_label = if input.unseen_alerts > 0 {
-        format!("View Price Alerts, {} new", input.unseen_alerts)
+        tr!(
+            "View Price Alerts, {count} new",
+            count = input.unseen_alerts
+        )
     } else {
-        "View Price Alerts".to_owned()
+        tr!("View Price Alerts").to_owned()
     };
     if tile_button(
         ui,
@@ -543,7 +555,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         &Tile {
             icon: Icon::Bell,
             label: &bell_label,
-            tooltip: "View Price Alerts",
+            tooltip: tr!("View Price Alerts"),
             active: Active::Off,
             tint: None,
             enabled: true,
@@ -575,14 +587,14 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         &Tile {
             icon: Icon::ArrowLeftRight,
             label: if input.paper_open {
-                "Hide Paper Trading panel"
+                tr!("Hide Paper Trading panel")
             } else {
-                "Show Paper Trading panel"
+                tr!("Show Paper Trading panel")
             },
             tooltip: if input.paper_open {
-                "Hide Paper Trading"
+                tr!("Hide Paper Trading")
             } else {
-                "Paper Trading"
+                tr!("Paper Trading")
             },
             active: if input.paper_open {
                 Active::Tinted
@@ -655,8 +667,10 @@ fn link_tile(
         });
 }
 
-/// The first tile: the cursor in force. A click opens the cursor menu; the tile is never lit, the
-/// cursor is the resting state like the crosshair always was.
+/// The first tile: the cursor the user chose. Like the tiles of the other menus, a click picks what
+/// it shows (the chosen cursor, which also puts an armed tool or Zoom In down), and the menu opens
+/// from the corner, a right-click or the keyboard. The tile is never lit: the cursor is the resting
+/// state, like the crosshair always was.
 fn cursor_tile(
     ui: &mut Ui,
     rect: Rect,
@@ -666,8 +680,8 @@ fn cursor_tile(
 ) {
     let tile = Tile {
         icon: cursor_menu::icon(input.cursor),
-        label: "Cursors",
-        tooltip: "Cursors",
+        label: tr!("Cursors"),
+        tooltip: tr!("Cursors"),
         active: Active::Off,
         tint: None,
         enabled: true,
@@ -677,7 +691,14 @@ fn cursor_tile(
         mark: None,
     };
     let response = tile_button(ui, rect, &tile, strip_right);
-    let wants_open = response.clicked()
+    if response.clicked() {
+        actions.push(ToolSidebarAction::SetCursor(input.cursor));
+    }
+    // The corner opens the menu instead of picking the cursor.
+    let corner = Rect::from_min_size(rect.right_bottom() - vec2(16.0, 16.0), vec2(16.0, 16.0));
+    let corner_response = ui.interact(corner, Id::new("tool-sidebar-menu-cursor"), Sense::click());
+    let corner_response = crate::ui::accessibility::label(corner_response, tr!("More cursors"));
+    let wants_open = corner_response.clicked()
         || response.secondary_clicked()
         || (response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::ArrowRight)));
     let width = cursor_menu::width(ui);
@@ -931,14 +952,14 @@ pub(super) fn star_button(
         .interact(star_rect, id, Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(if favorite {
-            "Remove from favorites"
+            tr!("Remove from favorites")
         } else {
-            "Add to favorites"
+            tr!("Add to favorites")
         });
     crate::ui::accessibility::selected_as(
         star,
         egui::WidgetType::Checkbox,
-        format!("Favorite {name}"),
+        tr!("Favorite {name}", name = name),
         favorite,
     )
 }
@@ -1345,8 +1366,7 @@ mod tests {
     }
 
     /// Clicks down the strip's left half in fresh contexts and returns the `y` values at which a
-    /// popup opened (no tile opens one from a plain click except Link charts, and the cursor
-    /// tile at the top, which is skipped).
+    /// popup opened (no tile opens one from a plain click except Link charts).
     fn popups_opened_by_plain_clicks(input: &ToolSidebarInput, height: f32) -> Vec<f32> {
         let size = vec2(900.0, height);
         let below_cursor_tile = 10.0 + BUTTON + SPACING;
@@ -1504,8 +1524,11 @@ mod tests {
         assert_eq!(armed.len(), 16);
     }
 
-    /// The cursor tile's centre, and one frame of the strip with its menu open.
+    /// The cursor tile's centre.
     const CURSOR_TILE: Pos2 = pos2(WIDTH / 2.0, 10.0 + BUTTON / 2.0);
+
+    /// The cursor tile's corner, where its menu opens from.
+    const CURSOR_CORNER: Pos2 = pos2(31.0, 36.0);
 
     fn open_cursor_menu(input: &ToolSidebarInput) -> (egui::Context, f64, Rect) {
         let size = vec2(900.0, 700.0);
@@ -1514,9 +1537,9 @@ mod tests {
         for _ in 0..3 {
             frame(&ctx, &mut time, size, Vec::new(), input);
         }
-        click(&ctx, &mut time, size, CURSOR_TILE, input);
+        click(&ctx, &mut time, size, CURSOR_CORNER, input);
         let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), input);
-        let menu = menu.expect("a click on the cursor tile opens its menu");
+        let menu = menu.expect("a click on the cursor tile's corner opens its menu");
         (ctx, time, menu)
     }
 
@@ -1531,7 +1554,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_tile_shows_the_cursor_and_a_click_opens_the_menu_without_arming_anything() {
+    fn a_click_on_the_cursor_tile_picks_the_chosen_cursor_and_opens_no_menu() {
         let size = vec2(900.0, 700.0);
         for cursor in CursorMode::ALL {
             let input = ToolSidebarInput { cursor, ..state() };
@@ -1540,6 +1563,45 @@ mod tests {
             let (actions, _) = frame(&ctx, &mut time, size, Vec::new(), &input);
             assert!(actions.is_empty());
             let actions = click(&ctx, &mut time, size, CURSOR_TILE, &input);
+            assert_eq!(
+                actions,
+                vec![ToolSidebarAction::SetCursor(cursor)],
+                "{cursor:?}: one click picks the cursor the tile shows"
+            );
+            let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+            assert!(menu.is_none(), "{cursor:?}: the click opened a menu");
+        }
+    }
+
+    #[test]
+    fn a_click_on_the_cursor_tile_with_a_tool_armed_asks_for_the_cursor_back() {
+        let size = vec2(900.0, 700.0);
+        let input = ToolSidebarInput {
+            active_tool: Tool::TrendLine,
+            cursor: CursorMode::Dot,
+            zoom_armed: true,
+            ..state()
+        };
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let actions = click(&ctx, &mut time, size, CURSOR_TILE, &input);
+        assert_eq!(actions, vec![ToolSidebarAction::SetCursor(CursorMode::Dot)]);
+    }
+
+    #[test]
+    fn the_cursor_tiles_corner_opens_the_menu_without_picking_anything() {
+        let size = vec2(900.0, 700.0);
+        for cursor in CursorMode::ALL {
+            let input = ToolSidebarInput { cursor, ..state() };
+            let ctx = egui::Context::default();
+            let mut time = 0.0;
+            for _ in 0..3 {
+                frame(&ctx, &mut time, size, Vec::new(), &input);
+            }
+            let actions = click(&ctx, &mut time, size, CURSOR_CORNER, &input);
             assert!(
                 actions.is_empty(),
                 "opening the menu changes nothing: {actions:?}"
@@ -1547,6 +1609,35 @@ mod tests {
             let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
             assert!(menu.is_some(), "{cursor:?}: the menu is open");
         }
+    }
+
+    #[test]
+    fn a_right_click_on_the_cursor_tile_opens_the_menu_without_picking_anything() {
+        let size = vec2(900.0, 700.0);
+        let input = state();
+        let ctx = egui::Context::default();
+        let mut time = 0.0;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let button = |pressed| egui::Event::PointerButton {
+            pos: CURSOR_TILE,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(
+            &ctx,
+            &mut time,
+            size,
+            vec![egui::Event::PointerMoved(CURSOR_TILE)],
+            &input,
+        );
+        frame(&ctx, &mut time, size, vec![button(true)], &input);
+        let (actions, _) = frame(&ctx, &mut time, size, vec![button(false)], &input);
+        assert!(actions.is_empty(), "{actions:?}");
+        let (_, menu) = frame(&ctx, &mut time, size, Vec::new(), &input);
+        assert!(menu.is_some(), "the menu is open");
     }
 
     #[test]
@@ -1657,7 +1748,7 @@ mod tests {
                 })
             };
             let button = |pressed| egui::Event::PointerButton {
-                pos: CURSOR_TILE,
+                pos: CURSOR_CORNER,
                 button: egui::PointerButton::Primary,
                 pressed,
                 modifiers: egui::Modifiers::NONE,
@@ -1665,7 +1756,7 @@ mod tests {
             for _ in 0..3 {
                 run(&mut screen, Vec::new());
             }
-            run(&mut screen, vec![egui::Event::PointerMoved(CURSOR_TILE)]);
+            run(&mut screen, vec![egui::Event::PointerMoved(CURSOR_CORNER)]);
             run(&mut screen, vec![button(true)]);
             run(&mut screen, vec![button(false)]);
             let mut last = None;

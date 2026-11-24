@@ -171,7 +171,6 @@ fn the_tooltip_names_the_bar_with_the_values_the_frame_holds() {
     let mut harness = hovering();
     harness.indicators.show_ema = true;
     harness.indicators.show_bollinger = true;
-    harness.indicators.show_rsi = true;
     harness.draw();
     let quiet = texts(&mut harness);
     assert!(
@@ -182,7 +181,7 @@ fn the_tooltip_names_the_bar_with_the_values_the_frame_holds() {
     wait(&mut harness, LONG);
     let shown = texts(&mut harness);
     for label in [
-        "O", "H", "L", "C", "Vol", "Chg", "RSI", "BB upper", "BB basis", "BB lower",
+        "O", "H", "L", "C", "Vol", "Chg", "BB upper", "BB basis", "BB lower",
     ] {
         assert!(
             shown.iter().any(|text| text == label),

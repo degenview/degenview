@@ -3,6 +3,7 @@
 //! crosshair. The range switch and the headline figures are the card's controls row.
 
 use super::{area_under, axis_text, dashed_h, dashed_v, loading_pill, reveal, tone_color, tooltip};
+use crate::i18n::tr;
 use crate::model::portfolio::card::{CardData, PortfolioCard};
 use crate::ui::icons::Icon;
 use crate::ui::kit::{
@@ -69,15 +70,24 @@ pub(super) fn paint_summary(ui: &Ui, row: Rect, card: &PortfolioCard, data: &Car
     let arrow = if change.profit >= 0.0 { "↗" } else { "↘" };
     let remaining = row.width() - width - 10.0;
     let full = match change.percentage {
-        Some(fraction) => format!(
-            "{arrow} {} · {}",
-            data.formatter.signed_money(change.profit),
-            data.formatter.signed_percent(fraction, 2)
+        Some(fraction) => tr!(
+            "{arrow} {amount} · {percent}",
+            arrow = arrow,
+            amount = data.formatter.signed_money(change.profit),
+            percent = data.formatter.signed_percent(fraction, 2)
         ),
-        None => format!("{arrow} {}", data.formatter.signed_money(change.profit)),
+        None => tr!(
+            "{arrow} {amount}",
+            arrow = arrow,
+            amount = data.formatter.signed_money(change.profit)
+        ),
     };
     let short = match change.percentage {
-        Some(fraction) => format!("{arrow} {}", data.formatter.signed_percent(fraction, 2)),
+        Some(fraction) => tr!(
+            "{arrow} {amount}",
+            arrow = arrow,
+            amount = data.formatter.signed_percent(fraction, 2)
+        ),
         None => full.clone(),
     };
     let probe = kit::galley(ui, &full, 11.0, kit::SEMIBOLD, color, f32::INFINITY);
@@ -107,7 +117,7 @@ pub(super) fn paint(
     pointer: Option<Pos2>,
 ) {
     if data.loading {
-        loading_pill(ui, area, "Loading market data…");
+        loading_pill(ui, area, tr!("Loading market data…"));
         return;
     }
     let points = prepared_points(
@@ -118,7 +128,7 @@ pub(super) fn paint(
         data.loading_history && data.history.is_empty(),
     );
     if data.loading_history && data.history.is_empty() {
-        loading_pill(ui, area, "Building history…");
+        loading_pill(ui, area, tr!("Building history…"));
         return;
     }
     let Some((minimum, maximum)) = value_bounds(&points) else {
@@ -126,8 +136,8 @@ pub(super) fn paint(
             ui,
             area,
             Icon::ChartUptrend,
-            "No History Yet",
-            "History builds from transaction dates and market candles.",
+            tr!("No History Yet"),
+            tr!("History builds from transaction dates and market candles."),
         );
         return;
     };
@@ -310,7 +320,10 @@ pub(super) fn paint(
     ];
     if point.net_contributions != 0.0 {
         lines.push((
-            format!("{} vs invested", data.formatter.signed_money(versus)),
+            tr!(
+                "{amount} vs invested",
+                amount = data.formatter.signed_money(versus)
+            ),
             11.0,
             kit::MEDIUM,
             tone_color(versus_tone),

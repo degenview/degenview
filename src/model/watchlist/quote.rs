@@ -2,6 +2,7 @@
 //! watchlist, and a missing value stays `None` so the row shows a dash, not zero.
 
 use crate::format;
+use crate::i18n::tr;
 use crate::model::{DataSource, PriceFormat};
 
 /// Text for a value the provider did not supply.
@@ -33,9 +34,9 @@ impl ChangeBasis {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Rolling24h => "Change over the last 24 hours",
-            Self::PreviousClose => "Change since the previous close",
-            Self::Window => "Change over the market's comparison window",
+            Self::Rolling24h => tr!("Change over the last 24 hours"),
+            Self::PreviousClose => tr!("Change since the previous close"),
+            Self::Window => tr!("Change over the market's comparison window"),
         }
     }
 }
@@ -52,11 +53,11 @@ pub enum Freshness {
 impl Freshness {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Live => "Live",
-            Self::Stale => "Stale",
-            Self::MarketClosed => "Market closed",
-            Self::Unavailable => "No quote",
-            Self::Unsupported => "No quotes for this market",
+            Self::Live => tr!("Live"),
+            Self::Stale => tr!("Stale"),
+            Self::MarketClosed => tr!("Market closed"),
+            Self::Unavailable => tr!("No quote"),
+            Self::Unsupported => tr!("No quotes for this market"),
         }
     }
 

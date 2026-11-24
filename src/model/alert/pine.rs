@@ -5,6 +5,7 @@
 //! A subscription is bound to the chart, symbol, timeframe and the exact source that was applied,
 //! so a different script or a chart showing another market never fires it by accident.
 
+use crate::i18n::tr;
 use crate::model::pine::instance::StoredInput;
 use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::pine::builtins::alert::frequency::AlertFrequency;
@@ -80,9 +81,9 @@ impl PineAlertSubscription {
 /// How a call's frequency reads in the UI, rather than its Pine constant.
 pub fn frequency_name(frequency: AlertFrequency) -> &'static str {
     match frequency {
-        AlertFrequency::All => "Every update",
-        AlertFrequency::OncePerBar => "Once per bar",
-        AlertFrequency::OncePerBarClose => "Once per bar close",
+        AlertFrequency::All => tr!("Every update"),
+        AlertFrequency::OncePerBar => tr!("Once per bar"),
+        AlertFrequency::OncePerBarClose => tr!("Once per bar close"),
     }
 }
 
@@ -106,9 +107,9 @@ pub fn call_row(site: &AlertCallSite) -> CallRow {
             .title
             .clone()
             .or_else(|| site.message.clone())
-            .unwrap_or_else(|| "Message set by the script".to_owned()),
+            .unwrap_or_else(|| tr!("Message set by the script").to_owned()),
         detail: site.title.as_ref().and(site.message.clone()),
-        frequency: site.frequency.map_or("Set by script", frequency_name),
+        frequency: site.frequency.map_or(tr!("Set by script"), frequency_name),
         line: site.range.start.line,
         help: if site.is_condition {
             "alertcondition()"
@@ -146,26 +147,26 @@ pub fn blocker(facts: ArmingFacts) -> Option<Blocker> {
     }
     if !facts.instance_exists {
         return Some(Blocker {
-            title: "Indicator removed",
-            detail: "This indicator is no longer applied to the chart.",
+            title: tr!("Indicator removed"),
+            detail: tr!("This indicator is no longer applied to the chart."),
         });
     }
     if !facts.source_loaded {
         return Some(Blocker {
-            title: "Script not loaded",
-            detail: "The indicator's script hasn't loaded yet. Try again in a moment.",
+            title: tr!("Script not loaded"),
+            detail: tr!("The indicator's script hasn't loaded yet. Try again in a moment."),
         });
     }
     if facts.call_sites == 0 {
         return Some(Blocker {
-            title: "No alerts in this script",
-            detail: "The script has no alert() or alertcondition() calls.",
+            title: tr!("No alerts in this script"),
+            detail: tr!("The script has no alert() or alertcondition() calls."),
         });
     }
     if facts.duplicate_exists {
         return Some(Blocker {
-            title: "Already armed",
-            detail: "This indicator already has an active alert on this chart.",
+            title: tr!("Already armed"),
+            detail: tr!("This indicator already has an active alert on this chart."),
         });
     }
     None

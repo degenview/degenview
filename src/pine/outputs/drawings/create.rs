@@ -7,42 +7,19 @@ use super::coordinates::{bar_index_for_time, is_time_anchored, point_coordinates
 use super::names::size_of;
 use super::{
     Arg, CHART_POINT_TYPE, DEFAULT_COLOR, DrawingLimits, OPAQUE_BLACK, allocate, bind,
-    bind_overload, cap, force_overlay, parse, text, width_or,
+    bind_overload, cap, force_overlay, handle, parameters, parse, text, width_or,
 };
 use crate::model::Kline;
 use crate::pine::outputs::{
-    BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
-    MISSING_INDEX, PolylineOutput, PolylinePoint, Size, TextAlign, YLocation, index_is_known,
-    price_is_known,
+    BoxOutput, FontFamily, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle,
+    LinefillOutput, MISSING_INDEX, PolylineOutput, PolylinePoint, Size, TextAlign, YLocation,
+    index_is_known, price_is_known,
 };
 use crate::pine::runtime::containers::Object;
 use crate::pine::runtime::fast_hash::FastMap;
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue, color_value};
 use crate::pine::syntax::token::Diagnostic;
-
-const PLAIN_LINE: [&str; 10] = [
-    "x1",
-    "y1",
-    "x2",
-    "y2",
-    "xloc",
-    "extend",
-    "color",
-    "style",
-    "width",
-    "force_overlay",
-];
-const POINT_LINE: [&str; 8] = [
-    "first_point",
-    "second_point",
-    "xloc",
-    "extend",
-    "color",
-    "style",
-    "width",
-    "force_overlay",
-];
 
 pub(super) fn new_line(
     args: &[Arg],
@@ -51,7 +28,7 @@ pub(super) fn new_line(
     bar_seconds: f64,
     limits: &DrawingLimits,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let (b, is_point) = bind_overload(args, &PLAIN_LINE, &POINT_LINE, state);
+    let (b, is_point) = bind_overload("line.new", args, state);
     let timed = is_time_anchored(&b);
     let (x1, y1, x2, y2) = if is_point {
         let Some(first) = b
@@ -129,38 +106,6 @@ pub(super) fn new_line(
     Ok(RuntimeValue::Ref(RefKind::Line, id))
 }
 
-const PLAIN_LABEL: [&str; 14] = [
-    "x",
-    "y",
-    "text",
-    "xloc",
-    "yloc",
-    "color",
-    "style",
-    "textcolor",
-    "size",
-    "textalign",
-    "tooltip",
-    "text_font_family",
-    "force_overlay",
-    "text_formatting",
-];
-const POINT_LABEL: [&str; 13] = [
-    "point",
-    "text",
-    "xloc",
-    "yloc",
-    "color",
-    "style",
-    "textcolor",
-    "size",
-    "textalign",
-    "tooltip",
-    "text_font_family",
-    "force_overlay",
-    "text_formatting",
-];
-
 pub(super) fn new_label(
     args: &[Arg],
     state: &mut RuntimeState,
@@ -168,7 +113,7 @@ pub(super) fn new_label(
     bar_seconds: f64,
     limits: &DrawingLimits,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let (b, is_point) = bind_overload(args, &PLAIN_LABEL, &POINT_LABEL, state);
+    let (b, is_point) = bind_overload("label.new", args, state);
     let timed = is_time_anchored(&b);
     let (x, y) = if is_point {
         let Some(point) = b
@@ -212,6 +157,11 @@ pub(super) fn new_label(
                 LabelStyle::LabelCenter,
             ),
             size: size_of(b.get("size"), Size::Normal),
+            font_family: parse(
+                b.get("text_font_family").and_then(RuntimeValue::text_value),
+                FontFamily::Default,
+                FontFamily::Default,
+            ),
             tooltip: text(&b, "tooltip"),
             text_align: parse(
                 b.get("textalign").and_then(RuntimeValue::text_value),
@@ -231,47 +181,6 @@ pub(super) fn new_label(
     Ok(RuntimeValue::Ref(RefKind::Label, id))
 }
 
-const PLAIN_BOX: [&str; 19] = [
-    "left",
-    "top",
-    "right",
-    "bottom",
-    "border_color",
-    "border_width",
-    "border_style",
-    "extend",
-    "xloc",
-    "bgcolor",
-    "text",
-    "text_size",
-    "text_color",
-    "text_halign",
-    "text_valign",
-    "text_wrap",
-    "text_font_family",
-    "force_overlay",
-    "text_formatting",
-];
-const POINT_BOX: [&str; 17] = [
-    "top_left",
-    "bottom_right",
-    "border_color",
-    "border_width",
-    "border_style",
-    "extend",
-    "xloc",
-    "bgcolor",
-    "text",
-    "text_size",
-    "text_color",
-    "text_halign",
-    "text_valign",
-    "text_wrap",
-    "text_font_family",
-    "force_overlay",
-    "text_formatting",
-];
-
 pub(super) fn new_box(
     args: &[Arg],
     state: &mut RuntimeState,
@@ -279,7 +188,7 @@ pub(super) fn new_box(
     bar_seconds: f64,
     limits: &DrawingLimits,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let (b, is_point) = bind_overload(args, &PLAIN_BOX, &POINT_BOX, state);
+    let (b, is_point) = bind_overload("box.new", args, state);
     let timed = is_time_anchored(&b);
     let (left, top, right, bottom) = if is_point {
         let Some(first) = b
@@ -353,6 +262,11 @@ pub(super) fn new_box(
             text: text(&b, "text").unwrap_or_default(),
             text_color: color_value(b.get("text_color"), Some(OPAQUE_BLACK)).unwrap_or(0),
             text_size: size_of(b.get("text_size"), Size::Normal),
+            text_font_family: parse(
+                b.get("text_font_family").and_then(RuntimeValue::text_value),
+                FontFamily::Default,
+                FontFamily::Default,
+            ),
             text_horizontal_align: parse(
                 b.get("text_halign").and_then(RuntimeValue::text_value),
                 TextAlign::Center,
@@ -375,7 +289,7 @@ pub(super) fn new_linefill(
     args: &[Arg],
     state: &mut RuntimeState,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(args, &["line1", "line2", "color"]);
+    let b = bind(args, parameters("linefill.new"));
     let (Some(line1), Some(line2)) = (b.get("line1"), b.get("line2")) else {
         return Ok(RuntimeValue::Na);
     };
@@ -409,20 +323,7 @@ pub(super) fn new_polyline(
     bar_seconds: f64,
     limits: &DrawingLimits,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let b = bind(
-        args,
-        &[
-            "points",
-            "curved",
-            "closed",
-            "xloc",
-            "line_color",
-            "fill_color",
-            "line_style",
-            "line_width",
-            "force_overlay",
-        ],
-    );
+    let b = bind(args, parameters("polyline.new"));
     let Some(RuntimeValue::Ref(RefKind::Array, array_id)) = b.get("points") else {
         return Ok(RuntimeValue::Na);
     };
@@ -472,7 +373,8 @@ pub(super) fn delete_polyline(
     args: &[Arg],
     state: &mut RuntimeState,
 ) -> Result<RuntimeValue, Diagnostic> {
-    if let Some(RuntimeValue::Ref(RefKind::Polyline, id)) = args.first().map(|arg| &arg.value) {
+    if let Some(RuntimeValue::Ref(RefKind::Polyline, id)) = handle("polyline.delete", args).as_ref()
+    {
         state.polylines.remove(id);
     }
     Ok(RuntimeValue::Void)
@@ -485,13 +387,7 @@ pub(super) fn chart_point(
     bar: &Kline,
     bar_seconds: f64,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let parameters: &[&str] = match name {
-        "chart.point.from_index" => &["index", "price"],
-        "chart.point.from_time" => &["time", "price"],
-        "chart.point.now" => &["price"],
-        _ => &["time", "index", "price"],
-    };
-    let b = bind(args, parameters);
+    let b = bind(args, parameters(name));
     let mut index = b.get("index").cloned();
     let mut time = b.get("time").cloned();
     if name == "chart.point.now" {
@@ -540,8 +436,8 @@ pub(super) fn copy_drawing(
     state: &mut RuntimeState,
     limits: &DrawingLimits,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let target = args.first().map(|arg| &arg.value);
-    let copied = match (name, target) {
+    let target = handle(name, args);
+    let copied = match (name, target.as_ref()) {
         ("line.copy", Some(RuntimeValue::Ref(RefKind::Line, id))) => {
             let fresh = allocate(state);
             let copy = clone_into(&mut state.lines, *id, fresh, |line, id| line.id = id);
@@ -585,7 +481,8 @@ pub(super) fn copy_chart_point(
     args: &[Arg],
     state: &mut RuntimeState,
 ) -> Result<RuntimeValue, Diagnostic> {
-    let Some(RuntimeValue::Ref(RefKind::Object, id)) = args.first().map(|arg| &arg.value) else {
+    let target = handle("chart.point.copy", args);
+    let Some(RuntimeValue::Ref(RefKind::Object, id)) = target.as_ref() else {
         return Ok(RuntimeValue::Na);
     };
     if !state

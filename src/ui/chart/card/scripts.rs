@@ -2,6 +2,7 @@
 //! hand back, the pane buttons, and the own pane an `overlay=false` script draws in.
 
 use super::*;
+use crate::pine::time::bucket::seconds_of;
 
 impl ChartCard {
     pub fn pine_instances(&self) -> &[PineInstance] {
@@ -173,6 +174,7 @@ impl ChartCard {
             bars,
             symbol: symbol_info,
             bar_seconds,
+            timeframe_seconds: self.timeframe.map(seconds_of),
             // What `chart.bg_color` and `chart.fg_color` read: the colours the chart is drawn on.
             theme: if theme::is_light() {
                 ChartTheme::LIGHT

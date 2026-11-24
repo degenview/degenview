@@ -12,6 +12,7 @@
 //! A pasted private key is never left on screen: once entered the field shows only its length.
 //! Rules are plain functions; the egui code only draws them.
 
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::service::work_queue::Pending;
 use crate::ui::kit::loading::LoadingIndicator;
 use std::collections::{BTreeMap, HashMap};
@@ -90,17 +91,17 @@ pub struct PermissionRow {
 pub fn permission_rows(permissions: &Permissions) -> Vec<PermissionRow> {
     vec![
         PermissionRow {
-            label: "View balances and orders",
+            label: tr!("View balances and orders"),
             granted: permissions.can_view,
             warn: false,
         },
         PermissionRow {
-            label: "Place and cancel orders",
+            label: tr!("Place and cancel orders"),
             granted: permissions.can_trade,
             warn: false,
         },
         PermissionRow {
-            label: "Move funds",
+            label: tr!("Move funds"),
             granted: permissions.can_transfer,
             warn: permissions.can_transfer,
         },
@@ -110,13 +111,13 @@ pub fn permission_rows(permissions: &Permissions) -> Vec<PermissionRow> {
 /// A sentence for what a checked key means for trading, when there is something to say.
 pub fn permission_advice(permissions: &Permissions) -> Option<&'static str> {
     if permissions.can_transfer {
-        Some(
-            "This key can move funds. DegenView never moves funds and does not need that: create a key without the Transfer permission and use that instead.",
-        )
+        Some(tr!(
+            "This key can move funds. DegenView never moves funds and does not need that: create a key without the Transfer permission and use that instead."
+        ))
     } else if !permissions.can_trade {
-        Some(
-            "This key can view but not trade. You can watch balances and orders; to place orders, create a key with the Trade permission.",
-        )
+        Some(tr!(
+            "This key can view but not trade. You can watch balances and orders; to place orders, create a key with the Trade permission."
+        ))
     } else {
         None
     }
@@ -125,36 +126,44 @@ pub fn permission_advice(permissions: &Permissions) -> Option<&'static str> {
 /// The badge for a broker's connection.
 pub fn connection_badge(connection: &Connection) -> (String, Tone) {
     match connection {
-        Connection::NotConfigured => ("Not connected".to_owned(), Tone::Neutral),
-        Connection::Saved => ("Connecting…".to_owned(), Tone::Neutral),
+        Connection::NotConfigured => (tr!("Not connected").to_owned(), Tone::Neutral),
+        Connection::Saved => (tr!("Connecting…").to_owned(), Tone::Neutral),
         Connection::Running(snapshot) => status_badge_for(&snapshot.status),
     }
 }
 
 pub fn status_badge_for(status: &Status) -> (String, Tone) {
     match status {
-        Status::Connecting => ("Connecting…".to_owned(), Tone::Neutral),
-        Status::Syncing => ("Reading your account…".to_owned(), Tone::Neutral),
-        Status::Live => ("Connected".to_owned(), Tone::Good),
-        Status::Reconnecting { .. } => ("Reconnecting…".to_owned(), Tone::Warning),
-        Status::Failed(_) => ("Needs attention".to_owned(), Tone::Bad),
-        Status::Stopped => ("Disconnected".to_owned(), Tone::Neutral),
+        Status::Connecting => (tr!("Connecting…").to_owned(), Tone::Neutral),
+        Status::Syncing => (tr!("Reading your account…").to_owned(), Tone::Neutral),
+        Status::Live => (tr!("Connected").to_owned(), Tone::Good),
+        Status::Reconnecting { .. } => (tr!("Reconnecting…").to_owned(), Tone::Warning),
+        Status::Failed(_) => (tr!("Needs attention").to_owned(), Tone::Bad),
+        Status::Stopped => (tr!("Disconnected").to_owned(), Tone::Neutral),
     }
 }
 
 /// The explanation under a badge, when the state has one.
 pub fn status_detail(snapshot: &BrokerSnapshot) -> Option<String> {
     match &snapshot.status {
-        Status::Reconnecting { reason, .. } => Some(format!(
-            "The connection dropped ({reason}) The orders and balances shown may be out of date until it comes back."
+        Status::Reconnecting { reason, .. } => Some(tr!(
+            "The connection dropped ({reason}) The orders and balances shown may be out of date until it comes back.",
+            reason = reason
         )),
-        Status::Failed(error) => Some(format!("{error} Enter a new key below, or disconnect.")),
+        Status::Failed(error) => Some(tr!(
+            "{error} Enter a new key below, or disconnect.",
+            error = error
+        )),
         _ => None,
     }
 }
 
 /// What disconnecting does, said plainly.
-pub const DISCONNECT_MESSAGE: &str = "This removes the key from this Mac and stops the connection. Orders already placed stay live at the broker. It does not revoke the key: to do that, delete it in the broker's own settings.";
+pub fn disconnect_message() -> &'static str {
+    tr!(
+        "This removes the key from this Mac and stops the connection. Orders already placed stay live at the broker. It does not revoke the key: to do that, delete it in the broker's own settings."
+    )
+}
 
 // ---- View ----------------------------------------------------------------------------------------
 
@@ -170,10 +179,10 @@ const COMPACT_ROOM: f32 = 240.0;
 pub fn card_summary(descriptor: &Descriptor, connection: &Connection) -> String {
     match connection {
         Connection::NotConfigured if !descriptor.real_money => {
-            "Test environment, no real money".to_owned()
+            tr!("Test environment, no real money").to_owned()
         }
-        Connection::NotConfigured => "Add an API key to trade".to_owned(),
-        Connection::Saved => "Connecting with the saved key…".to_owned(),
+        Connection::NotConfigured => tr!("Add an API key to trade").to_owned(),
+        Connection::Saved => tr!("Connecting with the saved key…").to_owned(),
         Connection::Running(snapshot) => match &snapshot.status {
             Status::Live => {
                 let mut parts = Vec::new();
@@ -183,24 +192,24 @@ pub fn card_summary(descriptor: &Descriptor, connection: &Connection) -> String 
                     }
                     parts.push(
                         if session.permissions.can_trade {
-                            "Can place orders"
+                            tr!("Can place orders")
                         } else {
-                            "View only"
+                            tr!("View only")
                         }
                         .to_owned(),
                     );
                 }
                 if parts.is_empty() {
-                    "Ready".to_owned()
+                    tr!("Ready").to_owned()
                 } else {
                     parts.join(" · ")
                 }
             }
-            Status::Connecting => "Connecting…".to_owned(),
-            Status::Syncing => "Reading your account…".to_owned(),
-            Status::Reconnecting { .. } => "The connection dropped, trying again".to_owned(),
-            Status::Failed(_) => "Check the key, then try again".to_owned(),
-            Status::Stopped => "Disconnected".to_owned(),
+            Status::Connecting => tr!("Connecting…").to_owned(),
+            Status::Syncing => tr!("Reading your account…").to_owned(),
+            Status::Reconnecting { .. } => tr!("The connection dropped, trying again").to_owned(),
+            Status::Failed(_) => tr!("Check the key, then try again").to_owned(),
+            Status::Stopped => tr!("Disconnected").to_owned(),
         },
     }
 }
@@ -227,7 +236,9 @@ pub fn body(
         crate::ui::icons::inline(ui, Icon::LockFill, 12.0, theme::text_tertiary());
         ui.add(
             egui::Label::new(kit::text(
-                "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade.",
+                tr!(
+                    "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade."
+                ),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -242,10 +253,10 @@ pub fn body(
 fn paper_choices(ui: &mut egui::Ui, hub: &std::sync::Arc<TradingHub>) -> Option<PaperPrefs> {
     let before = hub.paper_prefs();
     let mut prefs = before;
-    titled_group(ui, "Paper trading", |ui| {
+    titled_group(ui, tr!("Paper trading"), |ui| {
         switch_row(
             ui,
-            "Play a sound when a paper order is filled",
+            tr!("Play a sound when a paper order is filled"),
             &mut prefs.fill_sound,
         );
     });
@@ -303,7 +314,7 @@ fn broker_card(
             _ => setup_body(inner, host, broker, &connection, form),
         }
         if let Some(status) = &form.status {
-            status_message(inner, &status.text, status.is_error);
+            status_message(inner, &status.text(), status.is_error);
         }
     }
     prepared.frame = kit::card_frame(head.hovered());
@@ -316,9 +327,9 @@ fn broker_card(
             dialog_id,
             &kit::Confirm {
                 icon: Icon::Trash,
-                title: &format!("Disconnect {}?", descriptor.display_name),
-                message: DISCONNECT_MESSAGE,
-                destructive: "Disconnect",
+                title: &tr!("Disconnect {name}?", name = descriptor.display_name),
+                message: disconnect_message(),
+                destructive: tr!("Disconnect"),
             },
         ) {
             Some(kit::ConfirmOutcome::Confirmed) => {
@@ -352,11 +363,11 @@ fn header(
     );
     let response = crate::ui::accessibility::label(
         response,
-        format!(
-            "{}, {}",
-            descriptor.display_name,
-            if open { "expanded" } else { "collapsed" }
-        ),
+        if open {
+            tr!("{name}, expanded", name = descriptor.display_name)
+        } else {
+            tr!("{name}, collapsed", name = descriptor.display_name)
+        },
     )
     .on_hover_cursor(egui::CursorIcon::PointingHand);
 
@@ -408,7 +419,7 @@ fn header(
     let chip = (!descriptor.real_money).then(|| {
         kit::galley(
             ui,
-            "Test",
+            tr_c!("test environment badge", "Test"),
             kit::size::CAPTION,
             kit::SEMIBOLD,
             theme::text_secondary(),
@@ -508,12 +519,18 @@ fn connected_body(
         .as_ref()
         .map(|session| session.permissions)
         .or(form.checked);
-    titled_group(ui, "Access", |ui| {
+    titled_group(ui, tr!("Access"), |ui| {
         let mut first = true;
         if let Some(session) = &snapshot.session {
             for account in &session.accounts {
                 first = false;
-                value_row(ui, "Account", &account.label, theme::text_secondary(), None);
+                value_row(
+                    ui,
+                    tr!("Account"),
+                    &account.label,
+                    theme::text_secondary(),
+                    None,
+                );
             }
         }
         if let Some(permissions) = permissions {
@@ -523,9 +540,9 @@ fn connected_body(
                 }
                 first = false;
                 let (icon, color, word) = match (row.granted, row.warn) {
-                    (true, true) => (Some(Icon::TriangleFill), kit::ORANGE, "Allowed"),
-                    (true, false) => (Some(Icon::CheckCircleFill), kit::GREEN, "Allowed"),
-                    (false, _) => (None, theme::text_tertiary(), "Not allowed"),
+                    (true, true) => (Some(Icon::TriangleFill), kit::ORANGE, tr!("Allowed")),
+                    (true, false) => (Some(Icon::CheckCircleFill), kit::GREEN, tr!("Allowed")),
+                    (false, _) => (None, theme::text_tertiary(), tr!("Not allowed")),
                 };
                 value_row(ui, row.label, word, color, icon);
             }
@@ -536,7 +553,7 @@ fn connected_body(
             ui,
             Icon::TriangleFill,
             kit::ORANGE,
-            "About this key",
+            tr!("About this key"),
             Some(advice),
             None,
         );
@@ -547,8 +564,8 @@ fn connected_body(
         ui.set_min_height(28.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if form.operation.is_some() {
-                muted(ui, "Removing the key…");
-            } else if destructive_button(ui, "Disconnect").clicked() {
+                muted(ui, tr!("Removing the key…"));
+            } else if destructive_button(ui, tr!("Disconnect")).clicked() {
                 form.confirming_disconnect = true;
             }
         });
@@ -565,23 +582,26 @@ fn trading_choices(
     let venue = crate::model::broker::venue::TradingVenue::Broker(id);
     let mut prefs = hub.prefs(venue).unwrap_or_default();
     let before = prefs.clone();
-    titled_group(ui, "Trading", |ui| {
+    titled_group(ui, tr!("Trading"), |ui| {
         let rows: [(&str, &mut bool); 5] = [
             (
-                "Ask before sending a limit or stop-limit order",
+                tr!("Ask before sending a limit or stop-limit order"),
                 &mut prefs.confirm_resting_orders,
             ),
             (
-                "Ask before cancelling a single order",
+                tr!("Ask before cancelling a single order"),
                 &mut prefs.confirm_single_cancel,
             ),
             (
-                "Tell me when orders are placed, fill, cancel or are rejected",
+                tr!("Tell me when orders are placed, fill, cancel or are rejected"),
                 &mut prefs.notify,
             ),
-            ("Show working orders on charts", &mut prefs.show_on_charts),
             (
-                "Start a market buy as an amount to spend",
+                tr!("Show working orders on charts"),
+                &mut prefs.show_on_charts,
+            ),
+            (
+                tr!("Start a market buy as an amount to spend"),
                 &mut prefs.spend_in_quote_by_default,
             ),
         ];
@@ -594,7 +614,7 @@ fn trading_choices(
     });
     muted(
         ui,
-        "Market orders, changing an order and Cancel all always ask.",
+        tr!("Market orders, changing an order and Cancel all always ask."),
     );
     if prefs != before {
         hub.set_prefs(venue, prefs);
@@ -611,7 +631,7 @@ fn setup_body(
     form: &mut BrokerForm,
 ) {
     let descriptor = broker.descriptor();
-    titled_group(ui, "Set up", |ui| {
+    titled_group(ui, tr!("Set up"), |ui| {
         for (index, step) in descriptor.setup_steps.iter().enumerate() {
             step_row(ui, index + 1, step);
         }
@@ -619,7 +639,7 @@ fn setup_body(
     muted(ui, descriptor.permission_note);
     gray_link(
         ui,
-        &format!("Read {}'s instructions", descriptor.display_name),
+        &tr!("Read {name}'s instructions", name = descriptor.display_name),
         descriptor.docs_url,
     );
     if !descriptor.credential_fields.is_empty() {
@@ -629,10 +649,17 @@ fn setup_body(
         let value = form.values.entry(credential.key.to_owned()).or_default();
         // Scoped: a field squeezes the spacing it is drawn in.
         ui.scope(|ui| match credential.kind {
-            FieldKind::Pem => secret_block(ui, credential.label, credential.hint, value),
+            FieldKind::Pem => secret_block(
+                ui,
+                secret_block_id(descriptor.id, credential.key),
+                credential.label,
+                credential.hint,
+                value,
+            ),
             _ => {
                 field(
                     ui,
+                    ("broker-credential", descriptor.id, credential.key),
                     credential.label,
                     None,
                     credential.hint,
@@ -649,7 +676,7 @@ fn setup_body(
         let checking = form.checking.is_some();
         let busy = form.operation.as_ref().map(|(kind, _)| *kind);
         let enabled = !checking && busy.is_none() && can_connect(descriptor, &form.values);
-        if kit::sheet_button(ui, "Connect", true, enabled).clicked() {
+        if kit::sheet_button(ui, tr!("Connect"), true, enabled).clicked() {
             start_check(host, descriptor, form);
         }
         if checking || busy.is_some() {
@@ -657,15 +684,15 @@ fn setup_body(
             muted(
                 ui,
                 match busy {
-                    Some(KeyOperation::Saving) => "Saving the key…",
-                    Some(KeyOperation::Removing) => "Removing the key…",
-                    None => "Checking the key…",
+                    Some(KeyOperation::Saving) => tr!("Saving the key…"),
+                    Some(KeyOperation::Removing) => tr!("Removing the key…"),
+                    None => tr!("Checking the key…"),
                 },
             );
         }
         if matches!(connection, Connection::Saved | Connection::Running(_)) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if destructive_button(ui, "Remove saved key").clicked() {
+                if destructive_button(ui, tr!("Remove saved key")).clicked() {
                     form.confirming_disconnect = true;
                 }
             });
@@ -822,24 +849,26 @@ fn poll_operation(descriptor: &'static Descriptor, form: &mut BrokerForm) {
     form.status = Some(match (kind, answer) {
         // A broker that takes no key has nothing to keep: say so instead of "saved".
         (KeyOperation::Saving, Ok(())) if descriptor.credential_fields.is_empty() => {
-            StatusMessage::ok(
-                "Connected. Nothing is saved: connect again after restarting DegenView.",
-            )
+            StatusMessage::ok(tr!(
+                "Connected. Nothing is saved: connect again after restarting DegenView."
+            ))
         }
-        (KeyOperation::Saving, Ok(())) => StatusMessage::ok(crate::platform::saved_securely()),
-        (KeyOperation::Saving, Err(error)) => StatusMessage::error(format!(
-            "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}"
+        (KeyOperation::Saving, Ok(())) => StatusMessage::saved_securely(),
+        (KeyOperation::Saving, Err(error)) => StatusMessage::error(tr!(
+            "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}",
+            error = error
         )),
         (KeyOperation::Removing, Ok(())) if descriptor.credential_fields.is_empty() => {
-            StatusMessage::ok("Disconnected.")
+            StatusMessage::ok(tr!("Disconnected."))
         }
         (KeyOperation::Removing, Ok(())) => {
-            StatusMessage::ok("Disconnected. The key was removed from this Mac.")
+            StatusMessage::ok(tr!("Disconnected. The key was removed from this Mac."))
         }
         // The connection is stopped, but the key is still in the keychain: it connects again at
         // the next start unless it is removed there.
-        (KeyOperation::Removing, Err(error)) => StatusMessage::error(format!(
-            "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}"
+        (KeyOperation::Removing, Err(error)) => StatusMessage::error(tr!(
+            "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}",
+            error = error
         )),
     });
 }
@@ -892,9 +921,9 @@ fn poll_check(
         return;
     };
     let Some(answer) = check.poll_or(|| {
-        Err(BrokerError::invalid(
-            "The check stopped unexpectedly. Try again.",
-        ))
+        Err(BrokerError::invalid(tr!(
+            "The check stopped unexpectedly. Try again."
+        )))
     }) else {
         return;
     };
@@ -958,8 +987,17 @@ pub(in crate::ui) fn gray_link(ui: &mut egui::Ui, label: &str, url: &str) {
 
 /// A multi-line secret (a PEM private key). Empty, it is a box to paste into; once something is
 /// entered it is hidden behind its length, with Show to check it and Clear to start over.
-fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
-    let revealed_id = egui::Id::new(("broker-secret-revealed", title));
+/// The identity of a [`secret_block`]: kept under the broker and the credential, never under the
+/// words of its label, which change with the language.
+pub(in crate::ui) fn secret_block_id(
+    broker: impl std::hash::Hash + std::fmt::Debug,
+    key: &str,
+) -> egui::Id {
+    egui::Id::new("broker-secret").with(broker).with(key)
+}
+
+fn secret_block(ui: &mut egui::Ui, edit_id: egui::Id, title: &str, hint: &str, text: &mut String) {
+    let revealed_id = edit_id.with("revealed");
     let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
     ui.label(kit::text(
         title,
@@ -975,7 +1013,6 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
         .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let edit_id = egui::Id::new(("broker-secret", title));
             // The box stays while it has focus: swapping it for the hidden summary after the
             // first typed character would drop the rest of what is being typed.
             if text.is_empty() || revealed || ui.memory(|memory| memory.has_focus(edit_id)) {
@@ -996,7 +1033,11 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
                 );
             } else {
                 ui.label(kit::text(
-                    format!("Entered ({} characters). Hidden.", text.chars().count()),
+                    tr_n!(
+                        text.chars().count(),
+                        "Entered ({count} character). Hidden.",
+                        "Entered ({count} characters). Hidden."
+                    ),
                     kit::size::BODY,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -1007,12 +1048,18 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
-            if kit::sheet_button(ui, if revealed { "Hide" } else { "Show" }, false, true).clicked()
+            if kit::sheet_button(
+                ui,
+                if revealed { tr!("Hide") } else { tr!("Show") },
+                false,
+                true,
+            )
+            .clicked()
             {
                 revealed = !revealed;
                 ui.data_mut(|data| data.insert_temp(revealed_id, revealed));
             }
-            if kit::sheet_button(ui, "Clear", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Clear"), false, true).clicked() {
                 text.clear();
                 ui.data_mut(|data| data.insert_temp(revealed_id, false));
             }
@@ -1067,9 +1114,9 @@ mod tests {
         assert!(form.operation.is_none());
         let status = form.status.expect("a message");
         assert!(
-            !status.is_error && status.text.contains("removed"),
+            !status.is_error && status.text().contains("removed"),
             "{}",
-            status.text
+            status.text()
         );
 
         // The store refused: the connection is stopped, and the message says the key is still there.
@@ -1080,19 +1127,19 @@ mod tests {
         poll_operation(descriptor, &mut form);
         let status = form.status.expect("a message");
         assert!(
-            status.is_error && status.text.contains("NOT be removed"),
+            status.is_error && status.text().contains("NOT be removed"),
             "{}",
-            status.text
+            status.text()
         );
-        assert!(status.text.contains("the keychain refused"));
+        assert!(status.text().contains("the keychain refused"));
 
         let mut form = answered(KeyOperation::Saving, Err("no space".to_owned()));
         poll_operation(descriptor, &mut form);
         let status = form.status.expect("a message");
         assert!(
-            status.is_error && status.text.contains("could not be saved"),
+            status.is_error && status.text().contains("could not be saved"),
             "{}",
-            status.text
+            status.text()
         );
     }
 
@@ -1200,8 +1247,8 @@ mod tests {
 
     #[test]
     fn disconnecting_is_honest_about_what_it_does_not_do() {
-        assert!(DISCONNECT_MESSAGE.contains("does not revoke"));
-        assert!(DISCONNECT_MESSAGE.contains("stay live"));
+        assert!(disconnect_message().contains("does not revoke"));
+        assert!(disconnect_message().contains("stay live"));
     }
 
     #[test]

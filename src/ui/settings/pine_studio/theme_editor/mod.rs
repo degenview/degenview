@@ -8,6 +8,7 @@
 //! reset gives back its base theme's colour, not a fixed default.
 
 use crate::host::editor_theme::{EditorThemeHost, View};
+use crate::i18n::{tr, tr_n};
 use crate::model::editor_theme::contrast::low_contrast;
 use crate::model::editor_theme::{
     ColorKey, EditorTheme, Palette, Rgba, SYSTEM_FONT, SurfaceColor, SurfaceGroup, SyntaxGroup,
@@ -206,19 +207,19 @@ fn rows_column(
     let items = [
         kit::TabItem {
             value: Tab::Syntax,
-            title: "Syntax",
+            title: tr!("Syntax"),
             icon: Icon::Code,
             count: counts[0],
         },
         kit::TabItem {
             value: Tab::Editor,
-            title: "Editor",
+            title: tr!("Editor"),
             icon: Icon::MacWindow,
             count: counts[1],
         },
         kit::TabItem {
             value: Tab::Typography,
-            title: "Typography",
+            title: tr!("Typography"),
             icon: Icon::TextFormat,
             count: counts[2],
         },
@@ -229,7 +230,7 @@ fn rows_column(
             ui,
             Id::new("editor-theme-search"),
             query,
-            "Search colors",
+            tr!("Search colors"),
             width.max(80.0),
         );
     };
@@ -241,9 +242,9 @@ fn rows_column(
         });
     } else {
         let options = [
-            (Tab::Syntax, "Syntax"),
-            (Tab::Editor, "Editor"),
-            (Tab::Typography, "Typography"),
+            (Tab::Syntax, tr!("Syntax")),
+            (Tab::Editor, tr!("Editor")),
+            (Tab::Typography, tr!("Typography")),
         ];
         kit::segmented_filling(
             ui,
@@ -342,7 +343,7 @@ fn header(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let (rect, response) = ui.allocate_exact_size(vec2(84.0, 24.0), Sense::click());
-        let response = crate::ui::accessibility::label(response, "Back to the themes")
+        let response = crate::ui::accessibility::label(response, tr!("Back to the themes"))
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         // Quiet, like the rest of the page's chrome: neutral, a little stronger under the pointer.
         let ink = if response.hovered() {
@@ -357,7 +358,7 @@ fn header(
             Icon::ChevronLeft,
             ink,
         );
-        let text = kit::galley(ui, "Themes", kit::size::BODY, kit::REGULAR, ink, 60.0);
+        let text = kit::galley(ui, tr!("Themes"), kit::size::BODY, kit::REGULAR, ink, 60.0);
         ui.painter().galley(
             pos2(rect.left() + 24.0, rect.center().y - text.size().y / 2.0),
             text,
@@ -366,15 +367,18 @@ fn header(
         out.back = response.clicked();
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(kit::text(
-                format!(
-                    "Based on {} · {}",
-                    theme.base_theme().name(),
-                    match changes {
-                        0 => "no colors changed".to_owned(),
-                        1 => "1 color changed".to_owned(),
-                        count => format!("{count} colors changed"),
-                    }
-                ),
+                match changes {
+                    0 => tr!(
+                        "Based on {theme} · no colors changed",
+                        theme = theme.base_theme().name()
+                    ),
+                    count => tr_n!(
+                        count,
+                        "Based on {theme} · {count} color changed",
+                        "Based on {theme} · {count} colors changed",
+                        theme = theme.base_theme().name()
+                    ),
+                },
                 kit::size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -387,7 +391,7 @@ fn header(
         let width = ui.available_width() - 34.0 - 34.0;
         let title = kit::galley(
             ui,
-            &format!("Edit Theme: {}", theme.name),
+            &tr!("Edit Theme: {name}", name = theme.name),
             kit::size::TITLE2 + 1.0,
             kit::SEMIBOLD,
             theme::text_primary(),
@@ -403,7 +407,7 @@ fn header(
             Icon::Pencil,
             26.0,
             theme::text_secondary(),
-            "Rename this theme",
+            tr!("Rename this theme"),
         )
         .clicked()
         {
@@ -421,19 +425,19 @@ fn header(
                 Icon::Ellipsis,
                 26.0,
                 theme::text_secondary(),
-                "Reset colors",
+                tr!("Reset colors"),
             );
             kit::fitted_menu(
                 ui,
                 &more,
                 egui::RectAlign::BOTTOM_END,
-                &["Reset Changes", "Reset Theme…"],
+                &[tr!("Reset Changes"), tr!("Reset Theme…")],
                 |ui| {
-                    if kit::menu_item(ui, Icon::Undo, "Reset Changes", changed, false) {
+                    if kit::menu_item(ui, Icon::Undo, tr!("Reset Changes"), changed, false) {
                         out.reset_changes = true;
                         ui.close();
                     }
-                    if kit::menu_item(ui, Icon::Trash, "Reset Theme…", has_overrides, true) {
+                    if kit::menu_item(ui, Icon::Trash, tr!("Reset Theme…"), has_overrides, true) {
                         out.reset_theme = true;
                         ui.close();
                     }
@@ -456,16 +460,24 @@ fn contrast_notice(ui: &mut Ui, palette: &Palette, within: impl Fn(ColorKey) -> 
     }
     let names = match low.as_slice() {
         [one] => (*one).to_owned(),
-        [first, second] => format!("{first} and {second}"),
-        [first, second, rest @ ..] => format!("{first}, {second} and {} more", rest.len()),
+        [first, second] => tr!("{first} and {second}", first = first, second = second),
+        [first, second, rest @ ..] => tr!(
+            "{first}, {second} and {more} more",
+            first = first,
+            second = second,
+            more = rest.len()
+        ),
         [] => String::new(),
     };
     kit::notice_card(
         ui,
         Icon::Triangle,
         kit::ORANGE,
-        "Some colors are hard to read",
-        Some(&format!("Close to the color behind them: {names}.")),
+        tr!("Some colors are hard to read"),
+        Some(&tr!(
+            "Close to the color behind them: {names}.",
+            names = names
+        )),
         None,
     );
     ui.add_space(12.0);
@@ -475,7 +487,7 @@ fn no_match(ui: &mut Ui, query: &str) {
     ui.add_space(24.0);
     ui.vertical_centered(|ui| {
         ui.label(kit::text(
-            format!("No colors match “{}”.", query.trim()),
+            tr!("No colors match “{query}”.", query = query.trim()),
             kit::size::BODY,
             kit::REGULAR,
             theme::text_secondary(),
@@ -517,13 +529,12 @@ fn group_rows(
                 Icon::Ellipsis,
                 22.0,
                 theme::text_secondary(),
-                "Reset this group",
+                tr!("Reset this group"),
             );
             kit::menu_popup(&more).show(|ui| {
                 let label = match changed.len() {
-                    0 => "Nothing to reset".to_owned(),
-                    1 => "Reset 1 color".to_owned(),
-                    count => format!("Reset {count} colors"),
+                    0 => tr!("Nothing to reset").to_owned(),
+                    count => tr_n!(count, "Reset {count} color", "Reset {count} colors"),
                 };
                 // As wide as its one row needs, not a guessed width.
                 kit::menu_scope(ui, 0.0);
@@ -587,7 +598,7 @@ fn color_row(
                     Icon::Undo,
                     22.0,
                     theme::text_secondary(),
-                    &format!("Reset to {}'s {}", theme.base_theme().name(), color_hex(theme.base_theme().palette().get(key))),
+                    &tr!("Reset to {theme}'s {color}", theme = theme.base_theme().name(), color = color_hex(theme.base_theme().palette().get(key))),
                 )
                 .clicked()
                 {
@@ -600,7 +611,7 @@ fn color_row(
                 kit::text(color_hex(color), kit::size::CAPTION + 0.5, kit::REGULAR, theme::text_secondary())
                     .monospace(),
             )
-            .on_hover_text("Click the swatch to change it. The picker takes #RRGGBB, #RRGGBBAA, RGB values and system colors.");
+            .on_hover_text(tr!("Click the swatch to change it. The picker takes #RRGGBB, #RRGGBBAA, RGB values and system colors."));
         });
     });
 }
@@ -618,7 +629,9 @@ fn typography_tab(
 ) {
     ui.add(
         egui::Label::new(kit::text(
-            "Fonts are part of how the editor looks, so a theme can bring its own. Anything it does not set uses your own editor setting.",
+            tr!(
+                "Fonts are part of how the editor looks, so a theme can bring its own. Anything it does not set uses your own editor setting."
+            ),
             kit::size::SUBHEADLINE,
             kit::REGULAR,
             theme::text_secondary(),

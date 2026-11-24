@@ -2,7 +2,7 @@
 //! A pure view over a `CsvPreview`; the host runs the import and reports a failure back through
 //! `ImportPreviewState::failed`.
 
-use crate::format::plural;
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::accounting::unique_assets;
 use crate::model::portfolio::csv::CsvPreview;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
@@ -73,29 +73,30 @@ pub fn can_import(preview: &CsvPreview, state: &ImportPreviewState) -> bool {
 
 pub fn subtitle(preview: &CsvPreview) -> &'static str {
     if preview.transactions.is_empty() {
-        "Nothing to import yet."
+        tr!("Nothing to import yet.")
     } else {
-        "Review what will be added to your portfolio."
+        tr!("Review what will be added to your portfolio.")
     }
 }
 
 pub fn error_title(count: usize) -> String {
-    format!(
-        "{count} {}",
-        if count == 1 {
-            "problem requires attention"
-        } else {
-            "problems require attention"
-        }
+    tr_n!(
+        count,
+        "{count} problem requires attention",
+        "{count} problems require attention"
     )
 }
 
 pub fn warning_title(count: usize) -> String {
-    plural(count, "warning", "warnings")
+    tr_n!(count, "{count} warning", "{count} warnings")
 }
 
 pub fn import_button_title(count: usize) -> String {
-    format!("Import {}", plural(count, "Transaction", "Transactions"))
+    tr_n!(
+        count,
+        "Import {count} Transaction",
+        "Import {count} Transactions"
+    )
 }
 
 /// How serious one footer status is; picks its dot's colour.
@@ -123,12 +124,16 @@ pub fn footer_status(preview: &CsvPreview) -> Vec<(Status, String)> {
     if !preview.errors.is_empty() {
         status.push((
             Status::Error,
-            format!("{} to fix", plural(preview.errors.len(), "error", "errors")),
+            tr_n!(
+                preview.errors.len(),
+                "{count} error to fix",
+                "{count} errors to fix"
+            ),
         ));
     } else if preview.transactions.is_empty() {
-        status.push((Status::Warning, "Nothing to import".to_owned()));
+        status.push((Status::Warning, tr!("Nothing to import").to_owned()));
     } else {
-        status.push((Status::Good, "Ready to import".to_owned()));
+        status.push((Status::Good, tr!("Ready to import").to_owned()));
     }
     if !preview.warnings.is_empty() {
         status.push((Status::Warning, warning_title(preview.warnings.len())));
@@ -137,9 +142,10 @@ pub fn footer_status(preview: &CsvPreview) -> Vec<(Status, String)> {
 }
 
 pub fn failure_detail(message: &str) -> String {
-    format!(
+    tr!(
         "{message}\n\nNo transactions were imported. Correct the source data, or restart the \
-         CoinMarketCap import and skip the affected ticker or item."
+         CoinMarketCap import and skip the affected ticker or item.",
+        message = message
     )
 }
 
@@ -178,7 +184,7 @@ pub fn show(
             widgets::header(
                 ui,
                 art::Scene::Portfolio,
-                "Import Preview",
+                tr!("Import Preview"),
                 subtitle(preview),
             );
             ui.add_space(16.0);
@@ -216,7 +222,7 @@ pub fn show(
                 }
                 if kit::footer_button(
                     ui,
-                    "Cancel",
+                    tr!("Cancel"),
                     kit::FooterButton::Secondary,
                     !state.is_importing,
                     0.0,
@@ -258,9 +264,9 @@ fn summary_band(ui: &mut Ui, preview: &CsvPreview) {
         inner.left_top(),
         Align2::LEFT_TOP,
         if count == 1 {
-            "Transaction"
+            tr!("Transaction")
         } else {
-            "Transactions"
+            tr!("Transactions")
         },
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
@@ -285,7 +291,7 @@ fn summary_band(ui: &mut Ui, preview: &CsvPreview) {
                 count_of(crate::model::portfolio::PortfolioTransactionType::Buy),
                 count_of(crate::model::portfolio::PortfolioTransactionType::Sell)
             ),
-            plural(asset_count(preview), "asset", "assets")
+            tr_n!(asset_count(preview), "{count} asset", "{count} assets")
         ),
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
@@ -306,7 +312,7 @@ fn summary_band(ui: &mut Ui, preview: &CsvPreview) {
         ui,
         area.left_top(),
         Align2::LEFT_TOP,
-        "By Type",
+        tr!("By Type"),
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
         secondary,
@@ -321,7 +327,7 @@ fn notices(ui: &mut Ui, preview: &CsvPreview, state: &ImportPreviewState) {
             Icon::XmarkOctagonFill,
             theme::DOWN,
             &error_title(preview.errors.len()),
-            Some("Fix the source data and import again."),
+            Some(tr!("Fix the source data and import again.")),
             &preview.errors,
             84.0,
         );
@@ -332,7 +338,7 @@ fn notices(ui: &mut Ui, preview: &CsvPreview, state: &ImportPreviewState) {
             ui,
             Icon::TriangleFill,
             theme::DOWN,
-            "Import failed",
+            tr!("Import failed"),
             Some(&failure_detail(failure)),
             &[],
             0.0,
@@ -345,7 +351,7 @@ fn notices(ui: &mut Ui, preview: &CsvPreview, state: &ImportPreviewState) {
             Icon::TriangleFill,
             theme::REPLAY,
             &warning_title(preview.warnings.len()),
-            Some("Warnings don't block the import."),
+            Some(tr!("Warnings don't block the import.")),
             &preview.warnings,
             64.0,
         );
@@ -369,15 +375,22 @@ fn table(
             ui,
             outer,
             empty::Scene::Transactions,
-            "No Transactions",
-            "The file didn't contain any transactions that can be imported.",
+            tr!("No Transactions"),
+            tr!("The file didn't contain any transactions that can be imported."),
         );
         return;
     }
-    let headers: Vec<String> = ["Date", "Asset", "Type", "Quantity", "Price", "Total"]
-        .iter()
-        .map(|title| (*title).to_owned())
-        .collect();
+    let headers: Vec<String> = [
+        tr!("Date"),
+        tr!("Asset"),
+        tr!("Type"),
+        tr!("Quantity"),
+        tr!("Price"),
+        tr!("Total"),
+    ]
+    .iter()
+    .map(|title| (*title).to_owned())
+    .collect();
     let formatter = PortfolioValueFormatter::new(PortfolioCurrency::Usd, false);
     let output = grid::show_table(
         ui,
@@ -458,7 +471,7 @@ fn status(ui: &mut Ui, importing: bool, preview: &CsvPreview) {
     if importing {
         ui.add(LoadingIndicator::new().size(14.0));
         ui.label(kit::text(
-            "Validating and importing\u{2026}",
+            tr!("Validating and importing\u{2026}"),
             kit::size::BODY,
             kit::REGULAR,
             theme::text_secondary(),

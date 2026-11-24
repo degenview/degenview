@@ -298,3 +298,170 @@ fn gallery_of_the_sheets() {
         }
     }
 }
+
+/// The panel's pieces and the account sheet in the pseudo-locale, in both themes: every word put
+/// through `tr!` shows in brackets (a text with words and none is a literal that skipped it), and
+/// a label that does not fit shows without its closing one.
+#[test]
+fn the_panel_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::paper::account_sheet::{self, PaperAccountSheetState};
+    let _restore = theme::RestoreDefaultTheme;
+    let accounts = [AccountChoice {
+        id: 1,
+        name: "Main".into(),
+    }];
+    let positions = vec![
+        position("BTCUSDT", DataSource::Binance, 0.25, 61_000.0),
+        position("ETHUSDT", DataSource::Binance, -3.0, 3_050.0),
+    ];
+    let orders = [
+        order(1, "BTCUSDT", PaperOrderSide::Buy, PaperOrderType::Limit),
+        order(2, "ETHUSDT", PaperOrderSide::Sell, PaperOrderType::Stop),
+    ];
+    // Order sides and types, the venue and the account strip come from the model and the paper
+    // backend, which are not converted yet; the rest is data.
+    let data = [
+        "BTCUSDT", "ETHUSDT", "Main", "USD", "Paper", "MKT", "LMT", "STP", "LONG", "SHORT", "BUY",
+        "SELL", "Binance", "Market", "Limit", "Stop", "Long", "Short", "Equity", "Balance",
+        "Win rate", "Profit", "Drawdown", "Return", "Fees", "Open",
+    ];
+    with_locale(Locale::PSEUDO, || {
+        for (tab, name) in [
+            (PaperTab::Positions, "positions"),
+            (PaperTab::Orders, "orders"),
+        ] {
+            for light in [false, true] {
+                let tag = if light { "light" } else { "dark" };
+                let mut screen = Screen::new(Vec2::new(1_240.0, 300.0));
+                screen.ctx.set_theme(if light {
+                    egui::ThemePreference::Light
+                } else {
+                    egui::ThemePreference::Dark
+                });
+                let mut header_state = PaperHeaderState { tab };
+                let mut footer_state = PaperFooterState::default();
+                let mut positions_state = PositionsState::default();
+                let mut last = None;
+                for _ in 0..4 {
+                    last = Some(screen.run(vec![], |ui| {
+                        theme::sync(ui.ctx());
+                        egui::CentralPanel::default()
+                            .frame(egui::Frame::new().fill(crate::ui::kit::window()))
+                            .show(ui, |ui| {
+                                let input = PaperHeaderInput {
+                                    accounts: &accounts,
+                                    selected: Some(1),
+                                    currency: Some(PaperCurrency::Usd),
+                                    position_count: positions.len(),
+                                    working_order_count: orders.len(),
+                                };
+                                let parts = header::header_parts(&input);
+                                let bar = crate::ui::trade::panel_header::sample_bar(
+                                    crate::model::broker::venue::TradingVenue::Paper,
+                                    crate::trading::model::VenueKind::Simulated,
+                                    "Paper",
+                                );
+                                crate::ui::trade::panel_header::show(
+                                    ui,
+                                    &crate::ui::trade::panel_header::Header {
+                                        bar: &bar,
+                                        chip: &parts.chip,
+                                        tabs: &parts.tabs,
+                                        overlay: Some(true),
+                                        can_order: true,
+                                        more: &parts.more,
+                                        settings_tip: crate::i18n::tr!("Paper trading settings"),
+                                    },
+                                    &mut header_state.tab,
+                                );
+                                kit::panel_divider(ui);
+                                match tab {
+                                    PaperTab::Orders => {
+                                        let rows: Vec<crate::trading::model::OrderRow> = orders
+                                            .iter()
+                                            .map(crate::trading::paper::backend::order_row)
+                                            .collect();
+                                        crate::ui::trade::tables::orders(
+                                            ui,
+                                            "paper-orders",
+                                            &rows,
+                                            &mut Default::default(),
+                                            false,
+                                        );
+                                    }
+                                    _ => {
+                                        tables::positions_table(
+                                            ui,
+                                            &mut positions_state,
+                                            &PositionsInput {
+                                                positions: &positions,
+                                                ctx: Context {
+                                                    currency: PaperCurrency::Usd,
+                                                    utc_offset_secs: 0,
+                                                },
+                                                mark: &|p| Some(p.average_entry_price * 1.01),
+                                                unrealized_pnl: &|p| {
+                                                    p.signed_quantity * p.average_entry_price * 0.01
+                                                },
+                                                return_ratio: &|_| Some(0.01),
+                                            },
+                                        );
+                                    }
+                                }
+                                header::footer(
+                                    ui,
+                                    &mut footer_state,
+                                    tab,
+                                    &FooterFacts {
+                                        positions: &positions,
+                                        unrealized_total: 120.0,
+                                        working_orders: orders.len(),
+                                        events: 0,
+                                        trades: &[],
+                                        journal_entries: 0,
+                                        currency: PaperCurrency::Usd,
+                                    },
+                                    0,
+                                );
+                            });
+                    }));
+                }
+                let output = last.expect("a frame");
+                let loose = crate::ui::trade::pseudo_text::untranslated(&output, &data);
+                screen.save(&format!("paper-{name}-pseudo-{tag}"), output);
+                assert!(
+                    loose.is_empty(),
+                    "{name} ({tag}): texts that skipped `tr!`: {loose:?}"
+                );
+            }
+        }
+        for light in [false, true] {
+            let tag = if light { "light" } else { "dark" };
+            let mut screen = Screen::new(Vec2::new(760.0, 900.0));
+            screen.ctx.set_theme(if light {
+                egui::ThemePreference::Light
+            } else {
+                egui::ThemePreference::Dark
+            });
+            let mut sheet = PaperAccountSheetState::create();
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(vec![], |ui| {
+                    theme::sync(ui.ctx());
+                    ui.painter()
+                        .rect_filled(ui.max_rect(), 0.0, theme::background());
+                    let ctx = ui.ctx().clone();
+                    account_sheet::show(&ctx, &mut sheet);
+                }));
+            }
+            let output = last.expect("a frame");
+            let loose = crate::ui::trade::pseudo_text::untranslated(&output, &data);
+            screen.save(&format!("paper-sheet-pseudo-{tag}"), output);
+            assert!(
+                loose.is_empty(),
+                "sheet ({tag}): texts that skipped `tr!`: {loose:?}"
+            );
+        }
+    });
+}

@@ -39,6 +39,18 @@ pub struct State {
     /// `ta.macd`'s fast, slow and signal averages. Boxed: `State` is cloned on every realtime tick
     /// and only a `ta.macd` site has legs.
     pub macd: Option<Box<[MacdLeg; 3]>>,
+    /// `timeframe.change`: the open time of the bar the site last ran on, and of the bar it ran on
+    /// before that. Boxed like `macd`: `State` is cloned on every realtime tick, and only a
+    /// `timeframe.change` site has bars.
+    pub bar_times: Option<Box<BarTimes>>,
+}
+
+/// The bars a call site has run on, newest first. Only a bar the site ran on is recorded, so a site
+/// under an `if` or a short-circuit sees the last bar it ran on, not the chart's previous bar.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BarTimes {
+    pub latest: i64,
+    pub before: Option<i64>,
 }
 
 /// `ta.supertrend` between bars: the final upper/lower bands, the trend direction (1 up, -1 down),
@@ -431,6 +443,26 @@ pub fn evaluate_cum(source: &RuntimeValue, state: &mut State) -> RuntimeValue {
     let result = float(previous + source.number().unwrap_or(0.0));
     state.results.push(result.clone());
     result
+}
+
+/// The open time of the bar before the one at `open_time` that the site ran on (`None` the first
+/// time it runs), noting this bar. A site that runs several times in one bar (a loop) sees the same
+/// earlier bar every time. `timeframe.change` compares with it.
+pub fn previous_bar_time(open_time: i64, state: &mut State) -> Option<i64> {
+    let Some(times) = state.bar_times.as_deref_mut() else {
+        state.bar_times = Some(Box::new(BarTimes {
+            latest: open_time,
+            before: None,
+        }));
+        return None;
+    };
+    if times.latest != open_time {
+        *times = BarTimes {
+            latest: open_time,
+            before: Some(times.latest),
+        };
+    }
+    times.before
 }
 
 /// `ta.barssince(condition)`: bars since the condition was last true (0 on a true bar), `na`

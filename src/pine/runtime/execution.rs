@@ -154,6 +154,15 @@ impl ExecutionController {
         self
     }
 
+    /// Tells the script the length of the chart's timeframe (`timeframe.in_seconds()`), so it is
+    /// not read off the gap between bars: a bucket cut short by midnight, a session's first bar
+    /// after a night or a weekend would give a length the chart does not have. A price-based chart's
+    /// [`with_bar_seconds`](Self::with_bar_seconds) takes precedence.
+    pub fn with_timeframe_seconds(mut self, seconds: f64) -> Self {
+        self.session.configured_bar_seconds = (seconds > 0.0).then_some(seconds);
+        self
+    }
+
     pub fn update(
         &mut self,
         bars: &[Kline],

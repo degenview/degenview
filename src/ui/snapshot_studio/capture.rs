@@ -185,11 +185,8 @@ impl ChartCapture {
     /// toggle for indicators can switch off.
     pub fn has_indicators(&self) -> bool {
         let drawn = self.parts.indicators.drawn();
-        let built_in = drawn.show_volume
-            || drawn.show_rsi
-            || drawn.show_ema
-            || drawn.show_bollinger
-            || drawn.show_trend_flips;
+        let built_in =
+            drawn.show_volume || drawn.show_ema || drawn.show_bollinger || drawn.show_trend_flips;
         built_in || !self.outputs.is_empty()
     }
 

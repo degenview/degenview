@@ -7,6 +7,7 @@ pub mod quote;
 pub mod text;
 
 use crate::clock::now_ms;
+use crate::i18n::tr;
 use crate::model::{DataSource, InstrumentId};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -87,18 +88,21 @@ impl WatchlistNotice {
 impl WatchlistError {
     pub fn notice(&self) -> WatchlistNotice {
         let title = match self {
-            Self::Duplicate(_) => "Already in Watchlist",
-            Self::NotFound => "Item Not Found",
-            Self::EmptyName | Self::NameTooLong | Self::InvalidName => "Invalid Name",
-            Self::AmbiguousSection(_) => "Ambiguous Section",
-            Self::ListFull => "Watchlist Full",
-            Self::TooManyLists => "Too Many Watchlists",
-            Self::PersistenceUnavailable => "Changes Turned Off",
-            Self::SaveFailed => "Couldn\u{2019}t Save",
+            Self::Duplicate(_) => tr!("Already in Watchlist"),
+            Self::NotFound => tr!("Item Not Found"),
+            Self::EmptyName | Self::NameTooLong | Self::InvalidName => tr!("Invalid Name"),
+            Self::AmbiguousSection(_) => tr!("Ambiguous Section"),
+            Self::ListFull => tr!("Watchlist Full"),
+            Self::TooManyLists => tr!("Too Many Watchlists"),
+            Self::PersistenceUnavailable => tr!("Changes Turned Off"),
+            Self::SaveFailed => tr!("Couldn\u{2019}t Save"),
         };
         let message = match self {
             Self::Duplicate(name) => {
-                format!("\u{201c}{name}\u{201d} is already in this watchlist.")
+                tr!(
+                    "\u{201c}{name}\u{201d} is already in this watchlist.",
+                    name = name
+                )
             }
             other => format!("{other}."),
         };
@@ -129,24 +133,24 @@ impl WatchlistColumn {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Last => "Last",
-            Self::Change => "Chg",
-            Self::ChangePercent => "Chg%",
-            Self::Volume => "Vol",
-            Self::Exchange => "Exchange",
-            Self::Status => "Status",
+            Self::Last => tr!("Last"),
+            Self::Change => tr!("Chg"),
+            Self::ChangePercent => tr!("Chg%"),
+            Self::Volume => tr!("Vol"),
+            Self::Exchange => tr!("Exchange"),
+            Self::Status => tr!("Status"),
         }
     }
 
     /// Spoken name, since the header is abbreviated.
     pub fn accessibility_title(self) -> &'static str {
         match self {
-            Self::Last => "Last price",
-            Self::Change => "Change",
-            Self::ChangePercent => "Change percent",
-            Self::Volume => "Volume",
-            Self::Exchange => "Exchange",
-            Self::Status => "Market status",
+            Self::Last => tr!("Last price"),
+            Self::Change => tr!("Change"),
+            Self::ChangePercent => tr!("Change percent"),
+            Self::Volume => tr!("Volume"),
+            Self::Exchange => tr!("Exchange"),
+            Self::Status => tr!("Market status"),
         }
     }
 
@@ -186,12 +190,12 @@ impl WatchlistSortKey {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Manual => "Manual",
-            Self::Symbol => "Symbol",
-            Self::Last => "Last",
-            Self::Change => "Change",
-            Self::ChangePercent => "Change %",
-            Self::Volume => "Volume",
+            Self::Manual => tr!("Manual"),
+            Self::Symbol => tr!("Symbol"),
+            Self::Last => tr!("Last"),
+            Self::Change => tr!("Change"),
+            Self::ChangePercent => tr!("Change %"),
+            Self::Volume => tr!("Volume"),
         }
     }
 }
@@ -258,12 +262,12 @@ impl WatchlistFlag {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Red => "Red",
-            Self::Orange => "Orange",
-            Self::Yellow => "Yellow",
-            Self::Green => "Green",
-            Self::Blue => "Blue",
-            Self::Purple => "Purple",
+            Self::Red => tr!("Red"),
+            Self::Orange => tr!("Orange"),
+            Self::Yellow => tr!("Yellow"),
+            Self::Green => tr!("Green"),
+            Self::Blue => tr!("Blue"),
+            Self::Purple => tr!("Purple"),
         }
     }
 }

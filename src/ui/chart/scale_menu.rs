@@ -6,6 +6,7 @@
 //! there is one path and no state in the menu itself. The corner is already a dead zone for the
 //! chart's gestures, so the button takes no drag from the axes.
 
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{accessibility, kit, shortcut, theme};
@@ -75,9 +76,10 @@ impl ScaleButton {
 
     fn tooltip(&self) -> String {
         if self.waiting_for_prices() {
-            "Price scale: Logarithmic, shown linear while a price is at or below zero".to_owned()
+            tr!("Price scale: Logarithmic, shown linear while a price is at or below zero")
+                .to_owned()
         } else {
-            format!("Price scale: {}", self.mode.label())
+            tr!("Price scale: {mode}", mode = self.mode.label())
         }
     }
 }
@@ -181,7 +183,7 @@ fn menu(ui: &mut Ui, focus_id: Id, state: &ScaleButton, width: f32) -> Option<Pr
             focus = Some(index);
         }
         let row = if mode.is_logarithmic() && state.waiting_for_prices() {
-            row.on_hover_text("Needs prices above zero; drawn linear until then.")
+            row.on_hover_text(tr!("Needs prices above zero; drawn linear until then."))
         } else {
             row
         };

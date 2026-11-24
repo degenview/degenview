@@ -66,7 +66,7 @@ fn a_preset_or_a_repeat_among_the_pinned_is_listed_once() {
 #[test]
 fn up_and_down_keep_the_column_and_clamp_to_the_row() {
     let grid = Grid::new(&[]);
-    // Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up: 1D 1W 1M 1Y.
+    // Seconds: 1s 15s 30s 45s. Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up:
     // 1D 1W 1M 1Y.
     assert_eq!(
         grid.step(Timeframe::MINUTE_5, Step::Down),
@@ -92,7 +92,15 @@ fn up_and_down_keep_the_column_and_clamp_to_the_row() {
         pinned.step(Timeframe::MINUTE_30, Step::Down),
         Some(Timeframe::HOUR_1)
     );
-    assert_eq!(grid.step(Timeframe::MINUTE_1, Step::Up), None);
+    assert_eq!(
+        grid.step(Timeframe::MINUTE_1, Step::Up),
+        Some(Timeframe::SECOND_1)
+    );
+    assert_eq!(
+        grid.step(Timeframe::MINUTE_15, Step::Up),
+        Some(Timeframe::SECOND_30)
+    );
+    assert_eq!(grid.step(Timeframe::SECOND_15, Step::Up), None);
 }
 
 #[test]
@@ -106,7 +114,11 @@ fn left_and_right_walk_the_chips_in_reading_order() {
         grid.step(Timeframe::HOUR_1, Step::Left),
         Some(Timeframe::MINUTE_30)
     );
-    assert_eq!(grid.step(Timeframe::MINUTE_1, Step::Left), None);
+    assert_eq!(
+        grid.step(Timeframe::MINUTE_1, Step::Left),
+        Some(Timeframe::SECOND_45)
+    );
+    assert_eq!(grid.step(Timeframe::SECOND_1, Step::Left), None);
     assert_eq!(grid.step(Timeframe::YEAR_1, Step::Right), None);
 }
 
@@ -114,7 +126,7 @@ fn left_and_right_walk_the_chips_in_reading_order() {
 fn from_a_typed_timeframe_down_goes_to_the_first_chip() {
     let grid = Grid::new(&[]);
     let typed = custom(22, TimeUnit::Minute);
-    assert_eq!(grid.step(typed, Step::Down), Some(Timeframe::MINUTE_1));
+    assert_eq!(grid.step(typed, Step::Down), Some(Timeframe::SECOND_1));
     assert_eq!(grid.step(typed, Step::Up), None);
 }
 
@@ -129,7 +141,14 @@ fn the_field_is_read_as_a_timeframe() {
     assert_eq!(Typed::read("60"), Typed::Valid(Timeframe::HOUR_1));
     assert_eq!(
         Typed::read("30s"),
-        Typed::Invalid(TimeframeParseError::SecondsUnsupported)
+        Typed::Valid(custom(30, TimeUnit::Second))
+    );
+    assert_eq!(
+        Typed::read("60s"),
+        Typed::Invalid(TimeframeParseError::OutOfRange {
+            unit: TimeUnit::Second,
+            max: 59
+        })
     );
     assert!(matches!(Typed::read("soon"), Typed::Invalid(_)));
 }
@@ -147,7 +166,7 @@ fn the_highlight_follows_the_arrows_then_the_text_then_the_current_timeframe() {
     state.moved = Some(Timeframe::DAY_1);
     assert_eq!(state.highlighted(current), Some(Timeframe::DAY_1));
     state.moved = None;
-    state.query = "30s".to_owned();
+    state.query = "60s".to_owned();
     assert_eq!(state.highlighted(current), None);
 }
 
@@ -330,7 +349,7 @@ fn return_does_nothing_for_text_that_is_no_timeframe() {
     let input = Harness::input(&[], &[]);
     let mut harness = Harness::new();
     harness.open(&input);
-    harness.type_text("30s", &input);
+    harness.type_text("60s", &input);
     assert_eq!(harness.press(Key::Enter, Modifiers::NONE, &input), None);
     assert!(harness.is_open(), "the picker stays for another try");
 }

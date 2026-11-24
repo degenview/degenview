@@ -6,14 +6,15 @@ use crate::mcp::chart::drawings::{DrawingEdit, NewDrawing};
 use crate::mcp::chart::{ChartCommand, data};
 use crate::mcp::confirm::Summary;
 use crate::mcp::indicator::{IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values};
+use crate::mcp::tools::{IndicatorTarget, McpIndicator};
 use crate::mcp::types::{
     AddChartResult, AddChartStatus, AddIndicatorResult, CandlesResult, ChartInfo, ChartStatus,
     ChartsResult, DrawingsChangeResult, DrawingsResult, DrawingsStatus, IndicatorStatus,
     IndicatorsInfo, PineInstanceInfo, WorkspaceInfo,
 };
+use crate::model::pine::bundled;
 use crate::model::{
-    BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
-    Timeframe,
+    ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId, Timeframe,
 };
 use crate::workspace::{
     ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome, RemoveOutcome,
@@ -210,7 +211,7 @@ fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
             chart.chart_type.slug()
         }
         .to_owned(),
-        indicators: indicators_info(indicators),
+        indicators: indicators_info(indicators, &chart.bundled_shown),
         pine_instances: chart
             .pine_instances
             .into_iter()
@@ -226,11 +227,11 @@ fn chart_info(workspace: &ChartWorkspace, chart: ChartSummary) -> ChartInfo {
 }
 
 /// What the chart draws now: applied and not hidden with its eye.
-fn indicators_info(config: IndicatorConfig) -> IndicatorsInfo {
+fn indicators_info(config: IndicatorConfig, bundled_shown: &[&str]) -> IndicatorsInfo {
     let drawn = config.drawn();
     IndicatorsInfo {
         volume: drawn.show_volume,
-        rsi: drawn.show_rsi,
+        rsi: bundled_shown.contains(&"rsi"),
         ema: drawn.show_ema,
         ema_period: config.ema_period,
         bollinger: drawn.show_bollinger,
@@ -238,16 +239,41 @@ fn indicators_info(config: IndicatorConfig) -> IndicatorsInfo {
     }
 }
 
-/// Applies a built-in indicator through the workspace's own method and describes the result.
+/// The chart's indicators as they are now, once a change is done.
+fn indicators_now(workspace: &ChartWorkspace, chart_id: u64) -> Result<IndicatorsInfo, McpError> {
+    workspace
+        .chart_summaries()
+        .into_iter()
+        .find(|chart| chart.id == chart_id)
+        .map(|chart| indicators_info(chart.indicators, &chart.bundled_shown))
+        .ok_or_else(|| no_chart(workspace, chart_id))
+}
+
+/// Applies an indicator through the workspace's own method and describes the result. A built-in
+/// goes on the price plot; RSI is the bundled Pine indicator, in a pane of its own.
 pub fn apply_indicator(
     workspace: &mut ChartWorkspace,
     chart_id: u64,
-    indicator: BuiltIn,
+    indicator: McpIndicator,
     ema_period: Option<usize>,
 ) -> Result<AddIndicatorResult, McpError> {
     let workspace_id = workspace.id();
-    match workspace.apply_indicator(chart_id, indicator, ema_period) {
-        Ok((outcome, config)) => Ok(AddIndicatorResult {
+    let applied = match indicator.target() {
+        IndicatorTarget::BuiltIn(kind) => workspace
+            .apply_indicator(chart_id, kind, ema_period)
+            .map(|(outcome, _)| outcome),
+        IndicatorTarget::Bundled(id) => {
+            if ema_period.is_some() {
+                Err(IndicatorError::NoParameters)
+            } else {
+                bundled::find(id)
+                    .ok_or(IndicatorError::NoSuchChart)
+                    .and_then(|found| workspace.apply_bundled_indicator(chart_id, found))
+            }
+        }
+    };
+    match applied {
+        Ok(outcome) => Ok(AddIndicatorResult {
             workspace_id: workspace_id.to_string(),
             chart_id: chart_id.to_string(),
             indicator: indicator.id().to_owned(),
@@ -256,18 +282,18 @@ pub fn apply_indicator(
                 IndicatorOutcome::Updated => IndicatorStatus::Updated,
                 IndicatorOutcome::AlreadyApplied => IndicatorStatus::AlreadyApplied,
             },
-            indicators: indicators_info(config),
+            indicators: indicators_now(workspace, chart_id)?,
         }),
         Err(IndicatorError::NoSuchChart) => Err(McpError::NotFound(format!(
             "No chart {chart_id} in workspace {workspace_id}"
         ))),
         Err(IndicatorError::UnsupportedOnLineChart) => Err(McpError::Unsupported(format!(
             "{} is not available on line charts",
-            indicator.menu_title()
+            indicator.title()
         ))),
         Err(IndicatorError::NoParameters) => Err(McpError::InvalidArgument(format!(
             "{} has no parameters",
-            indicator.menu_title()
+            indicator.title()
         ))),
         Err(IndicatorError::InvalidEmaPeriod) => Err(McpError::InvalidArgument(format!(
             "EMA period must be one of {:?}",
@@ -452,15 +478,23 @@ pub fn remove_drawings(
     drawings_changed(workspace, chart_id, DrawingsStatus::Removed, &removed)
 }
 
-/// Takes a built-in indicator off a chart through the workspace's own method.
+/// Takes an indicator off a chart through the workspace's own method.
 pub fn remove_indicator(
     workspace: &mut ChartWorkspace,
     chart_id: u64,
-    indicator: BuiltIn,
+    indicator: McpIndicator,
 ) -> Result<AddIndicatorResult, McpError> {
     let workspace_id = workspace.id();
-    match workspace.remove_indicator(chart_id, indicator) {
-        Ok((outcome, config)) => Ok(AddIndicatorResult {
+    let removed = match indicator.target() {
+        IndicatorTarget::BuiltIn(kind) => workspace
+            .remove_indicator(chart_id, kind)
+            .map(|(outcome, _)| outcome),
+        IndicatorTarget::Bundled(id) => bundled::find(id)
+            .ok_or(IndicatorError::NoSuchChart)
+            .and_then(|found| workspace.remove_bundled_indicator(chart_id, found)),
+    };
+    match removed {
+        Ok(outcome) => Ok(AddIndicatorResult {
             workspace_id: workspace_id.to_string(),
             chart_id: chart_id.to_string(),
             indicator: indicator.id().to_owned(),
@@ -468,7 +502,7 @@ pub fn remove_indicator(
                 RemoveOutcome::Removed => IndicatorStatus::Removed,
                 RemoveOutcome::NotApplied => IndicatorStatus::NotApplied,
             },
-            indicators: indicators_info(config),
+            indicators: indicators_now(workspace, chart_id)?,
         }),
         Err(_) => Err(no_chart(workspace, chart_id)),
     }

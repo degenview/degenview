@@ -101,6 +101,17 @@ mod tests {
     }
 
     #[test]
+    fn a_ten_second_candle_is_subscribed_as_such_and_closes_ten_seconds_later() {
+        let session = session(&["BTC_USDT".into()], Timeframe::SECOND_10).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
+        assert_eq!(message["payload"], json!(["10s", "BTC_USDT"]));
+        let text = r#"{"channel":"spot.candlesticks","event":"update","result":{"t":"1794918310","v":"1","c":"2","h":"3","l":"1","o":"2","n":"10s_BTC_USDT","a":"0.5","w":false}}"#;
+        let (symbol, kline) = parse_kline(text, Timeframe::SECOND_10).expect("parse");
+        assert_eq!(symbol, "BTC_USDT");
+        assert_eq!(kline.close_time, 1_794_918_319_999);
+    }
+
+    #[test]
     fn parses_an_update_with_the_close_of_its_bucket() {
         let text = r#"{"time":1794918322,"time_ms":1794918322926,"channel":"spot.candlesticks","event":"update","result":{"t":"1794918300","v":"6630.1164403","c":"64955.5","h":"64961.7","l":"64955.1","o":"64958.3","n":"1m_BTC_USDT","a":"0.102065","w":false}}"#;
         let (symbol, kline) = parse_kline(text, Timeframe::MINUTE_1).expect("parse");

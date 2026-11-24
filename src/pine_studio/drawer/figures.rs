@@ -3,6 +3,7 @@
 
 use super::plot::{self, Plot};
 use super::tab_chrome::{self as chrome, SECTION, panel};
+use crate::i18n::tr;
 use crate::pine::strategy::StrategyReport;
 use crate::ui::accessibility;
 use crate::ui::pine::report::{self, PineReportFormat};
@@ -57,8 +58,13 @@ impl Figure {
     /// column is too narrow to draw it.
     fn spoken(&self) -> String {
         match &self.note {
-            Some(note) => format!("{}: {}, {note}", self.label, self.value),
-            None => format!("{}: {}", self.label, self.value),
+            Some(note) => tr!(
+                "{label}: {value}, {note}",
+                label = self.label,
+                value = self.value,
+                note = note
+            ),
+            None => tr!("{label}: {value}", label = self.label, value = self.value),
         }
     }
 }
@@ -68,20 +74,26 @@ pub(super) fn strategy(ui: &mut Ui, report: &StrategyReport) {
     if let Some(notice) = report::synthetic_fill_notice(report.chart) {
         chrome::banner(ui, &notice);
     }
-    chrome::caption(ui, "Figures");
+    chrome::caption(ui, tr!("Figures"));
     panel(ui, |ui| {
         headline(ui, report);
         ui.add_space(BLOCK_GAP);
         let key = key_figures(report);
-        grid(ui, &key, key.len(), Emphasis::Key);
+        grid(ui, "strategy-key", &key, key.len(), Emphasis::Key);
         ui.add_space(BLOCK_GAP);
         chrome::rule(ui);
         ui.add_space(BLOCK_GAP);
-        grid(ui, &quiet_figures(report), key.len(), Emphasis::Quiet);
+        grid(
+            ui,
+            "strategy-quiet",
+            &quiet_figures(report),
+            key.len(),
+            Emphasis::Quiet,
+        );
     });
     if report.equity.len() > 1 {
         ui.add_space(SECTION);
-        chrome::caption(ui, "Equity");
+        chrome::caption(ui, tr!("Equity"));
         panel(ui, |ui| equity_chart(ui, report));
     }
     if !report.trades.is_empty() {
@@ -98,7 +110,7 @@ fn headline(ui: &mut Ui, report: &StrategyReport) {
     let width = ui.available_width();
     let label = kit::galley(
         ui,
-        "Net profit",
+        tr!("Net profit"),
         kit::size::CAPTION,
         kit::REGULAR,
         theme::text_secondary(),
@@ -127,7 +139,7 @@ fn headline(ui: &mut Ui, report: &StrategyReport) {
     accessibility::label_as(
         response,
         WidgetType::Label,
-        format!("Net profit {net}, {ret}"),
+        tr!("Net profit {net}, {ret}", net = net, ret = ret),
     );
     let painter = ui.painter();
     painter.galley(rect.min, label, Color32::PLACEHOLDER);
@@ -151,26 +163,38 @@ fn key_figures(report: &StrategyReport) -> [Figure; 4] {
     let dash = || "\u{2014}".to_owned();
     let (drawdown, drawdown_fraction) = report.max_drawdown();
     let win_rate = match report.win_rate() {
-        Some(rate) => Figure::new("Win rate", PineReportFormat::percent(rate, false), primary)
-            .note(format!("{} of {}", report.win_count(), report.trades.len())),
-        None => Figure::new("Win rate", dash(), primary),
+        Some(rate) => Figure::new(
+            tr!("Win rate"),
+            PineReportFormat::percent(rate, false),
+            primary,
+        )
+        .note(tr!(
+            "{wins} of {total}",
+            wins = report.win_count(),
+            total = report.trades.len()
+        )),
+        None => Figure::new(tr!("Win rate"), dash(), primary),
     };
     [
         win_rate,
         Figure::new(
-            "Profit factor",
+            tr!("Profit factor"),
             report
                 .profit_factor()
                 .map_or_else(dash, PineReportFormat::ratio),
             primary,
         ),
         Figure::new(
-            "Max drawdown",
+            tr!("Max drawdown"),
             PineReportFormat::percent(drawdown_fraction, false),
             primary,
         )
         .note(PineReportFormat::money(drawdown)),
-        Figure::new("Closed trades", report.trades.len().to_string(), primary),
+        Figure::new(
+            tr!("Closed trades"),
+            report.trades.len().to_string(),
+            primary,
+        ),
     ]
 }
 
@@ -180,17 +204,17 @@ fn quiet_figures(report: &StrategyReport) -> [Figure; 3] {
     let average = report.average_trade();
     [
         Figure::new(
-            "Avg trade",
+            tr!("Avg trade"),
             average.map_or_else(|| "\u{2014}".to_owned(), PineReportFormat::signed_money),
             report::tint(average.unwrap_or(0.0), neutral),
         ),
         Figure::new(
-            "Open P&L",
+            tr!("Open P&L"),
             PineReportFormat::signed_money(report.open_profit),
             report::tint(report.open_profit, neutral),
         ),
         Figure::new(
-            "Final equity",
+            tr!("Final equity"),
             PineReportFormat::money(report.final_equity()),
             neutral,
         ),
@@ -210,7 +234,13 @@ pub(super) fn grid_columns(width: f32, count: usize) -> usize {
 
 /// Figures in a grid of equal columns, each its name over its value, left-aligned. The columns are
 /// those `slots` figures would take, so a shorter row under a longer one keeps its columns.
-pub(super) fn grid(ui: &mut Ui, figures: &[Figure], slots: usize, emphasis: Emphasis) {
+pub(super) fn grid(
+    ui: &mut Ui,
+    id_salt: &str,
+    figures: &[Figure],
+    slots: usize,
+    emphasis: Emphasis,
+) {
     let (value_size, value_weight, label_color) = match emphasis {
         Emphasis::Key => (kit::size::BODY, kit::MEDIUM, theme::text_secondary()),
         Emphasis::Quiet => (kit::size::SUBHEADLINE, kit::REGULAR, theme::text_tertiary()),
@@ -263,10 +293,14 @@ pub(super) fn grid(ui: &mut Ui, figures: &[Figure], slots: usize, emphasis: Emph
         for (index, figure) in cells.iter().enumerate() {
             let left = rect.left() + index as f32 * (column + COLUMN_GAP);
             let area = Rect::from_min_size(pos2(left, rect.top()), vec2(column, rect.height()));
-            // Named by the figure: the grids of one card share their parent, so a position would
-            // give a quiet row's first figure the id of the key row's.
-            let response =
-                ui.interact(area, ui.id().with(("figure", figure.label)), Sense::hover());
+            // Named by its grid and its place in it: the grids of one card share their parent, so a
+            // position alone would give a quiet row's first figure the id of the key row's. Never by
+            // the label, which is words in the language in use.
+            let response = ui.interact(
+                area,
+                ui.id().with(("figure", id_salt, row, index)),
+                Sense::hover(),
+            );
             accessibility::label_as(response, WidgetType::Label, figure.spoken());
         }
         let painter = ui.painter();
@@ -311,7 +345,11 @@ fn equity_chart(ui: &mut Ui, report: &StrategyReport) {
                 PineReportFormat::percent((value - capital) / capital, true)
             ));
         }
-        plot.readout(step, &[(value, tone)], &[format!("Bar {bar}"), reading]);
+        plot.readout(
+            step,
+            &[(value, tone)],
+            &[tr!("Bar {bar}", bar = bar), reading],
+        );
     }
 }
 

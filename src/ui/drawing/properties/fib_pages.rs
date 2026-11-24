@@ -7,6 +7,7 @@
 
 use super::rows::{Page, color_well, toggle_row};
 use super::{DrawingProperties, Icon, Id, Ui, card, number_field, picker_row};
+use crate::i18n::tr;
 use crate::model::Tool;
 use crate::model::chart::kind::LineDash;
 use crate::model::drawings::style::{
@@ -59,20 +60,20 @@ impl DrawingProperties {
             return;
         };
         let mut fib = self.fib_style_of(style);
-        page.section(ui, "Levels", None);
+        page.section(ui, tr!("Levels"), None);
         toggle_row(
             ui,
             Icon::Palette,
-            "Use one color",
-            "Draw every level in the line color.",
+            tr!("Use one color"),
+            tr!("Draw every level in the line color."),
             &mut style.use_one_color,
         );
         if features.trend_line {
             toggle_row(
                 ui,
                 Icon::LineTrend,
-                "Trend line",
-                "The line joining the anchors.",
+                tr!("Trend line"),
+                tr!("The line joining the anchors."),
                 &mut fib.trend_line,
             );
         }
@@ -80,8 +81,8 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::ArrowUpRight,
-                "Reverse",
-                "Flip the drawing round its anchors.",
+                tr!("Reverse"),
+                tr!("Flip the drawing round its anchors."),
                 &mut fib.reverse,
             );
         }
@@ -89,8 +90,8 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::PriceScale,
-                "Levels based on log scale",
-                "On a logarithmic chart, space levels by the ratio of the prices.",
+                tr!("Levels based on log scale"),
+                tr!("On a logarithmic chart, space levels by the ratio of the prices."),
                 &mut fib.log_levels,
             );
         }
@@ -98,8 +99,8 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::Circle,
-                "Full circles",
-                "Draw each arc as a whole circle.",
+                tr!("Full circles"),
+                tr!("Draw each arc as a whole circle."),
                 &mut fib.full_circles,
             );
         }
@@ -107,8 +108,8 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::Repeat,
-                "Counterclockwise",
-                "Turn the other way round.",
+                tr!("Counterclockwise"),
+                tr!("Turn the other way round."),
                 &mut fib.counterclockwise,
             );
         }
@@ -117,13 +118,13 @@ impl DrawingProperties {
                 ui,
                 Icon::RectFill,
                 features.second_fill,
-                "A second background, behind the other set of levels.",
+                tr!("A second background, behind the other set of levels."),
                 &mut fib.second_fill,
             );
         }
         if !features.grid.is_empty() {
             card::card(ui, Icon::Hash, features.grid, None, |ui| {
-                color_well(ui, "Grid color", &mut fib.grid.color);
+                color_well(ui, tr!("Grid color"), &mut fib.grid.color);
                 card::switch(ui, &mut fib.grid.enabled);
             });
         }
@@ -132,8 +133,8 @@ impl DrawingProperties {
             if let Some(scale) = card::card(
                 ui,
                 Icon::Ruler,
-                "Price per bar",
-                Some("Zero takes it from the two anchors."),
+                tr!("Price per bar"),
+                Some(tr!("Zero takes it from the two anchors.")),
                 |ui| {
                     number_field(
                         ui,
@@ -152,27 +153,27 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::InfoCircle,
-                "Ranges and ratio",
-                "Show the time range, the price range and their ratio.",
+                tr!("Ranges and ratio"),
+                tr!("Show the time range, the price range and their ratio."),
                 &mut fib.readout,
             );
         }
 
         if features.labels {
-            page.section(ui, "Labels", None);
+            page.section(ui, tr!("Labels"), None);
             toggle_row(
                 ui,
                 Icon::Hash,
-                "Levels",
-                "Print each level's value.",
+                tr!("Levels"),
+                tr!("Print each level's value."),
                 &mut fib.show_labels,
             );
             if features.percent && fib.show_labels {
                 toggle_row(
                     ui,
                     Icon::Percent,
-                    "Percents",
-                    "Print values as percentages.",
+                    tr!("Percents"),
+                    tr!("Print values as percentages."),
                     &mut fib.as_percent,
                 );
             }
@@ -180,8 +181,8 @@ impl DrawingProperties {
                 toggle_row(
                     ui,
                     Icon::Banknote,
-                    "Prices",
-                    "Print each level's price.",
+                    tr!("Prices"),
+                    tr!("Print each level's price."),
                     &mut fib.show_prices,
                 );
             }
@@ -193,7 +194,7 @@ impl DrawingProperties {
                 picker_row(
                     ui,
                     Icon::ArrowLeftRight,
-                    "Label position",
+                    tr!("Label position"),
                     None,
                     &horizontal,
                     &mut fib.label_h,
@@ -205,23 +206,23 @@ impl DrawingProperties {
                 picker_row(
                     ui,
                     Icon::ChevronUpDown,
-                    "Label placement",
-                    Some("Bottom puts the text on the line, top under it."),
+                    tr!("Label placement"),
+                    Some(tr!("Bottom puts the text on the line, top under it.")),
                     &vertical,
                     &mut fib.label_v,
                 );
             }
             if features.sides {
                 for (title, value) in [
-                    ("Left labels", &mut fib.sides.left),
-                    ("Right labels", &mut fib.sides.right),
-                    ("Top labels", &mut fib.sides.top),
-                    ("Bottom labels", &mut fib.sides.bottom),
+                    (tr!("Left labels"), &mut fib.sides.left),
+                    (tr!("Right labels"), &mut fib.sides.right),
+                    (tr!("Top labels"), &mut fib.sides.top),
+                    (tr!("Bottom labels"), &mut fib.sides.bottom),
                 ] {
                     toggle_row(ui, Icon::Tag, title, "", value);
                 }
             }
-            if let Some(size) = card::card(ui, Icon::TextFormat, "Font size", None, |ui| {
+            if let Some(size) = card::card(ui, Icon::TextFormat, tr!("Font size"), None, |ui| {
                 number_field(
                     ui,
                     Id::new("fib-font-size"),
@@ -262,7 +263,7 @@ impl DrawingProperties {
         }
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if kit::push_button(ui, Some(Icon::Undo), "Restore defaults", true).clicked() {
+            if kit::push_button(ui, Some(Icon::Undo), tr!("Restore defaults"), true).clicked() {
                 fib.restore_levels(self.tool);
             }
         });
@@ -303,7 +304,7 @@ fn edit_list<const N: usize>(
         None => {}
     }
     ui.horizontal(|ui| {
-        let add = kit::push_button(ui, Some(Icon::Plus), "Add level", !levels.is_full());
+        let add = kit::push_button(ui, Some(Icon::Plus), tr!("Add level"), !levels.is_full());
         if add.clicked() && !levels.is_full() {
             levels.push(levels.next_level());
         }
@@ -352,14 +353,14 @@ fn level_row(ui: &mut Ui, row: Row, level: &mut FibLevel) -> Option<RowAction> {
                 if let Some(ratio) = number_field_row(ui, id, level.ratio, max) {
                     level.ratio = ratio;
                 }
-                color_well(ui, "Level color", &mut level.color);
+                color_well(ui, tr!("Level color"), &mut level.color);
                 if let Some(asked) = look_chip(ui, id, level, row.position) {
                     action = Some(asked);
                 }
                 if row.corners {
-                    let label = if level.alt { "Far" } else { "Near" };
+                    let label = if level.alt { tr!("Far") } else { tr!("Near") };
                     if kit::value_chip(ui, label, level.alt)
-                        .on_hover_text("The corner the arc is centred on")
+                        .on_hover_text(tr!("The corner the arc is centred on"))
                         .clicked()
                     {
                         level.alt = !level.alt;
@@ -367,7 +368,7 @@ fn level_row(ui: &mut Ui, row: Row, level: &mut FibLevel) -> Option<RowAction> {
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let color = theme::text_secondary();
-                    if icons::button(ui, Icon::Trash, 22.0, color, "Remove level").clicked() {
+                    if icons::button(ui, Icon::Trash, 22.0, color, tr!("Remove level")).clicked() {
                         action = Some(RowAction::Remove);
                     }
                 });
@@ -397,13 +398,14 @@ fn look_chip(
     level: &mut FibLevel,
     (position, count): (usize, usize),
 ) -> Option<RowAction> {
-    let dash = match level.dash {
-        LineDash::Solid => "",
-        LineDash::Dashed => " dashed",
-        LineDash::Dotted => " dotted",
+    let width = level.width;
+    let text = match level.dash {
+        LineDash::Solid => tr!("{width}px", width = width),
+        LineDash::Dashed => tr!("{width}px dashed", width = width),
+        LineDash::Dotted => tr!("{width}px dotted", width = width),
     };
     let mut action = None;
-    let chip = kit::value_chip(ui, &format!("{}px{dash}", level.width), false);
+    let chip = kit::value_chip(ui, &text, false);
     egui::Popup::menu(&chip)
         .frame(kit::menu_frame())
         .show(|ui| {
@@ -411,14 +413,14 @@ fn look_chip(
             kit::menu_fit_rows(
                 ui,
                 &[
-                    ("Thickness", None),
-                    ("Line style", None),
-                    ("Dashed", None),
-                    ("Dotted", None),
-                    ("Move down", None),
+                    (tr!("Thickness"), None),
+                    (tr!("Line style"), None),
+                    (tr!("Dashed"), None),
+                    (tr!("Dotted"), None),
+                    (tr!("Move down"), None),
                 ],
             );
-            kit::menu_heading(ui, "Thickness");
+            kit::menu_heading(ui, tr!("Thickness"));
             ui.horizontal(|ui| {
                 ui.add_space(14.0);
                 let max = f64::from(crate::model::drawings::style::MAX_STROKE_WIDTH);
@@ -434,21 +436,21 @@ fn look_chip(
                 }
             });
             kit::menu_separator(ui);
-            kit::menu_heading(ui, "Line style");
+            kit::menu_heading(ui, tr!("Line style"));
             for dash in LineDash::ALL {
                 if kit::menu_item_marked(ui, Icon::Check, dash.label(), level.dash == dash) {
                     level.dash = dash;
                 }
             }
             kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::ChevronUp, "Move up", position > 0, false) {
+            if kit::menu_item(ui, Icon::ChevronUp, tr!("Move up"), position > 0, false) {
                 action = Some(RowAction::Up);
                 ui.close();
             }
             if kit::menu_item(
                 ui,
                 Icon::ChevronDown,
-                "Move down",
+                tr!("Move down"),
                 position + 1 < count,
                 false,
             ) {

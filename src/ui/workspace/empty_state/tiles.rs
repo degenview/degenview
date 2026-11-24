@@ -2,6 +2,7 @@
 //! the note a tab shows when it has nothing yet.
 
 use super::{EmptyStateAction, LayoutSummary};
+use crate::i18n::{tr, tr_n};
 use crate::model::market::trend::Trend;
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::icons::{self, Icon};
@@ -207,12 +208,23 @@ fn market_content(
 
 /// One market as a tile: artwork, ticker, name and its week.
 pub fn market_tile(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut Frame) -> Response {
-    let response = tile(ui, rect, id, &format!("Add {} to this tab", market.title));
+    let response = tile(
+        ui,
+        rect,
+        id,
+        &tr!("Add {market} to this tab", market = market.title),
+    );
     let response = crate::ui::accessibility::label(
         response,
         market.subtitle.map_or_else(
             || market.title.to_owned(),
-            |subtitle| format!("{}, {subtitle}", market.title),
+            |subtitle| {
+                tr!(
+                    "{market}, {subtitle}",
+                    market = market.title,
+                    subtitle = subtitle
+                )
+            },
         ),
     );
     let trend = frame.trend(&market);
@@ -231,13 +243,19 @@ pub fn market_tile(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut 
 pub fn market_row(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut Frame) -> Response {
     let response = ui
         .interact(rect, id, Sense::click())
-        .on_hover_text(format!("Add {} to this tab", market.title))
+        .on_hover_text(tr!("Add {market} to this tab", market = market.title))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = crate::ui::accessibility::label(
         response,
         market.subtitle.map_or_else(
             || market.title.to_owned(),
-            |subtitle| format!("{}, {subtitle}", market.title),
+            |subtitle| {
+                tr!(
+                    "{market}, {subtitle}",
+                    market = market.title,
+                    subtitle = subtitle
+                )
+            },
         ),
     );
     if response.hovered() {
@@ -371,9 +389,12 @@ pub fn more_tile(ui: &mut Ui, rect: Rect, hidden: usize) -> Response {
         ui,
         rect,
         Id::new("empty-favorites-more"),
-        "Show every favorite in the watchlist",
+        tr!("Show every favorite in the watchlist"),
     );
-    let response = crate::ui::accessibility::label(response, format!("{hidden} more favorites"));
+    let response = crate::ui::accessibility::label(
+        response,
+        tr_n!(hidden, "{count} more favorite", "{count} more favorites"),
+    );
     let bounds = rect.shrink2(vec2(14.0, 0.0));
     icons::paint(
         ui.painter(),
@@ -387,7 +408,7 @@ pub fn more_tile(ui: &mut Ui, rect: Rect, hidden: usize) -> Response {
     let left = bounds.left() + 42.0;
     let title = kit::galley(
         ui,
-        &format!("{hidden} more"),
+        &tr!("{hidden} more", hidden = hidden),
         size::BODY + 1.0,
         SEMIBOLD,
         theme::text_primary(),
@@ -395,7 +416,7 @@ pub fn more_tile(ui: &mut Ui, rect: Rect, hidden: usize) -> Response {
     );
     let subtitle = kit::galley(
         ui,
-        "Open watchlist",
+        tr!("Open watchlist"),
         size::CAPTION + 1.0,
         REGULAR,
         theme::text_secondary(),
@@ -419,19 +440,22 @@ pub fn layout_card(ui: &mut Ui, rect: Rect, layout: &LayoutSummary) -> Response 
         ui,
         rect,
         Id::new(("empty-layout", layout.id)),
-        &format!("Open {}", layout.name),
+        &tr!("Open {layout}", layout = layout.name),
     );
-    let subtitle = format!(
-        "{} · {}",
-        if layout.chart_count == 1 {
-            "1 chart".to_owned()
-        } else {
-            format!("{} charts", layout.chart_count)
-        },
-        layout.timeframe
+    let subtitle = tr_n!(
+        layout.chart_count,
+        "{count} chart · {timeframe}",
+        "{count} charts · {timeframe}",
+        timeframe = layout.timeframe
     );
-    let response =
-        crate::ui::accessibility::label(response, format!("{}, {subtitle}", layout.name));
+    let response = crate::ui::accessibility::label(
+        response,
+        tr!(
+            "{layout}, {subtitle}",
+            layout = layout.name,
+            subtitle = subtitle
+        ),
+    );
     let inner = rect.shrink2(vec2(14.0, 12.0));
     let name = kit::galley(
         ui,

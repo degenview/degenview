@@ -2,6 +2,7 @@
 //! error banners over it.
 
 use super::{PreviewState, REFRESH_INTERVAL};
+use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::pine::script::ScriptType;
 use crate::model::{DataSource, IndicatorConfig};
@@ -35,8 +36,8 @@ pub fn chart(
             ui,
             area,
             Icon::Books,
-            "Nothing to chart",
-            "Libraries export functions — they don't draw on a chart.",
+            tr!("Nothing to chart"),
+            tr!("Libraries export functions — they don't draw on a chart."),
             None,
             cmds,
         );
@@ -47,9 +48,9 @@ pub fn chart(
             ui,
             area,
             Icon::Key,
-            "Alpaca isn't set up",
-            "Stock candles come from Alpaca. Add your keys in Settings to test on stocks.",
-            Some(("Open Settings", Cmd::OpenAlpacaSettings)),
+            tr!("Alpaca isn't set up"),
+            tr!("Stock candles come from Alpaca. Add your keys in Settings to test on stocks."),
+            Some((tr!("Open Settings"), Cmd::OpenAlpacaSettings)),
             cmds,
         );
         return;
@@ -86,6 +87,7 @@ pub fn chart(
     let source = preview.market.source;
     let loading = preview.loading && candles.is_empty();
     let error = preview.error.clone();
+    preview.card.set_timeframe(preview.timeframe);
     preview.card.body(
         &mut chart_ui,
         &symbol,
@@ -135,7 +137,7 @@ pub fn chart(
         }
         response
             .on_hover_cursor(CursorIcon::PointingHand)
-            .on_hover_text("Show problems");
+            .on_hover_text(tr!("Show problems"));
     }
     // Refresh failures with candles on screen: a retry banner at the bottom.
     if let Some(error) = error.filter(|_| !preview.candles.is_empty())
@@ -178,7 +180,7 @@ pub(super) fn message(
 }
 
 fn stale_banner(ui: &mut Ui, area: Rect) -> Rect {
-    let text = "Fix the errors to update the chart — showing the last working version";
+    let text = tr!("Fix the errors to update the chart — showing the last working version");
     let font = FontId::proportional(10.0);
     let galley = ui
         .painter()
@@ -215,7 +217,7 @@ fn error_banner(ui: &mut Ui, area: Rect, message: &str) -> bool {
             .layout_no_wrap(message.to_owned(), font.clone(), theme::text_secondary());
     let retry = ui
         .painter()
-        .layout_no_wrap("Retry".to_owned(), font, theme::SYSTEM_ACCENT);
+        .layout_no_wrap(tr!("Retry").to_owned(), font, theme::SYSTEM_ACCENT);
     let width =
         (galley.size().x + retry.size().x + 8.0 + 8.0 + 16.0 + 14.0).min(area.width() - 16.0);
     let rect = Rect::from_min_size(

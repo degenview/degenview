@@ -3,6 +3,7 @@
 //! touches the store. A port of `PineStrategyReportView` / `PineEquityCurveView` /
 //! `PineReportFormat`.
 
+use crate::i18n::tr;
 use crate::pine::strategy::StrategyReport;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, RichText, Stroke};
@@ -139,7 +140,7 @@ pub fn show(ui: &mut egui::Ui, report: Option<&StrategyReport>) {
     report_box(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 10.0;
         ui.label(
-            RichText::new("Strategy report")
+            RichText::new(tr!("Strategy report"))
                 .size(10.0)
                 .strong()
                 .color(theme::text_primary()),
@@ -166,15 +167,16 @@ pub fn synthetic_fill_notice(chart: crate::model::ChartKind) -> Option<String> {
     use crate::model::ChartKind;
     let name = match chart {
         ChartKind::Standard => return None,
-        ChartKind::HeikinAshi => "Heikin Ashi",
-        ChartKind::Renko => "Renko",
-        ChartKind::Kagi => "Kagi",
-        ChartKind::LineBreak => "Line Break",
-        ChartKind::PointAndFigure => "Point & Figure",
-        ChartKind::Range => "Range",
+        ChartKind::HeikinAshi => tr!("Heikin Ashi"),
+        ChartKind::Renko => tr!("Renko"),
+        ChartKind::Kagi => tr!("Kagi"),
+        ChartKind::LineBreak => tr!("Line Break"),
+        ChartKind::PointAndFigure => tr!("Point & Figure"),
+        ChartKind::Range => tr!("Range"),
     };
-    Some(format!(
-        "Run on a {name} chart: orders filled at its constructed prices, not at prices the market traded at. Treat the results as indicative only."
+    Some(tr!(
+        "Run on a {name} chart: orders filled at its constructed prices, not at prices the market traded at. Treat the results as indicative only.",
+        name = name
     ))
 }
 
@@ -193,7 +195,7 @@ fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
 
     let metrics: [(&str, String, f64); 8] = [
         (
-            "Net profit",
+            tr!("Net profit"),
             format!(
                 "{}  {}",
                 PineReportFormat::signed_money(net),
@@ -201,11 +203,11 @@ fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
             ),
             net,
         ),
-        ("Closed trades", report.trades.len().to_string(), 0.0),
-        ("Win rate", win_rate, 0.0),
-        ("Profit factor", profit_factor, 0.0),
+        (tr!("Closed trades"), report.trades.len().to_string(), 0.0),
+        (tr!("Win rate"), win_rate, 0.0),
+        (tr!("Profit factor"), profit_factor, 0.0),
         (
-            "Max drawdown",
+            tr!("Max drawdown"),
             format!(
                 "{}  {}",
                 PineReportFormat::money(drawdown.0),
@@ -213,14 +215,14 @@ fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
             ),
             0.0,
         ),
-        ("Avg trade", avg_trade, 0.0),
+        (tr!("Avg trade"), avg_trade, 0.0),
         (
-            "Open P&L",
+            tr!("Open P&L"),
             PineReportFormat::signed_money(report.open_profit),
             report.open_profit,
         ),
         (
-            "Final equity",
+            tr!("Final equity"),
             PineReportFormat::money(report.final_equity()),
             0.0,
         ),
@@ -260,7 +262,7 @@ fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
 fn trade_list(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
     let latest: Vec<_> = report.trades.iter().rev().take(100).collect();
     egui::CollapsingHeader::new(
-        RichText::new(format!("Trades ({})", report.trades.len()))
+        RichText::new(tr!("Trades ({count})", count = report.trades.len()))
             .size(10.0)
             .color(theme::text_primary()),
     )
@@ -289,7 +291,12 @@ fn trade_list(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
                         cell(
                             ui,
                             38.0,
-                            if trade.is_long { "Long" } else { "Short" }.to_owned(),
+                            if trade.is_long {
+                                tr!("Long")
+                            } else {
+                                tr!("Short")
+                            }
+                            .to_owned(),
                         );
                         ui.label(
                             RichText::new(format!(
@@ -319,11 +326,11 @@ fn trade_list(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
 
 /// What hovering a trade says: its entry and exit ids, its size, and the comments of its orders.
 pub(crate) fn trade_summary(trade: &crate::pine::strategy::Trade) -> String {
-    let mut text = format!(
-        "{} \u{2192} {} \u{b7} qty {}",
-        trade.entry_id,
-        trade.exit_id,
-        PineReportFormat::price(trade.quantity)
+    let mut text = tr!(
+        "{entry} \u{2192} {exit} \u{b7} qty {quantity}",
+        entry = trade.entry_id,
+        exit = trade.exit_id,
+        quantity = PineReportFormat::price(trade.quantity)
     );
     let comments = trade.comments();
     if !comments.is_empty() {
@@ -396,7 +403,7 @@ fn equity_curve(ui: &mut egui::Ui, equity: &[f64], initial_capital: f64) {
     painter.text(
         rect.min + egui::vec2(4.0, 4.0),
         Align2::LEFT_TOP,
-        "Equity",
+        tr!("Equity"),
         FontId::proportional(9.0),
         weak,
     );

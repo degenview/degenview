@@ -16,6 +16,7 @@
 use degenview_brokers::{Decimal, Side, validate};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Sense, Vec2};
 
+use crate::i18n::tr;
 use crate::model::broker::chart::Unavailable;
 use crate::model::broker::ticket::display;
 use crate::ui::accessibility;
@@ -159,22 +160,42 @@ fn price_of(line: &OrderLine) -> Option<Decimal> {
     validate::snap_to_increment(line.price, Decimal::new(1, 8))
 }
 
+/// SELL or BUY, as a pill and a table tag say it.
+pub fn side_tag(side: Side) -> &'static str {
+    match side {
+        Side::Buy => tr!("BUY"),
+        Side::Sell => tr!("SELL"),
+    }
+}
+
 /// What a line's pill says.
 pub fn line_pill(line: &OrderLine, price_text: &str) -> Pill {
-    let side = match line.side {
-        Side::Buy => "BUY",
-        Side::Sell => "SELL",
+    let side = side_tag(line.side);
+    let text = match line.note {
+        Some(note) => tr!(
+            "{side} {size} @ {price} · {note}",
+            side = side,
+            size = line.remaining_text,
+            price = price_text,
+            note = note
+        ),
+        None => tr!(
+            "{side} {size} @ {price}",
+            side = side,
+            size = line.remaining_text,
+            price = price_text
+        ),
     };
-    let mut text = format!("{side} {} @ {price_text}", line.remaining_text);
-    if let Some(note) = line.note {
-        text.push_str(&format!(" · {note}"));
-    }
+    let close_label = match line.side {
+        Side::Buy => tr!("Cancel live buy order at {price}", price = price_text),
+        Side::Sell => tr!("Cancel live sell order at {price}", price = price_text),
+    };
     Pill {
-        tag: format!("LIVE {}", line.tag),
+        tag: tr!("LIVE {tag}", tag = line.tag),
         tint: line.tint,
         text,
         pnl: None,
-        close_label: format!("Cancel live {} order at {price_text}", side.to_lowercase()),
+        close_label,
     }
 }
 
@@ -186,7 +207,7 @@ const QUICK_TRADE_GAP: f32 = 4.0;
 /// What a header pill says: the side and, when the broker quotes one, its price.
 fn quick_trade_text(word: &str, price: Option<&str>) -> String {
     match price {
-        Some(price) => format!("{word}  {price}"),
+        Some(price) => tr!("{side}  {price}", side = word, price = price),
         None => word.to_owned(),
     }
 }
@@ -206,7 +227,7 @@ pub fn quick_trade_width(ui: &egui::Ui, bid: Option<&str>, ask: Option<&str>) ->
             .x
             + 18.0
     };
-    pill("SELL", bid) + pill("BUY", ask) + QUICK_TRADE_GAP
+    pill(side_tag(Side::Sell), bid) + pill(side_tag(Side::Buy), ask) + QUICK_TRADE_GAP
 }
 
 /// SELL and BUY in the card header with the broker's own best bid and ask (not the chart's last
@@ -226,10 +247,11 @@ pub fn quick_trade_buttons(
     ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Min), |ui| {
         let mut pressed = None;
         ui.spacing_mut().item_spacing.x = QUICK_TRADE_GAP;
-        for (side, word, price, tint) in [
-            (Side::Sell, "SELL", bid, theme::DOWN),
-            (Side::Buy, "BUY", ask, theme::UP),
+        for (side, price, tint) in [
+            (Side::Sell, bid, theme::DOWN),
+            (Side::Buy, ask, theme::UP),
         ] {
+            let word = side_tag(side);
             let text = quick_trade_text(word, price);
             let galley = ui
                 .painter()
@@ -260,10 +282,16 @@ pub fn quick_trade_buttons(
                 },
             );
             let help = match entry {
-                Ok(()) => format!(
-                    "Live: {} at {broker}. Opens the order ticket; nothing is sent from here.",
-                    word.to_lowercase()
-                ),
+                Ok(()) => match side {
+                    Side::Sell => tr!(
+                        "Live: sell at {broker}. Opens the order ticket; nothing is sent from here.",
+                        broker = broker
+                    ),
+                    Side::Buy => tr!(
+                        "Live: buy at {broker}. Opens the order ticket; nothing is sent from here.",
+                        broker = broker
+                    ),
+                },
                 Err(reason) => reason.text().to_owned(),
             };
             // The header is drawn over the plot, whose crosshair cursor would show here.
@@ -272,7 +300,10 @@ pub fn quick_trade_buttons(
             } else {
                 egui::CursorIcon::NotAllowed
             };
-            let response = accessibility::label(response, format!("Live {word} at {broker}"))
+            let response = accessibility::label(
+                response,
+                tr!("Live {side} at {broker}", side = word, broker = broker),
+            )
                 .on_hover_text(help)
                 .on_hover_cursor(cursor);
             if enabled && response.clicked() {

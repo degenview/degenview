@@ -241,3 +241,90 @@ fn gallery_of_the_sidebar() {
         }
     }
 }
+
+/// The sidebar in the pseudo-locale, with markets and with an empty list, in both themes: every
+/// word put through `tr!` shows in brackets, so a text with words and none is a literal that
+/// skipped it. Column titles, sort keys and flags come from the model, which is not converted yet.
+#[test]
+fn the_sidebar_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    let _restore = theme::RestoreDefaultTheme;
+    let data = [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "DOGEUSDT",
+        "BNBUSDT",
+        "NVDA",
+        "AAPL",
+        "TSLA",
+        "NVIDIA",
+        "Apple",
+        "Tesla",
+        "Favorites",
+        "Last",
+        "Chg",
+        "Live",
+        "1M",
+        "Binance",
+        "Alpaca",
+    ];
+    let mut full = Watchlist::new("Favorites");
+    let mut quotes = HashMap::new();
+    let mut trends = HashMap::new();
+    for (index, (source, symbol, id, last, change, volume, drift)) in MARKETS.iter().enumerate() {
+        let item = WatchlistInstrument::from_market(*source, symbol, id);
+        quotes.insert(item.instrument.key(), quote(*last, *change, *volume));
+        trends.insert(item.instrument.key(), Trend::Ready(month(index, *drift)));
+        full.add(item, None).expect("added");
+    }
+    let lookup = |id: &InstrumentId| quotes.get(&id.key()).cloned();
+    let flags = Flags::default();
+    with_locale(Locale::PSEUDO, || {
+        for (name, list) in [
+            ("filled", full.clone()),
+            ("empty", Watchlist::new("Favorites")),
+        ] {
+            let width = style::minimum_panel_width(&list.display) + 60.0;
+            let lists = vec![list];
+            for light in [false, true] {
+                let mut screen = Screen::new(Vec2::new(width, 520.0));
+                screen.ctx.set_theme(if light {
+                    egui::ThemePreference::Light
+                } else {
+                    egui::ThemePreference::Dark
+                });
+                let mut state = WatchlistSidebarState::default();
+                let input = WatchlistSidebarInput {
+                    lists: &lists,
+                    flags: &flags,
+                    quote: &lookup,
+                    trends: &trends,
+                    focused_market: None,
+                    load_failed: false,
+                    error: None,
+                    import_report: None,
+                };
+                let mut last = None;
+                for _ in 0..4 {
+                    last = Some(screen.run(vec![], |ui| {
+                        theme::sync(ui.ctx());
+                        egui::CentralPanel::default()
+                            .frame(egui::Frame::new().fill(theme::chrome()))
+                            .show(ui, |ui| {
+                                sidebar::show(ui, &mut state, &input);
+                            });
+                    }));
+                }
+                let output = last.expect("a frame");
+                let loose = crate::ui::trade::pseudo_text::untranslated(&output, &data);
+                let tag = if light { "light" } else { "dark" };
+                screen.save(&format!("watchlist-{name}-pseudo-{tag}"), output);
+                assert!(
+                    loose.is_empty(),
+                    "{name} ({tag}): texts that skipped `tr!`: {loose:?}"
+                );
+            }
+        }
+    });
+}

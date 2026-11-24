@@ -12,6 +12,7 @@ use super::{
     Hsv, accessibility, checkerboard_cells, hue_stops, nudged, paint_square, paint_swatch_on,
     round_corners, square_to_sv, sv_to_square,
 };
+use crate::i18n::tr;
 use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CursorIcon, FontId, Id, Key, Mesh, Painter, Pos2, Rect, Sense, Shape, Stroke,
@@ -141,10 +142,14 @@ pub fn show(
     let square = accessibility::label_as(
         square,
         egui::WidgetType::Slider,
-        "Saturation and brightness",
+        tr!("Saturation and brightness"),
     );
     square.widget_info(|| {
-        egui::WidgetInfo::slider(true, f64::from(hsv.s * 100.0), "Saturation and brightness")
+        egui::WidgetInfo::slider(
+            true,
+            f64::from(hsv.s * 100.0),
+            tr!("Saturation and brightness"),
+        )
     });
     if square.hovered() || square.dragged() {
         ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
@@ -181,7 +186,7 @@ pub fn show(
         layout.transparency,
         &mut opacity,
         Direction::OpaqueAtTop,
-        "Transparency",
+        tr!("Transparency"),
     );
     if moved.changed {
         let snapped = opacity_of(transparency_percent(opacity));
@@ -198,7 +203,7 @@ pub fn show(
         layout.hue,
         &mut hsv.h,
         Direction::HueDown,
-        "Hue",
+        tr!("Hue"),
     );
     output.color_changed |= moved.changed;
     output.finished |= moved.finished;

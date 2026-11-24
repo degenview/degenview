@@ -106,10 +106,13 @@ pub struct RuntimeFunction {
     pub scope: Option<String>,
     /// Whether the importing script may call it (a library's helpers are private).
     pub is_exported: bool,
+    /// Where its declaration starts in the source: what names the function to the profiler. The
+    /// body cannot, since the session may put statements of its own ahead of the first one.
+    pub declared_at: usize,
 }
 
 impl RuntimeFunction {
-    pub fn new(parameters: Vec<Parameter>, body: Vec<Statement>) -> Self {
+    pub fn new(parameters: Vec<Parameter>, body: Vec<Statement>, declared_at: usize) -> Self {
         let mut locals: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
         let mut persistent = HashSet::new();
         collect_declarations(&body, &mut locals, &mut persistent);
@@ -130,6 +133,7 @@ impl RuntimeFunction {
             history_locals: history.into(),
             scope: None,
             is_exported: true,
+            declared_at,
         }
     }
 

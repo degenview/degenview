@@ -1,6 +1,7 @@
 //! The Overview's hero: the total, its change and the sparkline beside it.
 
 use super::{OverviewInput, OverviewState, asset_count_text};
+use crate::i18n::tr;
 use crate::model::portfolio::PortfolioSnapshot;
 use crate::model::portfolio::statistics::{PortfolioPeriodChange, PortfolioStatistics};
 use crate::ui::icons::{self, Icon};
@@ -49,7 +50,7 @@ pub(super) fn hero(
         ui,
         pos2(chip.right() + 9.0, chip.center().y),
         Align2::LEFT_CENTER,
-        input.portfolio_name.unwrap_or("All Portfolios"),
+        input.portfolio_name.unwrap_or(tr!("All Portfolios")),
         15.0,
         SEMIBOLD,
         theme::text_primary(),
@@ -78,7 +79,7 @@ pub(super) fn hero(
             ui,
             pos2(inner.left() + 26.0, balance_middle),
             Align2::LEFT_CENTER,
-            "Loading portfolio value\u{2026}",
+            tr!("Loading portfolio value…"),
             12.0,
             REGULAR,
             caption_color(),
@@ -124,7 +125,7 @@ pub(super) fn hero(
         return;
     }
     let middle = rect.center().y;
-    let pnl_label = format!("P&L \u{00B7} {}", state.range.period_name());
+    let pnl_label = tr!("P&L · {period}", period = state.range.period_name());
     let edge = change_block(
         ui,
         f,
@@ -136,7 +137,7 @@ pub(super) fn hero(
     let day_edge = change_block(
         ui,
         f,
-        "24h",
+        tr!("24h"),
         stats.day_change.map(|d| d.amount),
         stats.day_change.and_then(|d| d.percentage),
         pos2(edge - 36.0, middle),

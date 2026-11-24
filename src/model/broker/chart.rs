@@ -33,27 +33,32 @@ pub enum Unavailable {
 
 impl Unavailable {
     pub fn text(self) -> &'static str {
+        use crate::i18n::tr;
         match self {
-            Self::NotAMarket => "This chart has no market to trade.",
+            Self::NotAMarket => tr!("This chart has no market to trade."),
             Self::OtherSource => {
-                "This chart's data is not from this broker, so it is not its market. Open the broker's own chart of the market."
+                tr!(
+                    "This chart's data is not from this broker, so it is not its market. Open the broker's own chart of the market."
+                )
             }
-            Self::UnknownMarket => "This is not a market the broker can trade.",
-            Self::NotConnected => "The broker is not connected.",
+            Self::UnknownMarket => tr!("This is not a market the broker can trade."),
+            Self::NotConnected => tr!("The broker is not connected."),
             Self::NotLive => {
-                "Waiting for the broker's connection. Orders are paused until it is back."
+                tr!("Waiting for the broker's connection. Orders are paused until it is back.")
             }
-            Self::NeedsAttention => "The broker needs attention. Open Settings ▸ Brokers.",
+            Self::NeedsAttention => tr!("The broker needs attention. Open Settings ▸ Brokers."),
             Self::JournalUnreadable => {
-                "New orders are paused: the record of orders waiting for confirmation cannot be read. Cancelling still works."
+                tr!(
+                    "New orders are paused: the record of orders waiting for confirmation cannot be read. Cancelling still works."
+                )
             }
-            Self::ViewOnly => "This key can view but not trade.",
-            Self::RulesNotRead => "Reading the market's rules…",
+            Self::ViewOnly => tr!("This key can view but not trade."),
+            Self::RulesNotRead => tr!("Reading the market's rules…"),
             Self::MarketNotOffered => {
-                "This broker does not offer this market, so it cannot be traded here."
+                tr!("This broker does not offer this market, so it cannot be traded here.")
             }
             Self::MarketNotTradable(reason) => reason,
-            Self::InReplay => "Not available during replay.",
+            Self::InReplay => tr!("Not available during replay."),
         }
     }
 }

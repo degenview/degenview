@@ -10,6 +10,7 @@ pub use events::{
 };
 pub use trending::{PROVIDER as TRENDING_PROVIDER, Trending};
 
+use crate::i18n::tr_n;
 use crate::model::DataSource;
 use crate::service::SearchResult;
 
@@ -32,18 +33,15 @@ impl EventHead {
 
     /// What the header says under the title: how many choices, and the likeliest.
     pub fn summary(&self) -> String {
-        let count = format!(
-            "{} choice{}",
-            self.choices,
-            if self.choices == 1 { "" } else { "s" }
-        );
         match self.lead.price {
-            Some(chance) => format!(
-                "{count} · {} {}",
-                self.lead.symbol,
-                crate::format::headline(chance, true)
+            Some(chance) => tr_n!(
+                self.choices,
+                "{count} choice · {symbol} {chance}",
+                "{count} choices · {symbol} {chance}",
+                symbol = self.lead.symbol,
+                chance = crate::format::headline(chance, true)
             ),
-            None => count,
+            None => tr_n!(self.choices, "{count} choice", "{count} choices"),
         }
     }
 }

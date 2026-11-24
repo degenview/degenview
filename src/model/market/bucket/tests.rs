@@ -740,3 +740,57 @@ fn a_folded_answer_is_trimmed_after_folding() {
     assert_eq!(opens(&shown), [15 * HOUR_MS, 18 * HOUR_MS, 21 * HOUR_MS]);
     assert_eq!(shown[0].close_time, 18 * HOUR_MS - 1);
 }
+
+#[test]
+fn second_buckets_restart_at_midnight_and_the_last_one_is_cut_short() {
+    let forty_five = tf(45, TimeUnit::Second);
+    let midnight = day(2024, 1, 11);
+    // 45 s divides the day (1,920 buckets), so the grid is the same every day.
+    assert_eq!(bucket_start_ms(forty_five, midnight + 44_999), midnight);
+    assert_eq!(
+        bucket_start_ms(forty_five, midnight + 45_000),
+        midnight + 45_000
+    );
+    assert_eq!(
+        next_bucket_start_ms(forty_five, midnight + 45_000),
+        midnight + 90_000
+    );
+    // 7 s does not: the day's last bucket holds the 6 seconds left.
+    let seven = tf(7, TimeUnit::Second);
+    let last = midnight + DAY_MS - 6_000;
+    assert_eq!(bucket_start_ms(seven, midnight + DAY_MS - 1), last);
+    assert_eq!(next_bucket_start_ms(seven, last), midnight + DAY_MS);
+}
+
+#[test]
+fn seconds_fold_from_one_second_candles_that_divide_them() {
+    let natives = [Timeframe::SECOND_1];
+    for target in ["5s", "15s", "45s", "1m", "22m", "3h", "1D", "1W"] {
+        assert_eq!(
+            fold_base(tf_text(target), &natives),
+            Some(Timeframe::SECOND_1),
+            "{target}"
+        );
+    }
+    // 10 s candles nest in 30 s and a minute, not in 15 s or 45 s.
+    let ten = [Timeframe::SECOND_10];
+    assert_eq!(fold_base(tf_text("30s"), &ten), Some(Timeframe::SECOND_10));
+    assert_eq!(fold_base(tf_text("1m"), &ten), Some(Timeframe::SECOND_10));
+    assert_eq!(fold_base(tf_text("15s"), &ten), None);
+    assert_eq!(fold_base(tf_text("45s"), &ten), None);
+    // A candle length that does not divide the day cannot be a base.
+    assert_eq!(fold_base(tf_text("1m"), &[tf(7, TimeUnit::Second)]), None);
+}
+
+#[test]
+fn one_second_candles_fold_into_forty_five_second_buckets() {
+    let start = day(2024, 1, 11);
+    let folded = fold(&series(start, 1_000, 100), tf(45, TimeUnit::Second), false);
+    assert_eq!(opens(&folded), [start, start + 45_000, start + 90_000]);
+    assert_eq!(folded[0].close_time, start + 44_999);
+    assert_eq!(folded[2].volume, 2.0 * 10.0);
+}
+
+fn tf_text(text: &str) -> Timeframe {
+    Timeframe::parse(text).unwrap()
+}

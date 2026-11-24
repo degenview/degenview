@@ -25,6 +25,7 @@ mod workspace;
 
 use crate::clock::now_ms;
 use crate::host::editor_theme::EditorThemeHost;
+use crate::i18n::tr;
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
@@ -428,7 +429,7 @@ impl PineStudio {
     pub fn title(&self) -> String {
         match &self.open {
             Some(open) if open.editor.is_dirty() => {
-                format!("{} — Edited", open.name)
+                tr!("{name} — Edited", name = open.name)
             }
             Some(open) => open.name.clone(),
             None => "Pine Studio".to_owned(),

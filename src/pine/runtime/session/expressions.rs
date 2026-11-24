@@ -273,10 +273,7 @@ impl Session {
                 (bar.high + bar.low + 2.0 * bar.close) / 4.0,
             )),
             "time" => Some(RuntimeValue::Int(bar.open_time)),
-            "time_close" => Some(RuntimeValue::Int(crate::pine::time::bucket::close_time(
-                bar.open_time,
-                self.bar_seconds,
-            ))),
+            "time_close" => Some(RuntimeValue::Int(self.bar_end(bar))),
             "bar_index" => Some(RuntimeValue::Int(self.working.bar_index)),
             "last_bar_index" => Some(RuntimeValue::Int(self.last_bar_index)),
             "last_bar_time" => self

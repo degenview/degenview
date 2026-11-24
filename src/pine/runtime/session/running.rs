@@ -44,8 +44,8 @@ impl Session {
                 crate::pine::time::bucket::nominal_length(open, seed)
             });
         }
-        if let Some(fixed) = self.fixed_bar_seconds {
-            self.bar_seconds = fixed;
+        if let Some(known) = self.known_bar_seconds() {
+            self.bar_seconds = known;
         } else if bars.len() > 1 {
             let previous = bars[bars.len() - 2].open_time;
             self.bar_seconds = crate::pine::time::bucket::nominal_length(
@@ -229,7 +229,7 @@ impl Session {
         }
         self.emitted_alerts.clear();
         if is_new
-            && self.fixed_bar_seconds.is_none()
+            && self.known_bar_seconds().is_none()
             && let Some(previous) = self.last_open_time
         {
             self.bar_seconds = crate::pine::time::bucket::nominal_length(

@@ -6,6 +6,7 @@
 //! when something it shows has changed.
 
 use super::ChartCard;
+use crate::i18n::tr;
 use crate::model::chart::kind::ChartType;
 use crate::model::chart::table::{Extra, TableFeed, ValueKind, align_right};
 use crate::model::pine::instance::VisualOrder;
@@ -57,9 +58,9 @@ impl ChartCard {
         }
         if let Some(bands) = &series.bollinger {
             for (title, values) in [
-                ("Bollinger upper", &bands.upper),
-                ("Bollinger basis", &bands.middle),
-                ("Bollinger lower", &bands.lower),
+                (tr!("Bollinger upper"), &bands.upper),
+                (tr!("Bollinger basis"), &bands.middle),
+                (tr!("Bollinger lower"), &bands.lower),
             ] {
                 extras.push(Extra {
                     title: title.to_owned(),
@@ -68,16 +69,9 @@ impl ChartCard {
                 });
             }
         }
-        if drawn.show_rsi {
-            extras.push(Extra {
-                title: "RSI".to_owned(),
-                kind: ValueKind::Plain,
-                values: series.rsi.clone(),
-            });
-        }
         if drawn.show_trend_flips {
             extras.push(Extra {
-                title: "Supertrend flip".to_owned(),
+                title: tr!("Supertrend flip").to_owned(),
                 kind: ValueKind::Flip,
                 values: series
                     .trend_flips
@@ -92,11 +86,17 @@ impl ChartCard {
                 .instances
                 .iter()
                 .find(|instance| instance.id == *instance_id)
-                .map_or("Script", |instance| instance.name.as_str());
+                .map_or(tr!("Script"), |instance| instance.name.as_str());
             for plot in output.plots.iter().filter(|plot| plot.display != 0) {
                 let title = match &plot.title {
-                    Some(title) if !title.is_empty() => format!("{name}: {title}"),
-                    _ => format!("{name}: plot {}", plot.id + 1),
+                    Some(title) if !title.is_empty() => {
+                        tr!("{script}: {plot}", script = name, plot = title)
+                    }
+                    _ => tr!(
+                        "{script}: plot {number}",
+                        script = name,
+                        number = plot.id + 1
+                    ),
                 };
                 extras.push(Extra {
                     title,
@@ -114,6 +114,7 @@ impl ChartCard {
             bars_label: chart_type.label().to_owned(),
             ohlc: !line,
             volume: provides_volume,
+            seconds: self.shows_seconds(),
             bars: bars.to_vec(),
             extras,
         }));

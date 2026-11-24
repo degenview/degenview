@@ -1,6 +1,7 @@
 //! The "Link charts" popover: which parts of horizontal navigation the charts of a workspace
 //! share. The toolbar owns the button; this draws what opens from it.
 
+use crate::i18n::tr;
 use crate::model::ChartSyncSettings;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
@@ -16,10 +17,10 @@ const PADDING: f32 = 10.0;
 /// What the toolbar button says, for its tooltip and its accessibility name.
 pub fn summary(settings: ChartSyncSettings) -> &'static str {
     match (settings.horizontal_position, settings.horizontal_zoom) {
-        (false, false) => "Link charts",
-        (true, false) => "Link charts: position",
-        (false, true) => "Link charts: zoom",
-        (true, true) => "Link charts: position and zoom",
+        (false, false) => tr!("Link charts"),
+        (true, false) => tr!("Link charts: position"),
+        (false, true) => tr!("Link charts: zoom"),
+        (true, true) => tr!("Link charts: position and zoom"),
     }
 }
 
@@ -39,7 +40,7 @@ pub fn show(
     ui.horizontal(|ui| {
         ui.add_space(PADDING);
         ui.label(kit::text(
-            "Link charts",
+            tr!("Link charts"),
             size::HEADLINE,
             SEMIBOLD,
             theme::text_primary(),
@@ -49,25 +50,25 @@ pub fn show(
     option(
         ui,
         "link-position",
-        "Sync horizontal position",
-        "Panning one chart moves the others to the same point in time.",
+        tr!("Sync horizontal position"),
+        tr!("Panning one chart moves the others to the same point in time."),
         &mut next.horizontal_position,
     );
     option(
         ui,
         "link-zoom",
-        "Sync zoom level",
-        "Zooming one chart adjusts the others.",
+        tr!("Sync zoom level"),
+        tr!("Zooming one chart adjusts the others."),
         &mut next.horizontal_zoom,
     );
     kit::menu_separator(ui);
-    note(ui, "Vertical scales remain independent.");
+    note(ui, tr!("Vertical scales remain independent."));
     if !excluded.is_empty() {
         note(
             ui,
-            &format!(
-                "Not linked: {}. Price-based chart types have no shared time.",
-                excluded.join(", ")
+            &tr!(
+                "Not linked: {charts}. Price-based chart types have no shared time.",
+                charts = excluded.join(", ")
             ),
         );
     }

@@ -10,7 +10,8 @@ fn presets_and_legacy_lists_are_in_order_with_their_tokens() {
     assert_eq!(
         tokens,
         [
-            "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1d", "1w", "1M", "1Y"
+            "1s", "15s", "30s", "45s", "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1d",
+            "1w", "1M", "1Y"
         ]
     );
     let legacy: Vec<_> = Timeframe::LEGACY.iter().map(|tf| tf.interval()).collect();
@@ -31,7 +32,8 @@ fn labels_use_lowercase_minutes_and_hours() {
     assert_eq!(
         labels,
         [
-            "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1D", "1W", "1M", "1Y"
+            "1s", "15s", "30s", "45s", "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1D",
+            "1W", "1M", "1Y"
         ]
     );
     assert_eq!(tf(22, TimeUnit::Minute).to_string(), "22m");
@@ -123,8 +125,13 @@ fn parse_explains_what_is_wrong() {
         ("0", Zero),
         ("0h", Zero),
         ("0Y", Zero),
-        ("30s", SecondsUnsupported),
-        ("5S", SecondsUnsupported),
+        (
+            "60s",
+            OutOfRange {
+                unit: TimeUnit::Second,
+                max: 59,
+            },
+        ),
         (
             "1441",
             OutOfRange {
@@ -177,8 +184,8 @@ fn parse_explains_what_is_wrong() {
         "Minutes go from 1 to 1440"
     );
     assert_eq!(
-        Timeframe::parse("30s").unwrap_err().to_string(),
-        "Seconds aren't supported"
+        Timeframe::parse("60s").unwrap_err().to_string(),
+        "Seconds go from 1 to 59"
     );
     assert_eq!(
         Timeframe::parse("0").unwrap_err().to_string(),
@@ -186,7 +193,7 @@ fn parse_explains_what_is_wrong() {
     );
     assert_eq!(
         Timeframe::parse("x").unwrap_err().to_string(),
-        "Type a number and a unit: 22m, 3h, 2D, 1W, 3M"
+        "Type a number and a unit: 30s, 22m, 3h, 2D, 1W, 3M"
     );
 }
 
@@ -292,5 +299,53 @@ fn other_values_round_trip_as_their_label() {
 fn text_that_is_no_timeframe_fails_to_decode() {
     for json in ["\"Fortnight\"", "\"0m\"", "\"2Y\"", "\"\"", "5"] {
         assert!(serde_json::from_str::<Timeframe>(json).is_err(), "{json}");
+    }
+}
+
+#[test]
+fn seconds_parse_print_and_sort_before_minutes() {
+    let half_minute = tf(30, TimeUnit::Second);
+    for text in ["30s", "30S", " 30 s "] {
+        assert_eq!(Timeframe::parse(text), Ok(half_minute), "{text:?}");
+    }
+    assert_eq!(half_minute.label(), "30s");
+    assert_eq!(half_minute.interval(), "30s");
+    assert_eq!(half_minute.nominal_ms(), 30_000);
+    assert_eq!(half_minute.description(), "30-second candles");
+    assert_eq!(Timeframe::SECOND_1.description(), "One-second candles");
+    assert_eq!(half_minute.section(), Section::Seconds);
+    assert!(half_minute.is_intraday() && half_minute.is_subminute());
+    assert!(!Timeframe::MINUTE_1.is_subminute());
+    assert!(half_minute < Timeframe::MINUTE_1);
+    assert!(Timeframe::SECOND_1 < half_minute);
+    assert_eq!(
+        Timeframe::parse("0s"),
+        Err(TimeframeParseError::Zero),
+        "a zero count"
+    );
+    assert_eq!(
+        Timeframe::parse("60s"),
+        Err(TimeframeParseError::OutOfRange {
+            unit: TimeUnit::Second,
+            max: 59,
+        }),
+        "a minute is written 1m"
+    );
+}
+
+#[test]
+fn seconds_round_trip_as_their_label() {
+    for timeframe in [
+        Timeframe::SECOND_1,
+        Timeframe::SECOND_5,
+        Timeframe::SECOND_10,
+        Timeframe::SECOND_15,
+        Timeframe::SECOND_30,
+        Timeframe::SECOND_45,
+    ] {
+        let json = serde_json::to_string(&timeframe).unwrap();
+        assert_eq!(json, format!("\"{}\"", timeframe.label()));
+        assert_eq!(serde_json::from_str::<Timeframe>(&json).unwrap(), timeframe);
+        assert_eq!(Timeframe::parse(&timeframe.interval()), Ok(timeframe));
     }
 }

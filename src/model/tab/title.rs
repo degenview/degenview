@@ -230,15 +230,15 @@ pub fn tooltip(chart: &TabChart, quote: Option<&WatchlistQuote>, timeframe: &str
             line.push_str(&format!("  ({})", basis.label().to_lowercase()));
         }
         if block.stale {
-            line.push_str("  · delayed");
+            line.push_str(&format!("  · {}", crate::i18n::tr!("delayed")));
         }
         lines.push(line);
     }
     if let Some(layout) = chart.layout.as_deref() {
-        lines.push(format!("Layout: {layout}"));
+        lines.push(crate::i18n::tr!("Layout: {name}", name = layout));
     }
     if let Some(custom) = chart.custom_title.as_deref() {
-        lines.push(format!("Tab title: {custom}"));
+        lines.push(crate::i18n::tr!("Tab title: {title}", title = custom));
     }
     lines.join("\n")
 }

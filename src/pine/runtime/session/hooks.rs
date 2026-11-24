@@ -50,16 +50,23 @@ impl Session {
         let Some(mut hooks) = self.hooks.take() else {
             return Ok(());
         };
+        // A statement the session added is not in the script: nothing stops at it, and its time
+        // is part of the statement it was taken from.
+        let synthetic = statement.is_synthetic();
         let outcome = match &mut *hooks {
+            Hooks::Debug(_) if synthetic => Ok(()),
             Hooks::Debug(debug) => debug.before_statement(self, statement, context),
             Hooks::Profile(profile) => {
                 // Library code is not timed: its offsets belong to another text, and its time is
                 // part of the statement that called it. Walking past a function's declaration runs
                 // nothing; its calls are timed in `invoke`.
+                let offset = statement.range().start.offset;
                 if context.scope.is_some() || matches!(statement, Statement::Function { .. }) {
                     profile.enter_untimed();
+                } else if synthetic {
+                    profile.enter_run_ahead(offset);
                 } else {
-                    profile.enter_statement(statement.range().start.offset);
+                    profile.enter_statement(offset);
                 }
                 Ok(())
             }
@@ -73,6 +80,7 @@ impl Session {
     #[inline(never)]
     pub(super) fn hook_after(&mut self, statement: &Statement, context: &RuntimeContext) {
         match self.hooks.as_deref_mut() {
+            Some(Hooks::Debug(_)) if statement.is_synthetic() => {}
             Some(Hooks::Debug(debug)) => debug.after_statement(statement, context),
             Some(Hooks::Profile(profile)) => profile.exit(),
             None => {}
@@ -114,7 +122,7 @@ impl Session {
         call_name: &str,
         range: SourceRange,
         scope: Option<&str>,
-        first_statement: Option<usize>,
+        declared_at: usize,
         saved: &[(String, Option<RuntimeValue>)],
         uncovered: &[(usize, Option<RuntimeValue>)],
     ) {
@@ -132,12 +140,11 @@ impl Session {
                     .collect();
                 debug.enter_function(call_name, range, scope, shadowed);
             }
-            Some(Hooks::Profile(profile)) => match first_statement {
-                Some(first) if scope.is_none() => {
-                    profile.enter_function(first, range.start.offset);
-                }
-                _ => profile.enter_untimed(),
-            },
+            // A library's offsets belong to another text: its calls are not timed.
+            Some(Hooks::Profile(profile)) if scope.is_none() => {
+                profile.enter_function(declared_at, range.start.offset);
+            }
+            Some(Hooks::Profile(profile)) => profile.enter_untimed(),
             None => {}
         }
     }

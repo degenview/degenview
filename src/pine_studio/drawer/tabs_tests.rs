@@ -29,31 +29,73 @@ const SIZES: [(f32, f32); 5] = [
     (900.0, 640.0),
 ];
 
+/// What the tabs draw that is data, not interface text: the script's own lines and alerts, the
+/// compiler's messages and codes, log lines, a symbol, and the words the tests hand a tab as a
+/// status or an input's title.
+const DATA: &[&str] = &[
+    "BTCUSDT",
+    "total",
+    "sq(",
+    "plot(",
+    "loop for i",
+    "w = weight",
+    "PINE",
+    "log.info(",
+    "input.int(",
+    "strategy.entry(",
+    "Crossed the signal line",
+    "signal",
+    "2023-11-14",
+    "The argument 'length'",
+    "Unused variable",
+    "Undefined variable",
+    "is called in a loop",
+    "The input",
+    "The script did not compile",
+    "The chart has no bars yet",
+];
+
 /// Draws `body` over several frames in a window of `size`, asserting it takes no more than the
-/// window, and writes the last frame when a gallery folder is set.
+/// window, and writes the last frame when a gallery folder is set. It is drawn twice: in English
+/// and in the pseudo-locale, whose longer text must fit as well.
 fn fits(tab: &str, state: &str, size: (f32, f32), mut body: impl FnMut(&mut Ui)) {
-    let mut screen = Screen::new(vec2(size.0, size.1));
-    let mut last = None;
-    for _ in 0..4 {
-        last = Some(screen.run(Vec::new(), |ui| {
-            let room = ui.max_rect();
-            ui.painter()
-                .rect_filled(room, 0.0, crate::ui::theme::background());
-            body(ui);
-            let used = ui.min_rect();
-            assert!(
-                used.height() <= room.height() + 1.0 && used.width() <= room.width() + 1.0,
-                "{tab} ({state}) at {size:?} used {:?} of {:?}",
-                used.size(),
-                room.size()
-            );
-        }));
-    }
-    if gallery_dir().is_some() {
-        screen.save(
-            &format!("drawer-{tab}-{state}-{}x{}", size.0, size.1),
-            last.expect("a frame"),
-        );
+    use crate::i18n::{Locale, with_locale};
+    for (locale, suffix) in [(Locale::ENGLISH, ""), (Locale::PSEUDO, "-pseudo")] {
+        with_locale(locale, || {
+            let mut screen = Screen::new(vec2(size.0, size.1));
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let room = ui.max_rect();
+                    ui.painter()
+                        .rect_filled(room, 0.0, crate::ui::theme::background());
+                    body(ui);
+                    let used = ui.min_rect();
+                    assert!(
+                        used.height() <= room.height() + 1.0 && used.width() <= room.width() + 1.0,
+                        "{tab} ({state}{suffix}) at {size:?} used {:?} of {:?}",
+                        used.size(),
+                        room.size()
+                    );
+                }));
+            }
+            if locale == Locale::PSEUDO {
+                let loose = crate::ui::trade::pseudo_text::untranslated(
+                    last.as_ref().expect("a frame"),
+                    DATA,
+                );
+                assert!(
+                    loose.is_empty(),
+                    "{tab} ({state}) has text that skipped tr!: {loose:?}"
+                );
+            }
+            if gallery_dir().is_some() {
+                screen.save(
+                    &format!("drawer-{tab}-{state}{suffix}-{}x{}", size.0, size.1),
+                    last.expect("a frame"),
+                );
+            }
+        });
     }
 }
 
@@ -550,19 +592,47 @@ fn profile_fits_the_drawer() {
 /// A finished profile of a small script, to draw.
 fn finished_profile() -> crate::pine_studio::profiler::Profile {
     use crate::pine_studio::preview::RunIdentity;
-    use crate::pine_studio::profiler::marks::ProfileMarks;
     use crate::pine_studio::profiler::{Profile, ProfileKey};
     let body =
         "sq(x) =>\n    x * x\ntotal = 0.0\nfor i = 1 to 20\n    total += sq(i)\nplot(total)\n";
     let source = format!("//@version=6\nindicator(\"T\")\n{body}");
     let report = crate::pine::profile::support::report(body, 40, 1_000);
-    let marks = ProfileMarks::build(&report, &source, 1_234_000);
-    Profile {
-        key: ProfileKey::new("demo", &source, RunIdentity::for_test()),
-        label: "BTCUSDT \u{b7} 1H".to_owned(),
-        report: std::sync::Arc::new(report),
-        marks: std::sync::Arc::new(marks),
-    }
+    Profile::new(
+        ProfileKey::new("demo", &source, RunIdentity::for_test()),
+        "BTCUSDT \u{b7} 1H".to_owned(),
+        report,
+        source.into(),
+        1_234_000,
+    )
+}
+
+/// A profile is made in one language and read in another when the language changes: its words are
+/// written again, not kept.
+#[test]
+fn a_profile_writes_its_words_again_when_the_language_changes() {
+    use crate::i18n::{Locale, with_locale};
+    let profile = finished_profile();
+    let label = |profile: &crate::pine_studio::profiler::Profile| {
+        profile
+            .marks()
+            .summary
+            .first()
+            .map(|row| row.label)
+            .expect("a summary row")
+    };
+    assert!(
+        !label(&profile).starts_with('['),
+        "English: {}",
+        label(&profile)
+    );
+    with_locale(Locale::PSEUDO, || {
+        assert!(
+            label(&profile).starts_with('['),
+            "pseudo: {}",
+            label(&profile)
+        );
+    });
+    assert!(!label(&profile).starts_with('['), "and back");
 }
 
 #[test]

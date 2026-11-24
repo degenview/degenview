@@ -7,6 +7,7 @@
 //! returned as a [`TreeAction`] for the workspace to apply through the same paths the chart's own
 //! controls use. Only the rows on screen are laid out.
 
+use crate::i18n::{tr, tr_n};
 use crate::model::BuiltIn;
 use crate::model::chart::object_tree::{IndicatorKey, Key, Row, Section};
 use crate::ui::icons::{self, Icon};
@@ -122,7 +123,7 @@ fn toolbar(ui: &mut Ui, title: &str, actions: &mut Vec<TreeAction>) {
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
             ui.add_space(16.0);
             ui.label(kit::text(
-                "Object tree",
+                tr!("Object tree"),
                 kit::size::HEADLINE,
                 kit::SEMIBOLD,
                 theme::text_primary(),
@@ -134,7 +135,7 @@ fn toolbar(ui: &mut Ui, title: &str, actions: &mut Vec<TreeAction>) {
                     Icon::Xmark,
                     26.0,
                     theme::text_secondary(),
-                    "Close object tree",
+                    tr!("Close object tree"),
                 );
                 if close.clicked() {
                     actions.push(TreeAction::Close);
@@ -192,18 +193,19 @@ fn search(ui: &mut Ui, state: &mut TreeState) {
     let edit = egui::TextEdit::singleline(&mut state.filter)
         .id(id)
         .frame(egui::Frame::NONE)
-        .hint_text("Filter objects")
+        .hint_text(tr!("Filter objects"))
         .font(egui::FontId::proportional(kit::size::BODY))
         .margin(egui::Margin::ZERO)
         .vertical_align(Align::Center)
         .desired_width(field.width());
     let response = ui.put(field, edit);
-    accessibility::label(response, "Filter objects");
+    accessibility::label(response, tr!("Filter objects"));
     if !state.filter.is_empty() {
         let slot =
             Rect::from_center_size(pos2(well.right() - 15.0, well.center().y), vec2(22.0, 22.0));
         let clear = ui.interact(slot, id.with("clear"), Sense::click());
-        let clear = accessibility::label(clear, "Clear filter").on_hover_text("Clear filter");
+        let clear =
+            accessibility::label(clear, tr!("Clear filter")).on_hover_text(tr!("Clear filter"));
         if clear.hovered() {
             ui.painter().rect_filled(slot, 11.0, theme::ink(18));
         }
@@ -224,20 +226,20 @@ fn no_matches(ui: &mut Ui, state: &mut TreeState) {
     ui.add_space(28.0);
     ui.vertical_centered(|ui| {
         ui.label(kit::text(
-            "No matches",
+            tr!("No matches"),
             kit::size::HEADLINE,
             kit::SEMIBOLD,
             theme::text_secondary(),
         ));
         ui.add_space(2.0);
         ui.label(kit::text(
-            "Nothing on this chart matches the filter.",
+            tr!("Nothing on this chart matches the filter."),
             kit::size::SUBHEADLINE,
             kit::REGULAR,
             theme::text_tertiary(),
         ));
         ui.add_space(10.0);
-        if kit::push_button(ui, None, "Clear filter", true).clicked() {
+        if kit::push_button(ui, None, tr!("Clear filter"), true).clicked() {
             state.filter.clear();
         }
     });
@@ -251,7 +253,7 @@ fn hint(ui: &mut Ui) {
         icons::inline(ui, Icon::Layers, 20.0, theme::text_tertiary());
         ui.add_space(6.0);
         ui.label(kit::text(
-            "Nothing else here yet",
+            tr!("Nothing else here yet"),
             kit::size::BODY,
             kit::SEMIBOLD,
             theme::text_secondary(),
@@ -259,7 +261,7 @@ fn hint(ui: &mut Ui) {
         ui.add_space(2.0);
         ui.add(
             egui::Label::new(kit::text(
-                "Draw with the tools on the left or add an indicator, and it is listed here.",
+                tr!("Draw with the tools on the left or add an indicator, and it is listed here."),
                 kit::size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -335,13 +337,21 @@ fn heading(ui: &mut Ui, row: &Row, section: Section, state: &mut TreeState, filt
             theme::text_secondary(),
         );
     }
-    let description = format!(
-        "{}, {} item{}, {}",
-        row.label,
-        row.count,
-        if row.count == 1 { "" } else { "s" },
-        if folded { "collapsed" } else { "expanded" }
-    );
+    let description = if folded {
+        tr_n!(
+            row.count,
+            "{label}, {count} item, collapsed",
+            "{label}, {count} items, collapsed",
+            label = row.label
+        )
+    } else {
+        tr_n!(
+            row.count,
+            "{label}, {count} item, expanded",
+            "{label}, {count} items, expanded",
+            label = row.label
+        )
+    };
     let response = accessibility::label(response, description);
     if !filtering && response.clicked() {
         if folded {
@@ -353,7 +363,7 @@ fn heading(ui: &mut Ui, row: &Row, section: Section, state: &mut TreeState, filt
 }
 
 /// The buttons a row can have, rightmost first.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Btn {
     Delete,
     Lock,
@@ -401,7 +411,6 @@ fn row_icon(row: &Row) -> Icon {
         Key::Symbol | Key::Heading(_) => Icon::ChartLine,
         Key::Indicator(IndicatorKey::BuiltIn(indicator)) => match indicator {
             BuiltIn::Volume => Icon::BarChart,
-            BuiltIn::Rsi => Icon::Waveform,
             BuiltIn::Ema | BuiltIn::Bollinger | BuiltIn::TrendFlips => Icon::ChartUptrend,
         },
         Key::Indicator(IndicatorKey::Script(_)) => Icon::AngleBrackets,
@@ -448,24 +457,26 @@ fn row_ui(ui: &mut Ui, row: &Row, selected: &[u64], actions: &mut Vec<TreeAction
         let (icon, tip, tint, enabled) = match *kind {
             Btn::Delete if row.locked == Some(true) => (
                 Icon::Trash,
-                "Unlock to delete",
+                tr!("Unlock to delete"),
                 theme::text_tertiary(),
                 false,
             ),
-            Btn::Delete => (Icon::Trash, "Delete", theme::text_secondary(), true),
-            Btn::Lock if row.locked == Some(true) => (Icon::LockFill, "Unlock", kit::ACCENT, true),
-            Btn::Lock => (Icon::LockOpen, "Lock", theme::text_secondary(), true),
-            Btn::Show if row.shown == Some(false) => {
-                (Icon::EyeSlash, "Show", theme::text_secondary(), true)
+            Btn::Delete => (Icon::Trash, tr!("Delete"), theme::text_secondary(), true),
+            Btn::Lock if row.locked == Some(true) => {
+                (Icon::LockFill, tr!("Unlock"), kit::ACCENT, true)
             }
-            Btn::Show => (Icon::Eye, "Hide", theme::text_secondary(), true),
+            Btn::Lock => (Icon::LockOpen, tr!("Lock"), theme::text_secondary(), true),
+            Btn::Show if row.shown == Some(false) => {
+                (Icon::EyeSlash, tr!("Show"), theme::text_secondary(), true)
+            }
+            Btn::Show => (Icon::Eye, tr!("Hide"), theme::text_secondary(), true),
         };
         let sense = if enabled {
             Sense::click()
         } else {
             Sense::hover()
         };
-        let button = ui.interact(slot, response.id.with(tip), sense);
+        let button = ui.interact(slot, response.id.with(*kind), sense);
         let button = accessibility::label(button, tip).on_hover_text(tip);
         let hot = enabled && button.hovered();
         if hot {
@@ -554,7 +565,7 @@ fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>)
                 && kit::menu_item(
                     ui,
                     Icon::Sliders,
-                    "Settings…",
+                    tr!("Settings…"),
                     row.locked != Some(true) && readable(row),
                     false,
                 )
@@ -565,10 +576,10 @@ fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>)
             if let Key::Drawing(id) = row.key {
                 kit::menu_separator(ui);
                 for (label, step) in [
-                    ("Bring forward", 1),
-                    ("Send backward", -1),
-                    ("Bring to front", i32::MAX / 2),
-                    ("Send to back", i32::MIN / 2),
+                    (tr!("Bring forward"), 1),
+                    (tr!("Send backward"), -1),
+                    (tr!("Bring to front"), i32::MAX / 2),
+                    (tr!("Send to back"), i32::MIN / 2),
                 ] {
                     if kit::menu_item(ui, Icon::Layers, label, readable(row), false) {
                         actions.push(TreeAction::Reorder(id, step));
@@ -578,7 +589,7 @@ fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>)
             }
             if !matches!(row.key, Key::Symbol) && row.locked != Some(true) {
                 kit::menu_separator(ui);
-                if kit::menu_item(ui, Icon::Trash, "Delete", true, true) {
+                if kit::menu_item(ui, Icon::Trash, tr!("Delete"), true, true) {
                     actions.push(TreeAction::Delete(row.key));
                     ui.close();
                 }
@@ -593,30 +604,29 @@ fn readable(row: &Row) -> bool {
 
 fn heading_text(section: Section) -> &'static str {
     match section {
-        Section::Symbol => "SYMBOL",
-        Section::Overlays => "COMPARED SYMBOLS",
-        Section::Indicators => "INDICATORS",
-        Section::Drawings => "DRAWINGS",
+        Section::Symbol => tr!("SYMBOL"),
+        Section::Overlays => tr!("COMPARED SYMBOLS"),
+        Section::Indicators => tr!("INDICATORS"),
+        Section::Drawings => tr!("DRAWINGS"),
     }
 }
 
 fn accessible_name(row: &Row) -> String {
     let kind = match row.key {
-        Key::Symbol => "Symbol",
-        Key::Overlay(_) => "Compared symbol",
-        Key::Indicator(IndicatorKey::BuiltIn(_)) => "Indicator",
-        Key::Indicator(IndicatorKey::Script(_)) => "Script",
-        Key::Drawing(_) => "Drawing",
+        Key::Symbol => tr!("Symbol"),
+        Key::Overlay(_) => tr!("Compared symbol"),
+        Key::Indicator(IndicatorKey::BuiltIn(_)) => tr!("Indicator"),
+        Key::Indicator(IndicatorKey::Script(_)) => tr!("Script"),
+        Key::Drawing(_) => tr!("Drawing"),
         Key::Heading(_) => "",
     };
-    let mut name = format!("{kind} {}", row.label);
-    if row.shown == Some(false) {
-        name.push_str(", hidden");
+    let name = tr!("{kind} {label}", kind = kind, label = row.label);
+    match (row.shown == Some(false), row.locked == Some(true)) {
+        (false, false) => name,
+        (true, false) => tr!("{name}, hidden", name = name),
+        (false, true) => tr!("{name}, locked", name = name),
+        (true, true) => tr!("{name}, hidden, locked", name = name),
     }
-    if row.locked == Some(true) {
-        name.push_str(", locked");
-    }
-    name
 }
 
 /// Where the rows were drawn last, for the tests that click them.

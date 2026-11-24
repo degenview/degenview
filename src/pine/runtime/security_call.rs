@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use super::fast_hash::FastMap;
 use super::security_slice;
-use super::session::Session;
+use super::session::{SeriesAnswer, Session};
 use super::state::{LoggedBar, RuntimeState, SecuritySite};
 use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
@@ -561,10 +561,14 @@ impl Session {
         }))
     }
 
-    /// The provider's candles for `key`, asked once per run.
+    /// The provider's candles for `key`: asked once while it answers, and again once
+    /// [`Session::security_retry_after`] has passed if it did not (a series it could not give is a
+    /// moment, not a fact; see [`SeriesAnswer`]).
     pub(in crate::pine) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
-        if let Some(known) = self.security_series.get(&key) {
-            return known.clone();
+        if let Some(known) = self.security_series.get(&key)
+            && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
+        {
+            return known.candles.clone();
         }
         // The chart covers up to where its last bar closes, exclusive as a provider's range is. That
         // is the later of the bar's calendar end (a 31-day month closes a day after "open + 30
@@ -595,7 +599,13 @@ impl Session {
         if let Some(deadline) = self.deadline_at.as_mut() {
             *deadline += asked.elapsed();
         }
-        self.security_series.insert(key, answer.clone());
+        self.security_series.insert(
+            key,
+            SeriesAnswer {
+                candles: answer.clone(),
+                asked: std::time::Instant::now(),
+            },
+        );
         answer
     }
 
@@ -897,7 +907,7 @@ impl Session {
             .reading(candles, request.interval);
         let mut fresh = false;
         if context.flags.is_confirmed {
-            let chart_close = chart.end;
+            let chart_close = self.bar_end(&bar);
             while state.completed_candles < candles.len() {
                 let candle = &candles[state.completed_candles];
                 if time::bucket::end(candle.open_time, request.interval) > chart_close {
@@ -963,14 +973,12 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        // A candle belongs to the chart bar its last instant falls in. The bar spans as long as its
-        // bucket, from where it opens (a stock's daily bar opens with its session, inside the UTC
-        // day its 4h candles are cut on): not `open_time` plus the chart's nominal length, which
-        // gives a 31-day month 30 days, nor the candles that merely open inside it (TradingView
-        // probes R2 and R5).
+        // A candle belongs to the chart bar its last instant falls in, the bar running from where it
+        // opens to where it closes (`bar_end`): a stock's daily bar opens with its session, inside
+        // the UTC day its 4h candles are cut on, so the candles that merely open inside it are not
+        // all its own (TradingView probes R2 and R5).
         let chart = self.chart_bar(&bar, &context.flags);
-        let span = chart.end - time::bucket::start(bar.open_time, self.bar_seconds);
-        let window_end = bar.open_time + span;
+        let window_end = self.bar_end(&bar);
         let ends = |candle: &Kline| time::bucket::end(candle.open_time, interval);
         let low = candles.partition_point(|candle| ends(candle) <= bar.open_time);
         let request = SecurityRequest {
@@ -2709,7 +2717,12 @@ mod tests {
             Some(Box::new(SpanOnlyProvider { seen: seen.clone() })),
             None,
         );
-        let chart = [bar(0, 10.0), bar(60_000, 11.0)];
+        // Minute bars that close when a minute ends: a bar's intrabars are the ones inside it.
+        let minute = |open_time: i64, close: f64| Kline {
+            close_time: open_time + 59_999,
+            ..bar(open_time, close)
+        };
+        let chart = [minute(0, 10.0), minute(60_000, 11.0)];
         assert!(session.load_history(&chart, None, None).is_ok());
         let output = session.output();
         assert_eq!(output.plots[0].values, [Some(0.0), Some(3.0)]);
@@ -2984,7 +2997,10 @@ mod tests {
             (0..)
                 .map(|index| from + index * step)
                 .take_while(|open| *open <= until)
-                .map(|open| bar(open, open as f64))
+                .map(|open| Kline {
+                    close_time: open + step - 1,
+                    ..bar(open, open as f64)
+                })
                 .collect(),
         );
         provider
@@ -3030,7 +3046,12 @@ mod tests {
                 recent_bars: 0,
             },
             (0..4)
-                .flat_map(|d| [12, 16, 20].map(|h| bar(d * day + h * hour, 1.0)))
+                .flat_map(|d| {
+                    [12, 16, 20].map(|h| Kline {
+                        close_time: d * day + (h + 4) * hour - 1,
+                        ..bar(d * day + h * hour, 1.0)
+                    })
+                })
                 .collect(),
         );
         let plots = loaded(
@@ -3153,5 +3174,21 @@ mod tests {
         );
         let flags: Vec<f64> = plots[0].iter().map(|value| value.unwrap()).collect();
         assert_eq!(flags, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn timeframe_change_in_a_request_compares_with_the_request_sites_previous_bar() {
+        // TradingView (probe R2, M1 and M2): the call keeps the bar it last ran on inside the
+        // request too. It runs every third hour, so each run is compared with the one before:
+        // 4-hour buckets open at hours 6, 9, 12, 18, 21 (day one) and 24, 30, 33, 36, 42, 45.
+        let chart: Vec<Kline> = (0..48).map(|hour| bar(hour * 3_600_000, 1.0)).collect();
+        let output = run(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(ta.cum(request.security(syminfo.tickerid, \"60\", \
+             hour % 3 == 0 ? (timeframe.change(\"240\") ? 1.0 : 0.0) : 0.0)))",
+            TestProvider::default(),
+            &chart,
+        );
+        assert_eq!(output.plots[0].values.last(), Some(&Some(11.0)));
     }
 }

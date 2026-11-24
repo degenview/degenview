@@ -3,6 +3,7 @@
 //! a panel that is waiting on prices. Painter code over the shared [`Art`] helpers, so every
 //! picture follows the theme.
 
+use crate::i18n::{tr, tr_n};
 use crate::ui::icons::Icon;
 use crate::ui::kit::art::{Art, ghost};
 use crate::ui::pine::logs_view::{centered, intro, step};
@@ -450,48 +451,48 @@ fn muted(text: &str) -> egui::RichText {
 pub fn page(ui: &mut Ui, scene: Scene, actions: impl FnOnce(&mut Ui)) {
     let (heading, subheading, steps): (&str, &str, [&str; 3]) = match scene {
         Scene::Portfolios => (
-            "Track everything you hold",
-            "Create a portfolio to get started.",
+            tr!("Track everything you hold"),
+            tr!("Create a portfolio to get started."),
             [
-                "Name it and pick the currency it reports in.",
-                "Add transactions, or import a CSV or CoinMarketCap export.",
-                "Value, profit and allocation follow the market.",
+                tr!("Name it and pick the currency it reports in."),
+                tr!("Add transactions, or import a CSV or CoinMarketCap export."),
+                tr!("Value, profit and allocation follow the market."),
             ],
         ),
         Scene::Overview => (
-            "Your portfolio at a glance",
-            "Add a transaction to see what it is worth.",
+            tr!("Your portfolio at a glance"),
+            tr!("Add a transaction to see what it is worth."),
             [
-                "Add a buy or sell, or import your history.",
-                "Prices stream in for every asset you hold.",
-                "Value, profit and allocation fill this page.",
+                tr!("Add a buy or sell, or import your history."),
+                tr!("Prices stream in for every asset you hold."),
+                tr!("Value, profit and allocation fill this page."),
             ],
         ),
         Scene::Holdings => (
-            "Every position in one table",
-            "Nothing held yet.",
+            tr!("Every position in one table"),
+            tr!("Nothing held yet."),
             [
-                "Buy an asset, or import a ledger.",
-                "Each holding lists its quantity, cost, value and profit.",
-                "Double-click a row for its transactions.",
+                tr!("Buy an asset, or import a ledger."),
+                tr!("Each holding lists its quantity, cost, value and profit."),
+                tr!("Double-click a row for its transactions."),
             ],
         ),
         Scene::Transactions => (
-            "A ledger of every trade",
-            "No transactions yet.",
+            tr!("A ledger of every trade"),
+            tr!("No transactions yet."),
             [
-                "Add one by hand, or import many at once.",
-                "Search and filter by asset, type or date.",
-                "Edit a row to correct a price or a fee.",
+                tr!("Add one by hand, or import many at once."),
+                tr!("Search and filter by asset, type or date."),
+                tr!("Edit a row to correct a price or a fee."),
             ],
         ),
         Scene::Statistics => (
-            "How your portfolio has performed",
-            "Statistics need a transaction to start from.",
+            tr!("How your portfolio has performed"),
+            tr!("Statistics need a transaction to start from."),
             [
-                "Add the buys and sells you have made.",
-                "Cost basis, profit and fees are worked out for you.",
-                "Each asset's result is charted against the rest.",
+                tr!("Add the buys and sells you have made."),
+                tr!("Cost basis, profit and fees are worked out for you."),
+                tr!("Each asset's result is charted against the rest."),
             ],
         ),
         Scene::Allocation | Scene::Results | Scene::History => {
@@ -529,14 +530,14 @@ fn example(ui: &mut Ui, width: f32, scene: Scene) {
             ui,
             width,
             Lead::Icon(Icon::Briefcase, kit::ACCENT),
-            ("Main", "3 assets"),
+            (tr!("Main"), &tr_n!(3, "{count} asset", "{count} assets")),
             ("$12,480.20", "USD", theme::text_primary()),
         ),
         Scene::Overview => sample(
             ui,
             width,
             Lead::Icon(Icon::PieChart, kit::ACCENT),
-            ("Total value", "Live market value"),
+            (tr!("Total value"), tr!("Live market value")),
             ("$12,480.20", "\u{25B2} 3.21%", green),
         ),
         Scene::Holdings => sample(
@@ -550,14 +551,26 @@ fn example(ui: &mut Ui, width: f32, scene: Scene) {
             ui,
             width,
             Lead::Trade(true),
-            ("Buy BTC", "0.25 at $64,200"),
-            ("$16,050.00", "Mar 4, 2026", theme::text_primary()),
+            (
+                tr!("Buy BTC"),
+                &tr!(
+                    "{quantity} at {price}",
+                    quantity = "0.25",
+                    price = "$64,200"
+                ),
+            ),
+            (
+                "$16,050.00",
+                // 4 March 2026, the sample trade's day.
+                &crate::ui::kit::time_text::date_text(1_772_582_400_000),
+                theme::text_primary(),
+            ),
         ),
         Scene::Statistics => sample(
             ui,
             width,
             Lead::Icon(Icon::Banknote, green),
-            ("Cost Basis", "What you put in"),
+            (tr!("Cost Basis"), tr!("What you put in")),
             ("$9,860.00", "+$2,620.20", green),
         ),
         Scene::Allocation | Scene::Results | Scene::History => {}
