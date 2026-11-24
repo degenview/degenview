@@ -1857,6 +1857,7 @@ mod tests {
             text: "0123456789".into(),
             text_color: 0xFFFF_FFFF,
             text_size: Size::Huge,
+            text_font_family: FontFamily::Default,
             text_horizontal_align: TextAlign::Center,
             text_vertical_align: TextAlign::Center,
             time_anchored: false,
