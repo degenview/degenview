@@ -42,8 +42,9 @@ things. Observed on TradingView, signed in, on its Cursor, Trendline, Fib and Me
   the app's choice, the behaviour is the same. It toggles the menu whatever is in hand. The Right
   arrow key does the same on a focused tile.
 - **Picking a row arms it at once**, closes the menu and becomes what the tile shows.
-- **Escape shuts an open menu and nothing else** (`close_menu_on_escape`, called before the charts
-  read the key); the next Escape puts the tool down. Another tile's click closes the menu and arms.
+- **Escape shuts an open menu and nothing else** (`close_menu_on_escape`, called first in
+  `ChartWorkspace::ui`: egui closes a popup on Escape as the rail draws, so a call after the rail,
+  in the grid, finds it already shut and the chart disarms the tool too; a frame test guards the order); the next Escape puts the tool down. Another tile's click closes the menu and arms.
 - Single-tool tiles (Ruler, Zoom in) arm and stay armed: a second click does not put them down.
   The shortcuts and the favorites bar still toggle (`toggle_tool`); only the tiles never do.
 - **Inferred, not seen:** TradingView arms a tool on a synthetic right-click of a tile; the app does
@@ -287,8 +288,8 @@ bar over the window: a grip of dots, then one button per favorite.
   the next move saves a window place. It is saved when the grip is let go, not while it moves. The bar is
   not shown while a portion of the chart is being selected or a replay start is being picked. Over the
   toolbar it covers what is under it, as any floating bar does; drag it away to reach that.
-- **Escape.** An open menu of the bar takes Escape first (`favorites_bar::close_menu_on_escape`, called before the
-  charts are drawn, as the scale menu does): it closes the menu and spends the key, so a draft, the armed tool and the
+- **Escape.** An open menu of the bar takes Escape first (`favorites_bar::close_menu_on_escape`, called first in
+  `ChartWorkspace::ui`, before any panel draws): it closes the menu and spends the key, so a draft, the armed tool and the
   selection behind it stay as they were.
 - **Layer.** The bar is a `Middle`-order area: above the charts, below every popup and menu (so a flyout
   open while its first star makes the bar appear keeps the pointer), the selected drawing's toolbar and the

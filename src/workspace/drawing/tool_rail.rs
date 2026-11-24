@@ -92,25 +92,29 @@ impl ChartWorkspace {
         self.drop_rulers();
     }
 
+    /// An open menu of the tool strip takes Escape before the charts do: the key must close it and
+    /// nothing behind it (a draft, the armed tool, the selection). egui closes a popup on Escape
+    /// while it draws and leaves the key to the rest of the frame, so call this before the strip is
+    /// drawn (`ChartWorkspace::ui` does, first).
+    pub(in crate::workspace) fn reserve_escape_for_tool_menus(&self, ctx: &egui::Context) {
+        tool_sidebar::close_menu_on_escape(ctx);
+    }
+
     /// Arms the Zoom In mode. It takes the pointer from any drawing tool, as a drawing tool takes
     /// it from Zoom In; arming it again changes nothing.
     pub(in crate::workspace) fn arm_zoom_in(&mut self) {
-        self.tools.arm_zoom();
-        self.drop_rulers();
-    }
-
-    /// An open menu of the tool strip takes Escape before the charts do: the key must close it and
-    /// nothing behind it (a draft, the armed tool, the selection). Call before the charts are drawn.
-    pub(in crate::workspace) fn reserve_escape_for_tool_menus(&self, ctx: &egui::Context) {
-        tool_sidebar::close_menu_on_escape(ctx);
+        if self.tools.arm_zoom() {
+            self.drop_rulers();
+        }
     }
 
     /// Puts `tool` in hand, remembering it as the one its group's tile shows. Arming the tool that
     /// is already armed changes nothing: the tiles and the menu rows never put a tool down.
     pub(in crate::workspace) fn arm_tool(&mut self, tool: Tool) {
-        self.tools.arm(tool);
+        if self.tools.arm(tool) {
+            self.drop_rulers();
+        }
         self.remember_group_tool(tool);
-        self.drop_rulers();
     }
 
     /// Zoom out on the focused chart: back to the view its last zoom came from. It is an undo
@@ -182,6 +186,43 @@ mod tests {
         workspace.arm_zoom_in();
         workspace.arm_zoom_in();
         assert!(workspace.tools.zoom_armed);
+    }
+
+    #[test]
+    fn arming_the_armed_ruler_keeps_its_measurement_and_arming_another_tool_takes_it() {
+        use crate::model::{Anchor, Drawing, DrawingCommand};
+        use crate::workspace::test_support::{chart_with_drawings, drawing_ids};
+        let mut workspace = empty_workspace(1);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.arm_tool(Tool::Ruler);
+        let ruler = Drawing::Ruler {
+            id: 50,
+            a: Anchor {
+                time_ms: 0,
+                price: 1.0,
+            },
+            b: Anchor {
+                time_ms: 9,
+                price: 2.0,
+            },
+        };
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(ruler)]);
+        // A click on the lit tile changes nothing: the measurement is still on the chart.
+        workspace.arm_tool(Tool::Ruler);
+        assert_eq!(drawing_ids(&workspace, chart), vec![1, 50]);
+        // Another tool in hand takes the measurement with the Ruler, as every way of leaving it does.
+        workspace.arm_tool(Tool::Brush);
+        assert_eq!(drawing_ids(&workspace, chart), vec![1]);
+    }
+
+    #[test]
+    fn arming_says_whether_what_is_in_hand_changed() {
+        let mut workspace = empty_workspace(1);
+        assert!(workspace.tools.arm(Tool::Ray));
+        assert!(!workspace.tools.arm(Tool::Ray), "already in hand");
+        assert!(workspace.tools.arm_zoom(), "Zoom In takes the pointer");
+        assert!(!workspace.tools.arm_zoom());
+        assert!(workspace.tools.arm(Tool::Ray), "and a tool takes it back");
     }
 
     #[test]

@@ -46,7 +46,8 @@ impl ChartWorkspace {
     }
 
     /// An open menu of the bar takes Escape before the charts do: the key must close it and
-    /// nothing behind it (a draft, the armed tool, the selection). Call before the charts are drawn.
+    /// nothing behind it (a draft, the armed tool, the selection). Call it before anything that
+    /// can show a popup is drawn (`ChartWorkspace::ui` does, first).
     pub(in crate::workspace) fn reserve_escape_for_favorites_menu(&self, ctx: &Context) {
         favorites_bar::close_menu_on_escape(ctx, self.favorites_bar_id());
     }
