@@ -33,13 +33,18 @@ impl Session {
         self.start_deadline();
         self.infer_mintick(bars);
         if let Some(seed) = seed.filter(|s| *s > 0.0) {
-            self.bar_seconds = seed;
+            self.bar_seconds = bars.last().map_or(seed, |last| {
+                crate::pine::time::bucket::nominal_length(last.open_time, seed)
+            });
         }
         if let Some(fixed) = self.fixed_bar_seconds {
             self.bar_seconds = fixed;
         } else if bars.len() > 1 {
-            self.bar_seconds =
-                (bars[bars.len() - 1].open_time - bars[bars.len() - 2].open_time) as f64 / 1000.0;
+            let previous = bars[bars.len() - 2].open_time;
+            self.bar_seconds = crate::pine::time::bucket::nominal_length(
+                previous,
+                (bars[bars.len() - 1].open_time - previous) as f64 / 1000.0,
+            );
         }
         self.last_bar_index = bars.len() as i64 - 1 + (precedes_live_bar as i64);
         self.last_bar_time = bars.last().map(|bar| {
@@ -227,7 +232,10 @@ impl Session {
             && self.fixed_bar_seconds.is_none()
             && let Some(previous) = self.last_open_time
         {
-            self.bar_seconds = (open_time - previous) as f64 / 1000.0;
+            self.bar_seconds = crate::pine::time::bucket::nominal_length(
+                previous,
+                (open_time - previous) as f64 / 1000.0,
+            );
         }
         let confirmed = event.phase.is_confirmed();
         let realtime = event.phase.is_realtime();

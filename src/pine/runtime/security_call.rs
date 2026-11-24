@@ -1900,6 +1900,21 @@ mod tests {
     }
 
     #[test]
+    fn a_monthly_request_on_a_monthly_chart_is_its_own_timeframe_whatever_the_last_months_length() {
+        // The chart's length is read off its bars when the app does not state it: October to
+        // November is 31 days, but a month is Pine's 30 and "M" is no finer than the chart
+        // (real window, BTCUSDT 1M: the request was served from finer candles).
+        let chart = monthly_chart(2026, 9, 3);
+        let closes = plotted_as_history(
+            "plot(request.security(syminfo.tickerid, \"M\", close))",
+            &chart,
+        );
+        assert_eq!(closes, [Some(1.0), Some(2.0), Some(3.0)]);
+        let length = plotted_as_history("plot(timeframe.in_seconds())", &chart);
+        assert_eq!(length.last(), Some(&Some(2_592_000.0)));
+    }
+
+    #[test]
     fn a_monthly_chart_completes_a_quarter_and_a_year_on_their_last_month() {
         // TradingView (probe R5, BTCUSDT 1M): the 3M and 12M candles arrive on the chart bar that
         // closes them. A 31-day month is longer than the chart's 30 days, so the bar's end, not its

@@ -274,6 +274,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   bucket) reaches the candle's, never `open_time` plus the chart's length: a monthly chart is a
   nominal 30 days, so a 31-day month would never close its quarter or year and the `"3M"` / `"12M"`
   request would arrive one bar late (TradingView probe R5, BTCUSDT 1M).
+  The chart's bar length is Pine's nominal one for a calendar bar (`bucket::nominal_length`):
+  `Session` reads it off the bars when the app does not state it, and a 31-day month measures
+  2,678,400 s, which made a `"M"` request on a monthly chart look finer than the chart and be served
+  from other candles (real window, BTCUSDT 1M: `"W"` span 102, `"M"` span 33; now 100 and 23, as
+  TradingView).
   A request finer than the chart reads the last of the chart bar's intrabars, the first with
   `lookahead_on` (an AAPL 1D chart reads a `"60"` request's 15:30 candle, and 9:30 with it, probe S1);
   its `timeframe.change("D")` sums to 0 over a window for the last intrabar and to the number of
