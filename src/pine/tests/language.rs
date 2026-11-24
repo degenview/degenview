@@ -1231,6 +1231,248 @@ fn floats_within_a_ten_billionth_are_equal_and_ordering_agrees() {
     assert_eq!(value(&session, "picked"), RuntimeValue::Int(1));
 }
 
+/// TradingView, same bars (probes P09 S5, P10 A, P11 S3): a quotient with a zero divisor is an IEEE
+/// infinity in arithmetic and ordering, and na to `na()`, `nz()`, `bool()`, `str.tostring()` and `==`.
+#[test]
+fn a_zero_divisor_quotient_is_an_infinity_to_arithmetic_and_na_to_the_na_functions() {
+    // `zero` is a series, so nothing is folded at compile time.
+    let session = run(
+        "zero = close - close\n\
+         x = close / zero\n\
+         a1 = na(x)\n\
+         a1text = str.tostring(x)\n\
+         a2 = 1 / x\n\
+         a2na = na(1 / x)\n\
+         a3 = 1 / (-close / zero)\n\
+         a3na = na(1 / (-close / zero))\n\
+         a4gt = x > 1e300\n\
+         a4eq = x == x\n\
+         a4bool = bool(x)\n\
+         a5nz = nz(x, 7)\n\
+         a5max = math.max(x, 5)\n\
+         a5sub = x - x\n\
+         a5subna = na(x - x)\n\
+         a5subtext = str.tostring(x - x)\n\
+         a6 = zero / zero\n\
+         a6na = na(zero / zero)\n\
+         a6text = str.tostring(zero / zero)\n\
+         a6inv = na(1 / (zero / zero))\n\
+         down = zero\n\
+         up = 3.0\n\
+         rsi = 100 - 100 / (1 + up / down)\n\
+         s3 = math.max(x, 5)\n\
+         s3na = na(math.max(x, 5))\n\
+         s3inv = 1 / math.max(x, 5)\n\
+         s3invna = na(1 / math.max(x, 5))",
+        3,
+    );
+    let expected = [
+        ("x", RuntimeValue::Float(f64::INFINITY)),
+        ("a1", RuntimeValue::Bool(true)),
+        ("a1text", RuntimeValue::String("NaN".into())),
+        ("a2", RuntimeValue::Float(0.0)),
+        ("a2na", RuntimeValue::Bool(false)),
+        ("a3", RuntimeValue::Float(0.0)),
+        ("a3na", RuntimeValue::Bool(false)),
+        ("a4gt", RuntimeValue::Bool(true)),
+        ("a4eq", RuntimeValue::Bool(false)),
+        ("a4bool", RuntimeValue::Bool(false)),
+        ("a5nz", RuntimeValue::Int(7)),
+        ("a5max", RuntimeValue::Float(f64::INFINITY)),
+        ("a5sub", RuntimeValue::Na),
+        ("a5subna", RuntimeValue::Bool(true)),
+        ("a5subtext", RuntimeValue::String("NaN".into())),
+        ("a6", RuntimeValue::Na),
+        ("a6na", RuntimeValue::Bool(true)),
+        ("a6text", RuntimeValue::String("NaN".into())),
+        ("a6inv", RuntimeValue::Bool(true)),
+        ("rsi", RuntimeValue::Float(100.0)),
+        ("s3", RuntimeValue::Float(f64::INFINITY)),
+        ("s3na", RuntimeValue::Bool(true)),
+        ("s3inv", RuntimeValue::Float(0.0)),
+        ("s3invna", RuntimeValue::Bool(false)),
+    ];
+    for (name, want) in expected {
+        assert_eq!(value(&session, name), want, "{name}");
+    }
+}
+
+/// TradingView (probe V7 U1 and a follow-up, BTCUSDT 4h): a divisor that is a literal zero does not
+/// compile ("Division by zero", CE10224), whatever the dividend; `%` and a divisor that is zero only
+/// at run time do.
+#[test]
+fn a_literal_zero_divisor_is_a_compile_error() {
+    let errors = |body: &str| -> Vec<String> {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        compiler::compile(&source, Limits::default(), &NoLibraries)
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "CE10224")
+            .map(|d| d.message.clone())
+            .collect()
+    };
+    for body in [
+        "plot(1 / 0)",
+        "float k = 1.0 / 0.0\nplot(k)",
+        "plot(close / 0)",
+        "plot(close / 0.0)",
+        "plot(close / -0.0)",
+        "f(x) => x / 0\nplot(f(close))",
+        "if close > 0\n    plot(close / 0)",
+    ] {
+        assert_eq!(errors(body), vec!["Division by zero".to_string()], "{body}");
+    }
+    for body in [
+        "plot(close % 0)",
+        "plot(close / (close - close))",
+        "var float z = 0.0\nif bar_index > 5\n    z := 1.0\nplot(close / z)",
+        "plot(close / 2)",
+        "plot(0 / close)",
+    ] {
+        assert!(errors(body).is_empty(), "{body}");
+    }
+}
+
+#[test]
+fn a_not_a_number_result_is_na_everywhere() {
+    let session = run(
+        "zero = close - close\n\
+         root = math.sqrt(zero - 1)\n\
+         rootna = na(math.sqrt(zero - 1))\n\
+         rooted = nz(math.sqrt(zero - 1), 7)\n\
+         power = na(math.pow(zero - 8, 0.5))\n\
+         logzero = math.log(zero)\n\
+         logna = na(math.log(zero))\n\
+         logpositive = math.log(zero) < -1e300\n\
+         fixed = fixnan(close / zero)",
+        3,
+    );
+    assert_eq!(value(&session, "root"), RuntimeValue::Na);
+    assert_eq!(value(&session, "rootna"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "rooted"), RuntimeValue::Int(7));
+    assert_eq!(value(&session, "power"), RuntimeValue::Bool(true));
+    assert_eq!(
+        value(&session, "logzero"),
+        RuntimeValue::Float(f64::NEG_INFINITY)
+    );
+    assert_eq!(value(&session, "logna"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "logpositive"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "fixed"), RuntimeValue::Na);
+}
+
+#[test]
+fn builtins_that_take_numbers_see_an_infinity_as_na_but_the_math_functions() {
+    let session = run(
+        "zero = close - close\n\
+         x = close / zero\n\
+         mean = ta.sma(x, 2)\n\
+         floor = math.floor(x)\n\
+         whole = int(x)\n\
+         kept = float(x)\n\
+         shifted = x[1]",
+        4,
+    );
+    assert_eq!(value(&session, "mean"), RuntimeValue::Na);
+    assert_eq!(
+        value(&session, "floor"),
+        RuntimeValue::Float(f64::INFINITY),
+        "math.floor keeps an infinity (probe V7 U5a)"
+    );
+    assert_eq!(value(&session, "whole"), RuntimeValue::Na);
+    assert_eq!(value(&session, "kept"), RuntimeValue::Float(f64::INFINITY));
+    assert_eq!(
+        value(&session, "shifted"),
+        RuntimeValue::Float(f64::INFINITY),
+        "a history keeps the value"
+    );
+}
+
+#[test]
+fn an_infinite_series_reaches_no_output_as_a_non_finite_number() {
+    // The chart renderer does not check what it draws: nothing non-finite may leave the run.
+    let session = run(
+        "zero = close - close\n\
+         x = close / zero\n\
+         huge = math.pow(10.0, 400.0)\n\
+         plot(x, \"x\")\n\
+         plot(huge, \"huge\")\n\
+         plot(close, \"base\", histbase = x)\n\
+         hline(huge)\n\
+         plotshape(x)\n\
+         plotarrow(huge)\n\
+         plotcandle(open, x, low, close)\n\
+         fill(plot(x), plot(close))\n\
+         line.new(bar_index, x, bar_index + 1, huge)\n\
+         label.new(bar_index, x)\n\
+         box.new(bar_index, x, bar_index + 1, -x)",
+        3,
+    );
+    let output = session.output();
+    let finite = |values: &[Option<f64>]| values.iter().flatten().all(|v| v.is_finite());
+    assert!(!output.plots.is_empty());
+    for plot in &output.plots {
+        assert!(finite(&plot.values), "plot {:?}", plot.title);
+        assert!(plot.hist_base.is_finite());
+    }
+    assert!(output.hlines.iter().all(|line| line.value.is_finite()));
+    for marker in &output.markers {
+        assert!(finite(&marker.prices));
+        assert!(marker.values.iter().all(|shown| !shown));
+    }
+    for arrow in &output.arrows {
+        assert!(finite(&arrow.values));
+    }
+    for bar in output.candles.iter().flat_map(|c| c.bars.iter().flatten()) {
+        assert!(
+            [bar.open, bar.high, bar.low, bar.close]
+                .iter()
+                .all(|v| v.is_finite())
+        );
+    }
+    // A drawing's missing price is NaN (the renderer tests `price_is_known`); an infinity is not.
+    assert!(!output.lines.is_empty() && !output.labels.is_empty() && !output.boxes.is_empty());
+    assert!(
+        output
+            .lines
+            .iter()
+            .all(|l| !l.y1.is_infinite() && !l.y2.is_infinite())
+    );
+    assert!(output.labels.iter().all(|l| !l.y.is_infinite()));
+    assert!(
+        output
+            .boxes
+            .iter()
+            .all(|b| !b.top.is_infinite() && !b.bottom.is_infinite())
+    );
+}
+
+#[test]
+fn a_loop_bound_that_is_not_finite_runs_no_iterations() {
+    // A loop up to an infinity must not hang; it is treated as na, as before.
+    let session = run(
+        "zero = close - close\n\
+         var up = 0\n\
+         var down = 0\n\
+         var from = 0\n\
+         for i = 0 to math.pow(10.0, 400.0)\n\
+         \x20   up += 1\n\
+         for i = 0 to 1 / zero\n\
+         \x20   up += 1\n\
+         for i = 0 to -1 / zero\n\
+         \x20   down += 1\n\
+         for i = 1 / zero to 5\n\
+         \x20   from += 1\n\
+         bounded = 0\n\
+         for i = 0 to 3\n\
+         \x20   bounded += 1",
+        2,
+    );
+    assert_eq!(value(&session, "up"), RuntimeValue::Int(0));
+    assert_eq!(value(&session, "down"), RuntimeValue::Int(0));
+    assert_eq!(value(&session, "from"), RuntimeValue::Int(0));
+    assert_eq!(value(&session, "bounded"), RuntimeValue::Int(4));
+}
+
 #[test]
 fn the_history_of_a_local_in_a_block_carries_over_the_bars_the_block_did_not_run() {
     // `u` is set on even bars only. `u[1]` is its last committed value as of the bar before: on
@@ -3081,4 +3323,32 @@ fn array_functions_take_the_reference_parameter_names() {
     assert_eq!(value(&session, "third_smallest"), RuntimeValue::Float(5.0));
     assert_eq!(value(&session, "size"), RuntimeValue::Int(5));
     assert!(value(&session, "cov").number().unwrap() < 0.0);
+}
+
+/// TradingView, probe V7 (BTCUSDT 4h, 2026-11-21), the rows that differ from a plain "infinity is na".
+#[test]
+fn an_infinity_through_orderings_and_math_functions_matches_probe_v7() {
+    let session = run(
+        "zero = close - close\n\
+         x = close / zero\n\
+         nx = -close / zero\n\
+         u4 = str.tostring(x > x) + str.tostring(x >= x) + str.tostring(x <= x) + str.tostring(nx < x) + str.tostring(nx > -1e300)\n\
+         u4b = str.tostring(x == x) + str.tostring(x >= x) + str.tostring(nx <= x) + str.tostring(x != x) + str.tostring(nx < x) + str.tostring(x == nx)\n\
+         u5a = str.tostring(math.abs(x) > 1e300) + str.tostring(math.sqrt(x) > 1e300) + str.tostring(math.exp(x) > 1e300) + str.tostring(math.floor(x) > 1e300)\n\
+         u5b = str.tostring(math.round(x) > 1e300) + str.tostring(math.ceil(x) > 1e300) + str.tostring(math.pow(x, 2.0) > 1e300) + str.tostring(math.avg(x, 1.0) > 1e300)\n\
+         u5c = str.tostring(math.sign(x) == 1) + str.tostring(math.sign(nx) == -1) + str.tostring(math.log(x) > 1e300) + str.tostring(math.exp(nx) == 0.0)\n\
+         u8 = str.tostring(math.pow(2.0, x) > 1e300) + str.tostring(math.pow(x, 0.0) == 1.0)",
+        3,
+    );
+    let text = |name: &str| match value(&session, name) {
+        RuntimeValue::String(text) => text,
+        other => panic!("{name}: {other:?}"),
+    };
+    let flags = |name: &str| text(name).replace("true", "T").replace("false", "F");
+    assert_eq!(flags("u4"), "FFFTF");
+    assert_eq!(flags("u4b"), "FFTFTF");
+    assert_eq!(flags("u5a"), "TTTT");
+    assert_eq!(flags("u5b"), "FTTT");
+    assert_eq!(flags("u5c"), "TTTT");
+    assert_eq!(flags("u8"), "TT");
 }

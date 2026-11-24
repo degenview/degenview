@@ -121,6 +121,7 @@ fn compile_internal(
         diagnostics.extend(checked.diagnostics);
         resolutions = checked.resolutions;
         diagnostics.extend(super::check::ignored_features::validate(&statements));
+        diagnostics.extend(super::check::constant_division::validate(&statements));
         diagnostics.extend(super::check::name_check::validate(
             &statements,
             &import_aliases,
@@ -835,7 +836,8 @@ fn input_value(
     }
     match constant_value(expression, environment)? {
         RuntimeValue::Int(value) => Some(InputValue::Int(value)),
-        RuntimeValue::Float(value) => Some(InputValue::Float(value)),
+        // An infinity is na to everything but arithmetic, so it is no input value (as the na it was).
+        RuntimeValue::Float(value) if value.is_finite() => Some(InputValue::Float(value)),
         RuntimeValue::Bool(value) => Some(InputValue::Bool(value)),
         RuntimeValue::String(value) => Some(InputValue::String(value)),
         RuntimeValue::Color(value) => Some(InputValue::Color(value)),

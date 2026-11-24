@@ -232,6 +232,20 @@ l = math.avg(a, b, c)
 plot(a + b + c + d + e + f + g + h + i + j + k + l)
 ";
 
+/// Quotients with a zero divisor on most bars, the way an RSI-style ratio or a guarded division
+/// meets one: what the arithmetic costs when a result is an infinity or has no value.
+pub(crate) const DIVISION_BY_ZERO_QUOTIENTS: &str = "//@version=6
+indicator(\"Division by zero quotients\")
+zero = close - close
+up = bar_index % 3 == 0 ? 0.0 : math.max(close - open, 0)
+down = bar_index % 2 == 0 ? 0.0 : math.max(open - close, 0)
+ratio = 100 - 100 / (1 + up / down)
+reciprocal = 1 / (close / zero)
+empty = zero / zero
+bounded = math.max(close / zero, 5)
+plot(ratio + nz(reciprocal) + nz(empty) + nz(bounded, 1))
+";
+
 /// Many blocks per bar, some declaring a name of their own (one that hides an outer variable, one
 /// that does not exist outside) and most not: what a block costs to enter and leave.
 pub(crate) const BLOCKS: &str = "//@version=6
@@ -793,6 +807,13 @@ fn workloads() -> Vec<Workload> {
         add(
             "many_math",
             Box::new(move || evaluate(MANY_MATH, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "division_by_zero_quotients",
+            Box::new(move || evaluate(DIVISION_BY_ZERO_QUOTIENTS, &data, false)),
         );
     }
     {

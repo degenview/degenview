@@ -1,0 +1,1 @@
+fixed: Pine scripts that divide by zero now behave as on TradingView: the result is an infinity that later arithmetic and comparisons carry on with (a formula like 100 - 100 / (1 + up / down) gives 100 when down is 0) instead of blanking the whole formula, and math.sqrt(-1) and similar are na. A division by a literal zero (1 / 0, close / 0) is a compile error, as on TradingView.
