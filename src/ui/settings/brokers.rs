@@ -314,7 +314,7 @@ fn broker_card(
             _ => setup_body(inner, host, broker, &connection, form),
         }
         if let Some(status) = &form.status {
-            status_message(inner, &status.text, status.is_error);
+            status_message(inner, &status.text(), status.is_error);
         }
     }
     prepared.frame = kit::card_frame(head.hovered());
@@ -853,7 +853,7 @@ fn poll_operation(descriptor: &'static Descriptor, form: &mut BrokerForm) {
                 "Connected. Nothing is saved: connect again after restarting DegenView."
             ))
         }
-        (KeyOperation::Saving, Ok(())) => StatusMessage::ok(crate::platform::saved_securely()),
+        (KeyOperation::Saving, Ok(())) => StatusMessage::saved_securely(),
         (KeyOperation::Saving, Err(error)) => StatusMessage::error(tr!(
             "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}",
             error = error
@@ -1114,9 +1114,9 @@ mod tests {
         assert!(form.operation.is_none());
         let status = form.status.expect("a message");
         assert!(
-            !status.is_error && status.text.contains("removed"),
+            !status.is_error && status.text().contains("removed"),
             "{}",
-            status.text
+            status.text()
         );
 
         // The store refused: the connection is stopped, and the message says the key is still there.
@@ -1127,19 +1127,19 @@ mod tests {
         poll_operation(descriptor, &mut form);
         let status = form.status.expect("a message");
         assert!(
-            status.is_error && status.text.contains("NOT be removed"),
+            status.is_error && status.text().contains("NOT be removed"),
             "{}",
-            status.text
+            status.text()
         );
-        assert!(status.text.contains("the keychain refused"));
+        assert!(status.text().contains("the keychain refused"));
 
         let mut form = answered(KeyOperation::Saving, Err("no space".to_owned()));
         poll_operation(descriptor, &mut form);
         let status = form.status.expect("a message");
         assert!(
-            status.is_error && status.text.contains("could not be saved"),
+            status.is_error && status.text().contains("could not be saved"),
             "{}",
-            status.text
+            status.text()
         );
     }
 

@@ -28,10 +28,7 @@ pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
     super::window::section(
         ui,
         tr!("Theme"),
-        Some(&tr!(
-            "System follows your {computer}'s light or dark setting.",
-            computer = crate::platform::computer()
-        )),
+        Some(crate::platform::system_theme_hint()),
         |ui| {
             let labels: Vec<TileLabel> = AppTheme::ALL
                 .into_iter()

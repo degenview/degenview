@@ -208,6 +208,19 @@ msgstr ""
 msgid "A key is optional"
 msgstr ""
 
+#: src/platform.rs
+msgid ""
+"A key is saved in Windows Credential Manager. Enter a new one to replace it."
+msgstr ""
+
+#: src/platform.rs
+msgid "A key is saved in secure storage. Enter a new one to replace it."
+msgstr ""
+
+#: src/platform.rs
+msgid "A key is saved in your Keychain. Enter a new one to replace it."
+msgstr ""
+
 #: src/ui/chart/settings/overlay.rs
 msgid "A label at the end of the line with its latest value."
 msgstr ""
@@ -268,6 +281,24 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "A second background, behind the other set of levels."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"A secret is kept in Windows Credential Manager and added to the URL or a "
+"header where you place it."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"A secret is kept in secure storage and added to the URL or a header where you "
+"place it."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"A secret is kept in your Keychain and added to the URL or a header where you "
+"place it."
 msgstr ""
 
 #: src/ui/workspace/snapshot_menu.rs
@@ -783,11 +814,7 @@ msgid "Alerts raised by your Pine scripts appear here."
 msgstr ""
 
 #: src/ui/webhook/settings.rs
-msgid ""
-"Alerts send their final message as the request body. A secret is kept "
-"{location} and added to the URL or a header where you place it. Each alert "
-"triggers one attempt per webhook, with a 3 second limit and no retries, so a "
-"slow or failing server can never send the same message twice."
+msgid "Alerts send their final message as the request body."
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -2557,6 +2584,7 @@ msgstr ""
 msgid "Close Replay"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/window/tab_bar/menu.rs
 msgid "Close Tab"
 msgstr ""
@@ -2957,6 +2985,7 @@ msgstr[1] ""
 msgid "Copied {text}"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/settings/about.rs
 #: src/ui/settings/mcp/server.rs
@@ -3540,6 +3569,10 @@ msgid_plural "Custom · {count} changes"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/native_bridge.rs
+msgid "Cut"
+msgstr ""
+
 #: src/model/tab/link/mod.rs
 msgid "Cyan"
 msgstr ""
@@ -3666,6 +3699,10 @@ msgstr ""
 msgid "Default text"
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "DegenView Documentation"
+msgstr ""
+
 #: src/ui/settings/snapshots.rs
 msgid ""
 "DegenView asks before the first upload to a host, and never uploads on its "
@@ -3704,6 +3741,10 @@ msgstr ""
 
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "DegenView mark"
+msgstr ""
+
+#: src/native_bridge.rs
+msgid "DegenView on GitHub"
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -4293,6 +4334,12 @@ msgstr ""
 msgid ""
 "Each alert chooses which of these it posts to. Turning one off pauses it "
 "everywhere."
+msgstr ""
+
+#: src/ui/webhook/settings.rs
+msgid ""
+"Each alert triggers one attempt per webhook, with a 3 second limit and no "
+"retries, so a slow or failing server can never send the same message twice."
 msgstr ""
 
 #: src/ui/portfolio/empty.rs
@@ -5459,6 +5506,10 @@ msgid ""
 "are."
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "Go to Definition"
+msgstr ""
+
 #: src/model/chart/canvas/mod.rs
 msgid "Gradient"
 msgstr ""
@@ -5584,6 +5635,10 @@ msgstr ""
 msgid "Held to the remote ceiling, and every change waits for your approval."
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "Help supporting this project"
+msgstr ""
+
 #: src/ui/kit/color_picker/mod.rs
 msgid "Hex color"
 msgstr ""
@@ -5605,6 +5660,10 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Hide Market Flow"
+msgstr ""
+
+#: src/native_bridge.rs
+msgid "Hide Others"
 msgstr ""
 
 #: src/ui/workspace/tool_sidebar.rs
@@ -5661,6 +5720,10 @@ msgstr ""
 
 #: src/ui/trade/panel_header.rs
 msgid "Hide trading on charts"
+msgstr ""
+
+#: src/native_bridge.rs
+msgid "Hide {app}"
 msgstr ""
 
 #: src/ui/pine/style_view.rs
@@ -6299,13 +6362,26 @@ msgid ""
 "Everything also stays on this Mac."
 msgstr ""
 
-#: src/ui/settings/sync.rs
-msgid "Kept on this Mac"
+#: src/platform.rs
+msgid ""
+"Kept in Windows Credential Manager and inserted wherever you place it, in the "
+"URL or a header."
 msgstr ""
 
-#: src/ui/webhook/editor.rs
+#: src/platform.rs
 msgid ""
-"Kept {location} and inserted wherever you place it, in the URL or a header."
+"Kept in secure storage and inserted wherever you place it, in the URL or a "
+"header."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Kept in your Keychain and inserted wherever you place it, in the URL or a "
+"header."
+msgstr ""
+
+#: src/ui/settings/sync.rs
+msgid "Kept on this Mac"
 msgstr ""
 
 #: src/ui/settings/ai.rs
@@ -7274,6 +7350,10 @@ msgstr ""
 msgid "Merge (Recommended)"
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "Merge All Windows"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Merge Into This Account"
 msgstr ""
@@ -7318,6 +7398,7 @@ msgstr ""
 msgid "Middle point"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/window/chrome.rs
 msgid "Minimize"
 msgstr ""
@@ -7443,6 +7524,7 @@ msgstr ""
 msgid "Move Down"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/window/tab_bar/menu.rs
 msgid "Move Tab to New Window"
 msgstr ""
@@ -7685,10 +7767,15 @@ msgstr ""
 msgid "New Portfolio…"
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "New Script"
+msgstr ""
+
 #: src/ui/watchlist/sidebar/mod.rs
 msgid "New Section"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/window/tab_bar/menu.rs
 msgid "New Tab"
 msgstr ""
@@ -8954,6 +9041,7 @@ msgid "Past month"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
+#: src/native_bridge.rs
 msgid "Paste"
 msgstr ""
 
@@ -9136,6 +9224,7 @@ msgstr ""
 msgid "Pin to screen"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/settings/window.rs
 msgid "Pine Studio"
 msgstr ""
@@ -9296,6 +9385,7 @@ msgstr ""
 msgid "Port"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/chart/symbol_picker/dashboards.rs
 #: src/ui/portfolio/tab/mod.rs
 msgid "Portfolio"
@@ -9664,6 +9754,10 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Question"
+msgstr ""
+
+#: src/native_bridge.rs
+msgid "Quit {app}"
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -10088,6 +10182,10 @@ msgstr ""
 
 #: src/ui/watchlist/sidebar/menus.rs
 msgid "Rename Section…"
+msgstr ""
+
+#: src/native_bridge.rs
+msgid "Rename Symbol…"
 msgstr ""
 
 #: src/ui/window/tab_bar/menu.rs
@@ -10641,6 +10739,7 @@ msgstr ""
 msgid "Saturation and brightness"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/alert/pine_editor.rs
 #: src/ui/chart/settings/templates/mod.rs
 #: src/ui/drawing/properties/templates.rs
@@ -10686,8 +10785,21 @@ msgstr ""
 msgid "Save current settings as template…"
 msgstr ""
 
-#: src/ui/webhook/editor.rs
-msgid "Save it as the secret so it is kept {location} instead of in plain text."
+#: src/platform.rs
+msgid ""
+"Save it as the secret so it is kept in Windows Credential Manager instead of "
+"in plain text."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Save it as the secret so it is kept in secure storage instead of in plain "
+"text."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Save it as the secret so it is kept in your Keychain instead of in plain text."
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -10726,6 +10838,18 @@ msgstr ""
 
 #: src/ui/settings/storage.rs
 msgid "Saved on this computer"
+msgstr ""
+
+#: src/platform.rs
+msgid "Saved securely in Keychain."
+msgstr ""
+
+#: src/platform.rs
+msgid "Saved securely in Windows Credential Manager."
+msgstr ""
+
+#: src/platform.rs
+msgid "Saved securely in secure storage."
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
@@ -10989,8 +11113,16 @@ msgstr ""
 msgid "Secret can't be in the host"
 msgstr ""
 
-#: src/ui/webhook/settings.rs
-msgid "Secret not found {location}"
+#: src/platform.rs
+msgid "Secret not found in Windows Credential Manager"
+msgstr ""
+
+#: src/platform.rs
+msgid "Secret not found in secure storage"
+msgstr ""
+
+#: src/platform.rs
+msgid "Secret not found in your Keychain"
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -11215,6 +11347,10 @@ msgstr ""
 msgid "Server Base URL"
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "Services"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Session statistics"
@@ -11257,6 +11393,7 @@ msgid "Settings {title}"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
+#: src/native_bridge.rs
 #: src/ui/chart/card/overlay_card.rs
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/chart/object_tree/mod.rs
@@ -11323,6 +11460,7 @@ msgstr ""
 msgid "Show 1M Chart"
 msgstr ""
 
+#: src/native_bridge.rs
 #: src/ui/watchlist/sidebar/header.rs
 msgid "Show All"
 msgstr ""
@@ -11336,8 +11474,16 @@ msgstr ""
 msgid "Show Market Flow"
 msgstr ""
 
+#: src/native_bridge.rs
+msgid "Show Next Tab"
+msgstr ""
+
 #: src/ui/workspace/tool_sidebar.rs
 msgid "Show Paper Trading panel"
+msgstr ""
+
+#: src/native_bridge.rs
+msgid "Show Previous Tab"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/header.rs
@@ -11393,12 +11539,20 @@ msgstr ""
 msgid "Show every favorite in the watchlist"
 msgstr ""
 
-#: src/model/chart/context/mod.rs
-msgid "Show in Paper panel"
+#: src/platform.rs
+msgid "Show in Explorer"
 msgstr ""
 
-#: src/ui/settings/storage.rs
-msgid "Show in {app}"
+#: src/platform.rs
+msgid "Show in File Manager"
+msgstr ""
+
+#: src/platform.rs
+msgid "Show in Finder"
+msgstr ""
+
+#: src/model/chart/context/mod.rs
+msgid "Show in Paper panel"
 msgstr ""
 
 #: src/ui/settings/pine_studio/mod.rs
@@ -11883,6 +12037,18 @@ msgstr ""
 msgid "Storage"
 msgstr ""
 
+#: src/platform.rs
+msgid "Stored in Windows Credential Manager, never in a file."
+msgstr ""
+
+#: src/platform.rs
+msgid "Stored in this computer's secure storage, never in a file."
+msgstr ""
+
+#: src/platform.rs
+msgid "Stored in your Mac's Keychain, never in a file."
+msgstr ""
+
 #: src/model/pine/script.rs
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Strategy"
@@ -12059,8 +12225,12 @@ msgstr ""
 msgid "System Mono"
 msgstr ""
 
-#: src/ui/settings/appearance.rs
-msgid "System follows your {computer}'s light or dark setting."
+#: src/platform.rs
+msgid "System follows your Mac's light or dark setting."
+msgstr ""
+
+#: src/platform.rs
+msgid "System follows your computer's light or dark setting."
 msgstr ""
 
 #: src/ui/trade/venue_pill.rs
@@ -12675,6 +12845,18 @@ msgstr ""
 msgid ""
 "The key could not be saved for later ({error}). It works until you quit "
 "DegenView."
+msgstr ""
+
+#: src/platform.rs
+msgid "The key stays in Windows Credential Manager on this computer."
+msgstr ""
+
+#: src/platform.rs
+msgid "The key stays in this Mac's Keychain."
+msgstr ""
+
+#: src/platform.rs
+msgid "The key stays in this computer's secure storage."
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -14219,8 +14401,16 @@ msgstr ""
 msgid "User-defined functions"
 msgstr ""
 
-#: src/ui/webhook/settings.rs
-msgid "Uses a secret kept {location}"
+#: src/platform.rs
+msgid "Uses a secret kept in Windows Credential Manager"
+msgstr ""
+
+#: src/platform.rs
+msgid "Uses a secret kept in secure storage"
+msgstr ""
+
+#: src/platform.rs
+msgid "Uses a secret kept in your Keychain"
 msgstr ""
 
 #: src/ui/settings/network/mod.rs
@@ -16837,6 +17027,31 @@ msgstr ""
 #: src/ui/paper/tables.rs
 msgctxt "journal entry"
 msgid "Entry"
+msgstr ""
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "Edit"
+msgstr ""
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "File"
+msgstr ""
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "Help"
+msgstr ""
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "View"
+msgstr ""
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "Window"
 msgstr ""
 
 #: src/trading/model.rs

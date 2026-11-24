@@ -181,6 +181,9 @@ pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
     // This process is separate from the app: it reads the proxy setting when it starts and
     // follows what the app saves after (`proxy::follow`, in the loop).
     crate::service::net::proxy::init(&lock(&store));
+    // Notifications are worded here, in this process, so it reads the language the app saved and
+    // follows a change made in Settings (`language.follow`, in the loop).
+    let mut language = crate::host::language::Follower::start(&lock(&store));
     let quote_book = WatchlistQuoteBook::default();
     let quote_coordinator = WatchlistQuoteCoordinator::new(quote_book.clone(), Arc::new(|| {}));
     let notifier = default_notifier();
@@ -197,6 +200,7 @@ pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         crate::service::net::proxy::follow(&lock(&store));
+        language.follow(&lock(&store));
         let now = now_ms();
         if now.saturating_sub(rates_refreshed_at) >= 3_600_000 {
             rates = refresh_rates(&fx);

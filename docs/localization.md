@@ -53,8 +53,15 @@ Rules that need a person:
 - Do not translate what is not interface text: symbols, tickers, Pine source and its errors, log
   lines, MCP tool descriptions, market and provider data, file formats, keys of saved data, and
   names the person gave (a layout, a watchlist, a script), including the example ones in a picture.
-- Wording that depends on the platform (`platform.rs`) is converted with the rest of the interface;
-  until then it stays English in every language.
+- Wording that depends on the platform (`platform.rs`) is one whole message per platform
+  (`if cfg!(windows) { tr!(…) } else { tr!(…) }`), never a platform word put into a sentence: another
+  language writes the sentence its own way and inflects the word. A text that needs the platform's
+  name gets a function there that returns the whole sentence ("Secret not found in your Keychain",
+  "Show in Finder"). Where a longer text holds one, split it into sentences and join them with a space.
+- **A status line keeps no text.** A `StatusMessage` that says the same thing whatever happened, such
+  as `StatusMessage::saved_securely()`, is stored as how to write it and written when drawn, so a
+  language chosen after the save reaches it. `StatusMessage::ok`/`error` with text keep that text as
+  written at the event; use `Words::Written` for a fixed message that can outlive a language change.
 
 A widget's `egui::Id` must not be made from translated text: the id would change with the language.
 Make it from the enum variant or a fixed name. `kit::field` takes that name as `id_salt`, apart from the
@@ -184,8 +191,35 @@ msgstr[1] "{count} alertas"
    or found one elsewhere; Han characters need the font order set per language).
 5. Draw Settings and a chart screen in the language and in the pseudo-locale at the smallest window
    size, in both themes, and look at the pictures.
-6. Add the language to the packaging that names languages (`CFBundleLocalizations`, the installer's
-   `[Languages]`, the Flatpak metainfo) once those carry translations.
+6. Add the language to the packaging that names languages (below) once those carry translations.
+
+### Packaging that names languages
+
+None of it names a language today, on purpose: with English the only one, a list of one tells the
+system nothing and a translated name would be a lie. When the first translation ships, each needs:
+
+- **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
+  (`en`) and `CFBundleLocalizations` (`en` plus each tag) to the app's and to the alert agent's
+  `Info.plist`. Without the list macOS treats the app as English-only: it keeps the standard strings
+  it draws itself (the Services and Window menus' own items, the open and save panels, the
+  notification permission prompt, the Dock's menu) in English whatever the system language. The
+  menu items the app titles (`native_bridge.rs`) and the notification text follow the app's own
+  setting either way. `NSLocale.preferredLanguages`, which `service::system::language` reads, is the
+  user's list whatever the bundle declares, so it needs no change. Check the `.app` in `System
+  Settings ▸ Language & Region ▸ Applications` and the Dock menu in the new language.
+- **Windows installer** (`packaging/windows/degenview.iss`). It has no `[Languages]` section, so
+  Inno Setup's wizard is English. Add `Name: "en"; MessagesFile: "compiler:Default.isl"` first, then
+  `Name: "<tag>"; MessagesFile: "compiler:Languages\<Name>.isl"` for each, and the wizard follows the
+  system language. A language Inno Setup ships no `.isl` for needs one added under `packaging/windows/`.
+  The installer's own `[CustomMessages]` and the shortcut names (`[Icons]`) are English text to
+  translate there. The app inside does not read the installer's choice; it follows the setting.
+- **Flatpak metainfo** (`packaging/flatpak/es.nico.degenview.metainfo.xml`). Add the translated
+  `<summary>` and `<description>` as repeated elements with `xml:lang="<tag>"` after the untagged
+  English ones, and the same for `Name` / `Comment` in `es.nico.degenview.desktop` (`Comment[es]=…`).
+  Release notes in `<release>` stay English unless they are written per language. Flathub's linter
+  reads these; run `flatpak run org.freedesktop.appstream-glib validate` on the file and check that
+  the sandbox passes the locale (`LANG`) the app's language reader looks at (`docs/flatpak.md`).
+- **Docs and the README** have their own languages; see "Not done yet".
 
 ## Not done yet
 
@@ -199,9 +233,16 @@ msgstr[1] "{count} alertas"
   differs.
 - **First day of the week.** The date pickers start on Monday. CLDR knows each region's first day
   (`icu_calendar`'s week information); the pickers' grids need to take it.
-- **The macOS menu bar and notifications.** `native_bridge.rs` builds the menus with English titles,
-  and the alert agent is another process that sends notification text without `tr!`. Both are to
-  be converted, and the agent needs the language setting read from the store.
+- **The macOS menu bar and notifications** are converted (`native_bridge.rs` retitles the menus when
+  `i18n::revision()` changes; the alert agent reads the language setting through
+  `host::language::Follower`). What is left in them:
+  - Items AppKit adds by itself (the Window menu's list of windows, Help's search field, Services'
+    entries) are in the system's language, not the app's, until the bundle declares its languages
+    (see "Packaging that names languages").
+  - The language on a machine whose system language changes while the app or the agent runs is read
+    again only at the next start; a choice made in Settings is followed at once.
+  - A delivery failure is stored as English text in the alert history (`delivery.error`): it is
+    written once, by whichever process tried, and not translated.
 - **The language of the AI assistant** and of the docs site (its own repository).
 - **A bare-literal lint** like the layering test's debt lists, once most of the interface is converted:
   it would fail a literal in a widget call outside a list of files that still have them.

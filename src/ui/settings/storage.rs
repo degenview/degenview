@@ -151,8 +151,9 @@ pub fn body(ui: &mut egui::Ui, state: &mut StorageState, actions: &mut Vec<Stora
                 if let Some(location) = &location {
                     kit::divider(ui);
                     row(ui, tr!("Location"), |ui| {
-                        let label = tr!("Show in {app}", app = platform::file_manager());
-                        if kit::push_button(ui, None, &label, true).clicked() {
+                        if kit::push_button(ui, None, platform::show_in_file_manager(), true)
+                            .clicked()
+                        {
                             // Nothing may be cached yet; reveal an empty folder rather than fail.
                             let _ = std::fs::create_dir_all(location);
                             platform::reveal_in_file_manager(location);
