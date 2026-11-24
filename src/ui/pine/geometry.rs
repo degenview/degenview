@@ -74,11 +74,12 @@ pub fn shape_radius(shape: MarkerShape, size: Size) -> f32 {
     }
 }
 
-/// Point size of a table cell's text. TradingView's named sizes are 8, 10, 14, 20 and 36 pixels:
-/// a table of one cell per size on a 2x screen drew digits 12, 14, 20, 28 and 51 pixels tall in
-/// rows 27, 34, 47, 67 and 120 pixels high (this font's digits are 0.73 of its size, as the
-/// 0.7 of TradingView's, so the sizes carry over as they are).
-pub fn table_font_size(size: Size) -> f32 {
+/// Point size of the text in a table cell or a box. TradingView's named sizes are 8, 10, 14, 20 and
+/// 36 pixels: a table of one cell per size on a 2x screen drew digits 12, 14, 20, 28 and 51 pixels
+/// tall in rows 27, 34, 47, 67 and 120 pixels high, and a box holding `0123` drew its digits 12,
+/// 14, 20, 28 and 52 pixels tall (this font's digits are 0.73 of its size, as the 0.7 of
+/// TradingView's, so the sizes carry over as they are).
+pub fn block_font_size(size: Size) -> f32 {
     match size {
         Size::Tiny => 8.0,
         Size::Small => 10.0,
@@ -89,10 +90,10 @@ pub fn table_font_size(size: Size) -> f32 {
     }
 }
 
-/// Point size of label and box text, measured the same way as [`table_font_size`] with labels
-/// holding `0123` at every size: digits 10, 14, 17 and 26 pixels tall on a 2x screen for tiny to
-/// large, and a bubble 50 pixels high at `size.huge`. Labels are set smaller than table text of
-/// the same name. A box's text is not measured and reads this scale.
+/// Point size of label text, measured the same way as [`block_font_size`] with labels holding
+/// `0123` at every size: digits 10, 14, 17 and 26 pixels tall on a 2x screen for tiny to large, and
+/// a bubble 50 pixels high at `size.huge`. Labels are set smaller than the text of a table or a box
+/// of the same name.
 pub fn label_font_size(size: Size) -> f32 {
     match size {
         Size::Tiny => 7.0,
@@ -138,16 +139,15 @@ pub struct ShapeLabel {
 /// The size of a `plotshape` label shape. Its `size` scales the bubble and its gap to the bar, never
 /// the text, which is drawn at [`label_font_size`]'s normal whatever the size. Measured on
 /// TradingView, which drew `0123` in bubbles 41 x 31, 47 x 40, 55 x 52 and 63 x 64 points for small
-/// to huge (22 high for tiny), with the tip 23, 34, 56 and 75 points from the bar's low, 11 for tiny
-/// (the pointer is the label's half font size, as for `label.new`; tiny is the thinnest of the data
-/// and the least certain).
+/// to huge (22 high for tiny), with the tip 23, 38, 56 and 75 points from the bar's low, 11 for tiny
+/// (the pointer is the label's half font size, as for `label.new`).
 pub fn shape_label(size: Size) -> ShapeLabel {
     let (width, height, gap) = match size {
         Size::Tiny => (7.0, 4.1, 11.0),
         Size::Small => (13.0, 12.1, 23.0),
         Size::Large => (27.0, 28.6, 56.0),
         Size::Huge => (35.0, 37.6, 75.0),
-        Size::Normal | Size::Auto | Size::Points(_) => (19.0, 19.6, 34.0),
+        Size::Normal | Size::Auto | Size::Points(_) => (19.0, 19.6, 38.0),
     };
     ShapeLabel {
         padding: Vec2::new(width, height),
@@ -575,7 +575,7 @@ pub fn measure_table(
         if cell.column >= table.columns || cell.row >= table.rows {
             continue;
         }
-        let font = table_font_size(cell.text_size);
+        let font = block_font_size(cell.text_size);
         let size = measure(&cell.text, font) + cell_padding(font);
         let width = size.x.max(area.x * cell.width as f32 / 100.0);
         let height = size.y.max(area.y * cell.height as f32 / 100.0);
@@ -594,7 +594,7 @@ pub fn measure_table(
         {
             continue;
         }
-        let font = table_font_size(cell.text_size);
+        let font = block_font_size(cell.text_size);
         let size = measure(&cell.text, font) + cell_padding(font);
         let last = (cell.column + cell.column_span).min(table.columns) - 1;
         let last_row = (cell.row + cell.row_span).min(table.rows) - 1;
@@ -926,9 +926,9 @@ mod tests {
         );
         assert!(is_visible(0x1234_5601) && !is_visible(0x1234_5600));
         assert_eq!(faded(0xFF00_00FF, 0.5).a(), 128);
-        assert_eq!(table_font_size(Size::Auto), 14.0);
-        assert_eq!(table_font_size(Size::Huge), 36.0);
-        assert_eq!(table_font_size(Size::Points(14)), 14.0);
+        assert_eq!(block_font_size(Size::Auto), 14.0);
+        assert_eq!(block_font_size(Size::Huge), 36.0);
+        assert_eq!(block_font_size(Size::Points(14)), 14.0);
         assert_eq!(label_font_size(Size::Auto), 12.0);
         assert_eq!(label_font_size(Size::Huge), 24.0);
         assert_eq!(
@@ -1473,7 +1473,7 @@ mod tests {
         );
         assert_eq!(overlay_extent(&[], 5), OverlayExtent::default());
     }
-    /// What `table_font_size`, `cell_padding`, `label_padding` and `shape_label` were fitted to:
+    /// What `block_font_size`, `cell_padding`, `label_padding` and `shape_label` were fitted to:
     /// heights read from TradingView's canvas, with this font's line 1.2 sizes high.
     #[test]
     fn cells_bubbles_and_label_shapes_are_as_tall_as_measured_on_tradingview() {
@@ -1489,11 +1489,25 @@ mod tests {
             (Size::Large, 67.0),
             (Size::Huge, 120.0),
         ] {
-            let font = table_font_size(size);
+            let font = block_font_size(size);
             near(
                 2.0 * (line(font) + cell_padding(font).y),
                 measured,
                 &format!("a {size:?} table cell"),
+            );
+        }
+        // The digits of a box's text in 2x pixels, which are 0.73 of the font's size.
+        for (size, measured) in [
+            (Size::Tiny, 12.0),
+            (Size::Small, 14.0),
+            (Size::Normal, 20.0),
+            (Size::Large, 28.0),
+            (Size::Huge, 52.0),
+        ] {
+            near(
+                2.0 * 0.73 * block_font_size(size),
+                measured,
+                &format!("{size:?} box text"),
             );
         }
         // A label's bubble is 2.1 font sizes high at every size.
@@ -1514,7 +1528,7 @@ mod tests {
         for (size, height, gap) in [
             (Size::Tiny, 22.0, 11.0),
             (Size::Small, 31.0, 23.0),
-            (Size::Normal, 40.0, 34.0),
+            (Size::Normal, 40.0, 38.0),
             (Size::Large, 52.0, 56.0),
             (Size::Huge, 64.0, 75.0),
         ] {

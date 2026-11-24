@@ -22,9 +22,9 @@ use crate::pine::outputs::{
 use crate::pine::strategy::StrategyReport;
 use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
 use crate::ui::pine::geometry::{
-    self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
-    candle_index_for_bar, dash_pattern, extended_line, faded, is_visible, label_font_size,
-    label_layout, polyline_points, rgba, series_index, shape_radius, table_font_size,
+    self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, block_font_size,
+    box_text_placement, candle_index_for_bar, dash_pattern, extended_line, faded, is_visible,
+    label_font_size, label_layout, polyline_points, rgba, series_index, shape_radius,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -743,7 +743,7 @@ impl PineLayer<'_> {
                 text_at(
                     &painter.with_clip_rect(rect.intersect(painter.clip_rect())),
                     &item.text,
-                    label_font_size(item.text_size),
+                    block_font_size(item.text_size),
                     rgba(item.text_color),
                     point,
                     anchor,
@@ -1515,12 +1515,12 @@ fn draw_table(
             rect,
             cell.text_horizontal_align,
             cell.text_vertical_align,
-            geometry::cell_padding(table_font_size(cell.text_size)).x / 2.0,
+            geometry::cell_padding(block_font_size(cell.text_size)).x / 2.0,
         );
         text_at(
             painter,
             &cell.text,
-            table_font_size(cell.text_size),
+            block_font_size(cell.text_size),
             rgba(cell.text_color),
             point,
             anchor,
