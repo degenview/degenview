@@ -6447,10 +6447,6 @@ msgstr ""
 msgid "Rejected"
 msgstr ""
 
-#: src/model/indicators/catalog.rs
-msgid "Relative Strength Index, 14 periods."
-msgstr ""
-
 #: src/model/editor_theme/typography.rs
 msgid "Relaxed"
 msgstr ""
@@ -9822,12 +9818,6 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Width point"
-msgstr ""
-
-#: src/model/indicators/catalog.rs
-msgid ""
-"Wilder's momentum oscillator, from 0 to 100, with the 70 and 30 levels drawn. "
-"Above 70 is conventionally overbought and below 30 oversold."
 msgstr ""
 
 #: src/ui/pine/report.rs
