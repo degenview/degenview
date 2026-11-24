@@ -72,6 +72,8 @@ enum AppAction {
     OpenBrokerSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
+    /// Settings ▸ Graphics saved new present prefs; apply on the next root frame.
+    ApplyGraphics(crate::graphics::prefs::GraphicsPrefs),
     /// Open Settings on the Snapshots page.
     OpenSnapshotSettings,
     /// Open Settings on the Pine Studio page, where the editor's themes are.
@@ -166,6 +168,8 @@ pub struct DegenViewApp {
     /// `degenview-eframe` (eframe with a Wayland fix) never presents it there; it never maps, and its
     /// passes never wait on frame callbacks.
     root_hidden: bool,
+    /// Present / backend prefs from Settings ▸ Graphics; applied to the surface each logic frame.
+    graphics_prefs: crate::graphics::prefs::GraphicsPrefs,
 }
 
 impl DegenViewApp {
@@ -247,11 +251,28 @@ impl DegenViewApp {
             host
         };
         let updates = UpdateHost::load(&store);
+        let graphics_prefs = store
+            .lock()
+            .ok()
+            .map(|store| crate::graphics::prefs::GraphicsPrefs::load(&store))
+            .unwrap_or_default();
         let settings_host = Arc::new(Mutex::new(SettingsHost::new(
             snapshots.clone(),
             editor_themes.clone(),
             tab_title_host.clone(),
         )));
+        if let Some(state) = creation.wgpu_render_state.as_ref() {
+            let info = state.adapter.get_info();
+            let adapter = if info.name.is_empty() {
+                format!("{:?}", info.device_type)
+            } else {
+                info.name.clone()
+            };
+            let backend = format!("{:?}", info.backend);
+            if let Ok(mut host) = settings_host.lock() {
+                host.set_graphics_info(adapter, backend);
+            }
+        }
         let mcp = {
             let ctx = creation.egui_ctx.clone();
             McpState::load(
@@ -402,6 +423,7 @@ impl DegenViewApp {
             actions,
             session: SessionState::new(kept),
             root_hidden: false,
+            graphics_prefs,
         }
     }
 }
@@ -416,9 +438,10 @@ impl eframe::App for DegenViewApp {
         }
     }
 
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::ui::theme::sync(ctx);
         self.process_commands(ctx);
+        crate::graphics::apply_surface(frame, self.graphics_prefs);
         self.sync_viewports(ctx);
         self.sync_settings_viewport(ctx);
         self.sync_alerts_viewport(ctx);
@@ -448,7 +471,10 @@ impl eframe::App for DegenViewApp {
             self.save_session();
         }
         self.alerts.show_banner(ctx, now_ms());
-        ctx.request_repaint_after(Duration::from_millis(250));
+        // Do not heartbeat the hidden root every 250 ms: on Windows that still ran a present on
+        // the shared device and serialized behind mouse-driven frames. Quotes, MCP, alerts and
+        // updates already request their own repaints when they need one.
+        ctx.request_repaint_after(Duration::from_secs(2));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

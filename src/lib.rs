@@ -65,7 +65,8 @@ pub fn run_gui_with(
     ))?);
     #[cfg(not(target_os = "macos"))]
     let icon = ui::window::chrome::app_icon();
-    graphics::start(|graphics| {
+    let graphics_prefs = graphics::prefs::GraphicsPrefs::load(&crate::lock::lock(&store));
+    graphics::start(graphics_prefs, |graphics| {
         // The window is built afresh for each try: `run_native` takes its options and the app's
         // constructor by value, and a try that fails before the renderer exists never calls it.
         // Before the renderer starts: a driver that crashes while it is probed leaves no other trace.

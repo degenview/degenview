@@ -4,6 +4,13 @@
 //! reach outside the settings it owns (notifications, login items, alert reference bookkeeping) are
 //! handed back to the caller.
 
+mod paint;
+
+pub use paint::SettingsPaintData;
+
+use crate::graphics::prefs::GraphicsPrefs;
+use crate::host::alert::AlertHost;
+use crate::host::mcp::McpHost;
 use crate::i18n::tr;
 use crate::model::alert::{AlertNotificationSettings, AlertRuntimeHealth};
 use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
@@ -18,15 +25,17 @@ use crate::service::work_queue::{self, Pending};
 use crate::store::Store;
 use crate::store::frame_cache::ChangeCached;
 use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::graphics::GraphicsAction;
 use crate::ui::settings::network::NetworkAction;
 use crate::ui::settings::snapshots::SnapshotsAction;
 use crate::ui::settings::storage::StorageAction;
-use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsState};
+use crate::ui::settings::window::{SettingsAction, SettingsInput, SettingsSection, SettingsState};
 use crate::ui::webhook::settings::{WebhookSettingsAction, WebhookSettingsInput};
 use eframe::egui;
+use paint::McpPaintData;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Something the Settings window asked for that only the caller can do.
 pub enum SettingsHostAction {
@@ -40,6 +49,8 @@ pub enum SettingsHostAction {
     Mcp(crate::model::mcp::McpAction),
     /// The About page installed an update; quit so the helper can reopen the app.
     QuitForUpdate,
+    /// Graphics prefs were saved; the app should apply the surface config on the next frame.
+    ApplyGraphics(GraphicsPrefs),
 }
 
 /// What the Storage page's background work reports back, on the UI thread's next frame.
@@ -73,6 +84,11 @@ pub struct SettingsHost {
     ai_prefs_read_at: Option<std::time::Instant>,
     /// The `net.proxy` setting the Network page shows, read again only after a write.
     network_config: ChangeCached<ProxyConfig>,
+    /// The `graphics.prefs` setting the Graphics page shows.
+    graphics_prefs: ChangeCached<GraphicsPrefs>,
+    /// Adapter / backend lines for the Graphics page (filled by the app at start).
+    graphics_adapter: String,
+    graphics_active_backend: String,
     /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
     snapshots_read_at: Option<std::time::Instant>,
     state: SettingsState,
@@ -83,6 +99,8 @@ pub struct SettingsHost {
     /// Tests still in flight, by endpoint; each sends its one result when it finishes.
     tests: Vec<(EndpointId, Pending<WebhookDeliveryResult>)>,
     open: bool,
+    /// Host snapshots reused across pointer-move frames (see `paint`).
+    paint: Option<SettingsPaintData>,
 }
 
 impl SettingsHost {
@@ -144,6 +162,102 @@ impl SettingsHost {
         self.open = true;
     }
 
+    /// Fills the Graphics page's "This computer" lines from the adapter chosen at start.
+    pub fn set_graphics_info(
+        &mut self,
+        adapter: impl Into<String>,
+        active_backend: impl Into<String>,
+    ) {
+        self.graphics_adapter = adapter.into();
+        self.graphics_active_backend = active_backend.into();
+    }
+
+    /// The page currently showing (for section-gated host snapshots).
+    pub fn section(&self) -> SettingsSection {
+        self.state.section
+    }
+
+    /// Refreshes the paint snapshot when the section changed or the cache went stale. Heavy MCP
+    /// and webhook clones only run for those pages.
+    pub fn prepare_paint(&mut self, store: &Store, alerts: &AlertHost, mcp: &McpHost) {
+        let section = self.state.section;
+        if self
+            .paint
+            .as_ref()
+            .is_some_and(|paint| paint.serves(section))
+        {
+            return;
+        }
+
+        let need_notes = SettingsPaintData::needs_notifications(section);
+        let need_hooks = SettingsPaintData::needs_webhook_refs(section);
+        let need_mcp = SettingsPaintData::needs_mcp(section);
+
+        let (notifications, health, alert_list) = if need_notes || need_hooks {
+            (
+                alerts.settings().clone(),
+                alerts.health().clone(),
+                if need_hooks {
+                    alerts.snapshot().alerts.clone()
+                } else {
+                    Vec::new()
+                },
+            )
+        } else {
+            (
+                AlertNotificationSettings::default(),
+                AlertRuntimeHealth::default(),
+                Vec::new(),
+            )
+        };
+
+        let subscriptions = if need_hooks {
+            Arc::from(store.pine_subscriptions_cached().as_slice())
+        } else {
+            Arc::from([])
+        };
+
+        let mcp = if need_mcp {
+            McpPaintData {
+                status: mcp.status(),
+                settings: mcp.settings().clone(),
+                clients: Arc::from(mcp.clients()),
+                global: mcp.global_permissions(),
+                fresh_token: mcp
+                    .fresh_token()
+                    .map(|fresh| (fresh.client_name.clone(), fresh.token.clone())),
+                load_error: mcp.load_error().map(str::to_owned),
+                notice: mcp.notice().map(str::to_owned),
+                can_reset: mcp.can_reset(),
+                activity: Arc::from(mcp.activity().as_slice()),
+                activity_unreadable: mcp.activity_unreadable(),
+                tls_fingerprint: mcp.tls_fingerprint().map(str::to_owned),
+            }
+        } else {
+            McpPaintData::default()
+        };
+
+        self.paint = Some(SettingsPaintData {
+            at: Instant::now(),
+            section,
+            notifications,
+            health,
+            alerts: Arc::from(alert_list),
+            subscriptions,
+            mcp,
+        });
+    }
+
+    /// Latest paint snapshot; call [`prepare_paint`] first.
+    pub fn paint_data(&self) -> Option<&SettingsPaintData> {
+        self.paint.as_ref()
+    }
+
+    /// Drop the paint cache so the next frame reloads (after a write that other pages must see).
+    pub fn invalidate_paint(&mut self) {
+        self.paint = None;
+    }
+
     /// Runs one frame of the Settings window: builds its input, hands it with the window state to
     /// `view` (which draws the page and returns what the user did), and applies those actions in
     /// place. `reference_count` answers "how many alerts use this endpoint" for the delete
@@ -166,36 +280,76 @@ impl SettingsHost {
         if !self.open {
             return Vec::new();
         }
-        self.collect_test_results(ctx);
-        self.collect_storage_events();
+        let section = self.state.section;
+        // Only the open page's background work runs; other pages stay idle so pointer moves stay cheap.
+        if matches!(section, SettingsSection::Webhooks) || !self.tests.is_empty() {
+            self.collect_test_results(ctx);
+        }
+        if matches!(section, SettingsSection::Storage) {
+            self.collect_storage_events();
+        }
+        if matches!(section, SettingsSection::Network) {
+            self.collect_network();
+        }
         let mut out = Vec::new();
         // The page fills the native Settings window itself: no egui window inside it, which
         // drew a second title bar and let the page be dragged around within its own window.
-        let endpoints = store.webhook_endpoints_cached();
+        let endpoints = if matches!(section, SettingsSection::Webhooks) {
+            store.webhook_endpoints_cached()
+        } else {
+            Arc::new(Vec::new())
+        };
         // Read again every second, like the assistant's: a change another Mac made reaches the page.
-        if self
-            .snapshots_read_at
-            .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
-        {
-            self.snapshots.refresh(Some(store));
-            self.snapshots_read_at = Some(std::time::Instant::now());
-        }
-        let snapshot_prefs = self.snapshots.prefs();
-        // Read again every second: the assistant panel changes these too, in another window.
-        if self.ai_prefs.is_none()
-            || self
-                .ai_prefs_read_at
+        let snapshot_prefs = if matches!(section, SettingsSection::Snapshots) {
+            if self
+                .snapshots_read_at
                 .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+            {
+                self.snapshots.refresh(Some(store));
+                self.snapshots_read_at = Some(std::time::Instant::now());
+            }
+            self.snapshots.prefs()
+        } else {
+            crate::model::chart::snapshot::SnapshotPrefs::default()
+        };
+        // Read again every second: the assistant panel changes these too, in another window.
+        let ai_fallback = AiPrefs::default();
+        if matches!(section, SettingsSection::Ai)
+            && (self.ai_prefs.is_none()
+                || self
+                    .ai_prefs_read_at
+                    .is_none_or(|at| at.elapsed() > Duration::from_secs(1)))
         {
             self.ai_prefs = Some(AiPrefs::load(store));
             self.ai_prefs_read_at = Some(std::time::Instant::now());
         }
-        let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
-        let network_config = self
-            .network_config
-            .get(store.change_stamp(), || ProxyConfig::load(store));
-        let proxy_status = proxy::status();
-        self.collect_network();
+        let ai_prefs = if matches!(section, SettingsSection::Ai) {
+            self.ai_prefs.as_ref().unwrap_or(&ai_fallback)
+        } else {
+            &ai_fallback
+        };
+        let network_config = if matches!(section, SettingsSection::Network) {
+            self.network_config
+                .get(store.change_stamp(), || ProxyConfig::load(store))
+        } else {
+            Arc::new(ProxyConfig::default())
+        };
+        let graphics_prefs = if matches!(section, SettingsSection::Graphics) {
+            *self
+                .graphics_prefs
+                .get(store.change_stamp(), || GraphicsPrefs::load(store))
+        } else {
+            GraphicsPrefs::default()
+        };
+        let proxy_status = if matches!(section, SettingsSection::Network) {
+            proxy::status()
+        } else {
+            proxy::Status {
+                mode: network_config.mode,
+                active: None,
+                problem: None,
+            }
+        };
         let input = SettingsInput {
             notifications,
             health,
@@ -211,16 +365,25 @@ impl SettingsHost {
                 prefs: &snapshot_prefs,
                 secrets: self.snapshots.secrets(),
             },
-            ai: crate::ui::settings::ai::AiSettingsInput { prefs: &ai_prefs },
+            ai: crate::ui::settings::ai::AiSettingsInput { prefs: ai_prefs },
             network: crate::ui::settings::network::NetworkInput {
-                config: &network_config,
+                config: network_config.as_ref(),
                 status: &proxy_status,
+            },
+            graphics: crate::ui::settings::graphics::GraphicsInput {
+                prefs: graphics_prefs,
+                adapter: &self.graphics_adapter,
+                active_backend: &self.graphics_active_backend,
             },
             updates,
             sync,
             trading_hub,
             editor_themes: &self.editor_themes,
-            tab_title_style: self.tab_titles.style(),
+            tab_title_style: if matches!(section, SettingsSection::Appearance) {
+                self.tab_titles.style()
+            } else {
+                Default::default()
+            },
             now_ms,
         };
         for action in view(&mut self.state, &input) {
@@ -231,6 +394,7 @@ impl SettingsHost {
                 SettingsAction::Storage(action) => self.apply_storage(action, ctx),
                 SettingsAction::Snapshots(action) => self.apply_snapshots(action, store),
                 SettingsAction::Network(action) => self.apply_network(action, store, ctx),
+                SettingsAction::Graphics(action) => self.apply_graphics(action, store, &mut out),
                 SettingsAction::Ai(crate::ui::settings::ai::AiAction::SavePrefs(prefs)) => {
                     if let Err(error) = prefs.save(store) {
                         self.state.ai.status = Some(StatusMessage::error(tr!(
@@ -289,6 +453,26 @@ impl SettingsHost {
             }
         }
         out
+    }
+
+    /// Saves graphics prefs and asks the app to apply the surface on the next frame.
+    fn apply_graphics(
+        &mut self,
+        action: GraphicsAction,
+        store: &Store,
+        out: &mut Vec<SettingsHostAction>,
+    ) {
+        let GraphicsAction::Save(prefs) = action;
+        if let Err(error) = prefs.save(store) {
+            self.state.graphics.status = Some(StatusMessage::error(tr!(
+                "Could not save the settings: {error}",
+                error = error
+            )));
+            return;
+        }
+        self.state.graphics.status = None;
+        self.graphics_prefs = ChangeCached::default();
+        out.push(SettingsHostAction::ApplyGraphics(prefs));
     }
 
     /// Saves the proxy setting and hands it to the proxy worker, which applies it whether or not

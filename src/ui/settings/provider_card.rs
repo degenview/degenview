@@ -306,7 +306,8 @@ pub fn provider_card(
         inner.spacing_mut().item_spacing.y = 10.0;
         body(inner, provider, input, form, &settings, &present, actions);
     }
-    prepared.frame = kit::card_frame(head.hovered());
+    // Stable frame: hover restyle after content forces a second layout pass per mouse move.
+    prepared.frame = kit::card_frame(false);
     prepared.end(ui);
 
     // Saved as it is typed: text when the typing pauses, a secret when its field is left, a
