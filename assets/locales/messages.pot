@@ -4806,11 +4806,6 @@ msgstr ""
 msgid "Momentum"
 msgstr ""
 
-#: src/ui/chart/settings/indicators.rs
-msgid ""
-"Momentum from 0–100 across the bottom, with guides at {low} and {high}."
-msgstr ""
-
 #: src/model/drawings/style.rs
 #: src/model/market/timeframe/mod.rs
 msgid "Monthly candles"
@@ -5547,16 +5542,6 @@ msgstr ""
 #: src/ui/drawing/content/sheet.rs
 msgid "Only when you ask, for the one link you chose"
 msgstr ""
-
-#: src/ui/chart/settings/indicators.rs
-msgid ""
-"Only {count} candle loaded — RSI needs more than {period}. Zoom out or pick "
-"a longer range."
-msgid_plural ""
-"Only {count} candles loaded — RSI needs more than {period}. Zoom out or pick"
-" a longer range."
-msgstr[0] ""
-msgstr[1] ""
 
 #: src/ui/kit/color_picker/mod.rs
 msgid "Opacity"

@@ -604,7 +604,6 @@ fn every_page_draws_in_the_pseudo_locale() {
                                 title: "BTC/USDT",
                                 symbol: "BTCUSDT",
                                 source: DataSource::Binance,
-                                loaded_candles: 0,
                                 indicators: &mut indicators,
                                 card: &mut card,
                                 scale_mode: PriceScaleMode::Regular,

@@ -1,7 +1,7 @@
 //! The Indicators page: the built-in indicators and their settings.
 
 use super::ChartSettingsContext;
-use crate::i18n::{tr, tr_n};
+use crate::i18n::tr;
 use crate::model::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, EMA_PERIODS, SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
 };
