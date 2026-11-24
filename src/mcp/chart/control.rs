@@ -21,7 +21,7 @@ pub const SET_CHART_TYPE: &str = "degenview_set_chart_type";
 pub const REMOVE_CHART: &str = "degenview_remove_chart";
 
 /// How a timeframe is written in a tool's arguments, for the descriptions and the schema.
-pub const TIMEFRAME_GRAMMAR: &str = "a count and a unit: m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 15m, 4h, 1D, 2W, 3M. Seconds are not offered";
+pub const TIMEFRAME_GRAMMAR: &str = "a count and a unit: s seconds, m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 30s, 15m, 4h, 1D, 2W, 3M";
 
 /// The timeframe a tool argument names (`15m`, `4h`, `1D`, `1H`, `3M`, `1Y`, ...), or the tool
 /// error that says what is accepted.
@@ -63,7 +63,7 @@ pub struct SetTimeframeParams {
     /// A `workspace_id` from `degenview_list_workspaces`. Every chart in it changes.
     #[schemars(length(max = 20))]
     pub workspace_id: String,
-    /// The bar length: a count and a unit (m minutes, h hours, D days, W weeks, M months, or 1Y),
+    /// The bar length: a count and a unit (s seconds, m minutes, h hours, D days, W weeks, M months, or 1Y),
     /// for example 15m, 4h, 1D, 2W, 3M.
     #[schemars(length(min = 1, max = 16))]
     pub timeframe: String,
@@ -106,7 +106,7 @@ pub fn chart_type_named(slug: &str) -> Option<ChartType> {
 impl DegenViewMcp {
     #[tool(
         name = "degenview_set_timeframe",
-        description = "Move a workspace to another timeframe (a count and unit: m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 15m, 4h, 1D, 2W, 3M). A source that has no such candle builds it from finer ones, or refuses the chart with its reason. The timeframe belongs to the workspace, so every chart in it reloads its candles for the new bar length and goes back to the newest bars; replay re-bases. Candles and indicators read right after may still be loading: check the charts' `status` in degenview_list_charts. Answers `unchanged` when the workspace already uses it.",
+        description = "Move a workspace to another timeframe (a count and unit: s seconds, m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 30s, 15m, 4h, 1D, 2W, 3M). A source that has no such candle builds it from finer ones, or refuses the chart with its reason. The timeframe belongs to the workspace, so every chart in it reloads its candles for the new bar length and goes back to the newest bars; replay re-bases. Candles and indicators read right after may still be loading: check the charts' `status` in degenview_list_charts. Answers `unchanged` when the workspace already uses it.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -268,10 +268,10 @@ mod tests {
 
     #[test]
     fn what_is_no_timeframe_is_refused_with_the_reason_and_the_grammar() {
-        assert!(message("30s").contains("Seconds aren't supported"));
+        assert!(message("60s").contains("Seconds go from 1 to 59"));
         assert!(message("0m").contains("can't be zero"));
         assert!(message("2000m").contains("Minutes go from 1 to 1440"));
         assert!(message("soon").contains("a count and a unit"));
-        assert!(message("").contains("m minutes, h hours"));
+        assert!(message("").contains("s seconds, m minutes, h hours"));
     }
 }

@@ -22,20 +22,27 @@ pub(super) struct Grid {
 
 impl Grid {
     pub(super) fn new(pinned: &[Timeframe]) -> Self {
-        let sections = [Section::Minutes, Section::Hours, Section::DaysAndUp]
-            .into_iter()
-            .map(|section| {
-                let mut shown: Vec<Timeframe> = Vec::new();
-                for timeframe in Timeframe::PRESETS.iter().chain(pinned) {
-                    if timeframe.section() == section && !shown.contains(timeframe) {
-                        shown.push(*timeframe);
-                    }
+        let sections = [
+            Section::Seconds,
+            Section::Minutes,
+            Section::Hours,
+            Section::DaysAndUp,
+        ]
+        .into_iter()
+        .map(|section| {
+            let mut shown: Vec<Timeframe> = Vec::new();
+            for timeframe in Timeframe::PRESETS.iter().chain(pinned) {
+                if timeframe.section() == section && !shown.contains(timeframe) {
+                    shown.push(*timeframe);
                 }
-                // Stable: lengths that tie (`7D` and `1W`) keep the order they were met in.
-                shown.sort_by_key(|timeframe| timeframe.nominal_ms());
-                (section, shown)
-            })
-            .collect();
+            }
+            // Stable: lengths that tie (`7D` and `1W`) keep the order they were met in.
+            shown.sort_by_key(|timeframe| timeframe.nominal_ms());
+            (section, shown)
+        })
+        // Seconds list only what is pinned until a source serves a preset of them.
+        .filter(|(_, shown)| !shown.is_empty())
+        .collect();
         Self { sections }
     }
 
@@ -97,6 +104,7 @@ impl Grid {
 /// A section's heading.
 pub(super) fn title(section: Section) -> &'static str {
     match section {
+        Section::Seconds => tr!("Seconds"),
         Section::Minutes => tr!("Minutes"),
         Section::Hours => tr!("Hours"),
         Section::DaysAndUp => tr!("Days and up"),

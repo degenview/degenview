@@ -807,7 +807,8 @@ impl DrawingStyle {
 }
 
 /// The switches a drawing's visibility has: each is a group of timeframes, so a drawing needs no
-/// setting per length. A quarter row is 3 to 6 months, a year row 7 to 12.
+/// setting per length. The minutes row holds seconds too (the saved mask has no bit left for a
+/// row of their own). A quarter row is 3 to 6 months, a year row 7 to 12.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VisibilityRow {
     Minutes,
@@ -834,7 +835,7 @@ impl VisibilityRow {
     /// The row a timeframe is shown under.
     pub const fn of(timeframe: Timeframe) -> Self {
         match (timeframe.unit(), timeframe.count()) {
-            (TimeUnit::Minute, _) => Self::Minutes,
+            (TimeUnit::Second | TimeUnit::Minute, _) => Self::Minutes,
             (TimeUnit::Hour, _) => Self::Hours,
             (TimeUnit::Day, _) => Self::Days,
             (TimeUnit::Week, _) => Self::Weeks,
@@ -846,7 +847,7 @@ impl VisibilityRow {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Minutes => tr!("Minute candles"),
+            Self::Minutes => tr!("Second and minute candles"),
             Self::Hours => tr!("Hourly candles"),
             Self::Days => tr!("Daily candles"),
             Self::Weeks => tr!("Weekly candles"),
@@ -964,6 +965,7 @@ mod tests {
         let tf = |count, unit| Timeframe::new(count, unit).unwrap();
         let cases = [
             (Timeframe::MINUTE_1, Minutes),
+            (tf(30, TimeUnit::Second), Minutes),
             (tf(22, TimeUnit::Minute), Minutes),
             (Timeframe::HOUR_1, Hours),
             (tf(24, TimeUnit::Hour), Hours),

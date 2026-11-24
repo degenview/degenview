@@ -103,7 +103,7 @@ mod tests {
         store
             .set_setting(
                 KEY,
-                &["22m", "30s", "1h", "nonsense", "22m", "3h"].map(str::to_owned),
+                &["22m", "60s", "1h", "nonsense", "22m", "3h"].map(str::to_owned),
             )
             .unwrap();
         assert_eq!(

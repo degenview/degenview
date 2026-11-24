@@ -129,7 +129,14 @@ fn the_field_is_read_as_a_timeframe() {
     assert_eq!(Typed::read("60"), Typed::Valid(Timeframe::HOUR_1));
     assert_eq!(
         Typed::read("30s"),
-        Typed::Invalid(TimeframeParseError::SecondsUnsupported)
+        Typed::Valid(custom(30, TimeUnit::Second))
+    );
+    assert_eq!(
+        Typed::read("60s"),
+        Typed::Invalid(TimeframeParseError::OutOfRange {
+            unit: TimeUnit::Second,
+            max: 59
+        })
     );
     assert!(matches!(Typed::read("soon"), Typed::Invalid(_)));
 }
@@ -147,7 +154,7 @@ fn the_highlight_follows_the_arrows_then_the_text_then_the_current_timeframe() {
     state.moved = Some(Timeframe::DAY_1);
     assert_eq!(state.highlighted(current), Some(Timeframe::DAY_1));
     state.moved = None;
-    state.query = "30s".to_owned();
+    state.query = "60s".to_owned();
     assert_eq!(state.highlighted(current), None);
 }
 
@@ -330,7 +337,7 @@ fn return_does_nothing_for_text_that_is_no_timeframe() {
     let input = Harness::input(&[], &[]);
     let mut harness = Harness::new();
     harness.open(&input);
-    harness.type_text("30s", &input);
+    harness.type_text("60s", &input);
     assert_eq!(harness.press(Key::Enter, Modifiers::NONE, &input), None);
     assert!(harness.is_open(), "the picker stays for another try");
 }

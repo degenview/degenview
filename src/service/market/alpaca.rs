@@ -48,6 +48,7 @@ const MAX_BARS: usize = 10_000;
 fn token(timeframe: Timeframe) -> String {
     let count = timeframe.count();
     match timeframe.unit() {
+        TimeUnit::Second => unreachable!("Alpaca's natives hold no second bars"),
         TimeUnit::Minute => format!("{count}Min"),
         TimeUnit::Hour => format!("{count}Hour"),
         TimeUnit::Day => format!("{count}Day"),
@@ -60,7 +61,7 @@ fn token(timeframe: Timeframe) -> String {
 /// 6.5 of 24 hours and five days of seven, so intraday bars are far apart in time.
 fn gap_factor(timeframe: Timeframe) -> f64 {
     match timeframe.unit() {
-        TimeUnit::Minute | TimeUnit::Hour => 6.0,
+        TimeUnit::Second | TimeUnit::Minute | TimeUnit::Hour => 6.0,
         TimeUnit::Day => 2.0,
         TimeUnit::Week => 1.6,
         TimeUnit::Month => 1.5,
