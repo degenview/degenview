@@ -2,6 +2,7 @@
 //! colour rules. The engine keeps full precision; only what the screens show is rounded here.
 
 use crate::format::civil_from_days;
+use crate::i18n::{tr, tr_c};
 use crate::model::paper::{
     PaperCurrency, PaperInstrument, PaperOrderEventKind, PaperOrderRole, PaperOrderSide,
     PaperOrderType, PaperPositionSide,
@@ -10,15 +11,15 @@ use crate::model::paper::{
 impl PaperOrderSide {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Buy => "Buy",
-            Self::Sell => "Sell",
+            Self::Buy => tr!("Buy"),
+            Self::Sell => tr!("Sell"),
         }
     }
 
     pub fn badge_text(self) -> &'static str {
         match self {
-            Self::Buy => "BUY",
-            Self::Sell => "SELL",
+            Self::Buy => tr_c!("badge", "BUY"),
+            Self::Sell => tr_c!("badge", "SELL"),
         }
     }
 
@@ -30,15 +31,15 @@ impl PaperOrderSide {
 impl PaperPositionSide {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Long => "Long",
-            Self::Short => "Short",
+            Self::Long => tr!("Long"),
+            Self::Short => tr!("Short"),
         }
     }
 
     pub fn badge_text(self) -> &'static str {
         match self {
-            Self::Long => "LONG",
-            Self::Short => "SHORT",
+            Self::Long => tr_c!("badge", "LONG"),
+            Self::Short => tr_c!("badge", "SHORT"),
         }
     }
 
@@ -50,19 +51,19 @@ impl PaperPositionSide {
 impl PaperOrderType {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Market => "Market",
-            Self::Limit => "Limit",
-            Self::Stop => "Stop",
-            Self::StopLimit => "Stop Limit",
+            Self::Market => tr!("Market"),
+            Self::Limit => tr!("Limit"),
+            Self::Stop => tr!("Stop"),
+            Self::StopLimit => tr!("Stop Limit"),
         }
     }
 
     pub fn badge_text(self) -> &'static str {
         match self {
-            Self::Market => "MKT",
-            Self::Limit => "LMT",
-            Self::Stop => "STP",
-            Self::StopLimit => "STP LMT",
+            Self::Market => tr_c!("badge", "MKT"),
+            Self::Limit => tr_c!("badge", "LMT"),
+            Self::Stop => tr_c!("badge", "STP"),
+            Self::StopLimit => tr_c!("badge", "STP LMT"),
         }
     }
 }
@@ -70,9 +71,9 @@ impl PaperOrderType {
 impl PaperOrderRole {
     pub fn badge_text(self) -> &'static str {
         match self {
-            Self::Entry => "ENTRY",
-            Self::TakeProfit => "TP",
-            Self::StopLoss => "SL",
+            Self::Entry => tr_c!("badge", "ENTRY"),
+            Self::TakeProfit => tr_c!("badge", "TP"),
+            Self::StopLoss => tr_c!("badge", "SL"),
         }
     }
 }
@@ -89,14 +90,14 @@ pub enum BadgeTone {
 impl PaperOrderEventKind {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Placed => "Placed",
-            Self::Accepted => "Accepted",
-            Self::PartiallyFilled => "Partial fill",
-            Self::Filled => "Filled",
-            Self::Modified => "Modified",
-            Self::Canceled => "Canceled",
-            Self::Rejected => "Rejected",
-            Self::Expired => "Expired",
+            Self::Placed => tr!("Placed"),
+            Self::Accepted => tr!("Accepted"),
+            Self::PartiallyFilled => tr!("Partial fill"),
+            Self::Filled => tr!("Filled"),
+            Self::Modified => tr!("Modified"),
+            Self::Canceled => tr!("Canceled"),
+            Self::Rejected => tr!("Rejected"),
+            Self::Expired => tr!("Expired"),
         }
     }
 

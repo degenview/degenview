@@ -5,6 +5,7 @@
 //!
 //! Not to be confused with `chart_type::ChartKind`, which tells a Pine script what chart it runs on.
 
+use crate::i18n::tr;
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::{
     PortfolioHistoryRange, PortfolioPeriodChange, PortfolioValueChange,
@@ -35,6 +36,8 @@ impl CardKind {
         Self::TopPerformers,
     ];
 
+    /// The name in English, in every language: a card put in a watchlist is stored under it. A
+    /// screen shows [`Self::display_title`].
     pub fn title(self) -> &'static str {
         match self {
             Self::ValueChart => "Portfolio Value Chart",
@@ -44,13 +47,23 @@ impl CardKind {
         }
     }
 
+    /// [`Self::title`] in the language in use, for a screen.
+    pub fn display_title(self) -> &'static str {
+        match self {
+            Self::ValueChart => tr!("Portfolio Value Chart"),
+            Self::Value => tr!("Portfolio Value"),
+            Self::Allocation => tr!("Allocation"),
+            Self::TopPerformers => tr!("Top Performers"),
+        }
+    }
+
     /// One line for the symbol picker's Dashboards tab.
     pub fn summary(self) -> &'static str {
         match self {
-            Self::ValueChart => "Value over time, from one day to all time",
-            Self::Value => "The current total as one big number",
-            Self::Allocation => "How the portfolio splits across assets",
-            Self::TopPerformers => "The holdings that gained the most over a range",
+            Self::ValueChart => tr!("Value over time, from one day to all time"),
+            Self::Value => tr!("The current total as one big number"),
+            Self::Allocation => tr!("How the portfolio splits across assets"),
+            Self::TopPerformers => tr!("The holdings that gained the most over a range"),
         }
     }
 

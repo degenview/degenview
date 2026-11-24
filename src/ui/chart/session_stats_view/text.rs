@@ -60,7 +60,7 @@ pub fn summary(title: &str, stats: &Stats, bar_ms: i64) -> String {
     let mut lines = vec![format!(
         "{title} · {} on {}",
         stats.outcome.label(),
-        stats.filter.describe()
+        stats.filter.display_describe()
     )];
     match (stats.estimate.proportion(), stats.estimate.interval()) {
         (Some(p), Some((low, high))) => lines.push(format!(
@@ -95,7 +95,7 @@ pub fn summary(title: &str, stats: &Stats, bar_ms: i64) -> String {
             count(stats.sessions),
             date(first),
             date(last),
-            stats.hours.label()
+            stats.hours.display_label()
         ));
     }
     lines.push("Historical frequency of this chart's bars, not a prediction.".to_owned());

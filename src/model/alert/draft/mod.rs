@@ -3,6 +3,7 @@
 //! derived here, so the sheet and MCP follow one set of rules and the rules are testable without
 //! a window.
 
+use crate::i18n::tr;
 use crate::model::alert::message::AlertMessageContext;
 use crate::model::alert::{
     AlertAsset, AlertCondition, AlertCurrency, AlertFrequency, AlertState, PriceAlert,
@@ -24,10 +25,10 @@ impl Direction {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Above => "Above",
-            Self::Below => "Below",
-            Self::Rises => "Rises",
-            Self::Falls => "Falls",
+            Self::Above => tr!("Above"),
+            Self::Below => tr!("Below"),
+            Self::Rises => tr!("Rises"),
+            Self::Falls => tr!("Falls"),
         }
     }
 
@@ -37,10 +38,10 @@ impl Direction {
 
     pub fn blurb(self) -> &'static str {
         match self {
-            Self::Above => "Notify me when the price crosses above a level.",
-            Self::Below => "Notify me when the price crosses below a level.",
-            Self::Rises => "Notify me when the price climbs by a percentage from now.",
-            Self::Falls => "Notify me when the price drops by a percentage from now.",
+            Self::Above => tr!("Notify me when the price crosses above a level."),
+            Self::Below => tr!("Notify me when the price crosses below a level."),
+            Self::Rises => tr!("Notify me when the price climbs by a percentage from now."),
+            Self::Falls => tr!("Notify me when the price drops by a percentage from now."),
         }
     }
 }
@@ -256,22 +257,24 @@ impl PriceAlertDraft {
         );
         if self.direction == Direction::Above && level <= price {
             return Some((
-                format!(
-                    "{signed} from now. The price is already above this level; it fires after dropping below and crossing back up."
+                tr!(
+                    "{signed} from now. The price is already above this level; it fires after dropping below and crossing back up.",
+                    signed = signed
                 ),
                 HintTone::Warning,
             ));
         }
         if self.direction == Direction::Below && level >= price {
             return Some((
-                format!(
-                    "{signed} from now. The price is already below this level; it fires after rising above and crossing back down."
+                tr!(
+                    "{signed} from now. The price is already below this level; it fires after rising above and crossing back down.",
+                    signed = signed
                 ),
                 HintTone::Warning,
             ));
         }
         Some((
-            format!("{signed} from the current price"),
+            tr!("{signed} from the current price", signed = signed),
             HintTone::Neutral,
         ))
     }
@@ -306,30 +309,41 @@ impl PriceAlertDraft {
         let ticker = &self.asset.symbol;
         let price = |value: f64| self.currency.format_price(value);
         let what = match &condition {
-            AlertCondition::CrossesAbove { target } => {
-                format!("{ticker} crosses above {}", price(*target))
-            }
-            AlertCondition::CrossesBelow { target } => {
-                format!("{ticker} crosses below {}", price(*target))
-            }
+            AlertCondition::CrossesAbove { target } => tr!(
+                "{ticker} crosses above {price}",
+                ticker = ticker,
+                price = price(*target)
+            ),
+            AlertCondition::CrossesBelow { target } => tr!(
+                "{ticker} crosses below {price}",
+                ticker = ticker,
+                price = price(*target)
+            ),
             AlertCondition::RisesBy {
                 percent, target, ..
-            } => {
-                format!("{ticker} rises {}% to {}", plain(*percent), price(*target))
-            }
+            } => tr!(
+                "{ticker} rises {percent}% to {price}",
+                ticker = ticker,
+                percent = plain(*percent),
+                price = price(*target)
+            ),
             AlertCondition::FallsBy {
                 percent, target, ..
-            } => {
-                format!("{ticker} falls {}% to {}", plain(*percent), price(*target))
-            }
+            } => tr!(
+                "{ticker} falls {percent}% to {price}",
+                ticker = ticker,
+                percent = plain(*percent),
+                price = price(*target)
+            ),
             AlertCondition::Unsupported { .. } => return None,
         };
+        // A separator between two short phrases, not a sentence built from pieces.
         Some(format!(
             "{what} · {}",
             if self.frequency == AlertFrequency::Once {
-                "once"
+                tr!("once")
             } else {
-                "every time"
+                tr!("every time")
             }
         ))
     }

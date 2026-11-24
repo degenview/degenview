@@ -6,6 +6,7 @@
 //! font's default features and has no weight axis for a plain font, and the editor indents with
 //! four spaces. A control for any of them would do nothing.
 
+use crate::i18n::tr;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -36,12 +37,12 @@ pub enum LineHeight {
 impl LineHeight {
     pub const ALL: [Self; 4] = [Self::Compact, Self::Default, Self::Relaxed, Self::Loose];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Compact => "Compact",
-            Self::Default => "Default",
-            Self::Relaxed => "Relaxed",
-            Self::Loose => "Loose",
+            Self::Compact => tr!("Compact"),
+            Self::Default => tr!("Default"),
+            Self::Relaxed => tr!("Relaxed"),
+            Self::Loose => tr!("Loose"),
         }
     }
 

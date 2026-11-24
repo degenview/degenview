@@ -3,6 +3,8 @@
 //! the lexer says what a keyword, string, escape or punctuation mark is, and the symbol table
 //! says what a name is declared as.
 
+use crate::i18n::tr;
+
 /// How a theme groups its syntax roles for editing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyntaxGroup {
@@ -20,12 +22,12 @@ impl SyntaxGroup {
         Self::Language,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::General => "General",
-            Self::Variables => "Variables and identifiers",
-            Self::Functions => "Functions",
-            Self::Language => "Language",
+            Self::General => tr!("General"),
+            Self::Variables => tr!("Variables and identifiers"),
+            Self::Functions => tr!("Functions"),
+            Self::Language => tr!("Language"),
         }
     }
 }
@@ -105,61 +107,63 @@ impl SyntaxRole {
         Self::ALL.into_iter().find(|role| role.key() == key)
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Default => "Default text",
-            Self::Comment => "Comments",
-            Self::String => "Strings",
-            Self::Escape => "Escape sequences",
-            Self::Number => "Numbers",
-            Self::Literal => "true, false and na",
-            Self::UserVariable => "User variables",
-            Self::Parameter => "Function parameters",
-            Self::BuiltinVariable => "Built-in variables",
-            Self::BuiltinConstant => "Built-in constants",
-            Self::Namespace => "Namespaces",
-            Self::UserFunction => "User-defined functions",
-            Self::BuiltinFunction => "Built-in functions",
-            Self::Keyword => "Keywords",
-            Self::ControlKeyword => "Control flow",
-            Self::Type => "Types",
-            Self::Operator => "Operators",
-            Self::Punctuation => "Punctuation",
-            Self::Directive => "Directives",
-            Self::ColorLiteral => "Color literals",
+            Self::Default => tr!("Default text"),
+            Self::Comment => tr!("Comments"),
+            Self::String => tr!("Strings"),
+            Self::Escape => tr!("Escape sequences"),
+            Self::Number => tr!("Numbers"),
+            Self::Literal => tr!("true, false and na"),
+            Self::UserVariable => tr!("User variables"),
+            Self::Parameter => tr!("Function parameters"),
+            Self::BuiltinVariable => tr!("Built-in variables"),
+            Self::BuiltinConstant => tr!("Built-in constants"),
+            Self::Namespace => tr!("Namespaces"),
+            Self::UserFunction => tr!("User-defined functions"),
+            Self::BuiltinFunction => tr!("Built-in functions"),
+            Self::Keyword => tr!("Keywords"),
+            Self::ControlKeyword => tr!("Control flow"),
+            Self::Type => tr!("Types"),
+            Self::Operator => tr!("Operators"),
+            Self::Punctuation => tr!("Punctuation"),
+            Self::Directive => tr!("Directives"),
+            Self::ColorLiteral => tr!("Color literals"),
         }
     }
 
-    pub const fn hint(self) -> &'static str {
+    pub fn hint(self) -> &'static str {
         match self {
-            Self::Default => "Text that has no color of its own, and the editor's foreground.",
-            Self::Comment => "Everything after // on a line.",
-            Self::String => "Text between quotes.",
-            Self::Escape => "Backslash sequences inside a string, such as \\n.",
-            Self::Number => "Integer and decimal literals.",
-            Self::Literal => "The literals true, false and na.",
-            Self::UserVariable => "Variables the script declares, including loop variables.",
+            Self::Default => tr!("Text that has no color of its own, and the editor's foreground."),
+            Self::Comment => tr!("Everything after // on a line."),
+            Self::String => tr!("Text between quotes."),
+            Self::Escape => tr!("Backslash sequences inside a string, such as \\n."),
+            Self::Number => tr!("Integer and decimal literals."),
+            Self::Literal => tr!("The literals true, false and na."),
+            Self::UserVariable => tr!("Variables the script declares, including loop variables."),
             Self::Parameter => {
-                "Parameters of the script's own functions, and name= labels in calls to them."
+                tr!("Parameters of the script's own functions, and name= labels in calls to them.")
             }
             Self::BuiltinVariable => {
-                "close, volume, bar_index and the other variables Pine provides."
+                tr!("close, volume, bar_index and the other variables Pine provides.")
             }
-            Self::BuiltinConstant => "color.red, math.pi and the other fixed values.",
-            Self::Namespace => "The ta in ta.sma, and the alias of an imported library.",
+            Self::BuiltinConstant => tr!("color.red, math.pi and the other fixed values."),
+            Self::Namespace => tr!("The ta in ta.sma, and the alias of an imported library."),
             Self::UserFunction => {
-                "Functions and methods the script defines, where defined and called."
+                tr!("Functions and methods the script defines, where defined and called.")
             }
             Self::BuiltinFunction => {
-                "ta.sma, plot, input.int and the other functions Pine provides."
+                tr!("ta.sma, plot, input.int and the other functions Pine provides.")
             }
-            Self::Keyword => "var, import, export, method, type, enum, and, or, not.",
-            Self::ControlKeyword => "if, else, for, while, switch, break, continue, in, to, once.",
-            Self::Type => "float, series, array and the types the script declares.",
-            Self::Operator => "Arithmetic, comparison, assignment and ?: operators.",
-            Self::Punctuation => "Brackets, parentheses, commas and dots.",
-            Self::Directive => "//@version=6 and the other //@ directives.",
-            Self::ColorLiteral => "Colors written as #RRGGBB.",
+            Self::Keyword => tr!("var, import, export, method, type, enum, and, or, not."),
+            Self::ControlKeyword => {
+                tr!("if, else, for, while, switch, break, continue, in, to, once.")
+            }
+            Self::Type => tr!("float, series, array and the types the script declares."),
+            Self::Operator => tr!("Arithmetic, comparison, assignment and ?: operators."),
+            Self::Punctuation => tr!("Brackets, parentheses, commas and dots."),
+            Self::Directive => tr!("//@version=6 and the other //@ directives."),
+            Self::ColorLiteral => tr!("Colors written as #RRGGBB."),
         }
     }
 
@@ -233,13 +237,13 @@ impl SurfaceGroup {
         Self::Popups,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Editor => "Editor",
-            Self::Gutter => "Gutter",
-            Self::Search => "Search and matches",
-            Self::Diagnostics => "Diagnostics",
-            Self::Popups => "Suggestions",
+            Self::Editor => tr!("Editor"),
+            Self::Gutter => tr!("Gutter"),
+            Self::Search => tr!("Search and matches"),
+            Self::Diagnostics => tr!("Diagnostics"),
+            Self::Popups => tr!("Suggestions"),
         }
     }
 }
@@ -323,59 +327,59 @@ impl SurfaceColor {
         )
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Background => "Background",
-            Self::CurrentLine => "Current line",
-            Self::Selection => "Selection",
-            Self::SelectionText => "Selected text",
-            Self::Caret => "Caret",
-            Self::BracketMatch => "Matching bracket",
-            Self::BracketMatchBorder => "Matching bracket border",
-            Self::WordHighlight => "Same name",
-            Self::FindMatch => "Search matches",
-            Self::FindMatchActive => "Current search match",
-            Self::IndentGuide => "Indent guides",
-            Self::IndentGuideActive => "Active indent guide",
-            Self::GutterBackground => "Gutter background",
-            Self::GutterSeparator => "Gutter separator",
-            Self::LineNumber => "Line numbers",
-            Self::LineNumberActive => "Current line number",
-            Self::DiagnosticError => "Error underline",
-            Self::DiagnosticWarning => "Warning underline",
-            Self::PopupBackground => "Suggestion list",
-            Self::PopupSelection => "Selected suggestion",
+            Self::Background => tr!("Background"),
+            Self::CurrentLine => tr!("Current line"),
+            Self::Selection => tr!("Selection"),
+            Self::SelectionText => tr!("Selected text"),
+            Self::Caret => tr!("Caret"),
+            Self::BracketMatch => tr!("Matching bracket"),
+            Self::BracketMatchBorder => tr!("Matching bracket border"),
+            Self::WordHighlight => tr!("Same name"),
+            Self::FindMatch => tr!("Search matches"),
+            Self::FindMatchActive => tr!("Current search match"),
+            Self::IndentGuide => tr!("Indent guides"),
+            Self::IndentGuideActive => tr!("Active indent guide"),
+            Self::GutterBackground => tr!("Gutter background"),
+            Self::GutterSeparator => tr!("Gutter separator"),
+            Self::LineNumber => tr!("Line numbers"),
+            Self::LineNumberActive => tr!("Current line number"),
+            Self::DiagnosticError => tr!("Error underline"),
+            Self::DiagnosticWarning => tr!("Warning underline"),
+            Self::PopupBackground => tr!("Suggestion list"),
+            Self::PopupSelection => tr!("Selected suggestion"),
         }
     }
 
-    pub const fn hint(self) -> &'static str {
+    pub fn hint(self) -> &'static str {
         match self {
-            Self::Background => "The editor's background.",
-            Self::CurrentLine => "The band behind the line the caret is on.",
-            Self::Selection => "Selected text. Translucent colors let the text show through.",
-            Self::SelectionText => "The color of text inside a selection.",
-            Self::Caret => "The blinking text cursor, including extra carets.",
+            Self::Background => tr!("The editor's background."),
+            Self::CurrentLine => tr!("The band behind the line the caret is on."),
+            Self::Selection => tr!("Selected text. Translucent colors let the text show through."),
+            Self::SelectionText => tr!("The color of text inside a selection."),
+            Self::Caret => tr!("The blinking text cursor, including extra carets."),
             Self::BracketMatch => {
-                "The fill behind a bracket and its partner, or behind one with no partner."
+                tr!("The fill behind a bracket and its partner, or behind one with no partner.")
             }
             Self::BracketMatchBorder => {
-                "An outline around matching brackets. Fully transparent draws none."
+                tr!("An outline around matching brackets. Fully transparent draws none.")
             }
-            Self::WordHighlight => "Other uses of the name under the caret.",
-            Self::FindMatch => "Matches of the search in the find bar.",
-            Self::FindMatchActive => "The match the find bar is on.",
-            Self::IndentGuide => "The vertical guides at each indent level.",
-            Self::IndentGuideActive => "The guide of the block the caret is in.",
-            Self::GutterBackground => "The strip with the line numbers.",
+            Self::WordHighlight => tr!("Other uses of the name under the caret."),
+            Self::FindMatch => tr!("Matches of the search in the find bar."),
+            Self::FindMatchActive => tr!("The match the find bar is on."),
+            Self::IndentGuide => tr!("The vertical guides at each indent level."),
+            Self::IndentGuideActive => tr!("The guide of the block the caret is in."),
+            Self::GutterBackground => tr!("The strip with the line numbers."),
             Self::GutterSeparator => {
-                "A line between the gutter and the code. Fully transparent draws none."
+                tr!("A line between the gutter and the code. Fully transparent draws none.")
             }
-            Self::LineNumber => "Line numbers in the gutter.",
-            Self::LineNumberActive => "The number of the line the caret is on.",
-            Self::DiagnosticError => "The underline under code the compiler rejects.",
-            Self::DiagnosticWarning => "The underline under code the compiler warns about.",
-            Self::PopupBackground => "The background of the suggestion list.",
-            Self::PopupSelection => "The highlighted row of the suggestion list.",
+            Self::LineNumber => tr!("Line numbers in the gutter."),
+            Self::LineNumberActive => tr!("The number of the line the caret is on."),
+            Self::DiagnosticError => tr!("The underline under code the compiler rejects."),
+            Self::DiagnosticWarning => tr!("The underline under code the compiler warns about."),
+            Self::PopupBackground => tr!("The background of the suggestion list."),
+            Self::PopupSelection => tr!("The highlighted row of the suggestion list."),
         }
     }
 

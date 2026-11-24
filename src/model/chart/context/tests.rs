@@ -211,9 +211,9 @@ fn replay_disables_alerts_and_orders_with_a_reason() {
     facts.replay = true;
     let menu = menu(&context(Some(118_150.0)), &facts);
     let add_alert = find(&menu, &Command::AddAlert).unwrap();
-    assert_eq!(add_alert.disabled, Some(IN_REPLAY));
+    assert_eq!(add_alert.disabled, Some(in_replay()));
     let add_order = find(&menu, &Command::AddOrder).unwrap();
-    assert_eq!(add_order.disabled, Some(IN_REPLAY));
+    assert_eq!(add_order.disabled, Some(in_replay()));
     // Copying a price and the chart panels still work in replay.
     assert!(find(&menu, &Command::CopyPrice).unwrap().is_enabled());
 }
@@ -226,7 +226,11 @@ fn a_price_at_the_market_greys_the_pending_orders_with_a_reason() {
         .filter(|item| matches!(item.command, Some(Command::QuickOrder(_))))
         .collect();
     assert_eq!(pending.len(), 2);
-    assert!(pending.iter().all(|item| item.disabled == Some(NO_MARKET)));
+    assert!(
+        pending
+            .iter()
+            .all(|item| item.disabled == Some(no_market()))
+    );
     // The full ticket is still reachable at the market price.
     assert!(find(&menu, &Command::AddOrder).unwrap().is_enabled());
 }
@@ -661,7 +665,7 @@ fn live_orders_are_greyed_with_the_reason_whenever_one_could_not_be_placed() {
     assert!(
         disabled(replay, Some(1.0))
             .iter()
-            .all(|d| *d == Some(IN_REPLAY))
+            .all(|d| *d == Some(in_replay()))
     );
 
     // A constructed chart: a price entry has no market price to use, a market order still works.

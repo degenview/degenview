@@ -14,6 +14,7 @@ pub mod studio;
 
 use self::studio::StudioPrefs;
 use crate::format;
+use crate::i18n::tr;
 use crate::model::webhook::{self, policy::ParsedUrl};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -57,13 +58,13 @@ impl SnapshotAction {
     ];
 
     /// The row in the menu.
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Download => "Download image",
-            Self::CopyImage => "Copy image",
-            Self::CopyLink => "Copy link",
-            Self::OpenInTab => "Open in new tab",
-            Self::ShareOnX => "Tweet image",
+            Self::Download => tr!("Download image"),
+            Self::CopyImage => tr!("Copy image"),
+            Self::CopyLink => tr!("Copy link"),
+            Self::OpenInTab => tr!("Open in new tab"),
+            Self::ShareOnX => tr!("Tweet image"),
         }
     }
 
@@ -91,10 +92,10 @@ impl SnapshotScale {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::X1 => "Standard (1×)",
-            Self::X2 => "High resolution (2×)",
+            Self::X1 => tr!("Standard (1×)"),
+            Self::X2 => tr!("High resolution (2×)"),
         }
     }
 }
@@ -254,13 +255,15 @@ pub enum HostError {
 }
 
 impl HostError {
-    pub const fn message(self) -> &'static str {
+    pub fn message(self) -> &'static str {
         match self {
-            Self::Empty => "Enter the address uploads are sent to.",
-            Self::NotAUrl => "That is not a web address.",
-            Self::NotHttps => "Use an https:// address. Plain http:// is only for this computer.",
-            Self::Credentials => "Leave the user name and password out of the address.",
-            Self::Fragment => "Remove the # part of the address.",
+            Self::Empty => tr!("Enter the address uploads are sent to."),
+            Self::NotAUrl => tr!("That is not a web address."),
+            Self::NotHttps => {
+                tr!("Use an https:// address. Plain http:// is only for this computer.")
+            }
+            Self::Credentials => tr!("Leave the user name and password out of the address."),
+            Self::Fragment => tr!("Remove the # part of the address."),
         }
     }
 }
@@ -402,21 +405,30 @@ impl UploadError {
     /// What to tell the user. `label` is where the image was going ("ImgBB", "snap.example.com").
     pub fn message(&self, label: &str) -> String {
         match self {
-            Self::TooLarge => "The image is too large to upload.".to_owned(),
-            Self::Offline => format!("Could not reach {label}. Check your connection."),
-            Self::Timeout => format!("{label} took too long to answer."),
-            Self::Unauthorized => {
-                format!("{label} refused the credentials. Check Settings ▸ Snapshots.")
-            }
+            Self::TooLarge => tr!("The image is too large to upload.").to_owned(),
+            Self::Offline => tr!(
+                "Could not reach {label}. Check your connection.",
+                label = label
+            ),
+            Self::Timeout => tr!("{label} took too long to answer.", label = label),
+            Self::Unauthorized => tr!(
+                "{label} refused the credentials. Check Settings ▸ Snapshots.",
+                label = label
+            ),
             Self::RateLimited {
                 retry_after: Some(seconds),
-            } => format!("Too many uploads. Try again in {seconds} s."),
+            } => tr!(
+                "Too many uploads. Try again in {seconds} s.",
+                seconds = seconds
+            ),
             Self::RateLimited { retry_after: None } => {
-                "Too many uploads. Try again in a moment.".to_owned()
+                tr!("Too many uploads. Try again in a moment.").to_owned()
             }
-            Self::RejectedAsTooLarge => format!("{label} says the image is too large."),
-            Self::Server(code) => format!("{label} failed (HTTP {code})."),
-            Self::BadResponse => format!("{label} did not return a link."),
+            Self::RejectedAsTooLarge => {
+                tr!("{label} says the image is too large.", label = label)
+            }
+            Self::Server(code) => tr!("{label} failed (HTTP {code}).", label = label, code = code),
+            Self::BadResponse => tr!("{label} did not return a link.", label = label),
         }
     }
 

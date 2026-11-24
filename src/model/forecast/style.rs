@@ -8,6 +8,7 @@
 //! Colours are the Charting Library's defaults where it states them (**lib**) and chosen here
 //! otherwise (**inferred**). Pure: no egui types.
 
+use crate::i18n::tr;
 use crate::model::chart::kind::{PriceSource, Rgba};
 use serde::{Deserialize, Serialize};
 
@@ -241,10 +242,10 @@ pub enum RowsLayout {
 impl RowsLayout {
     pub const ALL: [Self; 2] = [Self::Rows, Self::Ticks];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Rows => "Number of rows",
-            Self::Ticks => "Ticks per row",
+            Self::Rows => tr!("Number of rows"),
+            Self::Ticks => tr!("Ticks per row"),
         }
     }
 }
@@ -265,11 +266,11 @@ pub enum ProfileVolume {
 impl ProfileVolume {
     pub const ALL: [Self; 3] = [Self::Total, Self::UpDown, Self::Delta];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Total => "Total",
-            Self::UpDown => "Up/Down",
-            Self::Delta => "Delta",
+            Self::Total => tr!("Total"),
+            Self::UpDown => tr!("Up/Down"),
+            Self::Delta => tr!("Delta"),
         }
     }
 }

@@ -10,6 +10,7 @@
 //! Pure: no egui types. Colours are `[r, g, b, a]` bytes; `None` follows the chart's up/down
 //! palette (and, for borders and wicks, the body colour).
 
+use crate::i18n::tr;
 use crate::model::{DataSource, Kline};
 use serde::{Deserialize, Serialize};
 
@@ -52,11 +53,11 @@ pub enum ChartGroup {
 impl ChartGroup {
     pub const ALL: [Self; 3] = [Self::Standard, Self::LinesAndAreas, Self::PriceBased];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Standard => "Standard",
-            Self::LinesAndAreas => "Lines & Areas",
-            Self::PriceBased => "Price-Based",
+            Self::Standard => tr!("Standard"),
+            Self::LinesAndAreas => tr!("Lines & Areas"),
+            Self::PriceBased => tr!("Price-Based"),
         }
     }
 }
@@ -115,26 +116,26 @@ impl ChartType {
         Self::Range,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Candles => "Candles",
-            Self::HollowCandles => "Hollow Candles",
-            Self::Bars => "Bars",
-            Self::HighLowBars => "High-Low Bars",
-            Self::VolumeCandles => "Volume Candles",
-            Self::HeikinAshi => "Heikin Ashi",
-            Self::Renko => "Renko",
-            Self::Kagi => "Kagi",
-            Self::LineBreak => "Line Break",
-            Self::PointAndFigure => "Point & Figure",
-            Self::Range => "Range",
-            Self::Line => "Line",
-            Self::LineWithMarkers => "Line with Markers",
-            Self::StepLine => "Step Line",
-            Self::Area => "Area",
-            Self::HlcArea => "HLC Area",
-            Self::Baseline => "Baseline",
-            Self::Columns => "Columns",
+            Self::Candles => tr!("Candles"),
+            Self::HollowCandles => tr!("Hollow Candles"),
+            Self::Bars => tr!("Bars"),
+            Self::HighLowBars => tr!("High-Low Bars"),
+            Self::VolumeCandles => tr!("Volume Candles"),
+            Self::HeikinAshi => tr!("Heikin Ashi"),
+            Self::Renko => tr!("Renko"),
+            Self::Kagi => tr!("Kagi"),
+            Self::LineBreak => tr!("Line Break"),
+            Self::PointAndFigure => tr!("Point & Figure"),
+            Self::Range => tr!("Range"),
+            Self::Line => tr!("Line"),
+            Self::LineWithMarkers => tr!("Line with Markers"),
+            Self::StepLine => tr!("Step Line"),
+            Self::Area => tr!("Area"),
+            Self::HlcArea => tr!("HLC Area"),
+            Self::Baseline => tr!("Baseline"),
+            Self::Columns => tr!("Columns"),
         }
     }
 
@@ -221,19 +222,43 @@ impl ChartType {
     ///
     /// Sources that draw a line (prediction markets, CoinMarketCap indices) have no open, high,
     /// low or volume to build any of these from, so they keep their own line.
+    ///
+    /// The reason is English in every language: it goes to MCP clients. The menu shows
+    /// [`Self::unsupported_reason_text`].
     pub fn unsupported_reason(self, source: DataSource) -> Option<&'static str> {
+        self.unsupported(source).map(|why| match why {
+            Unsupported::DrawnAsLine => "This market is drawn as a line",
+            Unsupported::NoVolume => "This source reports no volume",
+        })
+    }
+
+    /// [`Self::unsupported_reason`] in the language in use, for a screen.
+    pub fn unsupported_reason_text(self, source: DataSource) -> Option<&'static str> {
+        self.unsupported(source).map(|why| match why {
+            Unsupported::DrawnAsLine => tr!("This market is drawn as a line"),
+            Unsupported::NoVolume => tr!("This source reports no volume"),
+        })
+    }
+
+    fn unsupported(self, source: DataSource) -> Option<Unsupported> {
         if source.is_line_chart() {
-            return Some("This market is drawn as a line");
+            return Some(Unsupported::DrawnAsLine);
         }
         if self == Self::VolumeCandles && !source.provides_volume() {
-            return Some("This source reports no volume");
+            return Some(Unsupported::NoVolume);
         }
         None
     }
 
     pub fn supported_by(self, source: DataSource) -> bool {
-        self.unsupported_reason(source).is_none()
+        self.unsupported(source).is_none()
     }
+}
+
+/// Why a source cannot show a chart type.
+enum Unsupported {
+    DrawnAsLine,
+    NoVolume,
 }
 
 /// The value of a bar a line, area, baseline or column chart follows.
@@ -261,12 +286,13 @@ impl PriceSource {
         Self::Ohlc4,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Open => "Open",
-            Self::High => "High",
-            Self::Low => "Low",
-            Self::Close => "Close",
+            Self::Open => tr!("Open"),
+            Self::High => tr!("High"),
+            Self::Low => tr!("Low"),
+            Self::Close => tr!("Close"),
+            // Pine's own names for the series, the same in every language.
             Self::Hl2 => "HL2",
             Self::Hlc3 => "HLC3",
             Self::Ohlc4 => "OHLC4",
@@ -298,11 +324,11 @@ pub enum LineDash {
 impl LineDash {
     pub const ALL: [Self; 3] = [Self::Solid, Self::Dashed, Self::Dotted];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Solid => "Solid",
-            Self::Dashed => "Dashed",
-            Self::Dotted => "Dotted",
+            Self::Solid => tr!("Solid"),
+            Self::Dashed => tr!("Dashed"),
+            Self::Dotted => tr!("Dotted"),
         }
     }
 }
@@ -323,11 +349,11 @@ pub enum SizeMethod {
 impl SizeMethod {
     pub const ALL: [Self; 3] = [Self::Traditional, Self::Atr, Self::Percent];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Traditional => "Traditional",
+            Self::Traditional => tr!("Traditional"),
             Self::Atr => "ATR",
-            Self::Percent => "Percent of price",
+            Self::Percent => tr!("Percent of price"),
         }
     }
 }
@@ -614,10 +640,10 @@ pub enum ConstructionSource {
 impl ConstructionSource {
     pub const ALL: [Self; 2] = [Self::Close, Self::HighLow];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Close => "Close",
-            Self::HighLow => "High/Low",
+            Self::Close => tr!("Close"),
+            Self::HighLow => tr!("High/Low"),
         }
     }
 }

@@ -8,6 +8,7 @@
 //!
 //! Pure: no egui types.
 
+use crate::i18n::tr;
 use crate::model::drawings::Anchor;
 use crate::model::market::kline::Kline;
 use serde::{Deserialize, Serialize};
@@ -42,15 +43,15 @@ impl BarsMode {
         Self::LineHl2,
     ];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Bars => "Bars",
-            Self::Candles => "Candles",
-            Self::LineClose => "Line - Close",
-            Self::LineOpen => "Line - Open",
-            Self::LineHigh => "Line - High",
-            Self::LineLow => "Line - Low",
-            Self::LineHl2 => "Line - HL/2",
+            Self::Bars => tr!("Bars"),
+            Self::Candles => tr!("Candles"),
+            Self::LineClose => tr!("Line - Close"),
+            Self::LineOpen => tr!("Line - Open"),
+            Self::LineHigh => tr!("Line - High"),
+            Self::LineLow => tr!("Line - Low"),
+            Self::LineHl2 => tr!("Line - HL/2"),
         }
     }
 

@@ -16,6 +16,7 @@
 //! visible window, the margin transform, the pane split) lives here so it is tested without a
 //! window.
 
+use crate::i18n::tr;
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::pine::instance::PaneLayout;
 use serde::{Deserialize, Serialize};
@@ -34,10 +35,10 @@ pub enum BackgroundMode {
 impl BackgroundMode {
     pub const ALL: [Self; 2] = [Self::Solid, Self::Gradient];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Solid => "Solid",
-            Self::Gradient => "Gradient",
+            Self::Solid => tr!("Solid"),
+            Self::Gradient => tr!("Gradient"),
         }
     }
 }
@@ -113,11 +114,11 @@ pub enum WatermarkMode {
 impl WatermarkMode {
     pub const ALL: [Self; 3] = [Self::Hidden, Self::Symbol, Self::Replay];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Hidden => "Hidden",
-            Self::Symbol => "Symbol",
-            Self::Replay => "Replay mode",
+            Self::Hidden => tr!("Hidden"),
+            Self::Symbol => tr!("Symbol"),
+            Self::Replay => tr!("Replay mode"),
         }
     }
 
@@ -213,11 +214,11 @@ pub enum ButtonVisibility {
 impl ButtonVisibility {
     pub const ALL: [Self; 3] = [Self::Always, Self::OnHover, Self::Never];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Always => "Always visible",
-            Self::OnHover => "Visible on mouse over",
-            Self::Never => "Never visible",
+            Self::Always => tr!("Always visible"),
+            Self::OnHover => tr!("Visible on mouse over"),
+            Self::Never => tr!("Never visible"),
         }
     }
 
