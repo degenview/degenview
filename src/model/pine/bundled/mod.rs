@@ -57,7 +57,7 @@ macro_rules! indicator {
 }
 
 /// Every bundled indicator: overlays first, then the ones with a pane of their own.
-pub static ALL: [BundledIndicator; 20] = [
+pub static ALL: [BundledIndicator; 21] = [
     indicator!(
         "ichimoku-cloud",
         "Ichimoku Cloud",
@@ -138,6 +138,15 @@ pub static ALL: [BundledIndicator; 20] = [
         "Moving Average Convergence Divergence with signal and histogram.",
         "The difference between a fast and a slow EMA, a signal line of that difference, and a histogram of the gap. The histogram is darker while momentum is growing. A MACD line crossing its signal is the classic trigger.",
         ["moving average convergence divergence"]
+    ),
+    indicator!(
+        "rsi",
+        "RSI",
+        Momentum,
+        false,
+        "Relative Strength Index, 14 periods, 0 to 100.",
+        "Wilder's momentum oscillator: the average gain over the average loss across the last N bars, scaled from 0 to 100. Above the upper level is conventionally overbought and below the lower level oversold.",
+        ["relative strength index", "rsi 14"]
     ),
     indicator!(
         "stochastic",
@@ -325,7 +334,8 @@ mod tests {
     #[test]
     fn bounded_oscillators_stay_inside_their_range() {
         // (indicator id, plot title, lowest, highest)
-        let ranges: [(&str, &str, f64, f64); 12] = [
+        let ranges: [(&str, &str, f64, f64); 13] = [
+            ("rsi", "RSI", 0.0, 100.0),
             ("stochastic", "%K", 0.0, 100.0),
             ("stochastic", "%D", 0.0, 100.0),
             ("stochastic-rsi", "%K", 0.0, 100.0),

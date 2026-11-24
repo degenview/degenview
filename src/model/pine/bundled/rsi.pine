@@ -1,0 +1,18 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// RSI: Wilder's Relative Strength Index, a momentum reading from 0 to 100. Above the upper level
+// is conventionally overbought, below the lower level oversold.
+indicator("RSI", overlay = false)
+
+length = input.int(14, "Length", minval = 1, group = "Lengths")
+source = input.source(close, "Source", group = "Lengths")
+upperLevel = input.int(70, "Overbought", minval = 50, maxval = 100, group = "Levels")
+lowerLevel = input.int(30, "Oversold", minval = 0, maxval = 50, group = "Levels")
+
+value = ta.rsi(source, length)
+
+plot(value, "RSI", color = color.purple)
+top = hline(upperLevel, "Overbought", color = color.gray)
+hline(50, "Midline", color = color.new(color.gray, 60))
+bottom = hline(lowerLevel, "Oversold", color = color.gray)
+fill(top, bottom, color = color.new(color.purple, 94), title = "Range")

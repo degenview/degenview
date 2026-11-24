@@ -5,8 +5,6 @@ use crate::model::Kline;
 use serde::{Deserialize, Serialize};
 
 pub const RSI_PERIOD: usize = 14;
-pub const RSI_OVERBOUGHT: f64 = 70.0;
-pub const RSI_OVERSOLD: f64 = 30.0;
 pub const BOLLINGER_PERIOD: usize = 20;
 pub const BOLLINGER_MULTIPLIER: f64 = 2.0;
 pub const SUPERTREND_PERIOD: usize = 10;
@@ -15,9 +13,15 @@ pub const EMA_DEFAULT_PERIOD: usize = 20;
 pub const EMA_PERIODS: [usize; 5] = [9, 20, 50, 100, 200];
 
 /// Which built-in indicators a chart draws.
+///
+/// RSI is not one of them any more: it is the bundled Pine indicator `rsi`, in a pane of its own
+/// like MACD. `show_rsi` and `hide_rsi` are what a layout saved before that holds. They are still
+/// written (a build older than the pane decodes a row only when `show_rsi` is there) but nothing
+/// sets them: [`IndicatorConfig::take_legacy_rsi`] hands them over when a chart opens.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IndicatorConfig {
     pub show_volume: bool,
+    /// Legacy, see the type's docs.
     pub show_rsi: bool,
     pub show_ema: bool,
     pub ema_period: usize,
@@ -25,6 +29,7 @@ pub struct IndicatorConfig {
     pub show_trend_flips: bool,
     #[serde(default)]
     pub hide_volume: bool,
+    /// Legacy, see the type's docs.
     #[serde(default)]
     pub hide_rsi: bool,
     #[serde(default)]
@@ -54,12 +59,19 @@ impl Default for IndicatorConfig {
 }
 
 impl IndicatorConfig {
+    /// Takes the RSI an older layout kept here: `Some(hidden)` when the layout had one (whether its
+    /// eye was off), and clears it so it is handed over once.
+    pub fn take_legacy_rsi(&mut self) -> Option<bool> {
+        let hidden = self.hide_rsi;
+        self.hide_rsi = false;
+        std::mem::take(&mut self.show_rsi).then_some(hidden)
+    }
+
     /// The flags shown in the settings sheet mean "applied". Rendering additionally
     /// respects the header eye controls, while the chips remain available to restore them.
     pub fn drawn(self) -> Self {
         Self {
             show_volume: self.show_volume && !self.hide_volume,
-            show_rsi: self.show_rsi && !self.hide_rsi,
             show_ema: self.show_ema && !self.hide_ema,
             show_bollinger: self.show_bollinger && !self.hide_bollinger,
             show_trend_flips: self.show_trend_flips && !self.hide_trend_flips,
@@ -73,26 +85,18 @@ impl IndicatorConfig {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BuiltIn {
     Volume,
-    Rsi,
     Ema,
     Bollinger,
     TrendFlips,
 }
 
 impl BuiltIn {
-    pub const ALL: [Self; 5] = [
-        Self::Volume,
-        Self::Rsi,
-        Self::Ema,
-        Self::Bollinger,
-        Self::TrendFlips,
-    ];
+    pub const ALL: [Self; 4] = [Self::Volume, Self::Ema, Self::Bollinger, Self::TrendFlips];
 
-    /// The stable identifier (`volume`, `rsi`, `ema`, `bollinger`, `trend_flips`).
+    /// The stable identifier (`volume`, `ema`, `bollinger`, `trend_flips`).
     pub fn id(self) -> &'static str {
         match self {
             Self::Volume => "volume",
-            Self::Rsi => "rsi",
             Self::Ema => "ema",
             Self::Bollinger => "bollinger",
             Self::TrendFlips => "trend_flips",
@@ -104,7 +108,6 @@ impl BuiltIn {
     pub fn menu_title(self) -> &'static str {
         match self {
             Self::Volume => "Volume",
-            Self::Rsi => "RSI",
             Self::Ema => "EMA",
             Self::Bollinger => "Bollinger Bands",
             Self::TrendFlips => "Trend Flips",
@@ -115,17 +118,17 @@ impl BuiltIn {
     pub fn display_title(self) -> &'static str {
         match self {
             Self::Volume => tr!("Volume"),
-            Self::Rsi => "RSI",
             Self::Ema => "EMA",
             Self::Bollinger => tr!("Bollinger Bands"),
             Self::TrendFlips => tr!("Trend Flips"),
         }
     }
 
-    /// Whether it draws on the price pane (`true`) or in a pane of its own.
+    /// Whether it draws on the price pane (`true`) or under the candles in a band of the price
+    /// plot (`false`). None of them has a pane of its own: that is what a Pine indicator is for.
     pub fn is_overlay(self) -> bool {
         match self {
-            Self::Volume | Self::Rsi => false,
+            Self::Volume => false,
             Self::Ema | Self::Bollinger | Self::TrendFlips => true,
         }
     }
@@ -138,7 +141,6 @@ impl BuiltIn {
     pub fn chip_title(self, config: &IndicatorConfig) -> String {
         match self {
             Self::Volume => tr_c!("indicator chip", "Vol").into(),
-            Self::Rsi => format!("RSI {RSI_PERIOD}"),
             Self::Ema => format!("EMA {}", config.ema_period),
             Self::Bollinger => "BB".into(),
             Self::TrendFlips => tr!("Trend Flips").into(),
@@ -148,7 +150,6 @@ impl BuiltIn {
     pub fn applied(self, config: &IndicatorConfig) -> bool {
         match self {
             Self::Volume => config.show_volume,
-            Self::Rsi => config.show_rsi,
             Self::Ema => config.show_ema,
             Self::Bollinger => config.show_bollinger,
             Self::TrendFlips => config.show_trend_flips,
@@ -158,7 +159,6 @@ impl BuiltIn {
     pub fn hidden(self, config: &IndicatorConfig) -> bool {
         match self {
             Self::Volume => config.hide_volume,
-            Self::Rsi => config.hide_rsi,
             Self::Ema => config.hide_ema,
             Self::Bollinger => config.hide_bollinger,
             Self::TrendFlips => config.hide_trend_flips,
@@ -168,7 +168,6 @@ impl BuiltIn {
     pub fn set_applied(self, config: &mut IndicatorConfig, applied: bool) {
         match self {
             Self::Volume => config.show_volume = applied,
-            Self::Rsi => config.show_rsi = applied,
             Self::Ema => config.show_ema = applied,
             Self::Bollinger => config.show_bollinger = applied,
             Self::TrendFlips => config.show_trend_flips = applied,
@@ -181,7 +180,6 @@ impl BuiltIn {
     fn set_hidden(self, config: &mut IndicatorConfig, hidden: bool) {
         match self {
             Self::Volume => config.hide_volume = hidden,
-            Self::Rsi => config.hide_rsi = hidden,
             Self::Ema => config.hide_ema = hidden,
             Self::Bollinger => config.hide_bollinger = hidden,
             Self::TrendFlips => config.hide_trend_flips = hidden,
@@ -203,7 +201,6 @@ pub struct BollingerSeries {
 /// Indicator readings aligned 1:1 with the visible candles. Empty means off.
 #[derive(Clone, Debug, Default)]
 pub struct IndicatorSeries {
-    pub rsi: Vec<Option<f64>>,
     pub ema: Vec<Option<f64>>,
     pub bollinger: Option<BollingerSeries>,
     /// `Some(true)` bullish flip, `Some(false)` bearish.
@@ -226,9 +223,6 @@ impl IndicatorSeries {
         }
         let end = (start + len).min(candles.len());
 
-        if config.show_rsi {
-            series.rsi = rsi(candles, RSI_PERIOD)[start..end].to_vec();
-        }
         if config.show_ema {
             series.ema = ema(candles, config.ema_period)[start..end].to_vec();
         }
@@ -421,9 +415,9 @@ mod tests {
     #[test]
     fn built_in_ids_are_stable_and_describe_placement() {
         let ids: Vec<_> = BuiltIn::ALL.iter().map(|kind| kind.id()).collect();
-        assert_eq!(ids, ["volume", "rsi", "ema", "bollinger", "trend_flips"]);
+        assert_eq!(ids, ["volume", "ema", "bollinger", "trend_flips"]);
         assert!(BuiltIn::Ema.is_overlay() && BuiltIn::Bollinger.is_overlay());
-        assert!(!BuiltIn::Rsi.is_overlay() && !BuiltIn::Volume.is_overlay());
+        assert!(!BuiltIn::Volume.is_overlay());
         assert!(!BuiltIn::Volume.supports_line_charts());
     }
 
@@ -451,6 +445,21 @@ mod tests {
         assert_eq!(values[1], None);
         assert_eq!(values[2], Some(2.0)); // seed = (1+2+3)/3
         assert!(values[4].is_some());
+    }
+
+    #[test]
+    fn the_old_rsi_flag_is_handed_over_once() {
+        let mut config = IndicatorConfig {
+            show_rsi: true,
+            hide_rsi: true,
+            show_ema: true,
+            ..IndicatorConfig::default()
+        };
+        assert_eq!(config.take_legacy_rsi(), Some(true));
+        assert_eq!(config.take_legacy_rsi(), None);
+        assert!(config.show_ema, "the others are left alone");
+        assert!(!config.show_rsi && !config.hide_rsi);
+        assert_eq!(IndicatorConfig::default().take_legacy_rsi(), None);
     }
 
     #[test]
@@ -483,7 +492,6 @@ mod tests {
     fn indicator_frame_cost_report() {
         let config = IndicatorConfig {
             show_volume: true,
-            show_rsi: true,
             show_ema: true,
             show_bollinger: true,
             show_trend_flips: true,

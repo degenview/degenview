@@ -837,7 +837,7 @@ mod tests {
             McpCommand::Chart(ChartCommand::RemoveIndicator {
                 workspace_id: 1,
                 chart_id: 1,
-                indicator: crate::model::BuiltIn::Rsi,
+                indicator: crate::mcp::tools::McpIndicator::Rsi,
             }),
         ]
     }

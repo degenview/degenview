@@ -27,6 +27,7 @@ use crate::mcp::session_stats::tools::GET_SESSION_STATS;
 use crate::mcp::snapshot::GET_CHART_SNAPSHOT;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::model::mcp::{McpAuditOutcome, Permission};
+use crate::model::pine::bundled;
 use crate::model::{BuiltIn, DataSource};
 use rmcp::handler::server::common::{AsRequestContext, FromContextPart};
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -169,14 +170,40 @@ pub enum McpIndicator {
     TrendFlips,
 }
 
+/// What an indicator id of the MCP tools names in the app: a built-in drawn by the chart, or an
+/// indicator bundled with the app, which has a Pine pane of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndicatorTarget {
+    BuiltIn(BuiltIn),
+    Bundled(&'static str),
+}
+
 impl McpIndicator {
-    pub(super) fn built_in(self) -> BuiltIn {
+    /// The id `degenview_list_indicators` gives it.
+    pub fn id(self) -> &'static str {
+        match self.target() {
+            IndicatorTarget::BuiltIn(kind) => kind.id(),
+            IndicatorTarget::Bundled(id) => id,
+        }
+    }
+
+    /// What the app calls it.
+    pub fn title(self) -> &'static str {
+        match self.target() {
+            IndicatorTarget::BuiltIn(kind) => kind.menu_title(),
+            IndicatorTarget::Bundled(id) => {
+                bundled::find(id).map_or(id, |indicator| indicator.name)
+            }
+        }
+    }
+
+    pub fn target(self) -> IndicatorTarget {
         match self {
-            Self::Volume => BuiltIn::Volume,
-            Self::Rsi => BuiltIn::Rsi,
-            Self::Ema => BuiltIn::Ema,
-            Self::Bollinger => BuiltIn::Bollinger,
-            Self::TrendFlips => BuiltIn::TrendFlips,
+            Self::Volume => IndicatorTarget::BuiltIn(BuiltIn::Volume),
+            Self::Rsi => IndicatorTarget::Bundled("rsi"),
+            Self::Ema => IndicatorTarget::BuiltIn(BuiltIn::Ema),
+            Self::Bollinger => IndicatorTarget::BuiltIn(BuiltIn::Bollinger),
+            Self::TrendFlips => IndicatorTarget::BuiltIn(BuiltIn::TrendFlips),
         }
     }
 }

@@ -274,8 +274,8 @@ mod tests {
     fn indicators_scripts_and_drawings_are_listed_in_sections() {
         let mut config = IndicatorConfig::default();
         BuiltIn::Ema.set_applied(&mut config, true);
-        BuiltIn::Rsi.set_applied(&mut config, true);
-        BuiltIn::Rsi.toggle_visible(&mut config);
+        BuiltIn::Bollinger.set_applied(&mut config, true);
+        BuiltIn::Bollinger.toggle_visible(&mut config);
         let scripts = [PineInstance::new(3, None, "My script", "//@version=6")];
         let drawings = [line(1), line(2)];
         let rows = rows(&inputs(&config, &scripts, &drawings), "");
@@ -285,16 +285,16 @@ mod tests {
                 "Symbol",
                 "BTCUSDT",
                 "Indicators",
-                "RSI 14",
                 "EMA 20",
+                "BB",
                 "My script",
                 "Drawings",
                 "Trend line 2",
                 "Trend line 1",
             ]
         );
-        let rsi = rows.iter().find(|row| row.label == "RSI 14").unwrap();
-        assert_eq!(rsi.shown, Some(false), "hidden by its eye");
+        let bands = rows.iter().find(|row| row.label == "BB").unwrap();
+        assert_eq!(bands.shown, Some(false), "hidden by its eye");
         let script = rows.iter().find(|row| row.label == "My script").unwrap();
         assert_eq!(script.key, Key::Indicator(IndicatorKey::Script(3)));
         assert_eq!(script.shown, Some(true));

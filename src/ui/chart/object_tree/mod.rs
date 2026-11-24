@@ -411,7 +411,6 @@ fn row_icon(row: &Row) -> Icon {
         Key::Symbol | Key::Heading(_) => Icon::ChartLine,
         Key::Indicator(IndicatorKey::BuiltIn(indicator)) => match indicator {
             BuiltIn::Volume => Icon::BarChart,
-            BuiltIn::Rsi => Icon::Waveform,
             BuiltIn::Ema | BuiltIn::Bollinger | BuiltIn::TrendFlips => Icon::ChartUptrend,
         },
         Key::Indicator(IndicatorKey::Script(_)) => Icon::AngleBrackets,

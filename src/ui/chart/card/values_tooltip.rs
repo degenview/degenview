@@ -160,9 +160,6 @@ impl ChartCard {
                 }
             }
         }
-        if let Some(value) = at(&series.rsi) {
-            rows.push(("RSI".to_owned(), format!("{value:.2}")));
-        }
         if let Some(flip) = series.trend_flips.get(index).copied().flatten() {
             let name = if flip {
                 tr!("Bullish flip")

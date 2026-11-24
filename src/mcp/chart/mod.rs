@@ -13,8 +13,10 @@ use crate::mcp::confirm::{Confirm, Gate};
 use crate::mcp::indicator::ReadingRequest;
 use crate::mcp::indicator::tools::REMOVE_INDICATOR;
 use crate::mcp::session_stats::Query;
-use crate::mcp::tools::{ADD_CHART, ADD_DRAWINGS, ADD_INDICATOR, DELETE_DRAWINGS, UPDATE_DRAWING};
-use crate::model::{BuiltIn, ChartType, InstrumentId, Timeframe};
+use crate::mcp::tools::{
+    ADD_CHART, ADD_DRAWINGS, ADD_INDICATOR, DELETE_DRAWINGS, McpIndicator, UPDATE_DRAWING,
+};
+use crate::model::{ChartType, InstrumentId, Timeframe};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChartCommand {
@@ -29,14 +31,14 @@ pub enum ChartCommand {
     ApplyIndicator {
         workspace_id: u64,
         chart_id: u64,
-        indicator: BuiltIn,
+        indicator: McpIndicator,
         ema_period: Option<usize>,
     },
     /// Takes a built-in indicator off a chart.
     RemoveIndicator {
         workspace_id: u64,
         chart_id: u64,
-        indicator: BuiltIn,
+        indicator: McpIndicator,
     },
     /// Built-in indicator readings over a chart's candles.
     GetIndicatorValues {

@@ -69,13 +69,6 @@ impl ChartCard {
                 });
             }
         }
-        if drawn.show_rsi {
-            extras.push(Extra {
-                title: "RSI".to_owned(),
-                kind: ValueKind::Plain,
-                values: series.rsi.clone(),
-            });
-        }
         if drawn.show_trend_flips {
             extras.push(Extra {
                 title: tr!("Supertrend flip").to_owned(),

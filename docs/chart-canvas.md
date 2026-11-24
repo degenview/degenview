@@ -140,8 +140,9 @@ pointer whatever tool is armed (Zoom In included), as the pane buttons do, but a
 owns the whole chart (Select portion, a replay start or Pine Logs range pick) sees no line: no resize
 pointer and no drag. There is no double-click reset.
 
-Built-in indicators (volume, RSI, Bollinger) are drawn inside the price plot, not in panes, so they
-have no pane buttons.
+The built-in indicators (volume, EMA, Bollinger, trend flips) are drawn inside the price plot, not in
+panes, so they have no pane buttons. RSI is not one of them: it is the bundled Pine indicator `rsi`,
+in a pane like MACD (see [Indicator catalog](indicator-picker.md)).
 
 ## The colour picker
 
