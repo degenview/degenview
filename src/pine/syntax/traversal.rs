@@ -248,34 +248,76 @@ pub fn for_each_call_with_args<'a>(
     statements: &'a [Statement],
     visit: &mut impl FnMut(&'a str, &'a [super::ast::Argument], SourceRange),
 ) {
+    for_each_call_site(statements, &mut |site| {
+        if !site.method {
+            visit(site.name, site.arguments, site.range);
+        }
+    });
+}
+
+/// One call as written, with the number the checker knows it by.
+pub struct CallSite<'a> {
+    /// The callee as written: a name, a dotted path (`levels.top`), or for a method called on
+    /// another expression (`f().top(x)`) the method's name alone.
+    pub name: &'a str,
+    pub arguments: &'a [super::ast::Argument],
+    pub site: usize,
+    pub range: SourceRange,
+    /// A method called on something that is not a plain variable path.
+    pub method: bool,
+}
+
+/// Visits every call at any depth, including methods called on other expressions, which
+/// [`for_each_call_with_args`] leaves out.
+pub fn for_each_call_site<'a>(statements: &'a [Statement], visit: &mut impl FnMut(CallSite<'a>)) {
     for statement in statements {
         for expression in expressions(statement) {
-            for_each_call_in_expression(expression, visit);
+            for_each_call_site_in_expression(expression, visit);
         }
         for block in nested_blocks(statement) {
-            for_each_call_with_args(block, visit);
+            for_each_call_site(block, visit);
         }
     }
 }
 
-fn for_each_call_in_expression<'a>(
+fn for_each_call_site_in_expression<'a>(
     expression: &'a Expression,
-    visit: &mut impl FnMut(&'a str, &'a [super::ast::Argument], SourceRange),
+    visit: &mut impl FnMut(CallSite<'a>),
 ) {
     match expression {
         Expression::Call {
             name,
             arguments,
+            site,
             range,
             ..
-        } => visit(name, arguments, *range),
+        } => visit(CallSite {
+            name,
+            arguments,
+            site: *site,
+            range: *range,
+            method: false,
+        }),
+        Expression::MethodCall {
+            name,
+            arguments,
+            site,
+            range,
+            ..
+        } => visit(CallSite {
+            name,
+            arguments,
+            site: *site,
+            range: *range,
+            method: true,
+        }),
         Expression::Statement(statement, _) => {
-            for_each_call_with_args(std::slice::from_ref(statement.as_ref()), visit);
+            for_each_call_site(std::slice::from_ref(statement.as_ref()), visit);
         }
         _ => {}
     }
     for child in children(expression) {
-        for_each_call_in_expression(child, visit);
+        for_each_call_site_in_expression(child, visit);
     }
 }
 

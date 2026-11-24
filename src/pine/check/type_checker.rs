@@ -54,6 +54,10 @@ pub struct Checked {
     /// The callable each call site selected, by call-site number and by position among the script's
     /// top-level functions (see [`Callables`]). A call the checker could not settle is absent.
     pub resolutions: HashMap<usize, usize>,
+    /// The builtin function each method-style call site means (`lbl.set_text("x")` is
+    /// `label.set_text`), by call-site number, where the receiver's type is known. A call to a
+    /// method the script declares is a `resolutions` entry instead.
+    pub builtin_methods: HashMap<usize, String>,
 }
 
 type Scope = HashMap<String, Inferred>;
@@ -77,6 +81,7 @@ pub struct TypeChecker {
     /// Calls between callables, for finding the ones that reach themselves.
     edges: Vec<(usize, usize, SourceRange)>,
     resolutions: HashMap<usize, usize>,
+    builtin_methods: HashMap<usize, String>,
     /// The value of the statement just checked, which a function returns when it is the last.
     last: Inferred,
     /// Whether the script imports a library, whose methods this checker cannot see.
@@ -126,6 +131,7 @@ impl TypeChecker {
             current: None,
             edges: Vec::new(),
             resolutions: HashMap::new(),
+            builtin_methods: HashMap::new(),
             last: Inferred::Unknown,
             imports,
         };
@@ -146,6 +152,7 @@ impl TypeChecker {
         Checked {
             diagnostics: checker.diagnostics,
             resolutions: checker.resolutions,
+            builtin_methods: checker.builtin_methods,
         }
     }
 
@@ -154,6 +161,7 @@ impl TypeChecker {
         self.diagnostics.clear();
         self.edges.clear();
         self.resolutions.clear();
+        self.builtin_methods.clear();
         self.last = Inferred::Unknown;
         self.current = None;
         self.read_unsettled = false;
@@ -1026,7 +1034,7 @@ impl TypeChecker {
             }
             Resolution::NoFit(reasons) => {
                 // A builtin method of the same name takes the call when no declaration does.
-                match self.builtin_method(&receiver_ty, receiver, member, values) {
+                match self.builtin_method(&receiver_ty, receiver, member, values, site) {
                     Some(result) => result,
                     None => {
                         if reasons.is_empty() {
@@ -1049,6 +1057,7 @@ impl TypeChecker {
         value: Inferred,
         member: &str,
         values: &[Inferred],
+        site: usize,
     ) -> Option<Inferred> {
         let namespace = match receiver {
             Ty::Array(_) => "array",
@@ -1082,6 +1091,8 @@ impl TypeChecker {
         if !exists {
             return None;
         }
+        self.builtin_methods
+            .insert(site, format!("{namespace}.{member}"));
         let _ = values;
         Some(match (receiver, member) {
             (Ty::Array(element), "get" | "first" | "last" | "pop" | "shift" | "remove") => {

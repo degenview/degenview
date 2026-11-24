@@ -363,8 +363,8 @@ impl CompiledProgram {
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
-        PolylineOutput, Size, TableOutput, TablePosition, TextAlign, YLocation,
+        BoxOutput, FontFamily, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle,
+        LinefillOutput, PolylineOutput, Size, TableOutput, TablePosition, TextAlign, YLocation,
     };
 
     #[test]
@@ -462,6 +462,7 @@ mod tests {
             text_color: 0,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: None,
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
@@ -485,6 +486,7 @@ mod tests {
             text: String::new(),
             text_color: 0,
             text_size: Size::Normal,
+            text_font_family: FontFamily::Default,
             text_horizontal_align: TextAlign::Center,
             text_vertical_align: TextAlign::Center,
             time_anchored: false,

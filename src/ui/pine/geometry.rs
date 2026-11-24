@@ -6,8 +6,9 @@
 
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape, PlotStyle, Size,
-    TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation, index_is_known,
+    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape,
+    PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation,
+    index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
@@ -560,12 +561,12 @@ impl TableLayout {
     }
 }
 
-/// Sizes the grid to its cell text. `measure(text, font_size)` is the text's size; a cell's
+/// Sizes the grid to its cell text. `measure(text, font_size, family)` is the text's size; a cell's
 /// `width` and `height` are minimums, as a percentage of the plot area.
 pub fn measure_table(
     table: &TableOutput,
     area: Vec2,
-    measure: &dyn Fn(&str, f32) -> Vec2,
+    measure: &dyn Fn(&str, f32, FontFamily) -> Vec2,
 ) -> TableLayout {
     let mut layout = TableLayout {
         widths: vec![0.0; table.columns],
@@ -576,7 +577,7 @@ pub fn measure_table(
             continue;
         }
         let font = block_font_size(cell.text_size);
-        let size = measure(&cell.text, font) + cell_padding(font);
+        let size = measure(&cell.text, font, cell.text_font_family) + cell_padding(font);
         let width = size.x.max(area.x * cell.width as f32 / 100.0);
         let height = size.y.max(area.y * cell.height as f32 / 100.0);
         if cell.column_span == 1 {
@@ -595,7 +596,7 @@ pub fn measure_table(
             continue;
         }
         let font = block_font_size(cell.text_size);
-        let size = measure(&cell.text, font) + cell_padding(font);
+        let size = measure(&cell.text, font, cell.text_font_family) + cell_padding(font);
         let last = (cell.column + cell.column_span).min(table.columns) - 1;
         let last_row = (cell.row + cell.row_span).min(table.rows) - 1;
         let span_width: f32 = layout.widths[cell.column..=last].iter().sum();
@@ -1191,6 +1192,7 @@ mod tests {
             text_color: 0,
             background_color: None,
             text_size: Size::Normal,
+            text_font_family: FontFamily::Default,
             column_span: 1,
             row_span: 1,
             text_horizontal_align: TextAlign::Center,
@@ -1201,7 +1203,7 @@ mod tests {
         }
     }
 
-    fn measure(text: &str, font: f32) -> Vec2 {
+    fn measure(text: &str, font: f32, _family: FontFamily) -> Vec2 {
         Vec2::new(text.chars().count() as f32 * font / 2.0, font)
     }
 
@@ -1250,7 +1252,7 @@ mod tests {
         let pad = cell_padding(14.0);
         assert_eq!(layout.widths, [0.0, 21.0 * 7.0 + pad.x]);
         let roomy = table(2, 1, vec![merged, cell(0, 0, "x")]);
-        let roomy_layout = measure_table(&roomy, Vec2::new(400.0, 300.0), &|_, _| {
+        let roomy_layout = measure_table(&roomy, Vec2::new(400.0, 300.0), &|_, _, _| {
             Vec2::new(10.0, 12.0)
         });
         assert_eq!(

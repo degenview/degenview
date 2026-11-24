@@ -3,7 +3,7 @@
 
 use super::{FromName, parse};
 use crate::pine::outputs::{
-    LabelStyle, LineExtend, LineStyle, Size, TablePosition, TextAlign, YLocation,
+    FontFamily, LabelStyle, LineExtend, LineStyle, Size, TablePosition, TextAlign, YLocation,
 };
 use crate::pine::runtime::value::RuntimeValue;
 
@@ -17,6 +17,16 @@ pub(super) fn size_of(value: Option<&RuntimeValue>, fallback: Size) -> Size {
         }
         Some(value) => parse(value.text_value(), fallback, fallback),
         None => fallback,
+    }
+}
+
+impl FromName for FontFamily {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "font.family_default" => Some(Self::Default),
+            "font.family_monospace" => Some(Self::Monospace),
+            _ => None,
+        }
     }
 }
 

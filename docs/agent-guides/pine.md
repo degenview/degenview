@@ -98,8 +98,21 @@
   editor offers these names. Drawings store bar indexes and `time_anchored`; `set_xloc` re-reads
   coordinates and flips it. Label `yloc` stored with its price, ignored (may be `na`) above/below the
   bar; `PineLayer::label_y` resolves it against the candle, price scale unaffected.
-- `table.cell_set_*` creates a blank cell if undefined (inferred). Undrawable properties
-  (font family, bold/italic) warned via `ignored_features`, never silently dropped.
+- `table.cell_set_*` creates a blank cell if undefined (inferred). `text_font_family`
+  (`font.family_default` / `font.family_monospace`) is stored as `FontFamily` on labels, boxes and
+  cells and drawn through `chart_render::font_id` (egui's monospace face), measured in the same face.
+  Bold/italic are not drawn and are warned via `ignored_features`, never silently dropped.
+- Drawing calls bind through `drawings::parameters(name)` (`parameters.rs`, TradingView's order,
+  handle first; `point_parameters` for the `chart.point` form of `line/label/box.new`): constructors,
+  setters, getters, `copy` and `delete` all take their arguments positionally or by name, in any
+  order. A new drawing function gets its entry there (a test fails for a member without one); never
+  read `args[n]`. `pine::compiler::signatures` is the one lookup of a builtin's parameter names
+  (its table, `ta`, collections, drawings): the editor's signature help and `ignored_features` both
+  read it, so a positional argument (`label.new(…, text.format_bold)`) is warned like a named one.
+  A method-style call (`lbl.set_text_formatting(…)`, also on `f()`) is warned under the builtin the
+  checker resolved it to (`Checked::builtin_methods`, by call site); a receiver of unknown type
+  (an untyped parameter) and a `chart.point` held in a variable (so the point form is not seen)
+  are not.
 - Text sizes are measured on TradingView (a probe of every size, drawn there and here with
   `gallery_of_a_script`, `ui::chart::card::snapshot_tests`), in `ui::pine::geometry`, never inline.
   Table and box text (`block_font_size`) is its named size in pixels: 8, 10, 14, 20, 36; a cell is
@@ -285,7 +298,7 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   - Theme and font owned by `host::editor_theme` (saved after a pause, never while Settings
     draws); change through it so all windows repaint. See [Editor themes](../editor-themes.md).
 - Completion never compiles, runs, re-lexes or touches network/storage. Builtins from the symbol
-  catalog, signatures from `pine_studio::editor::signature`: add new builtins to both. `array.*`/`map.*`
+  catalog, signatures from `pine::compiler::signatures`: add new builtins to both. `array.*`/`map.*`
   come from `array_builtins::KNOWN` / `map_builtins::NAMES` (signatures `parameters()`), no editor
   edit needed. List shows `COMPLETION_ROWS` (10) and scrolls to the highlight on ↑/↓;
   `completion_keys` consumes keys before drawing, so set `CompletionView::scroll_to_selected`, don't

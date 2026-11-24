@@ -16,8 +16,8 @@ use crate::model::Kline;
 use crate::model::chart::look::drawn_extremes;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerLocation, MarkerOutput, MarkerShape, PlotOutput,
-    PlotStyle, Size, TableOutput, YLocation,
+    DISPLAY_PANE, FontFamily, LabelOutput, LabelStyle, MarkerLocation, MarkerOutput, MarkerShape,
+    PlotOutput, PlotStyle, Size, TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
 use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
@@ -179,15 +179,23 @@ fn stroke_path(painter: &Painter, points: &[Pos2], stroke: Stroke, dashes: &[f32
     }
 }
 
-fn text_at(painter: &Painter, text: &str, size: f32, color: Color32, at: Pos2, anchor: Align2) {
-    let galley = painter.layout_no_wrap(text.to_owned(), FontId::proportional(size), color);
+/// The face a script asked for its text (`font.family_*`), at `size` points.
+fn font_id(size: f32, family: FontFamily) -> FontId {
+    match family {
+        FontFamily::Default => FontId::proportional(size),
+        FontFamily::Monospace => FontId::monospace(size),
+    }
+}
+
+fn text_at(painter: &Painter, text: &str, font: FontId, color: Color32, at: Pos2, anchor: Align2) {
+    let galley = painter.layout_no_wrap(text.to_owned(), font, color);
     let rect = anchor.anchor_size(at, galley.size());
     painter.galley(rect.min, galley, color);
 }
 
-fn measure(painter: &Painter, text: &str, size: f32) -> Vec2 {
+fn measure(painter: &Painter, text: &str, font: FontId) -> Vec2 {
     painter
-        .layout_no_wrap(text.to_owned(), FontId::proportional(size), Color32::WHITE)
+        .layout_no_wrap(text.to_owned(), font, Color32::WHITE)
         .size()
 }
 
@@ -746,7 +754,7 @@ impl PineLayer<'_> {
                 text_at(
                     &painter.with_clip_rect(clip.intersect(painter.clip_rect())),
                     &item.text,
-                    block_font_size(item.text_size),
+                    font_id(block_font_size(item.text_size), item.text_font_family),
                     rgba(item.text_color),
                     point,
                     anchor,
@@ -896,7 +904,7 @@ impl PineLayer<'_> {
             let Some(layout) = self.label_geometry(painter, label) else {
                 continue;
             };
-            let size = label_font_size(label.size);
+            let font = font_id(label_font_size(label.size), label.font_family);
             let text = rgba(label.text_color);
             if let Some(fill) = label.color.filter(|c| is_visible(*c)) {
                 draw_label_shape(painter, &layout, rgba(fill));
@@ -904,7 +912,7 @@ impl PineLayer<'_> {
             text_at(
                 painter,
                 &label.text,
-                size,
+                font,
                 text,
                 layout.body.center(),
                 Align2::CENTER_CENTER,
@@ -922,7 +930,7 @@ impl PineLayer<'_> {
         let y = self.label_y(label)?;
         let anchor = Pos2::new(self.x_bar(label.x), y);
         let font = label_font_size(label.size);
-        let measured = measure(painter, &label.text, font);
+        let measured = measure(painter, &label.text, font_id(font, label.font_family));
         Some(label_layout(
             label.style,
             anchor,
@@ -991,7 +999,14 @@ impl PineLayer<'_> {
                 let centre = Pos2::new(x, y);
                 let half_height = match &marker.character {
                     Some(glyph) => {
-                        text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
+                        text_at(
+                            painter,
+                            glyph,
+                            FontId::proportional(12.0),
+                            color,
+                            centre,
+                            Align2::CENTER_CENTER,
+                        );
                         6.0
                     }
                     // Drawn, not typeset: "▲" and "▼" are in no font bundled with egui, so
@@ -1017,7 +1032,7 @@ impl PineLayer<'_> {
                     text_at(
                         painter,
                         text,
-                        label_font_size(marker.size),
+                        FontId::proportional(label_font_size(marker.size)),
                         text_color,
                         at,
                         anchor,
@@ -1035,8 +1050,8 @@ impl PineLayer<'_> {
             .visible(&marker.texts, i)
             .and_then(|text| text.as_deref())
             .unwrap_or("");
-        let font = label_font_size(Size::Normal);
-        let measured = measure(painter, text, font);
+        let font = FontId::proportional(label_font_size(Size::Normal));
+        let measured = measure(painter, text, font.clone());
         let tip = Pos2::new(
             x,
             self.marker_tip_y(marker.location, &marker.prices, i, metrics.gap),
@@ -1198,8 +1213,8 @@ impl PineLayer<'_> {
             .iter()
             .filter(|t| t.columns > 0 && t.rows > 0 && !t.cells.is_empty())
             .map(|table| {
-                let layout = geometry::measure_table(table, area.size(), &|text, size| {
-                    measure(painter, text, size)
+                let layout = geometry::measure_table(table, area.size(), &|text, size, family| {
+                    measure(painter, text, font_id(size, family))
                 });
                 let origin = geometry::table_origin(layout.size(), table.position, area);
                 (table, layout, origin)
@@ -1523,7 +1538,7 @@ fn draw_table(
         text_at(
             painter,
             &cell.text,
-            block_font_size(cell.text_size),
+            font_id(block_font_size(cell.text_size), cell.text_font_family),
             rgba(cell.text_color),
             point,
             anchor,
@@ -1782,6 +1797,7 @@ mod tests {
             text: "zone".into(),
             text_color: 0xFFFF_FFFF,
             text_size: Size::Small,
+            text_font_family: FontFamily::Default,
             text_horizontal_align: TextAlign::Left,
             text_vertical_align: TextAlign::Top,
             time_anchored: false,
@@ -1796,6 +1812,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: None,
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
@@ -1840,6 +1857,7 @@ mod tests {
             text: "0123456789".into(),
             text_color: 0xFFFF_FFFF,
             text_size: Size::Huge,
+            text_font_family: FontFamily::Default,
             text_horizontal_align: TextAlign::Center,
             text_vertical_align: TextAlign::Center,
             time_anchored: false,
@@ -1949,6 +1967,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: None,
             text_align: TextAlign::Center,
             yloc,
@@ -2427,6 +2446,7 @@ mod tests {
                     text_color: 0xFFFF_FFFF,
                     background_color: None,
                     text_size: Size::Normal,
+                    text_font_family: FontFamily::Default,
                     column_span: 1,
                     row_span: 1,
                     text_horizontal_align: TextAlign::Center,
@@ -2445,6 +2465,7 @@ mod tests {
                         text_color: 0xFFFF_FFFF,
                         background_color: Some(0x0000_00FF),
                         text_size: Size::Normal,
+                        text_font_family: FontFamily::Default,
                         column_span: 1,
                         row_span: 1,
                         text_horizontal_align: TextAlign::Center,
@@ -2665,6 +2686,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             style: LabelStyle::LabelDown,
             size: Size::Normal,
+            font_family: FontFamily::Default,
             tooltip: tooltip.map(str::to_owned),
             text_align: TextAlign::Center,
             yloc: YLocation::Price,
@@ -2681,6 +2703,7 @@ mod tests {
             text_color: 0xFFFF_FFFF,
             background_color: None,
             text_size: Size::Normal,
+            text_font_family: FontFamily::Default,
             column_span: 1,
             row_span: 1,
             text_horizontal_align: TextAlign::Center,
