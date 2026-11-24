@@ -2338,6 +2338,10 @@ msgid "More chart patterns, Elliott waves and cycles"
 msgstr ""
 
 #: src/ui/workspace/tool_sidebar.rs
+msgid "More cursors"
+msgstr ""
+
+#: src/ui/workspace/tool_sidebar.rs
 msgid "More forecasting, volume and measurement tools"
 msgstr ""
 

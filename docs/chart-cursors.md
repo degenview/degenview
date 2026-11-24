@@ -37,8 +37,11 @@ an anchor needs the lines and the tags), and Esc or the tile brings it back.
   position, which is a frame behind). Only when the dot hid the pointer on the last frame, only the
   chart the pointer is over, only on the plot (a script pane has no crosshair to mark, so it keeps
   the system pointer). Live only; snapshots never contain it.
-- **Menu.** `ui/workspace/cursor_menu.rs`, opened by a click on the tile (`tool_sidebar::cursor_tile`).
-  Width is measured from the labels (`cursor_menu::width`), never guessed; the picked row is a light
+- **Tile and menu.** `tool_sidebar::cursor_tile` works like the rail's other menu tiles
+  (`menu_tile`). One click picks the chosen cursor the tile shows (`SetCursor(chosen_cursor())`,
+  which also puts an armed tool and Zoom In down, as Esc does), and opens nothing. The menu
+  (`ui/workspace/cursor_menu.rs`) opens from the tile's corner (the small triangle), a right-click,
+  or Right arrow while the tile has focus. Width is measured from the labels (`cursor_menu::width`), never guessed; the picked row is a light
   plate with dark text so it reads in both themes.
 
 ## The Eraser
@@ -184,8 +187,9 @@ cursor between sessions (ours does).
 ## Known differences and unverified
 
 - The Dot's size and ring are our design.
-- The tile's click opens the menu; it no longer disarms a drawing tool by itself (picking a cursor,
-  Esc, or arming another tool still does).
+- The tile's click picks the cursor it shows, which puts an armed tool or Zoom In down (a first
+  build opened the menu on every click, so the cursor could not be re-picked with one; that was a
+  regression against the other tiles and is fixed).
 - No pointer ring, ripple or trail: nothing documents them. The fade timings and the colour are ours.
 - The tooltip: TradingView documents the hold-to-show behaviour with a switch in the cursor menu, and
   (Charting Library 3.0) OHLC and change that follow the pointer; the **0.5 s**, the position, what
