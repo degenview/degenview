@@ -20,9 +20,12 @@ use crate::pine::runtime::support::{
 };
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
 use crate::pine::time::bucket::timeframe_of;
+use crate::service::ProviderError;
+use crate::service::market::retry::while_transient;
 use crate::store::scripts::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 /// Fetches `request.security` series through the REST kline service, so a script can read a symbol
 /// the chart does not carry. `candles` is blocking: one synchronous request per distinct key, which
@@ -31,6 +34,10 @@ pub struct KlineSecurityDataProvider;
 
 /// ~30 s TTL so repeated runs do not re-fetch a foreign symbol each bar.
 const SECURITY_CACHE_TTL_MS: i64 = 30_000;
+/// How long an intrabar fetch waits before asking again after a failure that may pass (a busy
+/// provider, a dropped connection); the script waits for it, so the wait is short.
+const INTRABAR_RETRY_DELAYS: [Duration; 2] =
+    [Duration::from_millis(500), Duration::from_millis(1_500)];
 type SecurityCache = HashMap<(SecurityKey, Option<ChartSpan>), (Vec<Kline>, i64)>;
 static SECURITY_CACHE: LazyLock<Mutex<SecurityCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -47,13 +54,21 @@ impl KlineSecurityDataProvider {
     }
 
     /// The series of finer bars over the chart's whole span (or its `calc_bars_count` newest bars).
-    fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
-        let target = timeframe_of(key.interval)?;
+    /// `Ok(None)` when there is nothing to build them from (the source has no candles that fold to
+    /// the length, or none in the span); an error when the source has them and did not answer.
+    fn intrabars(key: &SecurityKey, chart: ChartSpan) -> Result<Option<Vec<Kline>>, ProviderError> {
+        let Some(target) = timeframe_of(key.interval) else {
+            return Ok(None);
+        };
         let (plain, modifier) = ticker::split(&key.symbol);
-        let (source, symbol) = resolve_symbol(plain)?;
+        let Some((source, symbol)) = resolve_symbol(plain) else {
+            return Ok(None);
+        };
         // The candles the source itself has that `target` folds from, so a length it serves only
         // by folding (30 s on Gate.io, from its 10 s) is asked for in a length it can answer.
-        let plan = source.plan(target)?;
+        let Some(plan) = source.plan(target) else {
+            return Ok(None);
+        };
         let base_ms = plan.base().nominal_ms();
         let mut start = chart
             .start_ms
@@ -61,17 +76,20 @@ impl KlineSecurityDataProvider {
         if key.recent_bars > 0 {
             start = start.max(chart.end_ms - chart.spacing_ms * key.recent_bars as i64);
         }
-        let candles = crate::service::fetch_klines_range(
-            source,
-            &symbol,
-            plan.base(),
-            start,
-            chart.end_ms,
-            MAX_INTRABAR_CANDLES,
-        )
-        .ok()
-        .filter(|candles| !candles.is_empty())?;
-        Some(construct(modifier, plan.fold(candles, false)))
+        let candles = while_transient(&INTRABAR_RETRY_DELAYS, || {
+            crate::service::fetch_klines_range(
+                source,
+                &symbol,
+                plan.base(),
+                start,
+                chart.end_ms,
+                MAX_INTRABAR_CANDLES,
+            )
+        })?;
+        if candles.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(construct(modifier, plan.fold(candles, false))))
     }
 
     fn series(key: &SecurityKey, chart: Option<ChartSpan>) -> Option<Vec<Kline>> {
@@ -109,12 +127,29 @@ impl SecurityDataProvider for KlineSecurityDataProvider {
         }
         let finer = (key.interval * 1_000.0) < chart.spacing_ms as f64;
         let candles = if finer {
-            Self::intrabars(key, chart).or_else(|| Self::series(key, Some(chart)))?
+            intrabars_or_series(Self::intrabars(key, chart), || {
+                Self::series(key, Some(chart))
+            })?
         } else {
             Self::series(key, Some(chart))?
         };
         Self::remember(cache_key, &candles);
         Some(candles)
+    }
+}
+
+/// The intrabars when there are some. Nothing to build them from (`Ok(None)`): the source's own
+/// series of that length, which is the best there is. The source has them and did not answer, even
+/// asked again: nothing. Its newest candles of that length would leave every older bar without
+/// intrabars and no word of why, and with no answer the run reports it and the next run asks again.
+fn intrabars_or_series(
+    intrabars: Result<Option<Vec<Kline>>, ProviderError>,
+    series: impl FnOnce() -> Option<Vec<Kline>>,
+) -> Option<Vec<Kline>> {
+    match intrabars {
+        Ok(Some(intrabars)) => Some(intrabars),
+        Ok(None) => series(),
+        Err(_) => None,
     }
 }
 
@@ -215,6 +250,39 @@ pub fn run_script_checked_in_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bar(open_time: i64) -> Kline {
+        Kline {
+            open_time,
+            close_time: open_time + 999,
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1.0,
+        }
+    }
+
+    #[test]
+    fn intrabars_that_arrived_are_used_without_asking_for_the_series() {
+        let got = intrabars_or_series(Ok(Some(vec![bar(0)])), || {
+            panic!("the series is not asked for")
+        });
+        assert_eq!(got.map(|bars| bars.len()), Some(1));
+    }
+
+    #[test]
+    fn a_source_with_nothing_to_build_them_from_gives_its_own_series() {
+        let got = intrabars_or_series(Ok(None), || Some(vec![bar(0), bar(1_000)]));
+        assert_eq!(got.map(|bars| bars.len()), Some(2));
+    }
+
+    #[test]
+    fn a_source_that_did_not_answer_gives_nothing_not_its_newest_candles() {
+        let failed = ProviderError::from(crate::service::net::http::Error::Status(503));
+        let got = intrabars_or_series(Err(failed), || panic!("the series is not asked for"));
+        assert_eq!(got, None);
+    }
 
     /// A run at the script's default inputs.
     fn run_script(source: &str, bars: &[Kline], symbol: &SymbolInfo) -> VisualOutput {
