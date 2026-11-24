@@ -73,13 +73,14 @@ fn collect(
     Ok(plan.shape(candles, requested, max))
 }
 
-/// Gate.io's `interval` for a candle length it serves itself: `1m`, `4h`, `1d`, `7d` (weeks,
+/// Gate.io's `interval` for a candle length it serves itself: `10s`, `1m`, `4h`, `1d`, `7d` (weeks,
 /// from Monday) and `30d` (the calendar month).
 pub(crate) fn interval(timeframe: Timeframe) -> Option<&'static str> {
     if !DataSource::Gate.natives().contains(&timeframe) {
         return None;
     }
     [
+        (Timeframe::SECOND_10, "10s"),
         (Timeframe::MINUTE_1, "1m"),
         (Timeframe::MINUTE_5, "5m"),
         (Timeframe::MINUTE_15, "15m"),
@@ -287,7 +288,7 @@ mod tests {
         assert_eq!(
             intervals,
             [
-                "1m", "5m", "15m", "30m", "1h", "4h", "8h", "1d", "7d", "30d"
+                "10s", "1m", "5m", "15m", "30m", "1h", "4h", "8h", "1d", "7d", "30d"
             ]
         );
         // Gate.io also answers 3m, 2h, 6h and 12h, but documents none of them.
@@ -306,6 +307,7 @@ mod tests {
         // A request for 500 candles also asks for the one the start cuts.
         assert_eq!(base_of("1h"), ("1h", 500));
         assert_eq!(base_of("22m"), ("1m", 501 * 22));
+        assert_eq!(base_of("30s"), ("10s", 501 * 3));
         assert_eq!(base_of("2h"), ("1h", 501 * 2));
         assert_eq!(base_of("12h"), ("4h", 501 * 3));
         assert_eq!(base_of("3D"), ("1d", 501 * 3));

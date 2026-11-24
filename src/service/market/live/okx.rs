@@ -44,6 +44,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_second_chart_subscribes_to_the_one_second_bar() {
+        let session = session(&["BTC-USDT".into()], Timeframe::SECOND_1).unwrap();
+        let message: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
+        assert_eq!(message["args"][0]["channel"], "candle1s");
+    }
+
+    #[test]
     fn one_message_subscribes_every_market_to_the_bar_of_the_base_candle() {
         let session = session(&["btc-usdt".into(), "ETH-USDT".into()], Timeframe::DAY_1).unwrap();
         assert_eq!(session.url, "wss://ws.okx.com/ws/v5/business");

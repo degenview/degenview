@@ -68,6 +68,15 @@ mod tests {
     }
 
     #[test]
+    fn a_second_chart_streams_the_one_second_kline() {
+        let session = session(&["BTCUSDT".into()], Timeframe::SECOND_1);
+        assert_eq!(
+            session.url,
+            "wss://stream.binance.com/stream?streams=btcusdt@kline_1s"
+        );
+    }
+
+    #[test]
     fn parses_kline_stream_message() {
         let text = r#"{"stream":"btcusdt@kline_1h","data":{"k":{"t":1700000000000,"T":1700003599999,"o":"10","h":"12","l":"9","c":"11","v":"42.5","q":"0","x":false}}}"#;
         let (symbol, kline) = parse_kline(text).expect("parse");
