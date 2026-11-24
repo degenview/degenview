@@ -7,6 +7,7 @@ use crate::host::mcp::confirmation::{self, ConfirmationHost};
 use crate::host::mcp::paper::OrderMemory;
 use crate::host::mcp::snapshot::SnapshotJobs;
 use crate::host::mcp::{McpHost, McpTabs};
+use crate::i18n::tr;
 use crate::mcp::bridge::{McpCommand, McpError, McpReply, Request};
 use crate::mcp::state::McpShared;
 use crate::pine_studio::PineStudio;
@@ -229,7 +230,7 @@ impl DegenViewApp {
             macos_notifications::notify_async(
                 Arc::clone(&self.notifier),
                 crate::model::alert::notification::NotificationContent {
-                    title: format!("“{}” is asking permission", view.client_name),
+                    title: tr!("“{client}” is asking permission", client = view.client_name),
                     body: view.summary.line(),
                     identifier: format!("mcp-confirmation-{}", view.id),
                     sound: false,

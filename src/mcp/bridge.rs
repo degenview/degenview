@@ -8,7 +8,7 @@
 
 use crate::mcp::alert::AlertCommand;
 use crate::mcp::chart::ChartCommand;
-use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::confirm::{Confirm, Gate, Operation};
 use crate::mcp::market::WatchlistCommand;
 use crate::mcp::paper::PaperCommand;
 use crate::mcp::pine::PineCommand;
@@ -75,7 +75,7 @@ impl Confirm for McpCommand {
         self.domain().gate()
     }
 
-    fn plain_summary(&self) -> Option<(String, String)> {
+    fn plain_summary(&self) -> Option<(Operation, String)> {
         self.domain().plain_summary()
     }
 }

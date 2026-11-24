@@ -31,10 +31,110 @@ const SECURITY_NESTING_LIMIT: usize = 3;
 #[derive(Clone, Copy)]
 struct Step<'a> {
     bar: &'a Kline,
-    seconds: f64,
     confirmed: bool,
-    realtime: bool,
+    chart: ChartBar,
     skipped_after: Option<usize>,
+}
+
+/// The chart bar a request is evaluated for, which decides the request's `barstate.*`: the series
+/// the expression runs on is the same run, so a candle is realtime when the chart bar is and the
+/// candle does not end before the chart bar opens (an older candle caught up on a live bar is
+/// history), and it is the last when it holds the chart bar's final instant.
+#[derive(Clone, Copy)]
+struct ChartBar {
+    /// When the chart bar opens; `i64::MAX` for history before the chart's first bar.
+    start: i64,
+    /// When the chart bar closes (exclusive), where its bucket ends: a bar that does not divide the
+    /// day is cut at midnight. `i64::MIN` for history before the chart's first bar.
+    end: i64,
+    /// Whether the chart bar is the last one (`barstate.islast`).
+    last: bool,
+    /// Where the chart's history ends, when it is known: the candle that closed last with it is the
+    /// request's last confirmed history bar (`barstate.islastconfirmedhistory`).
+    history_end: Option<i64>,
+    /// Where the history the session was loaded with ends (`Session::history_end`), None when it
+    /// was never loaded as one: a candle that closed by then is confirmed (`barstate.isconfirmed`).
+    loaded_end: Option<i64>,
+    realtime: bool,
+    /// Whether this is the chart bar's first tick (`barstate.isnew`); true on history.
+    new: bool,
+}
+
+impl ChartBar {
+    /// History the chart does not show: the candles before its first bar.
+    const BEFORE_CHART: Self = Self {
+        start: i64::MAX,
+        end: i64::MIN,
+        last: false,
+        history_end: None,
+        loaded_end: None,
+        realtime: false,
+        new: true,
+    };
+
+    /// The bar `bar` runs as. `history_end` is `Session::history_end`; without it the chart bar
+    /// that is the last confirmed history one ends the history.
+    fn of(bar: &Kline, seconds: f64, flags: &BarFlags, history_end: Option<i64>) -> Self {
+        let end = Self::end_of(bar, seconds);
+        Self {
+            start: bar.open_time,
+            end,
+            last: flags.is_last,
+            history_end: history_end.or(flags.is_last_confirmed_history.then_some(end)),
+            loaded_end: history_end,
+            realtime: flags.is_realtime,
+            new: flags.is_new,
+        }
+    }
+
+    /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
+    fn replayed(bar: &Kline, seconds: f64, history_end: Option<i64>) -> Self {
+        Self {
+            start: bar.open_time,
+            end: Self::end_of(bar, seconds),
+            history_end,
+            loaded_end: history_end,
+            ..Self::BEFORE_CHART
+        }
+    }
+
+    /// Where the bar closes: the end of its bucket, which is not `open_time + seconds` for a length
+    /// that does not divide the day (a 5h bar opened at 20:00 closes at midnight) or a calendar month.
+    fn end_of(bar: &Kline, seconds: f64) -> i64 {
+        time::bucket::end(time::bucket::start(bar.open_time, seconds), seconds)
+    }
+
+    /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
+    ///
+    /// The last confirmed history bar belongs to the requested series, not to the chart bar: it is
+    /// the last candle that closed with the history, so the one whose successor is not history,
+    /// TradingView-measured (a `"1D"` request on a 4h chart, probe P12).
+    ///
+    /// A candle is new on history and on the first tick of the chart bar that opens it: a chart bar
+    /// that starts inside a candle sees that candle as already running.
+    ///
+    /// A candle is confirmed once it closed, and on history also while it develops (`lookahead_on`)
+    /// when it closes by the history's end: the candle is complete in the data, whichever chart bar
+    /// reads it. The one still open at the history's end, and one developing in real time, is not
+    /// (TradingView-measured: a completed month reads 1 from every chart bar inside it, the final
+    /// incomplete month 0, probes A and B; a developing day on a 4h history reads 1, probe R1).
+    fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
+        let candle_end = time::bucket::end(candle.open_time, interval);
+        let holds_last_instant = candle.open_time < self.end && self.end <= candle_end;
+        let is_realtime = self.realtime && candle_end > self.start;
+        let is_last_confirmed_history = self
+            .history_end
+            .is_some_and(|end| candle_end <= end && time::bucket::end(candle_end, interval) > end);
+        BarFlags {
+            is_first,
+            is_last: self.last && holds_last_instant,
+            is_history: !is_realtime,
+            is_realtime,
+            is_new: !is_realtime || (self.new && candle.open_time >= self.start),
+            is_confirmed: commit || self.loaded_end.is_some_and(|end| candle_end <= end),
+            is_last_confirmed_history,
+        }
+    }
 }
 
 /// The session state that belongs to the series now running, which a request's expression swaps for
@@ -513,7 +613,13 @@ impl Session {
             if time::bucket::end(candle.open_time, request.interval) > before {
                 break;
             }
-            site.last_result = self.evaluate_higher_timeframe(site, candle, request, true)?;
+            site.last_result = self.evaluate_higher_timeframe(
+                site,
+                candle,
+                request,
+                ChartBar::BEFORE_CHART,
+                true,
+            )?;
         }
         Ok(())
     }
@@ -550,9 +656,8 @@ impl Session {
             request,
             &Step {
                 bar: &bar,
-                seconds,
                 confirmed: context.flags.is_confirmed,
-                realtime: context.flags.is_realtime,
+                chart: ChartBar::of(&bar, seconds, &context.flags, self.history_end),
                 skipped_after: None,
             },
         )?;
@@ -593,9 +698,8 @@ impl Session {
                 request,
                 &Step {
                     bar: &bar,
-                    seconds,
                     confirmed: true,
-                    realtime: false,
+                    chart: ChartBar::replayed(&bar, seconds, self.history_end),
                     skipped_after: Some(skipped_after),
                 },
             )?;
@@ -642,9 +746,8 @@ impl Session {
     ) -> Result<(RuntimeValue, bool), Diagnostic> {
         let Step {
             bar,
-            seconds,
             confirmed,
-            realtime,
+            chart,
             skipped_after,
         } = *step;
         let replay = skipped_after.is_some();
@@ -657,7 +760,7 @@ impl Session {
             {
                 self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
                 state.last_result =
-                    self.evaluate_higher_timeframe(state, &pending, request, true)?;
+                    self.evaluate_higher_timeframe(state, &pending, request, chart, true)?;
                 fresh = true;
             }
             state.bucket = Some(start);
@@ -671,12 +774,14 @@ impl Session {
         developing.push(bar.clone());
         let developing = fold_one(&developing, request.interval);
         let end = time::bucket::end(start, request.interval);
-        let closes_bucket = bar.open_time + (seconds * 1000.0).round() as i64 >= end;
+        // The chart bar closes the bucket when its own end reaches the bucket's: a monthly bar is
+        // not `open_time + 30 days` (a 31-day month would never close its quarter or year).
+        let closes_bucket = chart.end >= end;
 
         let result;
         if closes_bucket && confirmed {
             self.replay_globals = skipped_after.map(|back| self.variables_as_of(back));
-            result = self.evaluate_higher_timeframe(state, &developing, request, true)?;
+            result = self.evaluate_higher_timeframe(state, &developing, request, chart, true)?;
             state.last_result = result.clone();
             state.accumulated = None;
             state.has_pending_bars = false;
@@ -686,8 +791,9 @@ impl Session {
                 state.accumulated = Some(developing.clone());
                 state.has_pending_bars = true;
             }
-            if !replay && (request.lookahead_on || realtime) {
-                result = self.evaluate_higher_timeframe(state, &developing, request, false)?;
+            if !replay && (request.lookahead_on || chart.realtime) {
+                result =
+                    self.evaluate_higher_timeframe(state, &developing, request, chart, false)?;
             } else {
                 result = state.last_result.clone();
             }
@@ -711,6 +817,7 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
+        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut fresh = false;
         if context.flags.is_confirmed {
             let chart_close = self.bar_end(&bar);
@@ -720,7 +827,7 @@ impl Session {
                     break;
                 }
                 state.last_result =
-                    self.evaluate_higher_timeframe(&mut state, candle, request, true)?;
+                    self.evaluate_higher_timeframe(&mut state, candle, request, chart, true)?;
                 state.completed_candles += 1;
                 fresh = true;
             }
@@ -730,7 +837,8 @@ impl Session {
             && let Some(index) = last_index(bar.open_time, candles)
             && index >= state.completed_candles
         {
-            result = self.evaluate_higher_timeframe(&mut state, &candles[index], request, false)?;
+            result =
+                self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
         }
         if request.gaps_on && !fresh {
             result = RuntimeValue::Na;
@@ -797,6 +905,7 @@ impl Session {
             gaps_on: false,
             foreign: None,
         };
+        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
         let mut results = Vec::new();
         let mut index = low;
         while index < candles.len() && candles[index].open_time < end {
@@ -804,6 +913,7 @@ impl Session {
                 &mut state,
                 &candles[index],
                 &request,
+                chart,
                 true,
             )?);
             index += 1;
@@ -843,13 +953,15 @@ impl Session {
         Ok(value)
     }
 
-    /// Runs the expression on `candle` in the site's own state. A commit keeps that state and
-    /// appends the candle to its histories; otherwise the state is thrown away, like a realtime tick.
+    /// Runs the expression on `candle` in the site's own state, for `chart_bar`. A commit keeps
+    /// that state and appends the candle to its histories; otherwise the state is thrown away, like
+    /// a realtime tick.
     fn evaluate_higher_timeframe(
         &mut self,
         site: &mut SecuritySite,
         candle: &Kline,
         request: &SecurityRequest,
+        chart_bar: ChartBar,
         commit: bool,
     ) -> Result<RuntimeValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
@@ -885,15 +997,12 @@ impl Session {
         self.working.instructions = 0;
         self.working.bar_index += 1;
 
-        let flags = BarFlags {
-            is_first: self.working.bar_index == 0,
-            is_last: false,
-            is_history: commit,
-            is_realtime: !commit,
-            is_new: true,
-            is_confirmed: commit,
-            is_last_confirmed_history: false,
-        };
+        let flags = chart_bar.flags_of(
+            candle,
+            request.interval,
+            commit,
+            self.working.bar_index == 0,
+        );
         let mut security_context = RuntimeContext::new(candle.clone(), flags);
         let requested = LogRequest {
             symbol: if request.symbol.is_empty() {
@@ -1355,6 +1464,451 @@ mod tests {
             .last()
             .copied()
             .flatten()
+    }
+
+    /// `count` hourly chart bars from `first_hour` (hours since the epoch, so hour 12 opens a 4h
+    /// candle and hour 24 a day).
+    fn hourly_chart(first_hour: i64, count: i64) -> Vec<Kline> {
+        (first_hour..first_hour + count)
+            .map(|hour| bar(hour * 3_600_000, 1.0 + hour as f64))
+            .collect()
+    }
+
+    /// The first plot of `source` over `chart`, bar by bar, with no provider candles.
+    fn plotted(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        run(&body, TestProvider::default(), chart).plots[0]
+            .values
+            .clone()
+    }
+
+    #[test]
+    fn bar_index_in_a_request_counts_from_zero() {
+        // 4h candles complete on chart bars 3, 7 and 11.
+        let values = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", bar_index))",
+            &hourly_chart(0, 12),
+        );
+        assert_eq!(values[3], Some(0.0));
+        assert_eq!(values[7], Some(1.0));
+        assert_eq!(values[11], Some(2.0));
+    }
+
+    #[test]
+    fn barstate_isfirst_in_a_request_is_true_on_its_first_bar_only() {
+        let values = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.isfirst ? 1.0 : 0.0))",
+            &hourly_chart(0, 12),
+        );
+        assert_eq!(values[3], Some(1.0));
+        assert_eq!(values[7], Some(0.0));
+    }
+
+    #[test]
+    fn timeframe_change_is_false_on_the_charts_first_bar() {
+        let chart = hourly_chart(13, 16);
+        let values = plotted("plot(timeframe.change(\"1D\") ? 1.0 : 0.0)", &chart);
+        assert_eq!(values[0], Some(0.0), "hour 13 opens mid-day");
+        assert_eq!(values[10], Some(0.0));
+        assert_eq!(values[11], Some(1.0), "hour 24 opens a day");
+    }
+
+    #[test]
+    fn timeframe_change_in_a_request_is_false_on_the_series_first_bar() {
+        // 4h candles open at hours 12, 16, 20 and 24 and complete on chart bars 2, 6, 10 and 14.
+        let values = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", timeframe.change(\"1D\") ? 1.0 : 0.0))",
+            &hourly_chart(13, 16),
+        );
+        assert_eq!(values[2], Some(0.0), "the requested series' first candle");
+        assert_eq!(values[10], Some(0.0), "20:00 is the same day as 16:00");
+        assert_eq!(values[14], Some(1.0), "24:00 opens a day");
+    }
+
+    #[test]
+    fn barstate_islast_in_a_request_holds_for_the_candle_with_the_charts_last_bar() {
+        let request = |bars: i64| {
+            plotted(
+                "plot(request.security(syminfo.tickerid, \"240\", barstate.islast ? 1.0 : 0.0))",
+                &hourly_chart(0, bars),
+            )
+        };
+        let values = request(12);
+        assert_eq!(
+            values[7],
+            Some(0.0),
+            "the candle at hours 4-7 is not the last"
+        );
+        assert_eq!(
+            values[11],
+            Some(1.0),
+            "the candle at hours 8-11 holds the last bar"
+        );
+        // A last bar in the middle of a candle: the developing candle (lookahead on) is the last.
+        let developing = plotted(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.islast ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))",
+            &hourly_chart(0, 10),
+        );
+        assert_eq!(developing[5], Some(0.0));
+        assert_eq!(developing[9], Some(1.0));
+    }
+
+    #[test]
+    fn a_request_on_history_is_history_even_for_a_developing_candle() {
+        let states = |state: &str| {
+            plotted(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"240\", {state} ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))"
+                ),
+                &hourly_chart(0, 8),
+            )
+        };
+        assert_eq!(states("barstate.ishistory")[5], Some(1.0));
+        assert_eq!(states("barstate.isrealtime")[5], Some(0.0));
+    }
+
+    #[test]
+    fn a_request_on_a_live_tick_is_realtime() {
+        let request = |state: &str| {
+            plotted_after_each_tick(&format!(
+                "plot(request.security(\"ETHUSDT\", \"1\", {state} ? 1.0 : 0.0))"
+            ))
+        };
+        assert_eq!(request("barstate.isrealtime"), [Some(1.0), Some(1.0)]);
+        assert_eq!(request("barstate.ishistory"), [Some(0.0), Some(0.0)]);
+    }
+
+    /// The first plot of `source` after `history` ran as history and `live` closed in real time.
+    fn plotted_live_close(
+        source: &str,
+        provider: TestProvider,
+        history: &[Kline],
+        live: Kline,
+    ) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(provider)),
+            None,
+        );
+        let bars = history
+            .iter()
+            .map(|bar| (bar.clone(), BarPhase::Historical))
+            .chain([(live, BarPhase::RealtimeClose { is_new: true })]);
+        let count = history.len() + 1;
+        for (index, (candle, phase)) in bars.enumerate() {
+            let _ = session.execute(BarEvent { candle, phase }, index + 1 == count, None);
+        }
+        session.output().plots[0].values.clone()
+    }
+
+    /// The first plot of `source` after each tick of the live bar `live`, which follows `history`.
+    fn plotted_per_live_tick(
+        source: &str,
+        history: &[Kline],
+        live: Kline,
+        ticks: &[bool],
+    ) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(TestProvider::default())),
+            None,
+        );
+        for candle in history {
+            let _ = session.execute(
+                BarEvent {
+                    candle: candle.clone(),
+                    phase: BarPhase::Historical,
+                },
+                false,
+                None,
+            );
+        }
+        ticks
+            .iter()
+            .map(|&is_new| {
+                let _ = session.execute(
+                    BarEvent {
+                        candle: live.clone(),
+                        phase: BarPhase::RealtimeTick { is_new },
+                    },
+                    true,
+                    None,
+                );
+                session.output().plots[0].values.last().copied().flatten()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn barstate_isnew_in_a_request_is_true_on_history_and_on_the_first_tick_of_a_candle_it_opens() {
+        let source =
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.isnew ? 1.0 : 0.0))";
+        let history = plotted(source, &hourly_chart(0, 12));
+        assert_eq!(&history[3], &Some(1.0));
+        assert_eq!(&history[7], &Some(1.0));
+        assert_eq!(&history[11], &Some(1.0));
+        // The live bar at hour 4 opens the 4h candle at hour 4: new on its first tick only.
+        let opening = plotted_per_live_tick(
+            source,
+            &hourly_chart(0, 4),
+            bar(4 * 3_600_000, 5.0),
+            &[true, false, false],
+        );
+        assert_eq!(opening, [Some(1.0), Some(0.0), Some(0.0)]);
+    }
+
+    #[test]
+    fn barstate_isnew_in_a_request_is_false_on_a_chart_bar_inside_a_candle_that_opened_earlier() {
+        // The live bar at hour 5 sits inside the 4h candle that opened at hour 4.
+        let values = plotted_per_live_tick(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.isnew ? 1.0 : 0.0))",
+            &hourly_chart(0, 5),
+            bar(5 * 3_600_000, 6.0),
+            &[true, false],
+        );
+        assert_eq!(values, [Some(0.0), Some(0.0)]);
+    }
+
+    #[test]
+    fn a_request_first_reached_on_a_live_close_replays_older_candles_as_history() {
+        // ETHUSDT's hourly candles 0-3 all end by the live chart bar's close, and the request is
+        // first reached on it: only the candle that opens with the chart bar is realtime.
+        let candles = hourly_chart(0, 4);
+        let mut provider = TestProvider::default();
+        provider.candles.insert(
+            SecurityKey {
+                symbol: "ETHUSDT".to_owned(),
+                interval: 3600.0,
+                recent_bars: 0,
+            },
+            candles.clone(),
+        );
+        let values = plotted_live_close(
+            "plot(barstate.isrealtime ? request.security(\"ETHUSDT\", \"60\", ta.cum(barstate.isrealtime ? 1.0 : 0.0)) : na)",
+            provider,
+            &candles[..3],
+            candles[3].clone(),
+        );
+        assert_eq!(values.last(), Some(&Some(1.0)));
+    }
+
+    #[test]
+    fn a_candle_completed_late_on_a_live_bar_is_history() {
+        // The chart has no 03:00 bar, so the 00:00 4h candle is completed when the live 04:00 bar
+        // arrives; it is history, and only the developing 04:00 candle is realtime.
+        let history: Vec<Kline> = [0, 1, 2]
+            .into_iter()
+            .map(|hour| bar(hour * 3_600_000, 1.0 + hour as f64))
+            .collect();
+        let values = plotted_live_close(
+            "plot(request.security(syminfo.tickerid, \"240\", ta.cum(barstate.isrealtime ? 1.0 : 0.0)))",
+            TestProvider::default(),
+            &history,
+            bar(4 * 3_600_000, 5.0),
+        );
+        assert_eq!(values.last(), Some(&Some(1.0)));
+    }
+
+    #[test]
+    fn barstate_islast_in_a_request_holds_when_the_chart_bar_length_does_not_divide_the_day() {
+        // 5h bars: the one at 20:00 ends at midnight, where the 5h candle is cut.
+        let chart: Vec<Kline> = [0, 5, 10, 15, 20]
+            .into_iter()
+            .map(|hour| bar(hour * 3_600_000, 1.0 + hour as f64))
+            .collect();
+        for state in ["barstate.islast", "barstate.islastconfirmedhistory"] {
+            let values = plotted(
+                &format!("plot(request.security(syminfo.tickerid, \"300\", {state} ? 1.0 : 0.0))"),
+                &chart,
+            );
+            assert_eq!(values[3], Some(0.0), "{state} on the 15:00 candle");
+            assert_eq!(values[4], Some(1.0), "{state} on the 20:00 candle");
+        }
+    }
+
+    /// The first plot of `source` over `chart` run as one history (`Session::evaluate`), which
+    /// tells the session where the history ends.
+    fn plotted_as_history(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        session.evaluate(chart).expect("runs");
+        session.output().plots[0].values.clone()
+    }
+
+    #[test]
+    fn the_last_confirmed_history_candle_of_a_request_is_the_last_one_that_closed_with_the_history()
+    {
+        // TradingView (probe P12, 2026-11-21): on the chart's last history bar, `"1D"` returns the
+        // last completed day, and that day is the request's last confirmed history bar.
+        let lch = |expression: &str, bars: i64| {
+            plotted_as_history(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"{expression}\", barstate.islastconfirmedhistory ? 1.0 : 0.0))"
+                ),
+                &hourly_chart(0, bars),
+            )
+        };
+        // Hours 0-29: day 0 closed at hour 24, day 1 is still running when the history ends.
+        let days = lch("1D", 30);
+        assert_eq!(days[22], None, "no day has closed yet");
+        assert_eq!(days[23], Some(1.0), "day 0 closes with the chart's hour 23");
+        assert_eq!(
+            days[29],
+            Some(1.0),
+            "and is still what the last history bar reads"
+        );
+        // Hours 0-11: the 4h candle 8-12 ends with the history, the one before it does not.
+        let hours = lch("240", 12);
+        assert_eq!(hours[7], Some(0.0));
+        assert_eq!(hours[11], Some(1.0));
+    }
+
+    /// `count` monthly chart bars from `first_year`-`first_month`, each opening on the 1st and closing on
+    /// the next 1st (so 28 to 31 days long, where the chart's length is the nominal 30 days).
+    fn monthly_chart(first_year: i64, first_month: i64, count: i64) -> Vec<Kline> {
+        let start = |index: i64| {
+            let month = first_month - 1 + index;
+            crate::pine::time::calendar::make(
+                first_year + month.div_euclid(12),
+                month.rem_euclid(12) + 1,
+                1,
+                0,
+                0,
+                0,
+                0,
+            )
+            .unwrap()
+        };
+        (0..count)
+            .map(|index| Kline {
+                open_time: start(index),
+                close_time: start(index + 1),
+                ..bar(0, 1.0 + index as f64)
+            })
+            .collect()
+    }
+
+    /// The first plot of `source` over `chart` as the app runs a monthly chart: one history load with
+    /// the chart's length fixed at Pine's 30-day month.
+    fn plotted_on_a_monthly_chart(source: &str, chart: &[Kline]) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(TestProvider::default())),
+            None,
+        );
+        session.fixed_bar_seconds = Some(2_592_000.0);
+        session.load_history(chart, false, None).expect("runs");
+        session.output().plots[0].values.clone()
+    }
+
+    #[test]
+    fn a_monthly_chart_completes_a_quarter_and_a_year_on_their_last_month() {
+        // TradingView (probe R5, BTCUSDT 1M): the 3M and 12M candles arrive on the chart bar that
+        // closes them. A 31-day month is longer than the chart's 30 days, so the bar's end, not its
+        // open plus 30 days, says it closes the bucket.
+        let quarter = plotted_on_a_monthly_chart(
+            "plot(request.security(syminfo.tickerid, \"3M\", bar_index))",
+            &monthly_chart(2023, 10, 6),
+        );
+        // Oct-Dec 2023 is candle 0, Jan-Mar 2024 candle 1: each is read from its last month on.
+        assert_eq!(quarter[1], None, "Nov: the quarter is still open");
+        assert_eq!(quarter[2], Some(0.0), "Dec closes Q4");
+        assert_eq!(quarter[4], Some(0.0), "Feb still reads Q4");
+        assert_eq!(quarter[5], Some(1.0), "Mar closes Q1");
+        let year = plotted_on_a_monthly_chart(
+            "plot(request.security(syminfo.tickerid, \"12M\", bar_index))",
+            &monthly_chart(2022, 1, 24),
+        );
+        assert_eq!(year[10], None, "Nov 2022: the year is still open");
+        assert_eq!(year[11], Some(0.0), "Dec 2022 closes 2022");
+        assert_eq!(year[22], Some(0.0), "Nov 2023 still reads 2022");
+        assert_eq!(year[23], Some(1.0), "Dec 2023 closes 2023");
+    }
+
+    #[test]
+    fn a_developing_candle_on_history_is_confirmed_when_it_closes_by_the_end_of_the_history() {
+        // TradingView (probe R1, 4h BTCUSDT, `"D"` with lookahead on): every historical chart bar
+        // reads 1, the developing day included; the final incomplete bucket reads 0 (probes A, B).
+        let states = |lookahead: &str| {
+            plotted_as_history(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"1D\", barstate.isconfirmed ? 1.0 : 0.0{lookahead}))"
+                ),
+                &hourly_chart(0, 30),
+            )
+        };
+        // Hours 0-29: day 0 closes at hour 24, day 1 is still open when the history ends.
+        let developing = states(", lookahead = barmerge.lookahead_on");
+        assert_eq!(
+            developing[5],
+            Some(1.0),
+            "day 0 develops, and closes inside the history"
+        );
+        assert_eq!(developing[23], Some(1.0));
+        assert_eq!(
+            developing[24],
+            Some(0.0),
+            "day 1 is still open when the history ends"
+        );
+        assert_eq!(developing[29], Some(0.0));
+        let completed = states("");
+        assert_eq!(completed[29], Some(1.0), "the last completed day");
+    }
+
+    #[test]
+    fn a_candle_developing_in_real_time_is_not_confirmed() {
+        // The history ends at hour 5; the live bar sits inside the 4h candle of hours 4-8.
+        let source = "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"240\", barstate.isconfirmed ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))";
+        let program = compiler::compile(source, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(TestProvider::default())),
+            None,
+        );
+        session
+            .load_history(&hourly_chart(0, 5), true, Some(3600.0))
+            .expect("runs");
+        let _ = session.execute(
+            BarEvent {
+                candle: bar(5 * 3_600_000, 6.0),
+                phase: BarPhase::RealtimeTick { is_new: true },
+            },
+            true,
+            None,
+        );
+        let values = &session.output().plots[0].values;
+        assert_eq!(values.last(), Some(&Some(0.0)));
     }
 
     #[test]

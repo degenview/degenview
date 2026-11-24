@@ -3,8 +3,9 @@
 
 pub mod tools;
 
+use crate::i18n::tr;
 use crate::mcp::bridge::McpError;
-use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::confirm::{Confirm, Gate, Operation};
 use crate::mcp::tools::{CREATE_ALERT, DELETE_ALERT, PAUSE_ALERT, RESUME_ALERT, UPDATE_ALERT};
 use crate::model::InstrumentId;
 use crate::model::alert::{AlertCurrency, AlertFrequency, AlertId, AlertRejectReason};
@@ -45,33 +46,35 @@ impl Confirm for AlertCommand {
         }
     }
 
-    fn plain_summary(&self) -> Option<(String, String)> {
+    fn plain_summary(&self) -> Option<(Operation, String)> {
         Some(match self {
             Self::Create(alert) => (
-                "Create a price alert".to_owned(),
-                format!(
-                    "{} crosses {} {}",
-                    alert.instrument.symbol,
-                    if alert.crosses_above {
-                        "above"
-                    } else {
-                        "below"
-                    },
-                    alert.target_text
-                ),
+                Operation::CreateAlert,
+                if alert.crosses_above {
+                    tr!(
+                        "{symbol} crosses above {price}",
+                        symbol = alert.instrument.symbol,
+                        price = alert.target_text
+                    )
+                } else {
+                    tr!(
+                        "{symbol} crosses below {price}",
+                        symbol = alert.instrument.symbol,
+                        price = alert.target_text
+                    )
+                },
             ),
             Self::Update(update) => (
-                "Change a price alert".to_owned(),
-                format!("alert {}", update.alert_id),
+                Operation::ChangeAlert,
+                tr!("alert {id}", id = update.alert_id),
             ),
             Self::SetPaused { alert_id, paused } => (
                 if *paused {
-                    "Pause a price alert"
+                    Operation::PauseAlert
                 } else {
-                    "Resume a price alert"
-                }
-                .to_owned(),
-                format!("alert {alert_id}"),
+                    Operation::ResumeAlert
+                },
+                tr!("alert {id}", id = alert_id),
             ),
             _ => return None,
         })

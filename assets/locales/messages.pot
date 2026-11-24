@@ -589,6 +589,10 @@ msgstr ""
 msgid "Add a buy or sell, or import your history."
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Add a chart"
+msgstr ""
+
 #: src/ui/portfolio/transaction_editor.rs
 msgid "Add a copy of this transaction, then adjust it."
 msgstr ""
@@ -637,6 +641,10 @@ msgstr ""
 
 #: src/ui/settings/brokers.rs
 msgid "Add an API key to trade"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Add an indicator to a chart"
 msgstr ""
 
 #: src/pine_studio/ai/panel.rs
@@ -1047,8 +1055,114 @@ msgstr ""
 msgid "Allow Once"
 msgstr ""
 
-#: src/ui/mcp/confirmation.rs
-msgid "Allow “{client}” to {action}?"
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to add a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to add an indicator to a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to apply a script to a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to cancel paper orders?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change a drawing?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change a paper order?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change a price alert?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change a script on a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change a watchlist?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change the chart type?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to change the timeframe?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to close paper positions?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to control the replay?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to create a price alert?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to create a watchlist?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to delete a price alert?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to delete a watchlist?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to delete {count} drawing?"
+msgid_plural "Allow “{client}” to delete {count} drawings?"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to draw on a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to pause a price alert?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to place a paper order?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to remove a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to remove a script from a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to remove an indicator from a chart?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to resume a price alert?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to save a script over its saved version?"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Allow “{client}” to write a script draft?"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
@@ -1279,6 +1393,10 @@ msgstr ""
 #: src/ui/settings/mcp/security.rs
 #: src/ui/settings/mcp/server.rs
 msgid "Apply"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Apply a script to a chart"
 msgstr ""
 
 #: src/ui/alert/script_list.rs
@@ -2329,6 +2447,10 @@ msgstr ""
 msgid "Cancel paper buy stop order at {price}"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Cancel paper orders"
+msgstr ""
+
 #: src/ui/paper/chart_trading.rs
 msgid "Cancel paper sell limit order at {price}"
 msgstr ""
@@ -2468,6 +2590,26 @@ msgstr ""
 msgid "Change %"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Change a drawing"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Change a paper order"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Change a price alert"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Change a script on a chart"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Change a watchlist"
+msgstr ""
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Change any color it paints, with the editor beside you."
 msgstr ""
@@ -2510,8 +2652,16 @@ msgid ""
 "colors the editor paints."
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Change the chart type"
+msgstr ""
+
 #: src/ui/chart/table_view.rs
 msgid "Change the order of the rows"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Change the timeframe"
 msgstr ""
 
 #: src/ui/portfolio/transaction_editor.rs
@@ -3078,6 +3228,10 @@ msgstr ""
 msgid "Close paper long position, {size}"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Close paper positions"
+msgstr ""
+
 #: src/ui/paper/chart_trading.rs
 msgid "Close paper short position, {size}"
 msgstr ""
@@ -3481,6 +3635,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Control point 2"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Control the replay"
 msgstr ""
 
 #: src/ui/settings/ai.rs
@@ -4013,12 +4171,20 @@ msgstr ""
 msgid "Create a portfolio to start tracking investments."
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Create a price alert"
+msgstr ""
+
 #: src/pine_studio/sheets.rs
 msgid "Create a script file in your library."
 msgstr ""
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Create a script, or start from the examples."
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Create a watchlist"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/mod.rs
@@ -4474,6 +4640,14 @@ msgstr ""
 msgid "Delete Watchlist…"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Delete a price alert"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Delete a watchlist"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 #: src/ui/alert/lines.rs
 msgid "Delete alert"
@@ -4530,6 +4704,12 @@ msgstr ""
 #: src/ui/portfolio/tab/mod.rs
 msgid "Delete transaction?"
 msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Delete {count} drawing"
+msgid_plural "Delete {count} drawings"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/portfolio/sheets.rs
 msgid "Delete {name}?"
@@ -4892,6 +5072,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
 msgid "Draw every line in the median's color."
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Draw on a chart"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
@@ -7272,6 +7456,10 @@ msgstr ""
 msgid "Iterations"
 msgstr ""
 
+#: src/host/mcp/confirmation.rs
+msgid "Its drawings go with it."
+msgstr ""
+
 #: src/pine_studio/drawer/intro.rs
 msgid "Its figures, equity curve and every trade appear here."
 msgstr ""
@@ -7293,6 +7481,10 @@ msgstr ""
 msgid ""
 "Its symbols stay in your other watchlists. Charts, drawings and alerts are not"
 " affected."
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "Its trigger history is kept."
 msgstr ""
 
 #: src/model/alert/mod.rs
@@ -10530,6 +10722,10 @@ msgstr ""
 msgid "Pause (Shift–Down Arrow)"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Pause a price alert"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "Pause alert"
 msgstr ""
@@ -10744,6 +10940,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
 msgid "Pivot names"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Place a paper order"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
@@ -11698,6 +11898,14 @@ msgstr ""
 msgid "Remove Watch"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Remove a chart"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Remove a script from a chart"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "Remove all"
 msgstr ""
@@ -11717,6 +11925,10 @@ msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 msgid "Remove all…"
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Remove an indicator from a chart"
 msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
@@ -12263,6 +12475,10 @@ msgstr ""
 msgid "Resume"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Resume a price alert"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "Resume alert"
 msgstr ""
@@ -12594,6 +12810,10 @@ msgstr ""
 
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Save a layout from the layout menu and it will show up here."
+msgstr ""
+
+#: src/model/mcp/operation.rs
+msgid "Save a script over its saved version"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
@@ -13650,6 +13870,10 @@ msgstr ""
 
 #: src/ui/trade/connect_list.rs
 msgid "Simulated"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "Simulated money."
 msgstr ""
 
 #: src/pine_studio/drawer/simulation.rs
@@ -15342,6 +15566,10 @@ msgstr ""
 msgid "The same size, different candles."
 msgstr ""
 
+#: src/host/mcp/confirmation.rs
+msgid "The saved source is overwritten and cannot be undone from here."
+msgstr ""
+
 #: src/ui/drawing/properties/levels.rs
 msgid "The scale of the move: it sets how the waves are written."
 msgstr ""
@@ -15515,6 +15743,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "The underline under code the compiler warns about."
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "The user can undo it in the app."
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -15760,6 +15992,10 @@ msgstr ""
 msgid ""
 "This copy of DegenView is not signed with a Developer ID, so it cannot update "
 "itself."
+msgstr ""
+
+#: src/mcp/confirm.rs
+msgid "This credential can be used from another machine, so it asks first."
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -17444,6 +17680,10 @@ msgstr ""
 msgid "Wrap text"
 msgstr ""
 
+#: src/model/mcp/operation.rs
+msgid "Write a script draft"
+msgstr ""
+
 #: src/ui/alert/script_list.rs
 msgid "Write and manage the scripts whose alert() calls appear here"
 msgstr ""
@@ -17653,9 +17893,25 @@ msgstr ""
 msgid "after {n}"
 msgstr ""
 
+#: src/mcp/alert/mod.rs
+msgid "alert {id}"
+msgstr ""
+
 #: src/model/portfolio/statistics.rs
 msgid "all time"
 msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "all {count} open position on “{account}”"
+msgid_plural "all {count} open positions on “{account}”"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/host/mcp/confirmation.rs
+msgid "all {count} working order on “{account}”"
+msgid_plural "all {count} working orders on “{account}”"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/pine_studio/ai/panel.rs
 #: src/ui/broker/panel.rs
@@ -17670,6 +17926,10 @@ msgstr[1] ""
 
 #: src/pine_studio/library/unsaved.rs
 msgid "and {rest} more"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "at market"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/text.rs
@@ -17878,6 +18138,14 @@ msgstr ""
 msgid "last stop"
 msgstr ""
 
+#: src/host/mcp/confirmation.rs
+msgid "limit"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "limit {price}"
+msgstr ""
+
 #: src/pine_studio/debug/panel/lists.rs
 msgid "line {line}"
 msgstr ""
@@ -17950,6 +18218,10 @@ msgstr ""
 msgid "on cost basis"
 msgstr ""
 
+#: src/host/mcp/confirmation.rs
+msgid "on {chart}"
+msgstr ""
+
 #: src/ui/settings/provider_card.rs
 msgid "on, checking"
 msgstr ""
@@ -17984,6 +18256,22 @@ msgstr ""
 
 #: src/model/session_stats/mod.rs
 msgid "prior day up"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "quantity {value}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "stop"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "stop {price}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "stop-limit {stop} / {limit}"
 msgstr ""
 
 #: src/model/watchlist/text.rs
@@ -18056,6 +18344,10 @@ msgstr ""
 msgid "waiting to load"
 msgstr ""
 
+#: src/mcp/market/mod.rs
+msgid "watchlist {id}"
+msgstr ""
+
 #: src/pine_studio/library/unsaved.rs
 msgid "whitespace only"
 msgstr ""
@@ -18070,6 +18362,10 @@ msgstr ""
 
 #: src/ui/mcp/activity.rs
 msgid "you declined it"
+msgstr ""
+
+#: src/mcp/confirm.rs
+msgid "{action}: {target}"
 msgstr ""
 
 #: src/ui/market_flow/flow.rs
@@ -18151,6 +18447,10 @@ msgstr[1] ""
 
 #: src/ui/portfolio/tab/mod.rs
 msgid "{caption} · Cached exchange rates"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "{chart} in “{workspace}”"
 msgstr ""
 
 #: src/pine_studio/debug/panel/mod.rs
@@ -18327,6 +18627,12 @@ msgstr[1] ""
 #: src/ui/chart/session_stats_view/result.rs
 msgid "{count} days"
 msgstr ""
+
+#: src/mcp/chart/mod.rs
+msgid "{count} drawing"
+msgid_plural "{count} drawings"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/workspace/drawing/mod.rs
 msgid "{count} drawing will be removed from this chart. You can undo it."
@@ -18583,6 +18889,12 @@ msgstr[1] ""
 #: src/ui/drawing/properties/coordinates.rs
 msgid "{count} more point: drag it on the chart."
 msgid_plural "{count} more points: drag them on the chart."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/host/mcp/confirmation.rs
+msgid "{count} named order on “{account}”"
+msgid_plural "{count} named orders on “{account}”"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -19107,6 +19419,10 @@ msgid ""
 "chart."
 msgstr ""
 
+#: src/host/mcp/confirmation.rs
+msgid "{market} on “{account}”"
+msgstr ""
+
 #: src/ui/chart/settings/mod.rs
 msgid "{market} · Changes apply as you make them"
 msgstr ""
@@ -19400,6 +19716,10 @@ msgid_plural "{scope} · {count} assets"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/host/mcp/confirmation.rs
+msgid "{script} on {chart}"
+msgstr ""
+
 #: src/ui/chart/card/table.rs
 msgid "{script}: plot {number}"
 msgstr ""
@@ -19468,6 +19788,14 @@ msgstr ""
 
 #: src/ui/paper/chart_trading.rs
 msgid "{side} {price} — opens a paper order ticket"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "{side} {quantity} {market} on “{account}”: {changes}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "{side} {quantity} {market} {kind} on “{account}”"
 msgstr ""
 
 #: src/ui/broker/chart_trading.rs
@@ -19542,8 +19870,26 @@ msgstr ""
 msgid "{subtitle} · Replay"
 msgstr ""
 
+#: src/host/mcp/confirmation.rs
+msgid "{symbol} alert {price}"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "{symbol} alert: {condition} {target}, {status}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+#: src/mcp/alert/mod.rs
+msgid "{symbol} crosses above {price}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+#: src/mcp/alert/mod.rs
+msgid "{symbol} crosses below {price}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "{symbol} falls by {price}"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/list.rs
@@ -19556,6 +19902,10 @@ msgstr ""
 
 #: src/ui/alert/banner.rs
 msgid "{symbol} reached {price}"
+msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "{symbol} rises by {price}"
 msgstr ""
 
 #: src/ui/market_flow/book/mod.rs
@@ -19774,6 +20124,10 @@ msgstr ""
 msgid "· All time"
 msgstr ""
 
+#: src/app/mcp.rs
+msgid "“{client}” is asking permission"
+msgstr ""
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "“{name}” could not be loaded: {why}"
 msgstr ""
@@ -19803,6 +20157,12 @@ msgstr ""
 #: src/ui/settings/pine_studio/mod.rs
 msgid "“{name}” will be deleted. The editor goes back to following the app."
 msgstr ""
+
+#: src/host/mcp/confirmation.rs
+msgid "“{name}” with {count} market"
+msgid_plural "“{name}” with {count} markets"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/pine_studio/editor/navigation.rs
 msgid "↑↓  navigate      ↵  open      esc  close"
