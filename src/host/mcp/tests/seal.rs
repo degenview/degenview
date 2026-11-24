@@ -477,7 +477,7 @@ fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script()
 
     let (_store, host, id) = seeded();
     let alert = describe::delete_alert(&host, id).unwrap();
-    assert_eq!(alert.action, "Delete a price alert");
+    assert_eq!(alert.client_line(), "Delete a price alert");
     assert!(
         alert.target.contains("crosses above") && alert.target.contains("70000"),
         "{}",
@@ -495,7 +495,7 @@ fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script()
         .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
         .chart_id;
     let chart = describe::remove_chart(&workspace, chart_id).unwrap();
-    assert_eq!(chart.action, "Remove a chart");
+    assert_eq!(chart.client_line(), "Remove a chart");
     assert!(chart.target.starts_with("BTCUSDT in “"), "{}", chart.target);
     assert!(chart.note.unwrap().contains("drawings go with it"));
     assert!(matches!(
@@ -517,7 +517,7 @@ fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script()
     let added = add_pine_instance(&mut workspace, chart_id, &script, true).unwrap();
     let instance: u64 = added.instance_id.parse().unwrap();
     let removed = describe::remove_pine_instance(&workspace, chart_id, instance, &[]).unwrap();
-    assert_eq!(removed.action, "Remove a script from a chart");
+    assert_eq!(removed.client_line(), "Remove a script from a chart");
     assert!(
         removed.target.starts_with("My script on BTCUSDT"),
         "{}",

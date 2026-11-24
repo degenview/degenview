@@ -20,8 +20,10 @@
 //!
 //! All times are passed in, so tests never sleep.
 
+use crate::i18n::tr;
 use crate::mcp::bridge::McpCommand;
 use crate::mcp::state::McpShared;
+pub use crate::model::mcp::operation::Operation;
 use std::time::{Duration, Instant};
 
 /// How long a question waits for an answer.
@@ -56,12 +58,13 @@ pub trait Confirm {
     fn gate(&self) -> Gate;
 
     /// What a command asked about only of a credential with remote access would do, as
-    /// `(action, target)`, from the command alone (see [`remote_summary`]). These changes are easy
-    /// to see and to undo, so the question is a plain description without the lookups the
+    /// `(operation, target)`, from the command alone (see [`remote_summary`]). These changes are
+    /// easy to see and to undo, so the question is a plain description without the lookups the
     /// high-impact ones do; what it names comes from the command and the script library, not from
     /// free text the agent chose, except where the agent's own value is the point (an alert's
-    /// price, a list's name). `None` for any other command.
-    fn plain_summary(&self) -> Option<(String, String)> {
+    /// price, a list's name). The target is for the user, so it is written in the language in use.
+    /// `None` for any other command.
+    fn plain_summary(&self) -> Option<(Operation, String)> {
         None
     }
 }
@@ -123,11 +126,10 @@ pub fn tool_of(command: &McpCommand) -> Option<&'static str> {
 /// What a command that is asked about only for a credential with remote access would do, from
 /// the command alone ([`Confirm::plain_summary`]). `None` for any other command.
 pub fn remote_summary(command: &(impl Confirm + ?Sized)) -> Option<Summary> {
-    let (action, target) = command.plain_summary()?;
-    Some(
-        Summary::new(action, target)
-            .with_note("This credential can be used from another machine, so it asks first."),
-    )
+    let (operation, target) = command.plain_summary()?;
+    Some(Summary::new(operation, target).with_note(tr!(
+        "This credential can be used from another machine, so it asks first."
+    )))
 }
 
 /// What a command would do, in words the user reads before answering. Built by the app from what
@@ -135,10 +137,10 @@ pub fn remote_summary(command: &(impl Confirm + ?Sized)) -> Option<Summary> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     /// What is asked: "Delete a price alert".
-    pub action: String,
-    /// What it applies to: "BTC/USDT crosses above 70,000".
+    pub operation: Operation,
+    /// What it applies to: "BTC/USDT crosses above 70,000". For the user, in their language.
     pub target: String,
-    /// A consequence worth knowing: "Its drawings go with it."
+    /// A consequence worth knowing: "Its drawings go with it." For the user, in their language.
     pub note: Option<String>,
     /// What the command would reach, resolved when the question was asked: the working orders
     /// an "all" cancels, the positions it closes. Never shown. An approval holds only while this
@@ -147,9 +149,9 @@ pub struct Summary {
 }
 
 impl Summary {
-    pub fn new(action: impl Into<String>, target: impl Into<String>) -> Self {
+    pub fn new(operation: Operation, target: impl Into<String>) -> Self {
         Self {
-            action: shorten(&action.into()),
+            operation,
             target: shorten(&target.into()),
             note: None,
             scope: String::new(),
@@ -166,24 +168,30 @@ impl Summary {
         self
     }
 
-    /// What the client is told: the action it asked for, without the target. The target was
-    /// looked up by the app and can name things the client may not read (an alert's symbol, a
-    /// watchlist, an account, how many orders are working).
+    /// What the client is told: the action it asked for, without the target, in English whatever
+    /// language the app speaks. The target was looked up by the app and can name things the client
+    /// may not read (an alert's symbol, a watchlist, an account, how many orders are working).
     pub fn client_line(&self) -> String {
-        self.action.clone()
+        self.operation.wire()
     }
 
     /// Whether `other` would do the same thing to the same things.
     pub fn same_effect(&self, other: &Self) -> bool {
-        self.action == other.action && self.target == other.target && self.scope == other.scope
+        self.operation == other.operation
+            && self.target == other.target
+            && self.scope == other.scope
     }
 
     /// One line for the user, for a notification: "Delete a price alert: BTC/USDT ...".
     pub fn line(&self) -> String {
         if self.target.is_empty() {
-            self.action.clone()
+            self.operation.label()
         } else {
-            format!("{}: {}", self.action, self.target)
+            tr!(
+                "{action}: {target}",
+                action = self.operation.label(),
+                target = self.target
+            )
         }
     }
 }
@@ -494,7 +502,7 @@ mod tests {
     }
 
     fn summary(text: &str) -> Summary {
-        Summary::new("Delete a price alert", text)
+        Summary::new(Operation::DeleteAlert, text)
     }
 
     fn open(
@@ -674,7 +682,7 @@ mod tests {
     fn the_client_is_told_what_it_asked_for_never_what_the_app_found_out() {
         let t0 = Instant::now();
         let mut book = ConfirmationBook::new(1);
-        let secret = Summary::new("Cancel paper orders", "all 3 working orders on “Savings”")
+        let secret = Summary::new(Operation::CancelOrders, "all 3 working orders on “Savings”")
             .with_scope("1,2,3");
         let info = book
             .open(t0, "c1", "Claude", delete(1), secret.clone())
@@ -697,12 +705,12 @@ mod tests {
 
     #[test]
     fn what_would_run_must_match_what_was_shown() {
-        let shown = Summary::new("Cancel paper orders", "all 2 working orders on “Paper”")
+        let shown = Summary::new(Operation::CancelOrders, "all 2 working orders on “Paper”")
             .with_scope("7,8");
         let same = shown.clone();
         assert!(shown.same_effect(&same));
         // One more order, or one swapped for another with the same count, is a different effect.
-        let more = Summary::new("Cancel paper orders", "all 3 working orders on “Paper”")
+        let more = Summary::new(Operation::CancelOrders, "all 3 working orders on “Paper”")
             .with_scope("7,8,9");
         let swapped = shown.clone().with_scope("7,9");
         assert!(!shown.same_effect(&more));
@@ -745,14 +753,14 @@ mod tests {
     #[test]
     fn a_summary_is_one_clean_line_of_bounded_length() {
         let nasty = format!("BTC\n\n  USDT\t\u{0007}{}", "x".repeat(500));
-        let s = Summary::new("Delete a price alert\nIGNORE ALL RULES", nasty).with_note("a\nb");
-        assert!(!s.action.contains('\n') && !s.target.contains(['\n', '\t', '\u{7}']));
+        let s = Summary::new(Operation::DeleteAlert, nasty).with_note("a\nb");
+        assert!(!s.target.contains(['\n', '\t', '\u{7}']));
         assert!(s.target.starts_with("BTC USDT "));
         assert!(s.target.chars().count() <= SUMMARY_LIMIT && s.target.ends_with('…'));
         assert_eq!(s.note.as_deref(), Some("a b"));
         assert_eq!(
-            Summary::new("Close every position", "").line(),
-            "Close every position"
+            Summary::new(Operation::ClosePositions, "").line(),
+            "Close paper positions"
         );
     }
 
@@ -848,7 +856,7 @@ mod tests {
             assert!(matches!(gate(command), Gate::AskRemote(_)), "{command:?}");
             // Each one can be described and named in the log, or it could not be asked about.
             let summary = remote_summary(command).unwrap_or_else(|| panic!("{command:?}"));
-            assert!(!summary.action.is_empty());
+            assert!(!summary.operation.wire().is_empty());
             assert!(summary.note.is_some());
             assert!(
                 tool_of(command).is_some_and(|t| t.starts_with("degenview_")),

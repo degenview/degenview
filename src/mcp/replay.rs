@@ -5,7 +5,7 @@
 use crate::mcp::bridge::{McpReply, REQUEST_TIMEOUT};
 use crate::mcp::chart::data::iso;
 use crate::mcp::chart::drawings::{TimeArg, parse_time};
-use crate::mcp::confirm::{Confirm, Gate};
+use crate::mcp::confirm::{Confirm, Gate, Operation};
 use crate::mcp::tools::{
     Caller, DegenViewMcp, failure, invalid, parse_chart_id, parse_workspace_id, unexpected,
 };
@@ -40,9 +40,9 @@ impl Confirm for ReplayRequest {
         }
     }
 
-    fn plain_summary(&self) -> Option<(String, String)> {
+    fn plain_summary(&self) -> Option<(Operation, String)> {
         match self {
-            Self::Control { .. } => Some(("Control the replay".to_owned(), String::new())),
+            Self::Control { .. } => Some((Operation::ControlReplay, String::new())),
             Self::Get { .. } => None,
         }
     }
