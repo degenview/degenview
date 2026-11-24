@@ -2757,6 +2757,60 @@ mod tests {
         }
     }
 
+    /// Counts how often it is asked, and serves whatever candles it holds now.
+    struct CountingProvider {
+        asked: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        candles: std::sync::Arc<std::sync::Mutex<Vec<Kline>>>,
+    }
+
+    impl SecurityDataProvider for CountingProvider {
+        fn candles(&self, _key: &SecurityKey) -> Option<Vec<Kline>> {
+            None
+        }
+
+        fn candles_over(&self, _key: &SecurityKey, _chart: ChartSpan) -> Option<Vec<Kline>> {
+            self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(self.candles.lock().unwrap().clone())
+        }
+    }
+
+    #[test]
+    fn a_reloaded_history_asks_the_provider_again() {
+        // One session lives as long as the script sits on the chart: a live bar's finer candles are
+        // not the ones the first load saw.
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let candles = std::sync::Arc::new(std::sync::Mutex::new(vec![
+            bar(60_000, 1.0),
+            bar(75_000, 2.0),
+        ]));
+        let provider = CountingProvider {
+            asked: asked.clone(),
+            candles: candles.clone(),
+        };
+        let program = compiler::compile(
+            "//@version=6\nindicator(\"T\")\nplot(array.sum(request.security_lower_tf(syminfo.tickerid, \"15S\", close)))",
+            Limits::default(),
+            &NoLibraries,
+        );
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(provider)),
+            None,
+        );
+        let chart = [bar(0, 10.0), bar(60_000, 11.0)];
+        session.load_history(&chart, None, None).expect("runs");
+        assert_eq!(session.output().plots[0].values.last(), Some(&Some(3.0)));
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        candles.lock().unwrap().push(bar(90_000, 4.0));
+        session.load_history(&chart, None, None).expect("runs");
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(session.output().plots[0].values.last(), Some(&Some(7.0)));
+    }
+
     #[test]
     fn a_monthly_chart_asks_the_provider_for_its_last_months_last_day() {
         // September and October 2026 on a monthly chart whose length is Pine's 30 days: "October 1 +

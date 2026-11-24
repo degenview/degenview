@@ -74,6 +74,8 @@ pub struct Session {
     pub input_variables: HashMap<usize, String>,
     pub linkage: LibraryLinkage,
     pub security_data: Option<Box<dyn SecurityDataProvider>>,
+    /// The provider's candles per request, asked once per run: a history load starts a run
+    /// (`reset`), so a chart that reloads with a newer live bar asks again.
     pub security_series: HashMap<super::support::SecurityKey, Option<std::sync::Arc<Vec<Kline>>>>,
     pub library_constants: FastMap<String, RuntimeValue>,
     pub constants_in_progress: HashSet<String>,
@@ -225,6 +227,7 @@ impl Session {
             self.inputs = inputs;
         }
         self.restart_state();
+        self.security_series.clear();
         self.logs.restart();
         self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
         self.last_bar_index = -1;
