@@ -419,6 +419,28 @@ fn corpus_matches_expectations() {
     eprintln!("Pine corpus: {} scripts checked", fetched.len());
 }
 
+/// The committed scripts are original work that must compile without a single diagnostic, warnings
+/// included: none may call a stateful `ta.*` function where a bar can skip it (`CW10004`).
+#[test]
+fn committed_scripts_have_no_diagnostics() {
+    let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pine/corpus/scripts");
+    let mut checked = 0;
+    for kind in ["indicator", "strategy", "library"] {
+        for entry in std::fs::read_dir(scripts.join(kind)).unwrap().flatten() {
+            let source = std::fs::read_to_string(entry.path()).unwrap();
+            let program = compiler::compile(&source, Limits::default(), &compiler::NoLibraries);
+            assert!(
+                program.diagnostics.is_empty(),
+                "{}: {:?}",
+                entry.path().display(),
+                program.diagnostics
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 3, "only {checked} committed scripts found");
+}
+
 /// Runs one file and prints its outcome and time: `PINE_RUN_FILE=path [PINE_RUN_BARS=n] cargo test --release run_one_file -- --nocapture`.
 /// A scratch tool for reducing a corpus failure; it does nothing without the variable.
 #[test]

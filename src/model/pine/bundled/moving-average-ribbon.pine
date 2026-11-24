@@ -9,7 +9,13 @@ source = input.source(close, "Source")
 first = input.int(20, "First length", minval = 2)
 step = input.int(10, "Step", minval = 1)
 
-average(len) => kind == "SMA" ? ta.sma(source, len) : kind == "WMA" ? ta.wma(source, len) : kind == "HMA" ? ta.hma(source, len) : ta.ema(source, len)
+// Every average is calculated on every bar, so the one in use never has gaps in its history.
+average(len) =>
+    simple = ta.sma(source, len)
+    weighted = ta.wma(source, len)
+    hull = ta.hma(source, len)
+    exponential = ta.ema(source, len)
+    kind == "SMA" ? simple : kind == "WMA" ? weighted : kind == "HMA" ? hull : exponential
 
 plot(average(first), "Average 1", color = color.new(color.blue, 0))
 plot(average(first + step), "Average 2", color = color.new(color.teal, 0))

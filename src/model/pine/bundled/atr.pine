@@ -7,6 +7,7 @@ indicator("ATR", overlay = false)
 length = input.int(14, "Length", minval = 1)
 asPercent = input.bool(false, "Show as percent of close")
 
-value = asPercent ? 100.0 * ta.atr(length) / close : ta.atr(length)
+averageRange = ta.atr(length)
+value = asPercent ? 100.0 * averageRange / close : averageRange
 
 plot(value, "ATR", color = color.orange, linewidth = 2)

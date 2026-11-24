@@ -3,6 +3,7 @@
 pub mod builtin_types;
 pub mod callables;
 pub mod declaration_rules;
+pub mod execution_model;
 pub mod identifier_rules;
 pub mod ignored_features;
 pub mod name_check;
