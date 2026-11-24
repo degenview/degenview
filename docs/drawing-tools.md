@@ -345,6 +345,7 @@ the order Minutes, Hours, Days, Weeks, Months, Quarters, Years. Bit 7 marks a ma
 the Minutes bit. A mask without it was saved before minutes existed (the old "every timeframe" is
 `63`): its minutes follow its Hours bit, so such a drawing is still visible wherever it was and
 on minutes if it showed on hours. The last visible row cannot be hidden.
+An anchor's time is edited through the shared date picker (`kit::date_picker`), which steps hours and minutes: on a chart of seconds an anchor nobody touched keeps its exact time, and one the user picks again lands on a whole minute. The picker has no seconds stepper.
 
 Drawings are main-pane only. Indicator panes are separate coordinate spaces and a drawing is never
 reinterpreted as a pane value.
