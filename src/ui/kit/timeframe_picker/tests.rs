@@ -66,7 +66,7 @@ fn a_preset_or_a_repeat_among_the_pinned_is_listed_once() {
 #[test]
 fn up_and_down_keep_the_column_and_clamp_to_the_row() {
     let grid = Grid::new(&[]);
-    // Seconds: 1s 5s 10s 15s / 30s 45s. Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up:
+    // Seconds: 1s 15s 30s 45s. Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up:
     // 1D 1W 1M 1Y.
     assert_eq!(
         grid.step(Timeframe::MINUTE_5, Step::Down),
@@ -94,14 +94,13 @@ fn up_and_down_keep_the_column_and_clamp_to_the_row() {
     );
     assert_eq!(
         grid.step(Timeframe::MINUTE_1, Step::Up),
-        Some(Timeframe::SECOND_30),
-        "the seconds' second row is shorter than the column"
+        Some(Timeframe::SECOND_1)
     );
     assert_eq!(
         grid.step(Timeframe::MINUTE_15, Step::Up),
-        Some(Timeframe::SECOND_45)
+        Some(Timeframe::SECOND_30)
     );
-    assert_eq!(grid.step(Timeframe::SECOND_5, Step::Up), None);
+    assert_eq!(grid.step(Timeframe::SECOND_15, Step::Up), None);
 }
 
 #[test]

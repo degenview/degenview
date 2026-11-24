@@ -102,11 +102,10 @@ impl Timeframe {
     pub const MONTH_3: Self = Self::preset(3, TimeUnit::Month);
     pub const YEAR_1: Self = Self::preset(12, TimeUnit::Month);
 
-    /// The chips the timeframe picker offers, shortest first: four to a row, so the seconds take two.
-    pub const PRESETS: [Self; 18] = [
+    /// The chips the timeframe picker offers, shortest first: four to each section's row. `5s` and `10s`
+    /// are typed or pinned, like `3M`.
+    pub const PRESETS: [Self; 16] = [
         Self::SECOND_1,
-        Self::SECOND_5,
-        Self::SECOND_10,
         Self::SECOND_15,
         Self::SECOND_30,
         Self::SECOND_45,
