@@ -7,9 +7,9 @@
 
 use super::navigation::{Region, Regions};
 use super::{ChartCard, PriceScale};
-use crate::model::Anchor;
 use crate::model::chart::context::Target;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::{Anchor, Tool};
 use crate::ui::alert::lines;
 use crate::ui::drawing::layer::DrawingFrame;
 use crate::ui::drawing::layer::Projection;
@@ -79,8 +79,12 @@ pub(super) fn request(
 }
 
 impl ChartCard {
-    /// The request for this frame's right-click, if the chart's menu is to answer it. A drawing
-    /// answers its own clicks; a paper marker is reported by its pill (drawn last frame).
+    /// The request for this frame's right-click, if the chart's menu is to answer it. This is the
+    /// one place that decides what a right-click on the chart does, so exactly one thing answers
+    /// it. A drawing answers its own clicks; a paper marker or an alert tag is reported by its pill
+    /// (drawn last frame); an axis opens its menu whatever is armed. On the plot or a script pane
+    /// with a drawing tool or Zoom In in hand the click puts it down and nothing opens: the menu is
+    /// the next click's.
     pub(super) fn context_request(
         &mut self,
         response: &egui::Response,
@@ -90,7 +94,12 @@ impl ChartCard {
         scale: &PriceScale,
         drawing: &mut DrawingFrame,
     ) -> Option<ContextRequest> {
-        if let Some(marker) = self.paper.menu.take() {
+        // Every candidate is taken, so one that is not chosen cannot open on a later frame.
+        let marker = self.paper.menu.take();
+        let alert = self.alert_menu.take();
+        // The layer reports a plot click it did not use (no drawing, no draft to finish).
+        let background = drawing.background_click.take();
+        if let Some(marker) = marker {
             return Some(ContextRequest {
                 at: marker.at,
                 time_ms: None,
@@ -98,7 +107,7 @@ impl ChartCard {
                 target: marker.target,
             });
         }
-        if let Some(menu) = self.alert_menu.take() {
+        if let Some(menu) = alert {
             return Some(ContextRequest {
                 at: menu.at,
                 time_ms: None,
@@ -106,15 +115,20 @@ impl ChartCard {
                 target: Target::Alert { id: menu.id },
             });
         }
-        // The layer reports a plot click it did not use (no drawing, no draft to finish).
-        if let Some(at) = drawing.background_click.take() {
+        if let Some(at) = background {
             return Some(request(at, Spot::Plot, projection, scale, &self.pane_ids));
         }
-        if !response.secondary_clicked() {
+        if !drawing.is_menu_click(response) {
             return None;
         }
         let at = response.interact_pointer_pos()?;
-        match spot(at, regions, panes)? {
+        let spot = spot(at, regions, panes)?;
+        let on_chart = matches!(spot, Spot::Plot | Spot::Pane(_));
+        if on_chart && (drawing.tool != Tool::Cursor || self.is_zoom_armed()) {
+            drawing.put_down = true;
+            return None;
+        }
+        match spot {
             // A plot click is the layer's to classify.
             Spot::Plot => None,
             other => Some(request(at, other, projection, scale, &self.pane_ids)),

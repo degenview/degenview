@@ -457,7 +457,7 @@ impl Rig {
             self.selected = select;
         }
         self.escape_consumed |= frame.escape_consumed;
-        if frame.disarm {
+        if frame.put_down {
             self.tool = Tool::Cursor;
         }
         if frame.content_used {

@@ -284,7 +284,7 @@ a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped ti
 
 The ruler is read after it is placed, so with Keep drawing off it stays armed and on screen until
 the next click or drag, which puts the tool down and takes the measurement with it (`ends_measurement`
-in the layer, `ChartWorkspace::disarm_tool`). On, that click starts another measurement. The report
+in the layer, `ChartWorkspace::put_down_tool`). On, that click starts another measurement. The report
 asked for this; it was not observed on TradingView.
 
 The cursor menu on the strip's first tile has an Eraser that removes drawings by clicking or

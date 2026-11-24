@@ -1478,7 +1478,7 @@ fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
     assert!(rig.workspace.content.place_now);
     assert_eq!(rig.workspace.tools.active_tool(), Tool::Post);
     rig.workspace.content.pending = None;
-    rig.workspace.tools.disarm();
+    rig.workspace.tools.put_down();
     rig.workspace.paste_text(&rig.ctx, TRADINGVIEW_LINK);
     assert!(
         rig.workspace.content.pending.is_none()
@@ -1521,7 +1521,7 @@ fn the_replace_sheet_survives_the_frame_that_follows_while_the_tool_is_the_curso
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
-    rig.workspace.tools.disarm();
+    rig.workspace.tools.put_down();
     rig.workspace
         .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Replace);
     assert!(rig.workspace.content.links.sheet.is_some());

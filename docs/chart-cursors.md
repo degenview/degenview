@@ -22,8 +22,8 @@ an anchor needs the lines and the tags), and Esc or the tile brings it back.
   changes (never per pointer frame). A value this build does not know falls back to Cross and keeps
   the other options. Only a resting cursor (`CursorMode::persists`: Cross, Dot, Arrow) is stored:
   Demonstration and the Eraser are modes of the moment, so a restart (or another Mac) never opens in
-  a mode that marks the chart or deletes. Esc (after Zoom In and an armed tool) puts them down, back
-  to the resting cursor.
+  a mode that marks the chart or deletes. Esc puts them down, back to the resting cursor, after letting go of Zoom In or an armed tool
+  (`DrawingTools::put_down`, which a right-click on the chart also uses).
 - **One crosshair.** `ChartCard::draw_crosshair` is still the only crosshair; it asks the caps which
   of its parts to draw (lines, price and time tags, the box naming the bar). Hover reporting is
   unchanged, so linked charts, replay and compared markets behave as before. Other charts' shared

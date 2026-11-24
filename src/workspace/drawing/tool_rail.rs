@@ -89,11 +89,11 @@ impl ChartWorkspace {
         actions
     }
 
-    /// Back to the crosshair after the drawing layer put its tool down (a drawing was placed, or the
-    /// ruler's measurement was read). A measurement goes away with its tool, as on every other way
-    /// of putting it down.
-    pub(in crate::workspace) fn disarm_tool(&mut self) {
-        self.tools.disarm();
+    /// Back to the crosshair after the drawing layer put the held tool down (a one-shot drawing was
+    /// placed, the ruler's measurement was read, or the chart was right-clicked). A measurement goes
+    /// away with its tool, as on every other way of putting it down.
+    pub(in crate::workspace) fn put_down_tool(&mut self) {
+        self.tools.put_down();
         self.drop_rulers();
     }
 
@@ -123,14 +123,11 @@ impl ChartWorkspace {
 
     /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair).
     pub(in crate::workspace) fn toggle_tool(&mut self, tool: Tool) {
-        if tool == Tool::Cursor {
-            self.tools.zoom_armed = false;
-        }
-        self.tools.active = if self.tools.active == tool || tool == Tool::Cursor {
-            Tool::Cursor
+        if tool == Tool::Cursor || self.tools.active == tool {
+            self.tools.put_down();
         } else {
-            tool
-        };
+            self.tools.active = tool;
+        }
         self.remember_group_tool(tool);
         self.drop_rulers();
     }
@@ -178,6 +175,34 @@ mod tests {
         workspace.toggle_zoom_in();
         workspace.toggle_zoom_in();
         assert!(!workspace.tools.zoom_armed);
+    }
+
+    #[test]
+    fn putting_down_lets_go_of_whatever_holds_the_pointer_and_says_whether_it_did() {
+        let mut workspace = empty_workspace(1);
+        assert!(!workspace.tools.put_down(), "nothing was held");
+        workspace.toggle_tool(Tool::TrendLine);
+        assert!(workspace.tools.put_down());
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        workspace.toggle_zoom_in();
+        assert!(workspace.tools.put_down());
+        assert!(!workspace.tools.zoom_armed);
+        assert!(
+            !workspace.tools.put_down(),
+            "and a second time holds nothing"
+        );
+    }
+
+    #[test]
+    fn escape_puts_down_what_is_held_before_it_clears_the_selection() {
+        let mut workspace = empty_workspace(1);
+        workspace.tools.select(7, vec![1]);
+        workspace.toggle_tool(Tool::Rectangle);
+        workspace.tools.escape();
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        assert!(workspace.tools.selection().is_some(), "one step per Esc");
+        workspace.tools.escape();
+        assert!(workspace.tools.selection().is_none());
     }
 
     #[test]
