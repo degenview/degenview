@@ -51,6 +51,13 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
+        let seconds = self.bar_seconds;
+        self.history_end = bars.last().map(|bar| {
+            crate::pine::time::bucket::end(
+                crate::pine::time::bucket::start(bar.open_time, seconds),
+                seconds,
+            )
+        });
         self.bulk_replay = true;
         let mut failed_bar = 0;
         let result = self.replay_history(bars, bars.len(), precedes_live_bar, &mut failed_bar);
