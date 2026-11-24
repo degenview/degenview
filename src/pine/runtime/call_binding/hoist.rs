@@ -684,11 +684,20 @@ struct Work<'w, 'c> {
     /// did not resolve it, as in a library) the function it is in, or one that calls it: that is
     /// not a recursion, which the compiler refuses, and counts nothing.
     active: std::cell::RefCell<Vec<usize>>,
-    /// How many times a call skipped a function that is being counted, other than the one the call
-    /// is in. What a function costs then lacks that callee's cost: it is right for the function
-    /// that is skipped (it is counted again from its own start) and not to be kept for the rest.
-    foreign_skips: std::cell::Cell<usize>,
+    /// The outermost function on `active` that a call skipped since the function being counted
+    /// began (`usize::MAX`: none), as a position on `active`. What a function costs then lacks the
+    /// cost of that callee: it is not complete for the functions above it on the stack, and is
+    /// complete for the skipped one (counted again from its own start) and for those below.
+    shallowest_skip: std::cell::Cell<usize>,
+    /// How many function bodies have been counted. A cycle that is not real (calls resolved by name
+    /// reach every overload of a name) makes counting every path through it exponential, so past
+    /// `MAX_WALKS` a function is taken to cost everything, which only keeps its calls where they are.
+    walks: std::cell::Cell<usize>,
 }
+
+/// The function bodies one `Work` may count; a script with functions that call each other by name
+/// (a library) can need many more than it has functions, and none needs this many.
+const MAX_WALKS: usize = 20_000;
 
 impl<'w, 'c> Work<'w, 'c> {
     fn new(calls: &'w Calls<'c>, bodies: &'w [(&'w [Parameter], &'w [Statement])]) -> Self {
@@ -697,7 +706,8 @@ impl<'w, 'c> Work<'w, 'c> {
             bodies,
             memo: std::cell::RefCell::new(vec![None; bodies.len()]),
             active: std::cell::RefCell::default(),
-            foreign_skips: std::cell::Cell::new(0),
+            shallowest_skip: std::cell::Cell::new(usize::MAX),
+            walks: std::cell::Cell::new(0),
         }
     }
 
@@ -708,7 +718,8 @@ impl<'w, 'c> Work<'w, 'c> {
             bodies: &[],
             memo: std::cell::RefCell::new(calls.work.iter().map(|work| Some(*work)).collect()),
             active: std::cell::RefCell::default(),
-            foreign_skips: std::cell::Cell::new(0),
+            shallowest_skip: std::cell::Cell::new(usize::MAX),
+            walks: std::cell::Cell::new(0),
         }
     }
 
@@ -722,7 +733,12 @@ impl<'w, 'c> Work<'w, 'c> {
         if let Some(known) = self.memo.borrow()[index] {
             return known;
         }
-        let skips = self.foreign_skips.get();
+        if self.walks.get() >= MAX_WALKS {
+            return u64::MAX;
+        }
+        self.walks.set(self.walks.get() + 1);
+        let position = self.active.borrow().len();
+        let outer = self.shallowest_skip.replace(usize::MAX);
         self.active.borrow_mut().push(index);
         let (parameters, body) = self.bodies[index];
         let defaults = parameters
@@ -732,20 +748,29 @@ impl<'w, 'c> Work<'w, 'c> {
             .fold(0, u64::saturating_add);
         let cost = self.block(body).saturating_add(defaults);
         self.active.borrow_mut().pop();
-        if self.foreign_skips.get() == skips {
+        let skipped = self.shallowest_skip.get();
+        // A skip of this function or of one counted below it leaves its cost complete.
+        let complete = skipped >= position;
+        if complete {
             self.memo.borrow_mut()[index] = Some(cost);
         }
+        self.shallowest_skip
+            .set(outer.min(if complete { usize::MAX } else { skipped }));
         cost
     }
 
     /// Whether a call to `callee` counts nothing because it is being counted already.
     fn skipped(&self, callee: usize) -> bool {
-        let active = self.active.borrow();
-        let skipped = active.contains(&callee);
-        if skipped && active.last() != Some(&callee) {
-            self.foreign_skips.set(self.foreign_skips.get() + 1);
+        let position = self
+            .active
+            .borrow()
+            .iter()
+            .position(|active| *active == callee);
+        if let Some(position) = position {
+            self.shallowest_skip
+                .set(self.shallowest_skip.get().min(position));
         }
-        skipped
+        position.is_some()
     }
 
     fn block(&self, statements: &[Statement]) -> u64 {

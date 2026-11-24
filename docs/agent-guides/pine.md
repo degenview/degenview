@@ -466,7 +466,7 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     whose passes are not known counts as all of them) passes it. A loop counts as known only when it
     ends: bounds past 2^53, or a step below two gaps between the floats there, can stop the
     counter (half a gap rounds back to the same float on every other value). What is not
-    counted: how often a function that holds a moved call is itself called, and a script close to the
+    counted: how often a function that holds a moved call is itself called. Counting a cost walks each function body once; calls resolved by name (a library's) can make a cycle that is not a recursion, so past `MAX_WALKS` bodies a function costs everything and its calls stay where they are. A script close to the
     budget can be pushed over it by what does move. A
     history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
     guard may keep out). A call that reads a name its statement declares stays.

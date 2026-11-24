@@ -833,6 +833,40 @@ fn a_cost_found_while_another_function_is_being_counted_is_not_kept() {
 }
 
 #[test]
+fn counting_what_overloads_that_call_each_other_by_name_cost_ends() {
+    // A library's calls are resolved by name only, so each of these ten overloads may reach all the
+    // others through `p(a)`: counting every path is exponential, and has to stop. What it costs is
+    // not asserted, only that the session builds.
+    let mut library = String::from("//@version=6\nlibrary(\"Lazy\")\np(float a) =>\n    a\n");
+    for arity in 2..=10 {
+        let names: Vec<String> = (1..arity).map(|n| format!("b{n}")).collect();
+        let parameters: Vec<String> = names.iter().map(|n| format!("float {n}")).collect();
+        library.push_str(&format!(
+            "p(float a, {}) =>\n    p(a) + {}\n",
+            parameters.join(", "),
+            names.join(" + ")
+        ));
+    }
+    library.push_str("export ahead(bool on) =>\n    on ? p(close, 1.0)[1] : na\n");
+    struct Lib(String);
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Many/1").then(|| self.0.clone())
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Many/1 as many\nplot(many.ahead(close > 0))\n";
+    let started = std::time::Instant::now();
+    let program = hoisted(source, &Lib(library));
+    assert!(program.imports[0].library.is_some(), "the library compiled");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "counting what the overloads cost took {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
 fn hoisted_scripts_run_the_same_both_ways() {
     for source in [
         "x = bar_index % 2 == 0 ? ta.sma(close, 3)[1] : na\nplot(x)",
@@ -1054,7 +1088,7 @@ const HELPERS: [(&str, &str); 16] = [
     ("f(v = math.random(0, 1)) =>\n    v\n", "f()"),
     ("g() =>\n    ta.sma(close, 3)\nf() =>\n    g() * 2\n", "f()"),
     (
-        "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
+        "g() =>\n    s = 0.0\n    for i = 0 to 100000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
         "f()",
     ),
     (
@@ -1078,7 +1112,7 @@ fn hoisting_checks(scripts: &[String]) -> (usize, Vec<String>) {
             continue;
         };
         let program = hoisted(&source, &NoLibraries);
-        hoisted_count += usize::from(!synthetic(&program.statements).is_empty());
+        hoisted_count += usize::from(off && !synthetic(&program.statements).is_empty());
         if off && !on {
             violations.push(source);
         }
@@ -1112,10 +1146,10 @@ fn assert_no_violations(scripts: &[String], hoisted_count: usize, violations: &[
         violations.len(),
         violations.join("\n---\n")
     );
-    // The check looks at something: many of these scripts have a call moved ahead of its guard.
+    // The check looks at something: scripts that ran without the hoist, with a call moved ahead.
     assert!(
-        hoisted_count * 5 > scripts.len(),
-        "only {hoisted_count} of {} scripts had a call moved",
+        hoisted_count * 12 > scripts.len(),
+        "only {hoisted_count} of {} scripts ran and had a call moved",
         scripts.len()
     );
 }
