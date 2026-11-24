@@ -38,14 +38,15 @@ static SECURITY_CACHE: LazyLock<Mutex<SecurityCache>> =
 
 /// The candle sizes the intrabar series are built from: a series of `request.security_lower_tf`
 /// is folded from the coarsest of these that nests in its length (12 minutes from 1-minute
-/// candles, 4 hours from 1-hour ones).
-const INTRABAR_BASES: [Timeframe; 6] = [
+/// candles, 4 hours from 1-hour ones, 15 seconds from 1-second ones).
+const INTRABAR_BASES: [Timeframe; 7] = [
     Timeframe::DAY_1,
     Timeframe::HOUR_1,
     Timeframe::MINUTE_30,
     Timeframe::MINUTE_15,
     Timeframe::MINUTE_5,
     Timeframe::MINUTE_1,
+    Timeframe::SECOND_1,
 ];
 
 impl KlineSecurityDataProvider {

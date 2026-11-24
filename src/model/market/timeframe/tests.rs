@@ -10,7 +10,8 @@ fn presets_and_legacy_lists_are_in_order_with_their_tokens() {
     assert_eq!(
         tokens,
         [
-            "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1d", "1w", "1M", "1Y"
+            "1s", "5s", "10s", "15s", "30s", "45s", "1m", "5m", "15m", "30m", "1h", "4h", "8h",
+            "12h", "1d", "1w", "1M", "1Y"
         ]
     );
     let legacy: Vec<_> = Timeframe::LEGACY.iter().map(|tf| tf.interval()).collect();
@@ -31,7 +32,8 @@ fn labels_use_lowercase_minutes_and_hours() {
     assert_eq!(
         labels,
         [
-            "1m", "5m", "15m", "30m", "1h", "4h", "8h", "12h", "1D", "1W", "1M", "1Y"
+            "1s", "5s", "10s", "15s", "30s", "45s", "1m", "5m", "15m", "30m", "1h", "4h", "8h",
+            "12h", "1D", "1W", "1M", "1Y"
         ]
     );
     assert_eq!(tf(22, TimeUnit::Minute).to_string(), "22m");

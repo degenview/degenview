@@ -89,7 +89,7 @@ one per tab: `Chart` is `ToolbarAction::SetTimeframe` (`reload_for_timeframe`, t
   any refusal shows its message in one caption line and Return does nothing. A valid timeframe no chip
   shows gets a row above the sections, "Chart 22m" with its description. An empty field points at the
   current timeframe.
-- **Chips** by section (`Timeframe::section`): MINUTES `1m 5m 15m 30m`, HOURS `1h 4h 8h 12h`, DAYS AND
+- **Chips** by section (`Timeframe::section`): SECONDS `1s 5s 10s 15s / 30s 45s` (two rows; a chip a chart's source cannot serve only warns), MINUTES `1m 5m 15m 30m`, HOURS `1h 4h 8h 12h`, DAYS AND
   UP `1D 1W 1M 1Y` (`Timeframe::PRESETS`), four to a row (a fifth wraps). `3M` is typed or pinned. Pinned timeframes join their section; each
   section is sorted by duration. The current one is lit and semibold.
 - **Keys**: Return charts the highlighted timeframe, ⇧Return charts it and pins it (a preset or an

@@ -1,7 +1,7 @@
 //! Where a higher-timeframe bar opens and closes, for a bar length in seconds (as Pine states
 //! timeframes, a month being 30 days). The cutting is `model::market::bucket`'s: a length that is
-//! a whole timeframe (`5` minutes, `1D`, `2W`, `3M`, `12M`) gets its buckets, quarters and years
-//! included. Any other length (`30S`, 90 seconds) floors onto the epoch.
+//! a whole timeframe (`30S`, `5` minutes, `1D`, `2W`, `3M`, `12M`) gets its buckets, quarters and
+//! years included. Any other length (90.5 seconds) floors onto the epoch.
 
 use crate::model::market::bucket;
 use crate::model::{TimeUnit, Timeframe};
@@ -11,11 +11,14 @@ const DAY: i64 = 86_400;
 
 /// The timeframe a length in seconds is, with Pine's month of 30 days: the largest unit that
 /// divides it evenly, as `timeframe_from_seconds` writes it. None for a length that is no
-/// timeframe: under a minute, not whole seconds, or more than a unit allows.
+/// timeframe: not whole seconds, or more than a unit allows.
 pub fn timeframe_of(seconds: f64) -> Option<Timeframe> {
     let whole = seconds.round() as i64;
-    if whole < MINUTE || (seconds - whole as f64).abs() > 1e-6 {
+    if whole < 1 || (seconds - whole as f64).abs() > 1e-6 {
         return None;
+    }
+    if whole < MINUTE {
+        return Timeframe::new(u16::try_from(whole).ok()?, TimeUnit::Second).ok();
     }
     let (count, unit) = [
         (30 * DAY, TimeUnit::Month),
@@ -76,8 +79,11 @@ mod tests {
             (7_776_000.0, Some(Timeframe::MONTH_3)),
             (31_104_000.0, Some(Timeframe::YEAR_1)),
             (1_320.0, Timeframe::new(22, TimeUnit::Minute).ok()),
-            (30.0, None),
+            (1.0, Some(Timeframe::SECOND_1)),
+            (30.0, Some(Timeframe::SECOND_30)),
+            (59.0, Timeframe::new(59, TimeUnit::Second).ok()),
             (90.5, None),
+            (0.5, None),
             // Thirteen months are not a timeframe.
             (13.0 * 30.0 * 86_400.0, None),
             (0.0, None),
@@ -127,7 +133,17 @@ mod tests {
 
     #[test]
     fn a_length_that_is_no_timeframe_floors_onto_the_epoch() {
+        assert_eq!(start(95_000, 90.5), 90_500);
+        assert_eq!(end(90_500, 90.5), 181_000);
+    }
+
+    #[test]
+    fn second_buckets_are_cut_from_midnight() {
         assert_eq!(start(95_000, 30.0), 90_000);
         assert_eq!(end(90_000, 30.0), 120_000);
+        // 7 s does not divide the day: the last bucket of a day is cut at midnight.
+        let midnight = 86_400_000;
+        assert_eq!(start(midnight - 1, 7.0), midnight - 6_000);
+        assert_eq!(end(midnight - 6_000, 7.0), midnight);
     }
 }

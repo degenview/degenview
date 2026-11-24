@@ -66,7 +66,7 @@ fn a_preset_or_a_repeat_among_the_pinned_is_listed_once() {
 #[test]
 fn up_and_down_keep_the_column_and_clamp_to_the_row() {
     let grid = Grid::new(&[]);
-    // Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up: 1D 1W 1M 1Y.
+    // Seconds: 1s 5s 10s 15s / 30s 45s. Minutes: 1m 5m 15m 30m. Hours: 1h 4h 8h 12h. Days and up:
     // 1D 1W 1M 1Y.
     assert_eq!(
         grid.step(Timeframe::MINUTE_5, Step::Down),
@@ -92,7 +92,16 @@ fn up_and_down_keep_the_column_and_clamp_to_the_row() {
         pinned.step(Timeframe::MINUTE_30, Step::Down),
         Some(Timeframe::HOUR_1)
     );
-    assert_eq!(grid.step(Timeframe::MINUTE_1, Step::Up), None);
+    assert_eq!(
+        grid.step(Timeframe::MINUTE_1, Step::Up),
+        Some(Timeframe::SECOND_30),
+        "the seconds' second row is shorter than the column"
+    );
+    assert_eq!(
+        grid.step(Timeframe::MINUTE_15, Step::Up),
+        Some(Timeframe::SECOND_45)
+    );
+    assert_eq!(grid.step(Timeframe::SECOND_5, Step::Up), None);
 }
 
 #[test]
@@ -106,7 +115,11 @@ fn left_and_right_walk_the_chips_in_reading_order() {
         grid.step(Timeframe::HOUR_1, Step::Left),
         Some(Timeframe::MINUTE_30)
     );
-    assert_eq!(grid.step(Timeframe::MINUTE_1, Step::Left), None);
+    assert_eq!(
+        grid.step(Timeframe::MINUTE_1, Step::Left),
+        Some(Timeframe::SECOND_45)
+    );
+    assert_eq!(grid.step(Timeframe::SECOND_1, Step::Left), None);
     assert_eq!(grid.step(Timeframe::YEAR_1, Step::Right), None);
 }
 
@@ -114,7 +127,7 @@ fn left_and_right_walk_the_chips_in_reading_order() {
 fn from_a_typed_timeframe_down_goes_to_the_first_chip() {
     let grid = Grid::new(&[]);
     let typed = custom(22, TimeUnit::Minute);
-    assert_eq!(grid.step(typed, Step::Down), Some(Timeframe::MINUTE_1));
+    assert_eq!(grid.step(typed, Step::Down), Some(Timeframe::SECOND_1));
     assert_eq!(grid.step(typed, Step::Up), None);
 }
 

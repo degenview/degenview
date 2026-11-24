@@ -115,8 +115,8 @@ watchlists.
   401 on `before_timestamp` is the end of history.
 - The chart offers 1h+, but Pine's `request.security` may ask any timeframe (5m intrabars, 4h):
   `timeframe_of` turns Pine's seconds into a `Timeframe` and the provider folds it, so an odd length
-  no longer fails with `PINE4021`/`PINE4022`; a length under a minute, or that is no timeframe
-  (`30S`), still does. Pine states lengths in seconds with a 30-day month; `pine::time::bucket` cuts
+  no longer fails with `PINE4021`/`PINE4022`; a length that is no timeframe (90.5 seconds) still
+  does, and one under a minute (`30S`) needs a source with second candles (Binance, OKX, Gate.io). Pine states lengths in seconds with a 30-day month; `pine::time::bucket` cuts
   the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
   `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
   base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
