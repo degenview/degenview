@@ -10,7 +10,7 @@
 pub mod call;
 pub mod extra;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::runtime::value::RuntimeValue;
 
 /// What one call site remembers between bars.

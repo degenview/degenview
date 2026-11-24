@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use super::fast_hash::FastMap;
 use super::types::RuntimeFunction;
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::program::{CompiledProgram, Import};
 use crate::pine::syntax::ast::{EnumMember, Expression, Parameter, Statement, TypeField};
 

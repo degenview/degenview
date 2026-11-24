@@ -201,7 +201,7 @@ pub struct StrategyReport {
     pub open_profit: f64,
     /// The chart the strategy ran on. On a price-based chart its orders filled at that chart's
     /// constructed prices, which are not prices anyone traded at.
-    pub chart: crate::model::ChartKind,
+    pub chart: crate::bars::ChartKind,
 }
 
 impl StrategyReport {

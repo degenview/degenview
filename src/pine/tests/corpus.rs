@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::compiler::{self, LibraryResolver};
 use crate::pine::runtime::session::{RunError, Session};

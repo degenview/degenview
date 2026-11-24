@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod alloc_count;
 mod app;
+mod bars;
 mod build_info;
 mod clock;
 mod crash_report;

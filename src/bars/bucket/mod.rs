@@ -14,8 +14,8 @@
 //!
 //! A bucket closes 1 ms before the next opens.
 
+use crate::bars::{Kline, TimeUnit, Timeframe};
 use crate::format::{civil_from_days, days_from_civil};
-use crate::model::{Kline, TimeUnit, Timeframe};
 
 mod plan;
 

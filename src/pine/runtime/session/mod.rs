@@ -12,7 +12,7 @@ use super::state::{AlertEvent, RuntimeState};
 use super::support::{LibraryLinkage, SecurityDataProvider};
 use super::types::{Flow, RuntimeFunction};
 use super::value::RuntimeValue;
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::program::{CompiledProgram, InputValue, SymbolInfo};
 use crate::pine::outputs::drawings;
 use crate::pine::{Diagnostic, Limits};

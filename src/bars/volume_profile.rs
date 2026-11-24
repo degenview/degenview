@@ -12,8 +12,8 @@
 //!
 //! Pure: no egui types, nothing read but the slice of bars it is given.
 
-use crate::model::chart::kind::PriceSource;
-use crate::model::market::kline::Kline;
+use crate::bars::Kline;
+use crate::bars::kind::PriceSource;
 use serde::{Deserialize, Serialize};
 
 /// The most rows a profile is built with, however many are asked for.

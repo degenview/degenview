@@ -4,8 +4,8 @@
 //! resolver. The `strategy.*` reads live in `strategy::builtins::strategy_value`.
 
 use super::ta;
+use crate::bars::{ChartKind, Kline};
 use crate::clock::now_ms;
-use crate::model::{ChartKind, Kline};
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::RuntimeValue;

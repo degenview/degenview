@@ -15,8 +15,8 @@
 //! Only the last segment can still grow, so it is the one left unconfirmed.
 
 use super::{BarShape, SyntheticBar, price_path, tolerance};
-use crate::model::Kline;
-use crate::model::chart::kind::ConstructionSource;
+use crate::bars::Kline;
+use crate::bars::kind::ConstructionSource;
 
 struct Segment {
     start: f64,

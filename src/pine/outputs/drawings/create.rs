@@ -9,7 +9,7 @@ use super::{
     Arg, CHART_POINT_TYPE, DEFAULT_COLOR, DrawingLimits, OPAQUE_BLACK, allocate, bind,
     bind_overload, cap, force_overlay, parse, text, width_or,
 };
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::outputs::{
     BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
     MISSING_INDEX, PolylineOutput, PolylinePoint, Size, TextAlign, YLocation, index_is_known,

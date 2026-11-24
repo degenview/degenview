@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::runtime::fast_hash::FastMap;
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::RuntimeValue;

@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::alloc_count;
-use crate::model::Kline;
+use crate::bars::Kline;
 use crate::pine::compiler::program::{SymbolInfo, VisualOutput};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::execution::ExecutionController;

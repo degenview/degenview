@@ -2,7 +2,7 @@
 //!
 //! The chart type is a presentation choice kept apart from the market data: the provider's candles
 //! stay canonical, and the types that construct their own bars (Heikin Ashi, Renko, Kagi, Line
-//! Break, Point & Figure, Range) derive them in [`crate::model::chart::synthetic`]. [`ChartStyle`] rides inside
+//! Break, Point & Figure, Range) derive them in [`crate::bars::synthetic`]. [`ChartStyle`] rides inside
 //! [`ChartAppearance`](super::ChartAppearance), so it is saved with the chart, the saved layouts
 //! and the layout fingerprint without a second persistence path. Every type keeps its own
 //! settings: switching away and back finds them as they were left.
@@ -10,7 +10,7 @@
 //! Pure: no egui types. Colours are `[r, g, b, a]` bytes; `None` follows the chart's up/down
 //! palette (and, for borders and wicks, the body colour).
 
-use crate::model::{DataSource, Kline};
+use crate::bars::{DataSource, Kline};
 use serde::{Deserialize, Serialize};
 
 /// A straight (unpremultiplied) RGBA colour.
