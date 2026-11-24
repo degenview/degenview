@@ -590,4 +590,65 @@ mod tests {
         assert!(report.open_trades.is_empty(), "{:?}", report.open_trades);
         assert_eq!(report.equity.len(), 3);
     }
+    /// 15-minute candles of the symbol, from midnight to 4:30.
+    struct Quarter;
+    impl crate::pine::runtime::support::SecurityDataProvider for Quarter {
+        fn candles(&self, key: &crate::pine::runtime::support::SecurityKey) -> Option<Vec<Kline>> {
+            (key.interval == 900.0).then(|| {
+                (0..19)
+                    .map(|i| Kline {
+                        open_time: i * 900_000,
+                        close_time: i * 900_000 + 899_999,
+                        open: 1.0,
+                        high: 1.0,
+                        low: 1.0,
+                        close: 1.0,
+                        volume: 1.0,
+                    })
+                    .collect()
+            })
+        }
+    }
+
+    #[test]
+    fn a_live_bar_splits_a_finer_request_at_the_clock_the_app_passes() {
+        // The app's update path (`now_ms`), not a hand-built session: 4:40 lies inside the live bar
+        // 4:00-5:00, so of the 15m candles the 4:15 one is the last confirmed history one, and the
+        // 4:30 one forming now the last and the realtime one (TradingView probe S2).
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.islastconfirmedhistory ? 1.0 : 0.0), 1.0))\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.islast ? 1.0 : 0.0), 1.0))\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isrealtime ? 1.0 : 0.0), 1.0))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Quarter)),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        let at = |plot: usize, bar: usize| update.output.plots[plot].values[bar];
+        for plot in 0..3 {
+            assert_eq!(at(plot, 3), Some(-1.0), "the last history bar, plot {plot}");
+        }
+        assert_eq!(at(0, 4), Some(1.0), "last confirmed history");
+        assert_eq!(at(1, 4), Some(2.0), "last");
+        assert_eq!(at(2, 4), Some(2.0), "realtime");
+    }
 }
