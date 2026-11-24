@@ -40,8 +40,9 @@ pub struct State {
     /// and only a `ta.macd` site has legs.
     pub macd: Option<Box<[MacdLeg; 3]>>,
     /// `timeframe.change`: the open time of the bar the site last ran on, and of the bar it ran on
-    /// before that.
-    pub bar_times: Option<BarTimes>,
+    /// before that. Boxed like `macd`: `State` is cloned on every realtime tick, and only a
+    /// `timeframe.change` site has bars.
+    pub bar_times: Option<Box<BarTimes>>,
 }
 
 /// The bars a call site has run on, newest first. Only a bar the site ran on is recorded, so a site
@@ -448,14 +449,19 @@ pub fn evaluate_cum(source: &RuntimeValue, state: &mut State) -> RuntimeValue {
 /// time it runs), noting this bar. A site that runs several times in one bar (a loop) sees the same
 /// earlier bar every time. `timeframe.change` compares with it.
 pub fn previous_bar_time(open_time: i64, state: &mut State) -> Option<i64> {
-    let times = match state.bar_times {
-        Some(times) if times.latest == open_time => times,
-        latest => BarTimes {
+    let Some(times) = state.bar_times.as_deref_mut() else {
+        state.bar_times = Some(Box::new(BarTimes {
             latest: open_time,
-            before: latest.map(|times| times.latest),
-        },
+            before: None,
+        }));
+        return None;
     };
-    state.bar_times = Some(times);
+    if times.latest != open_time {
+        *times = BarTimes {
+            latest: open_time,
+            before: Some(times.latest),
+        };
+    }
     times.before
 }
 
