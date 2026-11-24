@@ -32,6 +32,22 @@ pub(super) fn series(count: usize) -> Vec<Kline> {
         .collect()
 }
 
+/// How long a test waits for a snapshot job before it calls it hung. A picture takes seconds in a
+/// debug build with the machine to itself, and these tests share one work queue with every other
+/// test running, so the wait is a time, not a number of frames: a loaded machine runs frames
+/// quickly while the job it waits for is still queued.
+pub(super) const JOB_DEADLINE: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// Calls `step` until it says it is done, pausing a moment between calls, and fails the test with
+/// `what` if the job is still not done after [`JOB_DEADLINE`].
+pub(super) fn wait_until(what: &str, mut step: impl FnMut() -> bool) {
+    let started = std::time::Instant::now();
+    while !step() {
+        assert!(started.elapsed() < JOB_DEADLINE, "{what}");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 /// A workspace drawn on a window that takes pointer events, one chart per symbol.
 pub(super) struct Rig {
     pub(super) ctx: egui::Context,
