@@ -555,16 +555,22 @@ fn footnote_height(ui: &Ui, text: &str) -> f32 {
 fn footnote(ui: &mut Ui, text: &str) {
     kit::divider(ui);
     ui.add_space(8.0);
+    // The width `footnote_height` measured the note at, so the room it was given is the room it
+    // fills and the note keeps the margin on both sides.
+    let width = ui.available_width() - 2.0 * MARGIN;
     ui.horizontal(|ui| {
         ui.add_space(MARGIN);
-        ui.add(
-            egui::Label::new(kit::text(
-                text,
-                size::CAPTION,
-                REGULAR,
-                theme::text_tertiary(),
-            ))
-            .wrap(),
-        );
+        ui.scope(|ui| {
+            ui.set_max_width(width);
+            ui.add(
+                egui::Label::new(kit::text(
+                    text,
+                    size::CAPTION,
+                    REGULAR,
+                    theme::text_tertiary(),
+                ))
+                .wrap(),
+            );
+        });
     });
 }
