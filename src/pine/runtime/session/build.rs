@@ -28,6 +28,7 @@ impl Session {
         visible_range: Option<(i64, i64)>,
     ) -> Self {
         let mut program = program;
+        crate::pine::runtime::call_binding::hoist::lazy_history(&mut program);
         crate::pine::runtime::call_binding::bind(&mut program);
         let mut shadow_names = ShadowNames::default();
         mark_shadowing(&mut program, &mut shadow_names);
@@ -68,6 +69,7 @@ impl Session {
                             .map(|p| linkage.canonical(p, "", &HashSet::new()))
                             .collect(),
                         body.clone(),
+                        statement.range().start.offset,
                     );
                     function.mark_globals(&globals);
                     callables.push(function.clone());

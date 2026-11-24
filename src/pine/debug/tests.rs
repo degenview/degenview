@@ -295,6 +295,22 @@ fn no_statement_is_stopped_at_twice_when_stepping_into() {
 }
 
 #[test]
+fn a_call_the_session_runs_ahead_of_its_statement_adds_no_stop() {
+    // The call that `[1]` reads is the first thing the `if` arm runs, so it starts where that
+    // statement does; the session runs it ahead of the whole `x = if`, and the debugger steps
+    // through the same statements as without the `[1]`.
+    let stops = |history: &str| {
+        let body = format!(
+            "cond = bar_index % 2 == 0\nx = if cond\n    ta.sma(close, 3){history}\nelse\n    na\nplot(x)\n"
+        );
+        lines(&debug(&body, 2, &[], true, &[Resume::Into; 20]))
+    };
+    let with = stops("[1]");
+    assert_eq!(with, stops(""));
+    assert!(!with.is_empty());
+}
+
+#[test]
 fn loops_stop_once_per_iteration_in_the_body_and_once_for_the_header() {
     let body = "total = 0.0
 for i = 0 to 2

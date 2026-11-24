@@ -25,6 +25,10 @@ struct Counters {
     inclusive: u64,
     exclusive: u64,
     slowest: u64,
+    /// Time the session spent ahead of this region's statement since it last ran, which its next
+    /// execution takes into its own: `slowest` is the longest an execution took, run-ahead included,
+    /// as `inclusive` is.
+    run_ahead: u64,
     /// Executions of this region that are open right now: more than one means recursion.
     active: u32,
 }
@@ -67,6 +71,9 @@ struct Frame {
     outermost: bool,
     /// The same, for the call site.
     outermost_call: bool,
+    /// Whether its end is an execution of its region. What the session runs ahead of a statement is
+    /// time of that statement, not another run of it.
+    counted: bool,
 }
 
 pub struct ProfileRuntime {
@@ -75,6 +82,8 @@ pub struct ProfileRuntime {
     counters: Vec<Counters>,
     call_sites: FastMap<(usize, u32), CallSite>,
     stack: Vec<Frame>,
+    /// The regions that were given run-ahead time since the bar began, for `settle_run_ahead`.
+    run_ahead_regions: Vec<u32>,
     bar_started: u64,
     /// A bar has begun and not ended: a panic that unwinds past the interpreter leaves it so.
     bar_open: bool,
@@ -124,6 +133,7 @@ impl ProfileRuntime {
             table,
             clock,
             call_sites: FastMap::default(),
+            run_ahead_regions: Vec::new(),
             stack: Vec::with_capacity(64),
             bar_started: 0,
             bar_open: false,
@@ -188,6 +198,7 @@ impl ProfileRuntime {
         while !self.stack.is_empty() {
             self.pop(now);
         }
+        self.settle_run_ahead();
         self.bar_open = false;
         if outcome == BarOutcome::Skipped {
             return Duration::ZERO;
@@ -217,7 +228,7 @@ impl ProfileRuntime {
     pub fn enter_statement(&mut self, offset: usize) -> bool {
         match self.table.at_offset(offset) {
             Some(region) => {
-                self.push(region, None);
+                self.push(region, None, true);
                 true
             }
             None => {
@@ -227,14 +238,36 @@ impl ProfileRuntime {
         }
     }
 
-    /// A user-defined function's body starts, called from the call at `call_offset`. `first_statement`
-    /// is the offset of the first statement of the body, which names the function. Returns whether
-    /// it is a measured region; either way a frame is open until [`exit`](Self::exit).
-    #[inline]
-    pub fn enter_function(&mut self, first_statement: usize, call_offset: usize) -> bool {
-        match self.table.function_with_body(first_statement) {
+    /// Something the session runs ahead of a statement starts (a call it moved out of a lazy
+    /// operand), at `offset` in that statement's text. Its time is the statement's, the one written
+    /// in the region that is open, but running it is not an execution of the statement. Returns
+    /// whether it is a measured region; either way a frame is open until [`exit`](Self::exit).
+    pub fn enter_run_ahead(&mut self, offset: usize) -> bool {
+        let around = match self.stack.last() {
+            Some(frame) if frame.region == UNTIMED => None,
+            Some(frame) => Some(Some(frame.region)),
+            None => Some(None),
+        };
+        match around.and_then(|around| self.table.statement_around(offset, around)) {
             Some(region) => {
-                self.push(region, Some(call_offset));
+                self.push(region, None, false);
+                true
+            }
+            None => {
+                self.enter_untimed();
+                false
+            }
+        }
+    }
+
+    /// A user-defined function's body starts, called from the call at `call_offset`. `declared_at`
+    /// is where the function's declaration starts, which names it. Returns whether it is a measured
+    /// region; either way a frame is open until [`exit`](Self::exit).
+    #[inline]
+    pub fn enter_function(&mut self, declared_at: usize, call_offset: usize) -> bool {
+        match self.table.function_at(declared_at) {
+            Some(region) => {
+                self.push(region, Some(call_offset), true);
                 true
             }
             None => {
@@ -255,11 +288,12 @@ impl ProfileRuntime {
             children: 0,
             outermost: false,
             outermost_call: false,
+            counted: false,
         });
     }
 
     #[inline]
-    fn push(&mut self, region: u32, call: Option<usize>) {
+    fn push(&mut self, region: u32, call: Option<usize>, counted: bool) {
         let counters = &mut self.counters[region as usize];
         let outermost = counters.active == 0;
         counters.active += 1;
@@ -292,6 +326,7 @@ impl ProfileRuntime {
             children: 0,
             outermost,
             outermost_call,
+            counted,
         });
     }
 
@@ -304,6 +339,19 @@ impl ProfileRuntime {
             _ => self.now(),
         };
         self.pop(now);
+    }
+
+    /// Run-ahead time whose statement never started, because the bar was cut first, is an execution
+    /// of its own, so that every region's `slowest` and `inclusive` still add up to its executions.
+    fn settle_run_ahead(&mut self) {
+        for region in self.run_ahead_regions.drain(..) {
+            let counters = &mut self.counters[region as usize];
+            if counters.run_ahead > 0 {
+                counters.executions += 1;
+                counters.slowest = counters.slowest.max(counters.run_ahead);
+                counters.run_ahead = 0;
+            }
+        }
     }
 
     #[inline]
@@ -322,9 +370,17 @@ impl ProfileRuntime {
         let elapsed = now.saturating_sub(frame.start);
         let exclusive = elapsed.saturating_sub(frame.children);
         let counters = &mut self.counters[frame.region as usize];
-        counters.executions += 1;
+        if frame.counted {
+            counters.executions += 1;
+            let ran = elapsed.saturating_add(std::mem::take(&mut counters.run_ahead));
+            counters.slowest = counters.slowest.max(ran);
+        } else {
+            if counters.run_ahead == 0 {
+                self.run_ahead_regions.push(frame.region);
+            }
+            counters.run_ahead = counters.run_ahead.saturating_add(elapsed);
+        }
         counters.exclusive += exclusive;
-        counters.slowest = counters.slowest.max(elapsed);
         counters.active -= 1;
         if frame.outermost {
             counters.inclusive += elapsed;
@@ -352,6 +408,7 @@ impl ProfileRuntime {
         while !self.stack.is_empty() {
             self.pop(now);
         }
+        self.settle_run_ahead();
         if self.bar_open {
             // A bar that never ended: the interpreter unwound past it (a panic). Its time belongs to
             // the total, or its regions would add up to more than the run took. It is not a

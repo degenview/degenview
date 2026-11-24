@@ -94,6 +94,29 @@ plot(result)
 ";
 
 #[test]
+fn a_variable_the_session_adds_for_a_lazy_history_is_not_shown() {
+    let (probe, captured) = capture_all();
+    // Line 5 is `plot(x)`, after the statement whose call the session ran ahead of it.
+    at_lines(
+        "cond = bar_index % 2 == 0\nx = cond ? ta.sma(close, 3)[1] : na\nplot(x)\n",
+        4,
+        &[5],
+        probe,
+    );
+    let captured = captured.lock().unwrap();
+    assert!(!captured.is_empty());
+    for stop in captured.iter() {
+        for (_, rows) in &stop.frames {
+            assert!(rows.iter().any(|(_, name, _)| name == "x"));
+            assert!(
+                rows.iter().all(|(_, name, _)| !name.starts_with('\u{1}')),
+                "{rows:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn variables_are_grouped_by_scope_with_their_current_values() {
     let (probe, captured) = capture_all();
     // Line 8 is `twice + 1`, inside the function, on the third bar.

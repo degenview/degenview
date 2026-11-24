@@ -498,6 +498,57 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     workloads both ways; user methods/types/aliases that must stay on the chain) and
     `PINE_CORPUS_DUAL=1` (every community script both ways). Bench with `tools/pine-bench.sh`:
     `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
+- **A `[]` on a call in a lazy operand runs the call on every bar** (`call_binding::hoist`, before
+  `bind` and `mark_shadowing`, libraries included). `cond ? ta.sma(close, 3)[1] : na`, the right side of
+  `and`/`or`, the arms of an `if`/`switch` used for a value and a `switch` condition after the first read
+  the value the call has when it runs on every bar (TradingView: P09 S3, P10 C1-C3), while the call
+  without `[]` keeps its own state. The call moves, unchanged and with its `site`, into a synthetic
+  declaration `\u{1}h<n> = <call>` before its statement, and the operand reads `\u{1}h<n>[k]`: the
+  ordinary history of a variable, no new runtime code.
+  - Only a *total* call moves: running it on a bar its branch skips cannot fail or change anything
+    (`Calls::expression`, an exhaustive match over `Expression`: a new variant must be decided). Which
+    builtins are total is `call_binding::total::is_total`, decided by the evaluator, not by its family:
+    `math.*` (not `math.random`, which draws on the generator) and the `ta` table cannot fail because
+    their evaluators return a bare value; the inline and extra `ta` functions and the scalars return a
+    `Result` and are opt-in by name (`total::NAMES`; `runtime.error`, `ta.pivot_point_levels`, `time`
+    and `time_close` raise). A test makes every name of those families be in `NAMES` or `REFUSED`, so a
+    new builtin must be decided; anything unknown, `array.*`, `str.*`, `request.*`, a method or a draw
+    is not total. A user function is total when its body, and the defaults of its parameters (every
+    call that leaves one out evaluates it), only compute with total calls and declarations of its own.
+    A loop is total only when its bounds and step are numeric literals and the step is not zero (a zero
+    step raises); no `while`, `for … in`, field assignment, method or field read, or assignment to a
+    global. A moved call adds its cost to every bar, and a bar has a budget the guard may be keeping the
+    script under (PINE8004, 20 million instructions): a function that costs more than `RUN_AHEAD_WORK`
+    (100k statements run and loop passes, its callees' loops included) stays where it is, however its
+    loops are written, and so does a call whose cost times the passes of the loops around it (a loop
+    whose passes are not known counts as all of them) passes it. A loop counts as known only when it
+    ends: bounds past 2^53, or a step below two gaps between the floats there, can stop the
+    counter (half a gap rounds back to the same float on every other value). What is not
+    counted: how often a function that holds a moved call is itself called. Counting a cost walks each function body once; calls resolved by name (a library's) can make a cycle that is not a recursion, so past `MAX_WALKS` bodies a function costs everything and its calls stay where they are. A script close to the
+    budget can be pushed over it by what does move. A
+    history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
+    guard may keep out). A call that reads a name its statement declares stays.
+  - Nothing moves out of a loop inside an arm or a `while` condition.
+  - **Scope**: the script's own statements and the libraries it imports. A lazy `call[]` written
+    directly inside a `request.*` expression is not moved (that expression runs on the requested
+    series, in the request's own state), so it keeps its old reading, `na` on the bars its branch
+    skips; the same expression on the chart is hoisted (`a_lazy_history_directly_inside_a_request_expression_is_not_run_ahead`).
+    A variable the request reads is replayed by its slice, hoisted call included.
+  - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes the debugger's
+    `hook_before`/`hook_after` skip it and `SourceMap`/`RegionTable` leave it out, so the debugger shows
+    no such variable or stop (it can stop where a moved call fails, which only a resource limit does,
+    and a breakpoint in a function a moved call runs is hit on bars the guard excludes). The profiler times
+    it as the statement it came from, written in the open region (`RegionTable::statement_around`,
+    `ProfileRuntime::enter_run_ahead`), without counting an execution; its time goes into the
+    statement's next execution (an execution of its own when the bar is cut before the statement
+    starts), so Slowest is never below the average. A function is named to the
+    profiler by its declaration (`RuntimeFunction::declared_at`), never by its first body statement,
+    which may be a synthetic one. Its range starts at the call, unique among declarations in
+    `syntax::scopes`.
+  - A hoist inside a block runs when the block does, so the history carries over the bars it did not run
+    (not measured on TradingView).
+  - Not part of the hoist, and still different from Pine: `nz(a, ta.sma(…))` evaluates its second
+    argument only when `a` is `na` (`Session::scalar_call`), where Pine evaluates both.
 - A run-time failure has no profile (`Profiler::finish`), only the failure, also in Problems.
 - Never close a Pine Studio tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; quit/update restart use

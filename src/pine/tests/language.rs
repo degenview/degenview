@@ -1201,6 +1201,298 @@ fn the_history_of_a_local_in_a_block_carries_over_the_bars_the_block_did_not_run
     );
 }
 
+/// The values of the plot titled `title` after `body` ran over `count` bars.
+fn plot_values(body: &str, count: usize, title: &str) -> Vec<Option<f64>> {
+    let session = run(body, count);
+    session
+        .output()
+        .plots
+        .iter()
+        .find(|plot| plot.title.as_deref() == Some(title))
+        .map(|plot| plot.values.clone())
+        .unwrap_or_else(|| panic!("no plot {title}"))
+}
+
+/// `history` applied to a call under a condition that holds on every second bar, against the same
+/// call run on every bar. TradingView returns the every-bar value `offset` bars back wherever the
+/// condition holds (measured: `ta.sma`, `ta.ema`, an offset of 2, a user function) and `na` elsewhere.
+fn assert_lazy_history_reads_the_every_bar_series(prelude: &str, call: &str, offset: usize) {
+    let body = format!(
+        "{prelude}\ncond = bar_index % 2 == 0\nevery = {call}\nlazy = cond ? {call}[{offset}] : na\n\
+         plot(every, \"every\")\nplot(lazy, \"lazy\")"
+    );
+    let every = plot_values(&body, 40, "every");
+    let lazy = plot_values(&body, 40, "lazy");
+    let mut compared = 0;
+    for (bar, value) in lazy.iter().enumerate() {
+        if bar % 2 != 0 {
+            assert_eq!(*value, None, "bar {bar}: the condition is false");
+        } else if bar >= offset {
+            let expected = every[bar - offset];
+            match (value, expected) {
+                (Some(got), Some(want)) => {
+                    assert!((got - want).abs() < 1e-9, "bar {bar}: {got} vs {want}");
+                    compared += 1;
+                }
+                _ => assert_eq!(*value, expected, "bar {bar} for {call}[{offset}]"),
+            }
+        }
+    }
+    assert!(compared > 10, "the run has values to compare for {call}");
+}
+
+#[test]
+fn a_history_of_a_call_in_a_ternary_arm_reads_the_series_the_call_has_on_every_bar() {
+    assert_lazy_history_reads_the_every_bar_series("", "ta.sma(close, 3)", 1);
+    assert_lazy_history_reads_the_every_bar_series("", "ta.ema(close, 5)", 1);
+    assert_lazy_history_reads_the_every_bar_series("", "ta.sma(close, 3)", 2);
+    assert_lazy_history_reads_the_every_bar_series("f() =>\n    ta.sma(close, 3)\n", "f()", 1);
+}
+
+#[test]
+fn a_call_in_a_ternary_arm_without_a_history_keeps_its_own_state() {
+    // Run on even bars only, `ta.sma(close, 3)` averages the closes of bars t, t-2 and t-4: the close
+    // of bar t is 101 + t, so the average is 99 + t, not the every-bar 100 + t.
+    let lazy = plot_values(
+        "cond = bar_index % 2 == 0\nlazy = cond ? ta.sma(close, 3) : na\nplot(lazy, \"lazy\")",
+        20,
+        "lazy",
+    );
+    for bar in (4..20).step_by(2) {
+        assert_eq!(lazy[bar], Some(99.0 + bar as f64), "bar {bar}");
+    }
+    // The same call twice, once with a history: the plain site keeps its own state.
+    let both = plot_values(
+        "cond = bar_index % 2 == 0\nlazy = cond ? ta.sma(close, 3) : na\n\
+         ahead = cond ? ta.sma(close, 3)[1] : na\nplot(lazy, \"lazy\")\nplot(ahead, \"ahead\")",
+        20,
+        "lazy",
+    );
+    assert_eq!(both, lazy);
+}
+
+#[test]
+fn a_history_of_a_call_in_the_right_side_of_and_or_reads_the_every_bar_series() {
+    // The global `ta.sma(close, 3)` is 100 + j on bar j, so `[1] > 105` holds from bar 7 on.
+    let and = plot_values(
+        "cond = bar_index % 2 == 0\nhit = cond and ta.sma(close, 3)[1] > 105\n\
+         plot(hit ? 1.0 : 0.0, \"hit\")",
+        20,
+        "hit",
+    );
+    let or = plot_values(
+        "cond = bar_index % 2 == 0\nhit = not cond or ta.sma(close, 3)[1] > 105\n\
+         plot(hit ? 1.0 : 0.0, \"hit\")",
+        20,
+        "hit",
+    );
+    for bar in 0..20 {
+        let even = bar % 2 == 0;
+        assert_eq!(
+            and[bar],
+            Some(if even && bar >= 8 { 1.0 } else { 0.0 }),
+            "and, bar {bar}"
+        );
+        assert_eq!(
+            or[bar],
+            Some(if !even || bar >= 8 { 1.0 } else { 0.0 }),
+            "or, bar {bar}"
+        );
+    }
+}
+
+#[test]
+fn a_history_of_a_call_in_a_switch_or_if_expression_arm_reads_the_every_bar_series() {
+    let every = plot_values("plot(ta.sma(close, 3), \"every\")", 30, "every");
+    for (name, body) in [
+        (
+            "switch",
+            "v = switch\n    bar_index % 2 == 0 => ta.sma(close, 3)[1]\n    => na\nplot(v, \"v\")",
+        ),
+        (
+            "if",
+            "v = if bar_index % 2 == 0\n    ta.sma(close, 3)[1]\nelse\n    na\nplot(v, \"v\")",
+        ),
+    ] {
+        let v = plot_values(body, 30, "v");
+        for bar in 3..30 {
+            let want = if bar % 2 == 0 { every[bar - 1] } else { None };
+            assert_eq!(v[bar], want, "{name}, bar {bar}");
+        }
+    }
+}
+
+#[test]
+fn a_history_of_a_call_in_a_ternary_arm_inside_a_function_reads_the_every_bar_series() {
+    let body = "g(c) =>\n    c ? ta.sma(close, 3)[1] : na\n\
+                cond = bar_index % 2 == 0\nr = g(cond)\nplot(r, \"r\")\nplot(ta.sma(close, 3), \"every\")";
+    let r = plot_values(body, 30, "r");
+    let every = plot_values(body, 30, "every");
+    for bar in 3..30 {
+        let want = if bar % 2 == 0 { every[bar - 1] } else { None };
+        assert_eq!(r[bar], want, "bar {bar}");
+    }
+}
+
+#[test]
+fn a_history_of_a_call_in_a_ternary_arm_inside_a_loop_is_read_on_every_iteration() {
+    let body = "cond = bar_index % 2 == 0\ntotal = 0.0\nfor i = 0 to 0\n    \
+                total += cond ? ta.sma(close, 3)[1] : 0.0\nplot(total, \"total\")\n\
+                plot(ta.sma(close, 3), \"every\")";
+    let total = plot_values(body, 30, "total");
+    let every = plot_values(body, 30, "every");
+    for bar in 3..30 {
+        let want = if bar % 2 == 0 {
+            every[bar - 1].unwrap()
+        } else {
+            0.0
+        };
+        assert_eq!(total[bar], Some(want), "bar {bar}");
+    }
+}
+
+#[test]
+fn a_call_that_could_fail_is_not_run_ahead_of_its_guard() {
+    // `array.get(values, 0)` on an empty array is a run-time error; the guard keeps it from running.
+    let session = run(
+        "values = array.new_float(0)\nif bar_index > 3\n    array.push(values, close)\n\
+         ok = array.size(values) > 0 and array.get(values, 0)[1] > 0\n\
+         pick = array.size(values) > 0 ? array.get(values, 0)[1] : -1.0",
+        10,
+    );
+    assert_eq!(value(&session, "ok"), RuntimeValue::Bool(true));
+}
+
+#[test]
+fn a_history_whose_offset_the_guard_protects_is_not_run_ahead_of_it() {
+    // `close[lag]` raises PINE4006 for a negative `lag`: on bar 0 `lag` is -1 and the guard is false,
+    // so neither the call nor its argument may run. On bar 1 the branch runs (`close[0]` is that bar's 102) and bar 2 reads it.
+    for body in [
+        "lag = bar_index - 1\nr = lag >= 0 ? math.abs(close[lag])[1] : na\nplot(r, \"r\")",
+        "f(l) =>\n    math.abs(close[l])\nlag = bar_index - 1\nr = lag >= 0 ? f(lag)[1] : na\nplot(r, \"r\")",
+    ] {
+        let r = plot_values(body, 6, "r");
+        assert_eq!(r[..2], [None, None], "{body}");
+        assert_eq!(r[2], Some(102.0), "{body}");
+    }
+}
+
+#[test]
+fn a_function_that_changes_state_is_not_run_ahead_of_its_condition() {
+    let session = run(
+        "var seen = array.new_float(0)\nf() =>\n    array.push(seen, close)\n    array.size(seen)\n\
+         cond = bar_index % 2 == 0\nr = cond ? f()[1] : na\ncount = array.size(seen)",
+        10,
+    );
+    assert_eq!(value(&session, "count"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn a_request_reading_a_variable_with_a_lazy_history_replays_the_hoisted_call() {
+    // `x` reads the moved call; the slice of the request has to run it too, or `y` would be `na`.
+    let source = "x = int(close) % 2 == 1 ? ta.sma(close, 3)[1] : na\n\
+                  y = request.security(syminfo.tickerid, timeframe.period, x)\nplot(x, \"x\")\nplot(y, \"y\")";
+    let x = plot_values(source, 30, "x");
+    let y = plot_values(source, 30, "y");
+    assert!(x.iter().flatten().count() > 10, "the script ran");
+    assert_eq!(x, y);
+}
+
+#[test]
+fn a_lazy_history_inside_a_request_expression_still_runs() {
+    let source = "y = request.security(syminfo.tickerid, timeframe.period, int(close) % 2 == 1 ? ta.sma(close, 3)[1] : na)\nplot(y, \"y\")";
+    assert_eq!(plot_values(source, 12, "y").len(), 12);
+}
+
+#[test]
+fn a_lazy_history_directly_inside_a_request_expression_is_not_run_ahead() {
+    // Supported scope: the hoist works on the chart's own statements. A request's expression runs on
+    // the requested series, so a lazy `call[]` written inside it keeps the pre-hoist reading (`na` on
+    // the bars the branch skips, which is every bar here). The same expression on the chart is hoisted.
+    let guarded = "int(close) % 2 == 1 ? ta.sma(close, 3)[1] : na";
+    let source = format!(
+        "y = request.security(syminfo.tickerid, timeframe.period, {guarded})\n\
+         x = {guarded}\nplot(x, \"x\")\nplot(y, \"y\")"
+    );
+    assert!(plot_values(&source, 30, "x").iter().flatten().count() > 10);
+    assert!(plot_values(&source, 30, "y").iter().all(Option::is_none));
+}
+
+// What may run ahead of its guard: a hoisted call runs on bars its branch skips, so it must not be
+// able to fail there. Each script keeps a call that fails behind a guard that never holds; the run
+// panics on the first error, so these pass only when the call stays where it is.
+
+#[test]
+fn a_function_that_raises_is_not_run_ahead_of_its_guard() {
+    let body = "f() =>\n    runtime.error(\"unreachable\")\n    1.0\n\
+                never = bar_index < 0\nr = never ? f()[1] : na\nplot(r, \"r\")";
+    assert_eq!(plot_values(body, 6, "r"), vec![None; 6]);
+}
+
+#[test]
+fn a_timeframe_the_guard_keeps_out_is_not_read_ahead_of_it() {
+    // `time` and `time_close` raise PINE4021 for a timeframe they cannot read.
+    for call in ["time(tf)", "time_close(tf)"] {
+        let body = format!(
+            "tf = \"nonsense\"\nnever = bar_index < 0\nr = never ? {call}[1] : na\nplot(r, \"r\")"
+        );
+        assert_eq!(plot_values(&body, 6, "r"), vec![None; 6], "{call}");
+    }
+}
+
+#[test]
+fn a_loop_that_cannot_run_is_not_run_ahead_of_its_guard() {
+    // A zero step raises, and a bound the guard keeps out exhausts the per-bar instruction budget
+    // (PINE8004); neither may run on a bar whose branch is skipped.
+    for (name, helper, call) in [
+        (
+            "zero step",
+            "f() =>\n    s = 0.0\n    for i = 0 to 3 by 0\n        s += 1.0\n    s\n",
+            "f()",
+        ),
+        (
+            "bound the guard keeps out",
+            "f(n) =>\n    s = 0.0\n    for i = 0 to n\n        s += 1.0\n    s\n",
+            "f(2000000000)",
+        ),
+        (
+            "literal bound past the budget",
+            "f() =>\n    s = 0.0\n    for i = 0 to 30000000\n        s += 1.0\n    s\n",
+            "f()",
+        ),
+        (
+            "loops that multiply",
+            "f() =>\n    s = 0.0\n    for i = 0 to 10000\n        for j = 0 to 10000\n            s += 1.0\n    s\n",
+            "f()",
+        ),
+    ] {
+        let body =
+            format!("{helper}never = bar_index < 0\nr = never ? {call}[1] : na\nplot(r, \"r\")");
+        assert_eq!(plot_values(&body, 6, "r"), vec![None; 6], "{name}");
+    }
+}
+
+#[test]
+fn a_default_that_cannot_run_is_not_run_ahead_of_its_guard() {
+    // A call that leaves a parameter out evaluates its default, so the default is part of the
+    // function: `array.get` of an empty array raises, `math.random` moves every later draw.
+    let body = "values = array.new_float(0)\nf(v = array.get(values, 0)) =>\n    v\n\
+                never = bar_index < 0\nr = never ? f()[1] : na\nplot(r, \"r\")";
+    assert_eq!(plot_values(body, 6, "r"), vec![None; 6]);
+}
+
+#[test]
+fn a_loop_with_a_known_trip_count_is_still_run_ahead() {
+    let body = "f() =>\n    s = 0.0\n    for i = 0 to 3\n        s += close\n    s\n\
+                cond = bar_index % 2 == 0\nr = cond ? f()[1] : na\nplot(r, \"r\")\nplot(f(), \"every\")";
+    let r = plot_values(body, 20, "r");
+    let every = plot_values(body, 20, "every");
+    for bar in 2..20 {
+        let want = if bar % 2 == 0 { every[bar - 1] } else { None };
+        assert_eq!(r[bar], want, "bar {bar}");
+    }
+}
+
 #[test]
 fn trade_properties_read_the_closed_and_open_trades() {
     let source = "//@version=6\nstrategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 2)\n\
