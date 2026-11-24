@@ -740,8 +740,11 @@ impl PineLayer<'_> {
                     item.text_vertical_align,
                     4.0,
                 );
+                // TradingView lets a box's text run past the box's sides (a `size.huge` `0123` in a
+                // narrow box is wider than it); only its top and bottom hold it.
+                let clip = Rect::from_x_y_ranges(painter.clip_rect().x_range(), rect.y_range());
                 text_at(
-                    &painter.with_clip_rect(rect.intersect(painter.clip_rect())),
+                    &painter.with_clip_rect(clip.intersect(painter.clip_rect())),
                     &item.text,
                     block_font_size(item.text_size),
                     rgba(item.text_color),
@@ -1816,6 +1819,57 @@ mod tests {
         incomplete.lines.push(output.lines[1].clone());
         let layer = self::layer(&incomplete, &candles, &x, &y);
         assert_eq!(shapes_drawn(|painter| layer.draw_lines(painter)), 0);
+    }
+
+    #[test]
+    fn a_boxs_text_runs_past_its_sides_but_not_its_top_or_bottom() {
+        let candles = candles(4);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = empty();
+        output.boxes.push(BoxOutput {
+            id: 1,
+            left: 1,
+            top: 120.0,
+            right: 2,
+            bottom: 100.0,
+            border_color: None,
+            border_width: 0,
+            background_color: Some(0x0000_FFFF),
+            border_style: LineStyle::Solid,
+            extend: LineExtend::None,
+            text: "0123456789".into(),
+            text_color: 0xFFFF_FFFF,
+            text_size: Size::Huge,
+            text_horizontal_align: TextAlign::Center,
+            text_vertical_align: TextAlign::Center,
+            time_anchored: false,
+            force_overlay: false,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let ctx = egui::Context::default();
+        let mut run = ctx.run_ui(egui::RawInput::default(), |ui| {
+            layer.draw_boxes(ui.painter())
+        });
+        run.textures_delta.clear();
+        let text = run
+            .shapes
+            .iter()
+            .find(|clipped| matches!(clipped.shape, Shape::Text(_)))
+            .expect("the box's text");
+        let rect = Rect::from_min_max(
+            Pos2::new(x_of(1), y_of(120.0)),
+            Pos2::new(x_of(2), y_of(100.0)),
+        );
+        assert_eq!(
+            text.clip_rect.y_range(),
+            rect.y_range(),
+            "held top and bottom"
+        );
+        assert!(
+            text.clip_rect.left() < rect.left() && text.clip_rect.right() > rect.right(),
+            "free at the sides: {:?} against {rect:?}",
+            text.clip_rect
+        );
     }
 
     #[test]
