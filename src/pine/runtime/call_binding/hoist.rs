@@ -61,8 +61,18 @@ use crate::pine::syntax::ast::{
 };
 use crate::pine::syntax::traversal::{children, expressions, nested_blocks};
 
+#[cfg(test)]
+thread_local! {
+    /// Makes the pass do nothing on this thread, to run a script as it ran before it (tests).
+    pub(crate) static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Hoists the lazily evaluated history references of `program` and of the libraries it imports.
 pub fn lazy_history(program: &mut CompiledProgram) {
+    #[cfg(test)]
+    if OFF.get() {
+        return;
+    }
     // Most scripts take no history of a call: they pay for this scan and nothing else.
     if !any_history_of_call(program) {
         return;

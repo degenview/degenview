@@ -976,3 +976,217 @@ fn every_builtin_that_is_total_survives_hostile_arguments() {
         "no call of these compiled, so nothing was checked: {untested:?}"
     );
 }
+
+// MARK: Hoisting never introduces a failure
+
+/// Whether `source` compiles and runs over a few bars without failing, with the hoist on or off.
+fn runs(source: &str, hoist: bool) -> Option<bool> {
+    let program = compiler::compile(source, limits(), &NoLibraries);
+    if !program.is_valid() {
+        return None;
+    }
+    super::hoist::OFF.set(!hoist);
+    // About a eightieth of the real per-bar budget, so what runs away fails quickly; what may move ahead
+    // (`RUN_AHEAD_WORK`) is two fifths of this, and one moved call is all a script here has.
+    let mut small = limits();
+    small.instructions_per_bar = 250_000;
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        small,
+        Some(0.01),
+        symbol(),
+        None,
+        None,
+    );
+    super::hoist::OFF.set(false);
+    Some(session.evaluate(&bars(12, MINUTE)).is_ok())
+}
+
+/// The lazy positions a `call[1]` can sit in, under the guard `guard`.
+fn lazy_scripts(call: &str, guard: &str) -> Vec<String> {
+    let c = call;
+    let g = guard;
+    vec![
+        format!("r = {g} ? {c}[1] : na\n"),
+        format!("r = {g} and {c}[1] > 0\n"),
+        format!("r = if {g}\n    {c}[1]\nelse\n    na\n"),
+        format!("r = switch\n    {g} => {c}[1]\n    => na\n"),
+        format!("float r = na\nfor i = 0 to 3\n    r := {g} ? {c}[1] : na\n"),
+        format!("wrap(flag) =>\n    flag ? {c}[1] : na\nr = wrap({g})\n"),
+    ]
+}
+
+const GUARDS: [&str; 2] = ["bar_index < 0", "bar_index % 2 == 0"];
+
+/// Helper functions, as a prelude and the call that uses it: some compute, some fail, some change
+/// state, some cost more than a bar may be asked to spend.
+const HELPERS: [(&str, &str); 16] = [
+    ("f() =>\n    ta.sma(close, 3)\n", "f()"),
+    ("f(v = ta.sma(close, 3)) =>\n    v\n", "f()"),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 20\n        s += close\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 2000\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 30000000\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 0 to 3 by 0\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    (
+        "f() =>\n    s = 0.0\n    for i = 1e20 to 1e20\n        s += 1.0\n    s\n",
+        "f()",
+    ),
+    ("f() =>\n    runtime.error(\"x\")\n    1.0\n", "f()"),
+    ("f() =>\n    time(\"nonsense\")\n", "f()"),
+    ("f() =>\n    array.get(array.new_float(0), 0)\n", "f()"),
+    (
+        "a = array.new_float(0)\nf(v = array.get(a, 0)) =>\n    v\n",
+        "f()",
+    ),
+    ("f(v = math.random(0, 1)) =>\n    v\n", "f()"),
+    ("g() =>\n    ta.sma(close, 3)\nf() =>\n    g() * 2\n", "f()"),
+    (
+        "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
+        "f()",
+    ),
+    (
+        "var a = array.new_float(0)\nf() =>\n    array.push(a, close)\n    1.0\n",
+        "f()",
+    ),
+    (
+        "f(n) =>\n    s = 0.0\n    for i = 0 to n\n        s += 1.0\n    s\n",
+        "f(2000000000)",
+    ),
+];
+
+/// `(hoisted, violations)` over the scripts of `scripts`: how many had a call moved, and the ones that
+/// ran with the hoist off and failed with it on.
+fn hoisting_checks(scripts: &[String]) -> (usize, Vec<String>) {
+    let mut hoisted_count = 0;
+    let mut violations = Vec::new();
+    for body in scripts {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        let (Some(off), Some(on)) = (runs(&source, false), runs(&source, true)) else {
+            continue;
+        };
+        let program = hoisted(&source, &NoLibraries);
+        hoisted_count += usize::from(!synthetic(&program.statements).is_empty());
+        if off && !on {
+            violations.push(source);
+        }
+    }
+    (hoisted_count, violations)
+}
+
+/// `(scripts, hoisted, violations)` over `scripts`, checked on every core in turn.
+fn check_hoisting(scripts: &[String]) -> (usize, Vec<String>) {
+    let workers = std::thread::available_parallelism().map_or(2, usize::from);
+    let chunk = scripts.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = scripts
+            .chunks(chunk)
+            .map(|part| scope.spawn(move || hoisting_checks(part)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("a worker finished"))
+            .fold((0, Vec::new()), |(count, mut all), (moved, found)| {
+                all.extend(found);
+                (count + moved, all)
+            })
+    })
+}
+
+fn assert_no_violations(scripts: &[String], hoisted_count: usize, violations: &[String]) {
+    assert!(
+        violations.is_empty(),
+        "{} scripts ran without the hoist and failed with it:\n\n{}",
+        violations.len(),
+        violations.join("\n---\n")
+    );
+    // The check looks at something: many of these scripts have a call moved ahead of its guard.
+    assert!(
+        hoisted_count * 5 > scripts.len(),
+        "only {hoisted_count} of {} scripts had a call moved",
+        scripts.len()
+    );
+}
+
+#[test]
+fn hoisting_never_makes_a_script_that_ran_fail() {
+    let mut scripts: Vec<String> = Vec::new();
+    for (prelude, call) in HELPERS {
+        for guard in GUARDS {
+            for lazy in lazy_scripts(call, guard) {
+                scripts.push(format!("{prelude}{lazy}"));
+            }
+        }
+    }
+    let (hoisted_count, violations) = check_hoisting(&scripts);
+    assert_no_violations(&scripts, hoisted_count, &violations);
+}
+
+/// The same check over every registered builtin called with hostile arguments, in a sample of the
+/// lazy positions: about a minute in a debug build, so it runs on request
+/// (`cargo test --lib -- --ignored hoisting_never_makes`), after a change to `total.rs`.
+#[test]
+#[ignore = "samples every builtin: about a minute in a debug build"]
+fn hoisting_never_makes_a_script_that_ran_fail_for_any_builtin() {
+    let names: Vec<&str> = crate::pine::compiler::registry::all_functions()
+        .iter()
+        .map(String::as_str)
+        .filter(|name| {
+            ![
+                "request.",
+                "input.",
+                "strategy.",
+                "log.",
+                "alert",
+                "library",
+                "indicator",
+            ]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        })
+        .collect();
+    let lists = hostile_argument_lists();
+    // A fixed sequence, so a failure is the same on every run.
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut next = move |bound: usize| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 33) as usize) % bound
+    };
+    let mut scripts: Vec<String> = Vec::new();
+    for name in &names {
+        let mut found = 0;
+        for _ in 0..30 {
+            let call = format!("{name}({})", lists[next(lists.len())]);
+            let valid = format!("//@version=6\nindicator(\"T\")\nx = {call}\n");
+            if runs(&valid, true).is_none() {
+                continue;
+            }
+            let contexts = lazy_scripts(&call, GUARDS[next(GUARDS.len())]);
+            scripts.push(contexts[next(contexts.len())].clone());
+            found += 1;
+            if found == 2 {
+                break;
+            }
+        }
+    }
+    let (hoisted_count, violations) = check_hoisting(&scripts);
+    eprintln!(
+        "{} scripts, {hoisted_count} with a call moved ahead of its guard",
+        scripts.len()
+    );
+    assert_no_violations(&scripts, hoisted_count, &violations);
+}
