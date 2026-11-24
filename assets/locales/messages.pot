@@ -32,6 +32,22 @@ msgstr ""
 msgid "\"{section}\" is not an object, so none of it was read."
 msgstr ""
 
+#: src/model/liquidation/mod.rs
+msgid "$100K and up"
+msgstr ""
+
+#: src/model/liquidation/mod.rs
+msgid "$10K and up"
+msgstr ""
+
+#: src/model/liquidation/mod.rs
+msgid "$1K and up"
+msgstr ""
+
+#: src/model/liquidation/mod.rs
+msgid "$1M and up"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "% of account"
 msgstr ""
@@ -123,6 +139,11 @@ msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
 msgid "30D Range"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+#: src/ui/market_flow/mod.rs
+msgid "5 minutes"
 msgstr ""
 
 #: src/pine_studio/drawer/simulation.rs
@@ -1279,6 +1300,10 @@ msgstr ""
 msgid "Any address that has the token."
 msgstr ""
 
+#: src/model/liquidation/mod.rs
+msgid "Any size"
+msgstr ""
+
 #: src/model/mcp/activity.rs
 msgid "Any time"
 msgstr ""
@@ -1535,6 +1560,10 @@ msgstr ""
 
 #: src/ui/trade/order_sheet/form.rs
 msgid "Ask {price}"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Ask {size} ({worth})"
 msgstr ""
 
 #: src/ui/broker/panel.rs
@@ -1896,8 +1925,33 @@ msgstr ""
 msgid "Best · {ticker}"
 msgstr ""
 
+#: src/ui/market_flow/book/ladder.rs
+msgid "Bid"
+msgstr ""
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "Bid {price}"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Bid {size} ({worth})"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "Binance and Bybit announce them as they happen."
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid ""
+"Binance and Bybit spot and perpetual {asset}USDT. A market they do not list "
+"stays empty."
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid ""
+"Binance sends at most the latest liquidation of each market a second, and "
+"Bybit's 60 busiest markets are followed, so a busy moment adds up to less than"
+" it was."
 msgstr ""
 
 #: src/model/portfolio/mod.rs
@@ -1943,6 +1997,11 @@ msgstr ""
 msgid "Bollinger upper"
 msgstr ""
 
+#: src/ui/market_flow/mod.rs
+#: src/ui/market_flow/tests.rs
+msgid "Book"
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 #: src/ui/drawing/properties/style.rs
 msgid "Border"
@@ -1976,6 +2035,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Bottom puts the text on the line, top under it."
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Bought {bought}, sold {sold}"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -2167,6 +2230,7 @@ msgstr ""
 #: src/trading/draft.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs
 #: src/ui/portfolio/transaction_editor.rs
 #: src/ui/portfolio/transactions.rs
 #: src/ui/trade/fields.rs
@@ -2503,6 +2567,10 @@ msgstr ""
 #: src/model/drawings/style.rs
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Center"
+msgstr ""
+
+#: src/ui/market_flow/book/toolbar.rs
+msgid "Centre on the market"
 msgstr ""
 
 #: src/ui/settings/mcp/security.rs
@@ -3148,6 +3216,10 @@ msgstr ""
 msgid "Close line"
 msgstr ""
 
+#: src/ui/market_flow/mod.rs
+msgid "Close market flow"
+msgstr ""
+
 #: src/ui/chart/object_tree/mod.rs
 msgid "Close object tree"
 msgstr ""
@@ -3490,6 +3562,10 @@ msgstr ""
 
 #: src/ui/settings/network/mod.rs
 msgid "Connecting directly"
+msgstr ""
+
+#: src/ui/market_flow/book/mod.rs
+msgid "Connecting to {exchange}"
 msgstr ""
 
 #: src/ui/trade/order_sheet/mod.rs
@@ -6544,6 +6620,10 @@ msgstr ""
 msgid "Gross"
 msgstr ""
 
+#: src/ui/market_flow/book/toolbar.rs
+msgid "Group"
+msgstr ""
+
 #: src/ui/portfolio/sheets.rs
 msgid "Group transactions and track them together."
 msgstr ""
@@ -6923,6 +7003,11 @@ msgstr ""
 
 #: src/pine_studio/profiler/ui.rs
 msgid "Hottest lines"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+#: src/ui/market_flow/mod.rs
+msgid "Hour"
 msgstr ""
 
 #: src/model/session_stats/mod.rs
@@ -7646,6 +7731,19 @@ msgstr ""
 msgid "Last hour"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+#: src/ui/market_flow/mod.rs
+msgid "Last minute"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Last minute: net {net} (bought {bought}, sold {sold})"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Last minute: not observed, the sockets were not connected"
+msgstr ""
+
 #: src/model/watchlist/mod.rs
 msgid "Last price"
 msgstr ""
@@ -7666,6 +7764,7 @@ msgstr ""
 msgid "Later"
 msgstr ""
 
+#: src/ui/market_flow/mod.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Latest"
 msgstr ""
@@ -8046,6 +8145,11 @@ msgstr ""
 msgid "Links with a user name or port are not supported."
 msgstr ""
 
+#: src/ui/market_flow/mod.rs
+#: src/ui/market_flow/tests.rs
+msgid "Liquidations"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "Liquidity"
 msgstr ""
@@ -8259,12 +8363,21 @@ msgstr ""
 
 #: src/pine_studio/drawer/trades.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/market_flow/mod.rs
 #: src/ui/pine/report.rs
 msgid "Long"
 msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Long position"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "Longs liquidated"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "Longs {long} · shorts {short}"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -8324,6 +8437,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
 msgid "Lower line"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "Lower the size to see the smaller ones."
 msgstr ""
 
 #: src/ui/settings/mcp/server.rs
@@ -8442,6 +8559,7 @@ msgstr ""
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
+#: src/ui/market_flow/mod.rs
 #: src/ui/portfolio/transaction_editor.rs
 #: src/ui/trade/tables.rs
 msgid "Market"
@@ -8981,6 +9099,10 @@ msgstr ""
 msgid "Net"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "Net flow a minute, last 30 minutes"
+msgstr ""
+
 #: src/model/portfolio/editor.rs
 msgid "Net proceeds"
 msgstr ""
@@ -8992,6 +9114,10 @@ msgstr ""
 
 #: src/pine_studio/drawer/figures.rs
 msgid "Net profit {net}, {ret}"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Net taker flow, all venues"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -9338,6 +9464,10 @@ msgstr ""
 msgid "No finished orders"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "No flow for this market"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "No gaps on this market"
 msgstr ""
@@ -9428,6 +9558,10 @@ msgstr ""
 
 #: src/ui/paper/tables.rs
 msgid "No open positions"
+msgstr ""
+
+#: src/ui/market_flow/book/mod.rs
+msgid "No order book"
 msgstr ""
 
 #: src/ui/paper/tables.rs
@@ -9789,6 +9923,19 @@ msgstr ""
 msgid "Nothing matches “{query}”. Searched: {searched}."
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid ""
+"Nothing of the last 5 minutes was observed: the sockets were not connected."
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Nothing of the last hour was observed: the sockets were not connected."
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Nothing of the last minute was observed: the sockets were not connected."
+msgstr ""
+
 #: src/ui/chart/object_tree/mod.rs
 msgid "Nothing on this chart matches the filter."
 msgstr ""
@@ -9799,6 +9946,10 @@ msgstr ""
 
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "Nothing this size yet"
 msgstr ""
 
 #: src/ui/alert/pine_editor.rs
@@ -10105,6 +10256,24 @@ msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
 msgid "Only when you ask, for the one link you chose"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid ""
+"Only {observed} of the last 5 minutes was observed: the sockets were not "
+"connected for the rest."
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid ""
+"Only {observed} of the last hour was observed: the sockets were not connected "
+"for the rest."
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid ""
+"Only {observed} of the last minute was observed: the sockets were not "
+"connected for the rest."
 msgstr ""
 
 #: src/ui/kit/color_picker/mod.rs
@@ -11101,6 +11270,8 @@ msgstr ""
 #: src/ui/chart/settings/overlay.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/market_flow/book/ladder.rs
+#: src/ui/market_flow/book/tape.rs
 #: src/ui/portfolio/holdings.rs
 #: src/ui/portfolio/import_preview.rs
 #: src/ui/trade/tables.rs
@@ -11164,6 +11335,10 @@ msgstr ""
 
 #: src/ui/chart/scale_menu.rs
 msgid "Price scale: {mode}"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Price {price}"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -11325,6 +11500,16 @@ msgstr ""
 
 #: src/ui/settings/api_keys.rs
 msgid "Public API mode"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid ""
+"Pull/Stack: size added (+) or taken away (−) at the price over the last 10 "
+"seconds, not counting what traded"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Pulled {size} in the last 10 s"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -11568,6 +11753,10 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "Reconnecting ({reason}). New orders are paused."
+msgstr ""
+
+#: src/ui/market_flow/book/mod.rs
+msgid "Reconnecting to {exchange}"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
@@ -13151,6 +13340,7 @@ msgstr ""
 #: src/trading/draft.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs
 #: src/ui/portfolio/transaction_editor.rs
 #: src/ui/portfolio/transactions.rs
 #: src/ui/trade/fields.rs
@@ -13384,6 +13574,7 @@ msgstr ""
 
 #: src/pine_studio/drawer/trades.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
+#: src/ui/market_flow/mod.rs
 #: src/ui/pine/report.rs
 msgid "Short"
 msgstr ""
@@ -13394,6 +13585,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Shorter tags."
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "Shorts liquidated"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -13646,6 +13841,8 @@ msgstr ""
 
 #: src/trading/confirm.rs
 #: src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs
+#: src/ui/market_flow/mod.rs
 #: src/ui/paper/tables.rs
 #: src/ui/trade/tables.rs
 msgid "Side"
@@ -13692,6 +13889,8 @@ msgstr ""
 #: src/ui/broker/panel.rs
 #: src/ui/drawing/properties/content.rs
 #: src/ui/drawing/properties/text.rs
+#: src/ui/market_flow/book/tape.rs
+#: src/ui/market_flow/mod.rs
 #: src/ui/paper/tables.rs
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Size"
@@ -13781,6 +13980,10 @@ msgstr ""
 msgid "Some colors are hard to read"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "Some venues were not connected for all of it."
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Something went wrong syncing"
 msgstr ""
@@ -13834,9 +14037,21 @@ msgstr ""
 msgid "Spot"
 msgstr ""
 
+#: src/ui/market_flow/book/ladder.rs
+msgid "Spread {spread}"
+msgstr ""
+
 #: src/model/chart/snapshot/studio.rs
 #: src/model/drawings/style.rs
 msgid "Square"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Stack"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Stacked {size} in the last 10 s"
 msgstr ""
 
 #: src/ui/portfolio/transactions.rs
@@ -14424,6 +14639,19 @@ msgstr ""
 msgid "Taken from {variable}. Type one to use it instead."
 msgstr ""
 
+#: src/ui/market_flow/mod.rs
+#: src/ui/market_flow/tests.rs
+msgid "Taker flow"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Taker flow follows the focused chart when it shows a crypto market."
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Takers bought {bought} and sold {sold}"
+msgstr ""
+
 #: src/model/chart/template/mod.rs
 msgid ""
 "Takes the chart type and its settings too. Another type redraws the chart."
@@ -14752,6 +14980,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "The blinking text cursor, including extra carets."
+msgstr ""
+
+#: src/ui/market_flow/book/mod.rs
+msgid "The book is shown again as soon as it is back."
 msgstr ""
 
 #: src/ui/broker/panel.rs
@@ -15152,6 +15384,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "The number of the line the caret is on."
+msgstr ""
+
+#: src/ui/market_flow/book/mod.rs
+msgid "The order book follows the focused chart when it is on Binance or Bybit."
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -15620,6 +15856,10 @@ msgid ""
 "until the missing transactions arrive."
 msgstr ""
 
+#: src/ui/market_flow/book/tape.rs
+msgid "They are listed here as they happen."
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "They keep their own copies and will offer to upload them again."
 msgstr ""
@@ -15981,6 +16221,8 @@ msgstr ""
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/kit/date_picker.rs
+#: src/ui/market_flow/book/tape.rs
+#: src/ui/market_flow/mod.rs
 #: src/ui/paper/tables.rs
 #: src/ui/replay/date_sheet.rs
 #: src/ui/trade/tables.rs
@@ -16164,6 +16406,10 @@ msgstr ""
 
 #: src/ui/portfolio/statistics/mod.rs
 msgid "Tracking Since"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Traded"
 msgstr ""
 
 #: src/model/indicators/catalog.rs
@@ -16905,6 +17151,10 @@ msgstr ""
 msgid "Variance"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "Venue"
+msgstr ""
+
 #: src/ui/settings/about.rs
 msgid "Version {version}"
 msgstr ""
@@ -17054,6 +17304,10 @@ msgstr ""
 msgid "Waiting for data"
 msgstr ""
 
+#: src/ui/market_flow/mod.rs
+msgid "Waiting for liquidations"
+msgstr ""
+
 #: src/model/broker/chart.rs
 msgid "Waiting for the broker's connection. Orders are paused until it is back."
 msgstr ""
@@ -17079,8 +17333,20 @@ msgstr ""
 msgid "Waiting for the script to compile."
 msgstr ""
 
+#: src/ui/market_flow/book/mod.rs
+msgid "Waiting for the {symbol} book."
+msgstr ""
+
+#: src/ui/market_flow/book/tape.rs
+msgid "Waiting for trades"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Waiting for your OK"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "Waiting for {asset} trades"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
@@ -17980,6 +18246,10 @@ msgstr ""
 msgid "over {period}"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "partial"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "prior day down"
 msgstr ""
@@ -18098,6 +18368,15 @@ msgstr ""
 msgid "{action}: {target}"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "{ago} to {next} minutes ago: net {net} (bought {bought}, sold {sold})"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid ""
+"{ago} to {next} minutes ago: not observed, the sockets were not connected"
+msgstr ""
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "{allowed} of {total}"
 msgstr ""
@@ -18138,6 +18417,14 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "{assets} · {unpriced} unpriced"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid ""
+"{asset}USDT, spot and perpetual, on Binance and Bybit. Net flow is what takers"
+" bought minus what they sold: it says who was aggressive, not who was right. "
+"Figures marked partial, muted figures and faded bars cover only the time the "
+"sockets were connected: a trade from before is not in them."
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -18921,6 +19208,26 @@ msgstr ""
 msgid "{error} The order is being read again to see what happened."
 msgstr ""
 
+#: src/ui/market_flow/book/mod.rs
+msgid "{exchange} does not list {symbol}."
+msgstr ""
+
+#: src/model/exchange/mod.rs
+msgid "{exchange} perp"
+msgstr ""
+
+#: src/model/exchange/mod.rs
+msgid "{exchange} spot"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "{exchange} {symbol}: long liquidated, {quantity} at {price}, {worth}"
+msgstr ""
+
+#: src/ui/market_flow/mod.rs
+msgid "{exchange} {symbol}: short liquidated, {quantity} at {price}, {worth}"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "{exchange} · No data"
 msgstr ""
@@ -19159,8 +19466,16 @@ msgstr ""
 msgid "{message} Review them in the Transactions tab."
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "{minutes} min"
+msgstr ""
+
 #: src/ui/settings/about.rs
 msgid "{minutes} min ago"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "{minutes} min {seconds} s"
 msgstr ""
 
 #: src/ui/drawing/render.rs
@@ -19413,6 +19728,10 @@ msgstr ""
 msgid "{script}: {plot}"
 msgstr ""
 
+#: src/ui/market_flow/flow.rs
+msgid "{seconds} s"
+msgstr ""
+
 #: src/ui/webhook/settings.rs
 msgid "{secs} s"
 msgstr ""
@@ -19589,6 +19908,18 @@ msgstr ""
 msgid "{symbol} rises by {price}"
 msgstr ""
 
+#: src/ui/market_flow/book/mod.rs
+msgid ""
+"{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is"
+" size added or taken away over the last 10 seconds."
+msgstr ""
+
+#: src/ui/market_flow/book/mod.rs
+msgid ""
+"{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. "
+"Stack is size added or taken away over the last 10 seconds."
+msgstr ""
+
 #: src/ui/shortcut.rs
 msgid "{text} ({shortcut})"
 msgstr ""
@@ -19649,6 +19980,14 @@ msgstr ""
 
 #: src/pine_studio/profiler/marks.rs
 msgid "{time} per execution"
+msgstr ""
+
+#: src/ui/market_flow/book/tape.rs
+msgid "{time}: buy {amount} at {price}, {worth}"
+msgstr ""
+
+#: src/ui/market_flow/book/tape.rs
+msgid "{time}: sell {amount} at {price}, {worth}"
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -19727,6 +20066,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "{venue} · {kind}"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgid "{venue}: in the last hour takers bought {bought} and sold {sold}"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/rows.rs
@@ -19839,6 +20182,18 @@ msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
 msgid "− Row"
+msgstr ""
+
+#: src/ui/market_flow/book/state.rs
+msgid "≥ $100K"
+msgstr ""
+
+#: src/ui/market_flow/book/state.rs
+msgid "≥ $10K"
+msgstr ""
+
+#: src/ui/market_flow/book/state.rs
+msgid "≥ $1M"
 msgstr ""
 
 #: src/pine_studio/ai/review_view.rs
@@ -20023,6 +20378,26 @@ msgstr ""
 #: src/native_bridge.rs
 msgctxt "menu bar"
 msgid "Window"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgctxt "net over the last 5 minutes, column head"
+msgid "5m"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgctxt "net over the last hour, column head"
+msgid "1h"
+msgstr ""
+
+#: src/ui/market_flow/flow.rs
+msgctxt "net over the last minute, column head"
+msgid "1m"
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgctxt "order book"
+msgid "Ask"
 msgstr ""
 
 #: src/trading/model.rs

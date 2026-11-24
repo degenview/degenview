@@ -3,6 +3,7 @@
 //! row. Scrolling moves the rows; the toolbar brings them back.
 
 use super::{BookViewState, size_text, usd};
+use crate::i18n::{tr, tr_c};
 use crate::model::depth::{DepthSnapshot, Ladder, Price, Row, Scale};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
@@ -19,7 +20,6 @@ const FONT: f32 = 12.0;
 /// A pulled or stacked figure is coloured once it is this share of what rests at the price.
 const NOTABLE_SHARE: f64 = 0.25;
 const BAR_ALPHA: f32 = 0.22;
-const HEADER_TIP: &str = "Pull/Stack: size added (+) or taken away (−) at the price over the last 10 seconds, not counting what traded";
 
 /// The x ranges of the five columns, left to right.
 struct Columns {
@@ -138,30 +138,60 @@ pub(super) fn lines(ladder: &Ladder, capacity: usize) -> Vec<Line> {
 fn header(ui: &Ui, painter: &egui::Painter, area: Rect, columns: &Columns) {
     let color = theme::text_tertiary();
     let y = area.top() + HEADER_HEIGHT / 2.0;
-    let put = |text: &str, x: f32, align: Align2| {
-        painter.text(
-            pos2(x, y),
-            align,
-            text,
-            FontId::proportional(size::CAPTION),
-            color,
+    // A heading shrinks to the room of its column rather than run into the next one.
+    let put = |text: &str, x: f32, align: Align2, room: f32| {
+        let galley = kit::galley_fitted(ui, text, size::CAPTION, kit::REGULAR, color, room);
+        let width = galley.size().x;
+        let left = match align {
+            Align2::RIGHT_CENTER => x - width,
+            Align2::CENTER_CENTER => x - width / 2.0,
+            _ => x,
+        };
+        painter.galley(
+            pos2(left, y - galley.size().y / 2.0),
+            galley,
+            Color32::PLACEHOLDER,
         );
     };
-    put("Stack", columns.stack.1 - 6.0, Align2::RIGHT_CENTER);
-    put("Bid", columns.bid.1 - 6.0, Align2::RIGHT_CENTER);
+    let room = |range: (f32, f32)| range.1 - range.0 - 6.0;
     put(
-        "Price",
+        tr!("Stack"),
+        columns.stack.1 - 6.0,
+        Align2::RIGHT_CENTER,
+        room(columns.stack) + PAD,
+    );
+    put(
+        tr!("Bid"),
+        columns.bid.1 - 6.0,
+        Align2::RIGHT_CENTER,
+        room(columns.bid),
+    );
+    put(
+        tr!("Price"),
         (columns.price.0 + columns.price.1) / 2.0,
         Align2::CENTER_CENTER,
+        columns.price.1 - columns.price.0,
     );
-    put("Ask", columns.ask.0 + 6.0, Align2::LEFT_CENTER);
-    put("Traded", columns.traded.1, Align2::RIGHT_CENTER);
+    put(
+        tr_c!("order book", "Ask"),
+        columns.ask.0 + 6.0,
+        Align2::LEFT_CENTER,
+        room(columns.ask),
+    );
+    put(
+        tr!("Traded"),
+        columns.traded.1,
+        Align2::RIGHT_CENTER,
+        columns.traded.1 - columns.traded.0,
+    );
     let tip = Rect::from_x_y_ranges(
         columns.stack.0 - PAD..=columns.stack.1,
         area.top()..=area.top() + HEADER_HEIGHT,
     );
     ui.interact(tip, ui.id().with("stack-header"), Sense::hover())
-        .on_hover_text(HEADER_TIP);
+        .on_hover_text(tr!(
+            "Pull/Stack: size added (+) or taken away (−) at the price over the last 10 seconds, not counting what traded"
+        ));
     painter.hline(
         area.x_range(),
         area.top() + HEADER_HEIGHT - 0.5,
@@ -319,27 +349,41 @@ pub(super) fn taker_color(taker: Taker) -> Color32 {
 }
 
 /// What a row says, for a hover and for a screen reader: sizes in the base coin, with what they
-/// are worth.
+/// are worth. One whole message for each fact, a line each, so a language orders and punctuates
+/// every one as it needs and none is a clause of another.
 fn describe(row: &Row, decimals: u8) -> String {
     let worth = |size: f64| usd(size * row.price.as_f64());
-    let mut parts = vec![format!("Price {}", row.price.format(decimals))];
+    let mut lines = vec![tr!("Price {price}", price = row.price.format(decimals))];
     if row.bid > 0.0 {
-        parts.push(format!("bid {} ({})", size_text(row.bid), worth(row.bid)));
-    }
-    if row.ask > 0.0 {
-        parts.push(format!("ask {} ({})", size_text(row.ask), worth(row.ask)));
-    }
-    if row.bought > 0.0 || row.sold > 0.0 {
-        parts.push(format!(
-            "bought {}, sold {}",
-            size_text(row.bought),
-            size_text(row.sold)
+        lines.push(tr!(
+            "Bid {size} ({worth})",
+            size = size_text(row.bid),
+            worth = worth(row.bid)
         ));
     }
-    if let Some((figure, _)) = stack_figure(row) {
-        parts.push(format!("stack {figure} in 10 s"));
+    if row.ask > 0.0 {
+        lines.push(tr!(
+            "Ask {size} ({worth})",
+            size = size_text(row.ask),
+            worth = worth(row.ask)
+        ));
     }
-    parts.join(", ")
+    if row.bought > 0.0 || row.sold > 0.0 {
+        lines.push(tr!(
+            "Bought {bought}, sold {sold}",
+            bought = size_text(row.bought),
+            sold = size_text(row.sold)
+        ));
+    }
+    if stack_figure(row).is_some() {
+        let size = size_text(row.pull_stack.abs());
+        lines.push(if row.pull_stack > 0.0 {
+            tr!("Stacked {size} in the last 10 s", size = size)
+        } else {
+            tr!("Pulled {size} in the last 10 s", size = size)
+        });
+    }
+    lines.join("\n")
 }
 
 fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder, tick: Price) {
@@ -347,7 +391,7 @@ fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder, tick: Price
         return;
     };
     painter.rect_filled(rect, 0.0, theme::quaternary(0.28));
-    let text = format!("Spread {}", spread.format(tick.decimals()));
+    let text = tr!("Spread {spread}", spread = spread.format(tick.decimals()));
     painter.text(
         rect.center(),
         Align2::CENTER_CENTER,
@@ -373,5 +417,51 @@ fn scroll(ui: &Ui, state: &mut BookViewState, ladder: &Ladder, area: Rect) {
     if let Some(centre) = state.centre.or_else(|| ladder.centre()) {
         // Scrolling up shows higher prices.
         state.centre = Some(centre + ladder.group.times(rows as i64));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, with_locale};
+
+    fn row(bid: f64, ask: f64, traded: (f64, f64), pull_stack: f64) -> Row {
+        Row {
+            price: Price::parse("60110").unwrap(),
+            bid,
+            ask,
+            bought: traded.0,
+            sold: traded.1,
+            pull_stack,
+        }
+    }
+
+    #[test]
+    fn a_row_is_described_one_whole_message_a_line() {
+        assert_eq!(describe(&row(0.0, 0.0, (0.0, 0.0), 0.0), 0), "Price 60,110");
+        let busy = describe(&row(0.5, 0.0, (0.1, 0.2), -0.25), 0);
+        let lines: Vec<&str> = busy.lines().collect();
+        assert_eq!(lines.len(), 4, "{busy}");
+        assert_eq!(lines[0], "Price 60,110");
+        assert!(lines[1].starts_with("Bid 0.500 ("), "{}", lines[1]);
+        assert_eq!(lines[2], "Bought 0.100, sold 0.200");
+        assert_eq!(lines[3], "Pulled 0.250 in the last 10 s");
+        let stacked = describe(&row(0.0, 2.0, (0.0, 0.0), 0.5), 0);
+        assert!(stacked.contains("Ask 2.00 ("), "{stacked}");
+        assert!(
+            stacked.ends_with("Stacked 0.500 in the last 10 s"),
+            "{stacked}"
+        );
+    }
+
+    #[test]
+    fn every_line_of_a_row_follows_the_language() {
+        let text = with_locale(Locale::PSEUDO, || {
+            describe(&row(0.5, 2.0, (0.1, 0.2), 0.5), 0)
+        });
+        assert_eq!(text.lines().count(), 5, "{text}");
+        for line in text.lines() {
+            assert!(line.starts_with('[') && line.ends_with(']'), "{line}");
+        }
     }
 }

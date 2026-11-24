@@ -3,6 +3,7 @@
 
 use super::state::BigTrade;
 use super::{BookViewState, MARGIN};
+use crate::i18n::tr;
 use crate::model::depth::Ladder;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, size};
@@ -22,7 +23,7 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder) {
             ui.spacing_mut().item_spacing.x = 8.0;
             ui.add_space(MARGIN);
             ui.label(kit::text(
-                "Group",
+                tr!("Group"),
                 size::CAPTION,
                 MEDIUM,
                 theme::text_secondary(),
@@ -37,7 +38,7 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder) {
                         Icon::Target,
                         26.0,
                         theme::text_secondary(),
-                        "Centre on the market",
+                        tr!("Centre on the market"),
                     )
                     .clicked()
                 {
@@ -73,7 +74,7 @@ fn big_picker(ui: &mut Ui, state: &mut BookViewState) {
         .iter()
         .position(|big| *big == state.big)
         .unwrap_or(0);
-    if let Some(chosen) = kit::menu_picker(ui, BIG_WIDTH, &labels, selected, true) {
+    if let Some(chosen) = kit::menu_picker_fitted(ui, BIG_WIDTH, &labels, selected, true) {
         state.big = BigTrade::ALL[chosen];
     }
 }

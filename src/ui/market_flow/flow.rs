@@ -3,6 +3,7 @@
 //! minutes, and the same by venue.
 
 use super::{FlowBody, MARGIN, footnote, footnote_height, usd};
+use crate::i18n::{tr, tr_c};
 use crate::model::taker_flow::{
     HOUR_MS, MINUTE_MS, MINUTES, Observed, Snapshot, Spans, VENUES, Volumes, full,
 };
@@ -23,8 +24,8 @@ pub(super) fn show(ui: &mut Ui, body: &FlowBody<'_>) {
             ui,
             area,
             Icon::Flame,
-            "No flow for this market",
-            "Taker flow follows the focused chart when it shows a crypto market.",
+            tr!("No flow for this market"),
+            tr!("Taker flow follows the focused chart when it shows a crypto market."),
         );
         return;
     };
@@ -33,9 +34,10 @@ pub(super) fn show(ui: &mut Ui, body: &FlowBody<'_>) {
             ui,
             area,
             Icon::Flame,
-            &format!("Waiting for {asset} trades"),
-            &format!(
-                "Binance and Bybit spot and perpetual {asset}USDT. A market they do not list stays empty."
+            &tr!("Waiting for {asset} trades", asset = asset),
+            &tr!(
+                "Binance and Bybit spot and perpetual {asset}USDT. A market they do not list stays empty.",
+                asset = asset
             ),
         );
         return;
@@ -66,8 +68,9 @@ pub(super) fn show(ui: &mut Ui, body: &FlowBody<'_>) {
 }
 
 fn footnote_text(asset: &str) -> String {
-    format!(
-        "{asset}USDT, spot and perpetual, on Binance and Bybit. Net flow is what takers bought minus what they sold: it says who was aggressive, not who was right. Figures marked partial, muted figures and faded bars cover only the time the sockets were connected: a trade from before is not in them."
+    tr!(
+        "{asset}USDT, spot and perpetual, on Binance and Bybit. Net flow is what takers bought minus what they sold: it says who was aggressive, not who was right. Figures marked partial, muted figures and faded bars cover only the time the sockets were connected: a trade from before is not in them.",
+        asset = asset
     )
 }
 
@@ -91,22 +94,77 @@ fn signed_usd(value: f64) -> String {
 fn duration(ms: i64) -> String {
     let seconds = ms.max(0) / 1_000;
     match (seconds / 60, seconds % 60) {
-        (0, seconds) => format!("{seconds} s"),
-        (minutes, 0) => format!("{minutes} min"),
-        (minutes, seconds) => format!("{minutes} min {seconds} s"),
+        (0, seconds) => tr!("{seconds} s", seconds = seconds),
+        (minutes, 0) => tr!("{minutes} min", minutes = minutes),
+        (minutes, seconds) => tr!(
+            "{minutes} min {seconds} s",
+            minutes = minutes,
+            seconds = seconds
+        ),
+    }
+}
+
+/// The spans the totals add up: what each one covers and how a tooltip says so.
+#[derive(Clone, Copy)]
+enum Span {
+    Minute,
+    FiveMinutes,
+    Hour,
+}
+
+impl Span {
+    const fn ms(self) -> i64 {
+        match self {
+            Self::Minute => MINUTE_MS,
+            Self::FiveMinutes => 5 * MINUTE_MS,
+            Self::Hour => HOUR_MS,
+        }
+    }
+
+    /// What a tooltip says of the span when none of it was observed.
+    fn nothing_observed(self) -> String {
+        match self {
+            Self::Minute => {
+                tr!("Nothing of the last minute was observed: the sockets were not connected.")
+                    .to_owned()
+            }
+            Self::FiveMinutes => {
+                tr!("Nothing of the last 5 minutes was observed: the sockets were not connected.")
+                    .to_owned()
+            }
+            Self::Hour => {
+                tr!("Nothing of the last hour was observed: the sockets were not connected.")
+                    .to_owned()
+            }
+        }
+    }
+
+    /// What a tooltip says of the span when only `observed` (a duration) of it was.
+    fn part_observed(self, observed: String) -> String {
+        match self {
+            Self::Minute => tr!(
+                "Only {observed} of the last minute was observed: the sockets were not connected for the rest.",
+                observed = observed
+            ),
+            Self::FiveMinutes => tr!(
+                "Only {observed} of the last 5 minutes was observed: the sockets were not connected for the rest.",
+                observed = observed
+            ),
+            Self::Hour => tr!(
+                "Only {observed} of the last hour was observed: the sockets were not connected for the rest.",
+                observed = observed
+            ),
+        }
     }
 }
 
 /// What a span's tooltip adds when only part of it was observed.
-fn observed_note(observed: i64, span: i64, span_name: &str) -> Option<String> {
-    (!full(observed, span)).then(|| {
+fn observed_note(observed: i64, span: Span) -> Option<String> {
+    (!full(observed, span.ms())).then(|| {
         if observed <= 0 {
-            format!("Nothing of the {span_name} was observed: the sockets were not connected.")
+            span.nothing_observed()
         } else {
-            format!(
-                "Only {} of the {span_name} was observed: the sockets were not connected for the rest.",
-                duration(observed)
-            )
+            span.part_observed(duration(observed))
         }
     })
 }
@@ -124,7 +182,7 @@ fn title(ui: &mut Ui, asset: &str) {
                 theme::text_primary(),
             ));
             ui.label(kit::text(
-                "Net taker flow, all venues",
+                tr!("Net taker flow, all venues"),
                 size::CAPTION,
                 REGULAR,
                 theme::text_secondary(),
@@ -138,33 +196,31 @@ fn title(ui: &mut Ui, asset: &str) {
 fn totals(ui: &mut Ui, all: &Spans) {
     let periods = [
         (
-            "Last minute",
+            tr!("Last minute"),
             all.minute,
             all.observed.minute,
-            MINUTE_MS,
-            "last minute",
+            Span::Minute,
         ),
         (
-            "5 minutes",
+            tr!("5 minutes"),
             all.five_minutes,
             all.observed.five_minutes,
-            5 * MINUTE_MS,
-            "last 5 minutes",
+            Span::FiveMinutes,
         ),
-        ("Hour", all.hour, all.observed.hour, HOUR_MS, "last hour"),
+        (tr!("Hour"), all.hour, all.observed.hour, Span::Hour),
     ];
     let gap = 12.0;
     let column = (ui.available_width() - 2.0 * MARGIN - 2.0 * gap) / 3.0;
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         ui.add_space(MARGIN);
-        for (index, (name, volumes, observed, span, span_name)) in periods.into_iter().enumerate() {
+        for (index, (name, volumes, observed, span)) in periods.into_iter().enumerate() {
             if index > 0 {
                 ui.add_space(gap);
             }
             ui.allocate_ui_with_layout(vec2(column, 0.0), Layout::top_down(Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.y = 3.0;
-                let note = observed_note(observed, span, span_name);
+                let note = observed_note(observed, span);
                 ui.label(kit::text(
                     name,
                     size::CAPTION,
@@ -180,7 +236,7 @@ fn totals(ui: &mut Ui, all: &Spans) {
                 split_bar(ui, volumes, column, note.as_deref());
                 if note.is_some() {
                     ui.label(kit::text(
-                        "partial",
+                        tr!("partial"),
                         size::CAPTION,
                         REGULAR,
                         theme::text_tertiary(),
@@ -220,10 +276,10 @@ fn split_bar(ui: &mut Ui, volumes: Volumes, width: f32, note: Option<&str>) {
             theme::DOWN,
         );
     }
-    let mut text = format!(
-        "Takers bought {} and sold {}",
-        usd(volumes.buy),
-        usd(volumes.sell)
+    let mut text = tr!(
+        "Takers bought {bought} and sold {sold}",
+        bought = usd(volumes.buy),
+        sold = usd(volumes.sell)
     );
     if let Some(note) = note {
         text = format!("{text}\n{note}");
@@ -238,7 +294,7 @@ fn minutes(ui: &mut Ui, snapshot: &Snapshot) {
     ui.horizontal(|ui| {
         ui.add_space(MARGIN);
         ui.label(kit::text(
-            "Net flow a minute, last 30 minutes",
+            tr!("Net flow a minute, last 30 minutes"),
             size::CAPTION,
             MEDIUM,
             theme::text_secondary(),
@@ -300,36 +356,61 @@ fn minutes(ui: &mut Ui, snapshot: &Snapshot) {
         let minute = snapshot.minutes[index];
         let observed = snapshot.minutes_observed[index];
         let ago = MINUTES - 1 - index;
-        let when = if ago == 0 {
-            "Last minute".to_owned()
-        } else {
-            format!("{ago} to {} minutes ago", ago + 1)
-        };
-        let text = if observed <= 0 {
-            format!("{when}: not observed, the sockets were not connected")
-        } else {
-            let mut text = format!(
-                "{when}: net {} (bought {}, sold {})",
-                signed_usd(minute.net()),
-                usd(minute.buy),
-                usd(minute.sell)
-            );
-            if !full(observed, VENUES * MINUTE_MS) {
-                text = format!("{text}\nSome venues were not connected for all of it.");
-            }
-            text
-        };
+        let text = minute_tooltip(ago, minute, observed);
         response.on_hover_text(text);
     }
     ui.add_space(12.0);
 }
 
+/// What a bar of the half hour says: which minute it is (`ago` minutes back), the net, and how much
+/// of it the sockets saw. The minute is in each message, not put in from another, so a language
+/// may write the sentence its own way.
+fn minute_tooltip(ago: usize, minute: Volumes, observed: i64) -> String {
+    let next = ago + 1;
+    if observed <= 0 {
+        return if ago == 0 {
+            tr!("Last minute: not observed, the sockets were not connected").to_owned()
+        } else {
+            tr!(
+                "{ago} to {next} minutes ago: not observed, the sockets were not connected",
+                ago = ago,
+                next = next
+            )
+        };
+    }
+    let (net, bought, sold) = (signed_usd(minute.net()), usd(minute.buy), usd(minute.sell));
+    let mut text = if ago == 0 {
+        tr!(
+            "Last minute: net {net} (bought {bought}, sold {sold})",
+            net = net,
+            bought = bought,
+            sold = sold
+        )
+    } else {
+        tr!(
+            "{ago} to {next} minutes ago: net {net} (bought {bought}, sold {sold})",
+            ago = ago,
+            next = next,
+            net = net,
+            bought = bought,
+            sold = sold
+        )
+    };
+    if !full(observed, VENUES * MINUTE_MS) {
+        text = format!(
+            "{text}\n{}",
+            tr!("Some venues were not connected for all of it.")
+        );
+    }
+    text
+}
+
 /// What a venue's row says about each span it did not observe whole, the shortest first.
-fn venue_notes(observed: Observed) -> [(i64, i64, &'static str); 3] {
+fn venue_notes(observed: Observed) -> [(i64, Span); 3] {
     [
-        (observed.minute, MINUTE_MS, "last minute"),
-        (observed.five_minutes, 5 * MINUTE_MS, "last 5 minutes"),
-        (observed.hour, HOUR_MS, "last hour"),
+        (observed.minute, Span::Minute),
+        (observed.five_minutes, Span::FiveMinutes),
+        (observed.hour, Span::Hour),
     ]
 }
 
@@ -338,11 +419,15 @@ fn venues(ui: &mut Ui, snapshot: &Snapshot) {
     ui.add_space(4.0);
     let (header, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
     let painter = ui.painter();
-    let columns = [("1m", 2), ("5m", 1), ("1h", 0)];
+    let columns = [
+        (tr_c!("net over the last minute, column head", "1m"), 2),
+        (tr_c!("net over the last 5 minutes, column head", "5m"), 1),
+        (tr_c!("net over the last hour, column head", "1h"), 0),
+    ];
     painter.text(
         pos2(header.left() + MARGIN, header.center().y),
         egui::Align2::LEFT_CENTER,
-        "Venue",
+        tr!("Venue"),
         egui::FontId::proportional(size::CAPTION),
         theme::text_tertiary(),
     );
@@ -405,14 +490,14 @@ fn venues(ui: &mut Ui, snapshot: &Snapshot) {
             );
             ui.painter().galley(origin, galley, Color32::PLACEHOLDER);
         }
-        let mut text = format!(
-            "{}: in the last hour takers bought {} and sold {}",
-            venue.label(),
-            usd(spans.hour.buy),
-            usd(spans.hour.sell)
+        let mut text = tr!(
+            "{venue}: in the last hour takers bought {bought} and sold {sold}",
+            venue = venue.label(),
+            bought = usd(spans.hour.buy),
+            sold = usd(spans.hour.sell)
         );
-        for (observed, span, name) in venue_notes(spans.observed) {
-            if let Some(note) = observed_note(observed, span, name) {
+        for (observed, span) in venue_notes(spans.observed) {
+            if let Some(note) = observed_note(observed, span) {
                 text = format!("{text}\n{note}");
             }
         }
@@ -437,18 +522,18 @@ mod tests {
 
     #[test]
     fn a_span_is_noted_only_when_part_of_it_was_not_observed() {
-        assert_eq!(observed_note(MINUTE_MS, MINUTE_MS, "last minute"), None);
+        assert_eq!(observed_note(MINUTE_MS, Span::Minute), None);
         assert_eq!(
-            observed_note(MINUTE_MS - 1_500, MINUTE_MS, "last minute"),
+            observed_note(MINUTE_MS - 1_500, Span::Minute),
             None,
             "a moment short is whole"
         );
-        let partial = observed_note(40_000, 5 * MINUTE_MS, "last 5 minutes").unwrap();
+        let partial = observed_note(40_000, Span::FiveMinutes).unwrap();
         assert!(
             partial.contains("Only 40 s of the last 5 minutes"),
             "{partial}"
         );
-        let none = observed_note(0, HOUR_MS, "last hour").unwrap();
+        let none = observed_note(0, Span::Hour).unwrap();
         assert!(none.contains("Nothing of the last hour"), "{none}");
     }
 
