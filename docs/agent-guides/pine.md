@@ -239,19 +239,31 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   stays its own.
 - **Request context.** The site's state starts at `bar_index` −1 (`RuntimeState::before_first_bar`),
   so a request's first candle is bar 0 and `barstate.isfirst` is true on it. `barstate.*` in a request
-  follow the chart bar the call runs for (`ChartBar`): realtime when the chart bar is and the
-  candle does not end before it opens (an older candle caught up on a live bar is history; a
-  developing candle on a historical bar is history), and `islast` / `islastconfirmedhistory` on the
-  candle that holds the chart bar's final instant, the end of its bucket (a 5h bar opened at 20:00
-  ends at midnight), when the chart bar has them. `islastconfirmedhistory` belongs to the requested
-  series: the last candle that closed by the history's end (`Session::history_end`) whose successor
-  ends after it, so a `"1D"` request on a 4h chart has it on yesterday's day (TradingView probe P12,
-  2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
-  realtime by wall-clock time. `barstate.isnew` in a request is true on history and, in real time,
+  follow the chart bar the call runs for (`ChartBar`). A candle is realtime when the chart bar is and
+  the candle ends after the history did (`Session::history_end`: the end of the chart's last history
+  bar, and with a live bar after it the moment of the load, `Session::now_ms`, which lies inside that
+  bar). A candle that closed before the load is history even inside the live chart bar: of the 15m
+  candles of a live 4h bar only the one forming at the load is realtime (TradingView probe S2,
+  2026-11-24), and a developing candle on a historical bar is history.
+  `islast` belongs to the requested series, not to the chart bar: it is true on the series' final
+  candle on every chart bar that reads it, a `"1D"` request with `lookahead_on` on each chart bar of
+  the day still forming (probes A, R3, R4). A series folded from the chart's bars has it on the
+  candle that holds the chart's last bar's final instant (`ChartBar::last_end`, the end of its bucket:
+  a 5h bar opened at 20:00 ends at midnight); a series the provider holds (finer, foreign) by its last
+  candle (`SeriesEdges`). `islastconfirmedhistory` is the series' last candle that closed by the
+  history's end, whose successor ends after it (folded) or the last in the list that closed by it
+  (provider): `"1D"` on a 4h chart has it on yesterday's day (probe P12), a `"15"` request on the
+  live 4h bar on the candle closed last before the load, and a closed stock's last hourly candle has
+  both (probe S2). So a lower-timeframe request reads no `islastconfirmedhistory` on the chart's last
+  confirmed history bar (probe R4: 15, 60 and 120 read 38, 240 54) and the forming candle is the one
+  with `islast` and `isrealtime`. `barstate.isnew` in a request is true on history and, in real time,
   on the first tick of the chart bar that opens the candle; a chart bar that starts inside a candle,
   or a later tick, reads false (`ChartBar::new`; TradingView probe C, 2026-11-21: one true tick per
   requested candle open, none on a mid-candle chart bar). TradingView fires it one tick after the
-  chart bar that opened the candle (feed latency, not modelled here).
+  chart bar that opened the candle (feed latency, not modelled here), and a finer request's own
+  candles open between the chart's ticks: probe R3 (BTCUSDT 5m, 9.6 minutes) read isnew true on 29
+  of 1,373 ticks for `"1"`, about three per candle open, which this runtime cannot show because the
+  provider's finer series is read once per run.
   `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
   developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
   candle is complete in the data whichever chart bar reads it. The candle still open at the
@@ -262,6 +274,13 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   bucket) reaches the candle's, never `open_time` plus the chart's length: a monthly chart is a
   nominal 30 days, so a 31-day month would never close its quarter or year and the `"3M"` / `"12M"`
   request would arrive one bar late (TradingView probe R5, BTCUSDT 1M).
+  A request finer than the chart reads the last of the chart bar's intrabars, the first with
+  `lookahead_on` (an AAPL 1D chart reads a `"60"` request's 15:30 candle, and 9:30 with it, probe S1);
+  its `timeframe.change("D")` sums to 0 over a window for the last intrabar and to the number of
+  days for the first. A candle belongs to the chart bar its last instant falls in, over as long as
+  the bucket from where the bar opens (`serve_intrabars`): a stock's daily bar opens at 14:30 UTC and
+  its 4h candles are cut at 12, 16 and 20 UTC, so the 12:00 candle that ends at 16:00 belongs to the
+  day it ends in, not to the day before, and a 31-day month holds its last day (probes R2 and R5).
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 
