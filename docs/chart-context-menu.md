@@ -102,13 +102,28 @@ price format, the compact volume, and the chart's UTC times. Only the rows on sc
 
 The symbol, the markets compared on the chart (in the legend's order), the built-in indicators and
 scripts, and the drawings (topmost first). A compared market has an eye and a trash; double-click or
-Settings… opens the Compare page; it has no lock and no reordering. Click selects a
+Settings… opens the Compare page; it has no lock. Click selects a
 drawing (the workspace's one selection, so it highlights on the chart too); double-click opens its
-settings; the row buttons hide, lock and delete; the row menu reorders and deletes. Everything goes
-through the paths the chart's own controls use, so drawing changes are undoable. There is no
-rename or grouping: drawings have no name and no group model. A drawing this version cannot read (from
-a newer build) is a row too, "From a newer version", with only Delete: it is not drawn or selectable,
-and nothing else changes it.
+settings; the row buttons hide, lock and delete; a drawing's row menu reorders it and deletes.
+Everything goes through the paths the chart's own controls use, so drawing changes are undoable.
+There is no rename or grouping: drawings have no name and no group model. A drawing this version
+cannot read (from a newer build) is a row too, "From a newer version", with only Delete: it is not
+drawn or selectable, and nothing else changes it.
+
+**Dragging.** Press a row and move: the row dims, a line shows where it would land and the list
+scrolls at its top and bottom edges. Letting go puts the row in the place of the one it landed on
+(`TreeAction::Drop`, one undo step). Drawings, compared markets and scripts move among their own
+kind, and a drop past the end of the kind lands at its end. Drawings change their z-order
+(`DrawingCommand::Reorder`, counted in the stored list so rows the tree does not show are crossed),
+compared markets and scripts their draw order (`Move::To`, `move_pine_instance`, later is on top).
+Built-in indicators have a fixed order and the symbol and headings are not rows to move, a drawing
+from a newer version stays where it is, and nothing drags in a filtered list. Letting go outside
+the list's viewport (over the filter field, beside it, or below a short list) cancels. On a touch
+screen a swipe over any row scrolls the list; a finger that rests on a movable row for 0.4 s picks it
+up instead (and the row's menu does not open while it is carried). Every position on screen comes
+from one geometry, `RowsArea`: the list is shown with no item spacing, so row `n` is at
+`n * ROW_HEIGHT` for `show_rows`, the drop and its line alike. The row menu's Bring forward and Send backward remain the way to reorder
+without a pointer, for drawings only.
 
 ## Pine logs
 

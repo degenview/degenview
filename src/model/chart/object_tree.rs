@@ -153,12 +153,32 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
     }
     sections.push((Section::Indicators, indicators));
 
-    // Topmost first, numbered per tool from the bottom so a name stays with its drawing. A drawing
-    // this version cannot read (a tool, or a field, from a newer build) is listed too, so it is not
-    // just invisible: it can be deleted, nothing else.
-    let mut counts: std::collections::HashMap<&'static str, usize> =
+    // Topmost first. A name is its drawing's rank among the drawings of its tool by id, oldest
+    // first, so it stays with the drawing when the stack is reordered (by id, not by place: a
+    // drawing dropped to the bottom still reads "Trend line 4"). A drawing this version cannot
+    // read (a tool, or a field, from a newer build) is listed too, so it is not just invisible: it
+    // can be deleted, nothing else.
+    let name_of = |drawing: &Drawing| drawing.tool().map_or(tr!("Drawing"), |tool| tool.label());
+    let listed = |drawing: &&Drawing| {
+        !matches!(drawing, Drawing::Unreadable(_))
+            && drawing.tool().is_some()
+            && !drawing.is_ruler()
+    };
+    let mut ids: std::collections::HashMap<&'static str, Vec<u64>> =
         std::collections::HashMap::new();
-    let mut unreadable = 0;
+    for drawing in inputs.drawings.iter().filter(listed) {
+        ids.entry(name_of(drawing)).or_default().push(drawing.id());
+    }
+    let mut unreadable_ids: Vec<u64> = inputs
+        .drawings
+        .iter()
+        .filter(|drawing| matches!(drawing, Drawing::Unreadable(_)))
+        .map(Drawing::stored_id)
+        .collect();
+    for list in ids.values_mut().chain([&mut unreadable_ids]) {
+        list.sort_unstable();
+    }
+    let rank = |list: &[u64], id: u64| list.partition_point(|other| *other < id) + 1;
     let mut drawings: Vec<Row> = inputs
         .drawings
         .iter()
@@ -166,10 +186,12 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
             if let Drawing::Unreadable(_) = drawing {
                 // A row that is not even a drawing (no id) is not an object.
                 let id = drawing.stored_id();
-                unreadable += 1;
                 return (id != 0).then(|| Row {
                     key: Key::Drawing(id),
-                    label: tr!("From a newer version {number}", number = unreadable),
+                    label: tr!(
+                        "From a newer version {number}",
+                        number = rank(&unreadable_ids, id)
+                    ),
                     detail: tr!("Update DegenView to see it").to_owned(),
                     shown: None,
                     locked: None,
@@ -177,19 +199,17 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
                     count: 0,
                 });
             }
-            if drawing.tool().is_none() || drawing.is_ruler() {
+            if !listed(&drawing) {
                 return None;
             }
-            let name = drawing.tool().map_or(tr!("Drawing"), |tool| tool.label());
-            let number = counts.entry(name).or_insert(0);
-            *number += 1;
+            let name = name_of(drawing);
             Some(Row {
                 key: Key::Drawing(drawing.id()),
                 label: tr_c!(
                     "a numbered drawing, such as Trend Line 3",
                     "{name} {number}",
                     name = name,
-                    number = number
+                    number = rank(&ids[name], drawing.id())
                 ),
                 detail: drawing
                     .summary()
@@ -215,6 +235,53 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
         out.extend(rows);
     }
     out
+}
+
+// MARK: Reordering
+
+/// What a row can be moved among: rows of one kind are one stack. Built-in indicators have a fixed
+/// order, so they are in none.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stack {
+    Overlays,
+    Scripts,
+    Drawings,
+}
+
+fn stack_of(key: Key) -> Option<Stack> {
+    match key {
+        Key::Overlay(_) => Some(Stack::Overlays),
+        Key::Indicator(IndicatorKey::Script(_)) => Some(Stack::Scripts),
+        Key::Drawing(_) => Some(Stack::Drawings),
+        Key::Heading(_) | Key::Symbol | Key::Indicator(IndicatorKey::BuiltIn(_)) => None,
+    }
+}
+
+/// Whether the user can pick the row up to reorder it. A drawing from a newer version (it has no
+/// tool) stays where it is, as in the row menu.
+pub fn draggable(row: &Row) -> bool {
+    stack_of(row.key).is_some() && (!matches!(row.key, Key::Drawing(_)) || row.tool.is_some())
+}
+
+/// The rows `key` can be dropped among, in the order the tree shows them (itself included).
+pub fn siblings(rows: &[Row], key: Key) -> Vec<Key> {
+    let Some(stack) = stack_of(key) else {
+        return Vec::new();
+    };
+    rows.iter()
+        .map(|row| row.key)
+        .filter(|candidate| stack_of(*candidate) == Some(stack))
+        .collect()
+}
+
+/// The row `from` takes the place of when it is dropped into insertion gap `gap` (0 is above the
+/// first sibling, `siblings.len()` below the last; a larger gap counts as the last). `None` when
+/// the drop leaves it where it is: its own two gaps, or a row that is not among `siblings`.
+pub fn drop_over(siblings: &[Key], from: Key, gap: usize) -> Option<Key> {
+    let from_index = siblings.iter().position(|key| *key == from)?;
+    let gap = gap.min(siblings.len());
+    let to = if gap > from_index { gap - 1 } else { gap };
+    (to != from_index).then(|| siblings[to])
 }
 
 #[cfg(test)]
@@ -370,6 +437,31 @@ mod tests {
     }
 
     #[test]
+    fn a_drawing_keeps_its_name_when_the_stack_is_reordered() {
+        let config = IndicatorConfig::default();
+        // Stacked 30, 10, 20 from the bottom: ids 10, 20, 30 are numbered 1, 2, 3 whatever the order.
+        let drawings = [line(30), line(10), line(20)];
+        let rows = rows(&inputs(&config, &[], &drawings), "");
+        let label = |id| {
+            rows.iter()
+                .find(|row| row.key == Key::Drawing(id))
+                .map(|row| row.label.as_str())
+        };
+        assert_eq!(label(10), Some("Trend line 1"));
+        assert_eq!(label(20), Some("Trend line 2"));
+        assert_eq!(label(30), Some("Trend line 3"));
+        let order: Vec<Key> = rows
+            .iter()
+            .filter(|row| matches!(row.key, Key::Drawing(_)))
+            .map(|row| row.key)
+            .collect();
+        assert_eq!(
+            order,
+            [Key::Drawing(20), Key::Drawing(10), Key::Drawing(30)]
+        );
+    }
+
+    #[test]
     fn a_hidden_or_locked_drawing_says_so() {
         let config = IndicatorConfig::default();
         let mut hidden = line(1);
@@ -459,6 +551,61 @@ mod tests {
             .find(|row| row.key == Key::Heading(Section::Drawings))
             .unwrap();
         assert_eq!(heading.count, 2);
+    }
+
+    #[test]
+    fn a_drop_takes_the_place_of_the_row_it_lands_on() {
+        let keys: Vec<Key> = (1..=4).map(Key::Drawing).collect();
+        // Gaps are numbered 0 (above the first) to 4 (below the last).
+        assert_eq!(drop_over(&keys, Key::Drawing(3), 0), Some(Key::Drawing(1)));
+        assert_eq!(drop_over(&keys, Key::Drawing(3), 1), Some(Key::Drawing(2)));
+        assert_eq!(drop_over(&keys, Key::Drawing(1), 4), Some(Key::Drawing(4)));
+        assert_eq!(drop_over(&keys, Key::Drawing(1), 3), Some(Key::Drawing(3)));
+        // The two gaps beside a row leave it where it is, as does a row that is not listed.
+        assert_eq!(drop_over(&keys, Key::Drawing(3), 2), None);
+        assert_eq!(drop_over(&keys, Key::Drawing(3), 3), None);
+        assert_eq!(drop_over(&keys, Key::Drawing(9), 0), None);
+        // Past the end is the end.
+        assert_eq!(drop_over(&keys, Key::Drawing(1), 99), Some(Key::Drawing(4)));
+        assert_eq!(drop_over(&[], Key::Drawing(1), 0), None);
+    }
+
+    #[test]
+    fn only_overlays_scripts_and_readable_drawings_move_among_their_own_kind() {
+        let config = IndicatorConfig::default();
+        let mut with_ema = config;
+        BuiltIn::Ema.set_applied(&mut with_ema, true);
+        let scripts = [
+            PineInstance::new(3, None, "One", "//@version=6"),
+            PineInstance::new(4, None, "Two", "//@version=6"),
+        ];
+        let future = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 9}}));
+        let drawings = [line(1), future, line(2)];
+        let rows = rows(&inputs(&with_ema, &scripts, &drawings), "");
+        let row = |key| rows.iter().find(|row| row.key == key).unwrap();
+
+        assert_eq!(
+            siblings(&rows, Key::Indicator(IndicatorKey::Script(4))),
+            [
+                Key::Indicator(IndicatorKey::Script(3)),
+                Key::Indicator(IndicatorKey::Script(4))
+            ],
+            "the built-in indicator is not among them"
+        );
+        assert_eq!(
+            siblings(&rows, Key::Drawing(1)),
+            [Key::Drawing(2), Key::Drawing(9), Key::Drawing(1)],
+            "an unreadable drawing holds its place in the stack"
+        );
+        assert!(draggable(row(Key::Drawing(1))));
+        assert!(!draggable(row(Key::Drawing(9))), "from a newer version");
+        assert!(draggable(row(Key::Indicator(IndicatorKey::Script(3)))));
+        assert!(!draggable(row(Key::Indicator(IndicatorKey::BuiltIn(
+            BuiltIn::Ema
+        )))));
+        assert!(!draggable(row(Key::Symbol)));
+        assert!(!draggable(row(Key::Heading(Section::Drawings))));
+        assert!(siblings(&rows, Key::Symbol).is_empty());
     }
 
     #[test]
