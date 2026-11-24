@@ -282,6 +282,11 @@ the replay cursor, so it cannot reach a bar replay has not shown.
 Keep drawing (on by default, which is how the tools always behaved here) stays on the tool after
 a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped tile's tool persist.
 
+The ruler is read after it is placed, so with Keep drawing off it stays armed and on screen until
+the next click or drag, which puts the tool down and takes the measurement with it (`ends_measurement`
+in the layer, `ChartWorkspace::disarm_tool`). On, that click starts another measurement. The report
+asked for this; it was not observed on TradingView.
+
 The cursor menu on the strip's first tile has an Eraser that removes drawings by clicking or
 sweeping over them; see [Chart cursors](chart-cursors.md).
 

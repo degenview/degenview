@@ -927,6 +927,9 @@ impl DrawingLayer {
             }
             return;
         }
+        if Self::ends_measurement(frame) {
+            return;
+        }
         let tool = frame.tool;
         let anchor = Self::anchor_for(tool, press, egui::Modifiers::NONE, frame, proj);
         self.gesture = Some(Gesture::Draft(Draft {
@@ -936,6 +939,18 @@ impl DrawingLayer {
             dragging: true,
             placed_at_press: 0,
         }));
+    }
+
+    /// With Keep drawing off a tool is one-shot. The ruler's result is read after it is placed, so
+    /// its one-shot ends at the next press: the measurement stays up until then, and the press
+    /// puts the tool down (the workspace takes the measurement with it) instead of starting
+    /// another. Reports whether it did.
+    fn ends_measurement(frame: &mut DrawingFrame) -> bool {
+        let ends = frame.tool == Tool::Ruler
+            && !frame.keep_drawing
+            && frame.drawings.iter().any(Drawing::is_ruler);
+        frame.disarm |= ends;
+        ends
     }
 
     fn begin_press_in_draft(&mut self) {
@@ -1156,6 +1171,9 @@ impl DrawingLayer {
                 }
             }
             tool => {
+                if Self::ends_measurement(frame) {
+                    return;
+                }
                 let anchor = Self::anchor_for(tool, point, modifiers, frame, proj);
                 let draft = Draft {
                     tool,
@@ -1345,6 +1363,8 @@ impl DrawingLayer {
             frame.content_used = true;
             frame.disarm = true;
         } else if !frame.keep_drawing && tool != Tool::Ruler {
+            // The ruler is read once placed, so its one-shot ends at the next press instead
+            // (`ends_measurement`).
             frame.disarm = true;
         }
     }

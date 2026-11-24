@@ -915,7 +915,7 @@ impl ChartWorkspace {
             }
         }
         if drawing_disarm {
-            self.tools.disarm();
+            self.disarm_tool();
         }
         // A zoom puts the tool down, is an undo step, and the chart it was made on becomes the
         // focused one, which is the one Zoom out goes back on. Every chart is asked, so none keeps
