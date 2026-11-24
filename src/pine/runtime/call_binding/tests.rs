@@ -582,6 +582,10 @@ fn a_user_function_moves_only_when_it_only_computes() {
         "f() =>\n    s = 0.0\n    for i = 0 to 1 by 0.00000001\n        s += 1.0\n    s\n",
         "f() =>\n    s = 0.0\n    for i = 0 to 1000\n        for j = 0 to 1000\n            s += 1.0\n    s\n",
         "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\nf() =>\n    g() + g()\n",
+        // A counter that cannot move: past 2^53, or by less than the gap between floats there.
+        "f() =>\n    s = 0.0\n    for i = 1e20 to 1e20\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 9007199254740992 to 9007199254740994\n        s += 1.0\n    s\n",
+        "f() =>\n    s = 0.0\n    for i = 1e15 to 1e15 by 0.01\n        s += 1.0\n    s\n",
         // What a call leaves out is evaluated for it: a default is part of the function.
         "f(v = math.random(0, 1)) =>\n    v\n",
         "f(v = time(\"nonsense\")) =>\n    v\n",
@@ -591,6 +595,36 @@ fn a_user_function_moves_only_when_it_only_computes() {
         let source = format!("{impure}x = close > 0 ? f()[1] : na");
         assert!(hoisted_calls(&source).is_empty(), "{source}");
     }
+}
+
+#[test]
+fn a_call_in_a_loop_moves_only_while_the_loop_leaves_room_for_its_cost() {
+    // The moved call runs once per pass of the loop around it, so its cost is multiplied by them.
+    let helper = "g() =>\n    s = 0.0\n    for i = 0 to 20000\n        s += 1.0\n    s\n";
+    assert_eq!(
+        hoisted_calls(&format!(
+            "{helper}for i = 0 to 0\n    r = close > 0 ? g()[1] : na"
+        )),
+        ["g"]
+    );
+    for loops in [
+        "for i = 0 to 999\n    r = close > 0 ? g()[1] : na",
+        "for i = 0 to bar_index\n    r = close > 0 ? g()[1] : na",
+        "while bar_index < 3\n    r = close > 0 ? g()[1] : na\n    break",
+        "for i = 0 to 9\n    for j = 0 to 9\n        r = close > 0 ? g()[1] : na",
+    ] {
+        let source = format!("{helper}{loops}");
+        assert!(hoisted_calls(&source).is_empty(), "{source}");
+    }
+    // A cheap call has room for a few passes and none for a loop nobody can count.
+    assert_eq!(
+        hoisted_calls("for i = 0 to 9\n    r = close > 0 ? ta.sma(close, 3)[1] : na"),
+        ["ta.sma"]
+    );
+    assert!(
+        hoisted_calls("for i = 0 to bar_index\n    r = close > 0 ? ta.sma(close, 3)[1] : na")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -736,6 +770,31 @@ fn a_library_function_is_hoisted_in_its_own_program() {
         "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
     let program = hoisted(source, &Lib);
     assert!(synthetic(&program.statements).is_empty());
+    let library = program.imports[0]
+        .library
+        .as_deref()
+        .expect("the library compiled");
+    assert_eq!(synthetic(&library.statements).len(), 1);
+    assert_eq!(outcome(source, &Lib, false), outcome(source, &Lib, true));
+}
+
+#[test]
+fn a_library_function_that_calls_its_own_overload_is_still_hoisted() {
+    // A library's calls are not resolved, so a call reaches every overload of its name, the
+    // function it is in among them: that is not a recursion, and costs nothing.
+    struct Lib;
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Lazy/1").then(|| {
+                "//@version=6\nlibrary(\"Lazy\")\nf(float x) =>\n    x * 2\nf(float x, float y) =>\n    f(x) + y\n\
+                 export ahead(bool on) =>\n    on ? f(close, 1.0)[1] : na\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
+    let program = hoisted(source, &Lib);
     let library = program.imports[0]
         .library
         .as_deref()

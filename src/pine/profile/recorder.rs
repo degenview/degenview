@@ -82,6 +82,8 @@ pub struct ProfileRuntime {
     counters: Vec<Counters>,
     call_sites: FastMap<(usize, u32), CallSite>,
     stack: Vec<Frame>,
+    /// The regions that were given run-ahead time since the bar began, for `settle_run_ahead`.
+    run_ahead_regions: Vec<u32>,
     bar_started: u64,
     /// A bar has begun and not ended: a panic that unwinds past the interpreter leaves it so.
     bar_open: bool,
@@ -131,6 +133,7 @@ impl ProfileRuntime {
             table,
             clock,
             call_sites: FastMap::default(),
+            run_ahead_regions: Vec::new(),
             stack: Vec::with_capacity(64),
             bar_started: 0,
             bar_open: false,
@@ -195,6 +198,7 @@ impl ProfileRuntime {
         while !self.stack.is_empty() {
             self.pop(now);
         }
+        self.settle_run_ahead();
         self.bar_open = false;
         if outcome == BarOutcome::Skipped {
             return Duration::ZERO;
@@ -337,6 +341,19 @@ impl ProfileRuntime {
         self.pop(now);
     }
 
+    /// Run-ahead time whose statement never started, because the bar was cut first, is an execution
+    /// of its own, so that every region's `slowest` and `inclusive` still add up to its executions.
+    fn settle_run_ahead(&mut self) {
+        for region in self.run_ahead_regions.drain(..) {
+            let counters = &mut self.counters[region as usize];
+            if counters.run_ahead > 0 {
+                counters.executions += 1;
+                counters.slowest = counters.slowest.max(counters.run_ahead);
+                counters.run_ahead = 0;
+            }
+        }
+    }
+
     #[inline]
     fn pop(&mut self, now: u64) {
         let Some(frame) = self.stack.pop() else {
@@ -358,6 +375,9 @@ impl ProfileRuntime {
             let ran = elapsed.saturating_add(std::mem::take(&mut counters.run_ahead));
             counters.slowest = counters.slowest.max(ran);
         } else {
+            if counters.run_ahead == 0 {
+                self.run_ahead_regions.push(frame.region);
+            }
             counters.run_ahead = counters.run_ahead.saturating_add(elapsed);
         }
         counters.exclusive += exclusive;
@@ -388,6 +408,7 @@ impl ProfileRuntime {
         while !self.stack.is_empty() {
             self.pop(now);
         }
+        self.settle_run_ahead();
         if self.bar_open {
             // A bar that never ended: the interpreter unwound past it (a panic). Its time belongs to
             // the total, or its regions would add up to more than the run took. It is not a

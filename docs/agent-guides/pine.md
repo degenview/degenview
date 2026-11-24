@@ -462,7 +462,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     global. A moved call adds its cost to every bar, and a bar has a budget the guard may be keeping the
     script under (PINE8004, 20 million instructions): a function that costs more than `RUN_AHEAD_WORK`
     (100k statements run and loop passes, its callees' loops included) stays where it is, however its
-    loops are written, and a script close to the budget can still be pushed over it by what does move. A
+    loops are written, and so does a call whose cost times the passes of the loops around it (a loop
+    whose passes are not known counts as all of them) passes it. A loop counts as known only when it
+    ends: bounds past 2^53, or a step below the gap between floats there, never end. What is not
+    counted: how often a function that holds a moved call is itself called, and a script close to the
+    budget can be pushed over it by what does move. A
     history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
     guard may keep out). A call that reads a name its statement declares stays.
   - Nothing moves out of a loop inside an arm or a `while` condition.
@@ -473,10 +477,12 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     A variable the request reads is replayed by its slice, hoisted call included.
   - `SYNTHETIC` (`syntax::ast`) starts the name; `Statement::is_synthetic` makes the debugger's
     `hook_before`/`hook_after` skip it and `SourceMap`/`RegionTable` leave it out, so the debugger shows
-    no such variable or stop (nor a stop where it fails: `hook_failed` skips it too). The profiler times
+    no such variable or stop (it can stop where a moved call fails, which only a resource limit does,
+    and a breakpoint in a function a moved call runs is hit on bars the guard excludes). The profiler times
     it as the statement it came from, written in the open region (`RegionTable::statement_around`,
     `ProfileRuntime::enter_run_ahead`), without counting an execution; its time goes into the
-    statement's next execution, so Slowest is never below the average. A function is named to the
+    statement's next execution (an execution of its own when the bar is cut before the statement
+    starts), so Slowest is never below the average. A function is named to the
     profiler by its declaration (`RuntimeFunction::declared_at`), never by its first body statement,
     which may be a synthetic one. Its range starts at the call, unique among declarations in
     `syntax::scopes`.

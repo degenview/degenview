@@ -34,8 +34,10 @@
 //! A moved call also adds its cost to every bar, and a bar has a budget (PINE8004, and a deadline)
 //! that the guard may be keeping the script under: a function that costs more than
 //! `RUN_AHEAD_WORK` (statements run and loop passes, the loops of the functions it calls included)
-//! stays where it is, however its loops are written. A script close to the budget can still be
-//! pushed over it by what does move.
+//! stays where it is, however its loops are written, and so does a call whose cost times the passes
+//! of the loops around it passes it (`Hoister::passes`). A script close to the budget can still be
+//! pushed over it by what does move, and how often a function holding a moved call is called is not
+//! counted.
 //!
 //! The scope is the script's own statements and the libraries it imports, in blocks and functions
 //! alike. A call inside a `request.*` expression is not moved: that expression runs on the requested
@@ -82,7 +84,12 @@ fn hoist_program(
 ) {
     if takes_history_of_call(&program.statements) {
         let calls = Calls::new(&program.statements, captured, targets);
-        Hoister { calls, counter }.block(&mut program.statements);
+        Hoister {
+            calls,
+            counter,
+            passes: 1,
+        }
+        .block(&mut program.statements);
     }
     for import in &mut program.imports {
         if let Some(library) = &mut import.library {
@@ -125,6 +132,8 @@ struct Calls<'c> {
     by_name: HashMap<String, Vec<usize>>,
     /// For each top-level function or method: whether running it changes nothing and cannot fail.
     pure: Vec<bool>,
+    /// For each of them: what a call costs, as `Work` counts it.
+    work: Vec<u64>,
 }
 
 impl<'c> Calls<'c> {
@@ -151,15 +160,16 @@ impl<'c> Calls<'c> {
             targets,
             by_name,
             pure: vec![true; bodies.len()],
+            work: Vec::new(),
         };
         // What a call of each function costs, which no other function's purity changes.
-        let work = Work::new(&calls, &bodies).of_each();
+        calls.work = Work::new(&calls, &bodies).of_each();
         // Greatest fixpoint: a function is pure unless its body calls something that is not.
         loop {
             let next: Vec<bool> = bodies
                 .iter()
                 .zip(&calls.pure)
-                .zip(&work)
+                .zip(&calls.work)
                 .map(|(((parameters, body), pure), work)| {
                     *pure && *work <= RUN_AHEAD_WORK && calls.body_is_pure(parameters, body)
                 })
@@ -315,6 +325,10 @@ struct Written {
 struct Hoister<'h, 'c> {
     calls: Calls<'c>,
     counter: &'h mut usize,
+    /// How many times the statement being walked runs in one run of the function (or the script)
+    /// it is in, from the loops around it: a call moved ahead of it runs that often. `u64::MAX`
+    /// when a loop's passes are not known.
+    passes: u64,
 }
 
 impl Hoister<'_, '_> {
@@ -366,17 +380,30 @@ impl Hoister<'_, '_> {
                 if let Some(step) = step {
                     self.expression(step, false, &written, ahead);
                 }
+                let outside = self.passes;
+                self.passes = outside.saturating_mul(trips(from, to, step.as_ref()));
                 self.block(body);
+                self.passes = outside;
             }
             Statement::ForIn {
                 collection, body, ..
             } => {
                 self.expression(collection, false, &written, ahead);
+                let outside = std::mem::replace(&mut self.passes, u64::MAX);
                 self.block(body);
+                self.passes = outside;
             }
             // The condition runs again on every pass: nothing to run once ahead of it.
-            Statement::WhileLoop { body, .. } | Statement::Function { body, .. } => {
+            Statement::WhileLoop { body, .. } => {
+                let outside = std::mem::replace(&mut self.passes, u64::MAX);
                 self.block(body);
+                self.passes = outside;
+            }
+            // How often a function runs is for its callers to count: a body starts again.
+            Statement::Function { body, .. } => {
+                let outside = std::mem::replace(&mut self.passes, 1);
+                self.block(body);
+                self.passes = outside;
             }
             Statement::Once {
                 condition, body, ..
@@ -538,6 +565,15 @@ impl Hoister<'_, '_> {
         if !self.calls.expression(call, &HashSet::new()) {
             return false;
         }
+        // It runs as often as the statement does in a run of its function: the loops around it
+        // multiply what it costs (a function it calls only has its own loops counted).
+        if Work::known(&self.calls)
+            .expression(call)
+            .saturating_mul(self.passes)
+            > RUN_AHEAD_WORK
+        {
+            return false;
+        }
         let mut reads_written = false;
         identifiers(call, &mut |name| {
             reads_written |= written.names.contains(name)
@@ -609,6 +645,12 @@ fn trips(from: &Expression, to: &Expression, step: Option<&Expression>) -> u64 {
         Some(Some(step)) if step != 0.0 => step.abs(),
         Some(_) => return u64::MAX,
     };
+    // The counter steps as a float: past 2^53, or by less than half the gap between the floats at
+    // the end it reaches, `i + stride` is `i` and the loop never ends.
+    let reach = from.abs().max(to.abs());
+    if reach > 9_007_199_254_740_992.0 || reach + stride == reach || reach - stride == reach {
+        return u64::MAX;
+    }
     let passes = ((to - from).abs() / stride).floor() + 1.0;
     if passes >= u64::MAX as f64 {
         u64::MAX
@@ -623,9 +665,12 @@ fn trips(from: &Expression, to: &Expression, step: Option<&Expression>) -> u64 {
 struct Work<'w, 'c> {
     calls: &'w Calls<'c>,
     bodies: &'w [(&'w [Parameter], &'w [Statement])],
-    /// Each function's cost once known. A function met while it is being counted costs everything,
-    /// which only a recursive one can be (the compiler refuses those).
+    /// Each function's cost once known.
     memo: std::cell::RefCell<Vec<Option<u64>>>,
+    /// The functions being counted, outermost first. A call may reach (by name, where the compiler
+    /// did not resolve it, as in a library) the function it is in, or one that calls it: that is
+    /// not a recursion, which the compiler refuses, and counts nothing.
+    active: std::cell::RefCell<Vec<usize>>,
 }
 
 impl<'w, 'c> Work<'w, 'c> {
@@ -634,6 +679,17 @@ impl<'w, 'c> Work<'w, 'c> {
             calls,
             bodies,
             memo: std::cell::RefCell::new(vec![None; bodies.len()]),
+            active: std::cell::RefCell::default(),
+        }
+    }
+
+    /// With the costs of `calls` already worked out (`Calls::work`), for what is not a function.
+    fn known(calls: &'w Calls<'c>) -> Self {
+        Self {
+            calls,
+            bodies: &[],
+            memo: std::cell::RefCell::new(calls.work.iter().map(|work| Some(*work)).collect()),
+            active: std::cell::RefCell::default(),
         }
     }
 
@@ -647,7 +703,7 @@ impl<'w, 'c> Work<'w, 'c> {
         if let Some(known) = self.memo.borrow()[index] {
             return known;
         }
-        self.memo.borrow_mut()[index] = Some(u64::MAX);
+        self.active.borrow_mut().push(index);
         let (parameters, body) = self.bodies[index];
         let defaults = parameters
             .iter()
@@ -655,6 +711,7 @@ impl<'w, 'c> Work<'w, 'c> {
             .map(|default| self.expression(default))
             .fold(0, u64::saturating_add);
         let cost = self.block(body).saturating_add(defaults);
+        self.active.borrow_mut().pop();
         self.memo.borrow_mut()[index] = Some(cost);
         cost
     }
@@ -701,6 +758,7 @@ impl<'w, 'c> Work<'w, 'c> {
                     .calls
                     .callees(name, *site)
                     .iter()
+                    .filter(|callee| !self.active.borrow().contains(callee))
                     .map(|callee| self.function(*callee))
                     .max()
                     .unwrap_or(0);

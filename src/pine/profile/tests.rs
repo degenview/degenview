@@ -275,6 +275,33 @@ fn a_function_whose_first_statement_has_a_call_run_ahead_is_still_in_the_profile
 }
 
 #[test]
+fn run_ahead_time_whose_statement_never_started_is_an_execution_of_its_own() {
+    // The bar is cut after the call ran ahead and before its statement began: the time is in the
+    // statement's total, so the statement has an execution to divide it by, and its slowest covers it.
+    let source = script("up = close > open\nx = up ? ta.sma(close, 3) : na\n");
+    let call = source.find("ta.sma").unwrap();
+    let table = Arc::new(RegionTable::build(&compiler::compile(
+        &source,
+        Limits::default(),
+        &NoLibraries,
+    )));
+    let mut runtime = ProfileRuntime::with_clock(table, Box::new(SteppingClock::new(STEP)));
+    runtime.begin_bar();
+    assert!(runtime.enter_run_ahead(call));
+    runtime.exit();
+    runtime.end_bar(BarOutcome::Cut, false);
+    let report = runtime.finish(Completeness::Complete);
+    let stats = report
+        .stats
+        .iter()
+        .find(|stats| stats.inclusive_ns > 0)
+        .unwrap();
+    assert_eq!(stats.executions, 1);
+    assert_eq!(stats.slowest_ns, stats.inclusive_ns);
+    assert_consistent(&report);
+}
+
+#[test]
 fn a_switch_counts_each_arm() {
     let data = bars(30, 60_000);
     let report = profile(
