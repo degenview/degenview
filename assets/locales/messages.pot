@@ -5864,10 +5864,6 @@ msgstr ""
 msgid "Minute"
 msgstr ""
 
-#: src/model/drawings/style.rs
-msgid "Minute candles"
-msgstr ""
-
 #: src/ui/kit/timeframe_picker/grid.rs
 msgid "Minutes"
 msgstr ""
@@ -6889,6 +6885,10 @@ msgstr ""
 
 #: src/model/market/timeframe/mod.rs
 msgid "One-minute candles"
+msgstr ""
+
+#: src/model/market/timeframe/mod.rs
+msgid "One-second candles"
 msgstr ""
 
 #: src/service/annotation/ingest.rs
@@ -8869,6 +8869,10 @@ msgstr ""
 msgid "Searching exchanges…"
 msgstr ""
 
+#: src/model/drawings/style.rs
+msgid "Second and minute candles"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Second arm"
 msgstr ""
@@ -8879,6 +8883,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Second wave X"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/grid.rs
+msgid "Seconds"
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -12779,6 +12787,10 @@ msgstr ""
 
 #: src/model/market/timeframe/mod.rs
 msgid "{count}-month candles"
+msgstr ""
+
+#: src/model/market/timeframe/mod.rs
+msgid "{count}-second candles"
 msgstr ""
 
 #: src/model/market/timeframe/mod.rs

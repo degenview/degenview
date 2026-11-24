@@ -23,6 +23,7 @@ impl Window {
         Window {
             plan,
             timeframe: match base.unit() {
+                TimeUnit::Second => unreachable!("its natives hold no second bars"),
                 TimeUnit::Minute => "minute",
                 TimeUnit::Hour => "hour",
                 // Its natives hold no weeks or months.

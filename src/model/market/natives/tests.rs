@@ -326,3 +326,19 @@ fn geckoterminal_pages_back_while_a_page_of_its_base_candles_is_short_of_180_day
         );
     }
 }
+
+#[test]
+fn no_source_serves_seconds_until_it_lists_them_and_lines_refuse_them() {
+    let half_minute = tf("30s");
+    for source in CANDLE_SOURCES {
+        assert!(!source.serves(half_minute), "{source:?}");
+    }
+    for source in [
+        DataSource::CoinGecko,
+        DataSource::Polymarket,
+        DataSource::Kalshi,
+    ] {
+        assert!(!source.serves(half_minute), "{source:?}");
+    }
+    assert!(DataSource::Polymarket.serves(tf("1m")));
+}

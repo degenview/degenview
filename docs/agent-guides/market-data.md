@@ -33,8 +33,8 @@ watchlists.
 
 ## Timeframes
 
-- `model::Timeframe` is a value, `{ count: u16, unit: TimeUnit }` (`Minute`, `Hour`, `Day`, `Week`,
-  `Month`), not a list. Limits: minutes 1-1440, hours 1-24, days 1-365, weeks 1-52, months 1-12;
+- `model::Timeframe` is a value, `{ count: u16, unit: TimeUnit }` (`Second`, `Minute`, `Hour`, `Day`,
+  `Week`, `Month`), not a list. Limits: seconds 1-59 (a minute is `1m`), minutes 1-1440, hours 1-24, days 1-365, weeks 1-52, months 1-12;
   `Timeframe::new` refuses the rest (`TimeframeParseError`, whose messages are shown as they are).
   Canonical form: whole hours of minutes are hours (`60m` is `1h`, `1440m` is `24h`), `24h` stays
   apart from `1D`, and `12M` is the year. Equality, hashing and ordering (by nominal length, then
@@ -42,16 +42,16 @@ watchlists.
 - Consts: `MINUTE_1` ... `YEAR_1`; `PRESETS` are the lengths providers serve natively, `LEGACY` the
   six (`1h`, `1D`, `1W`, `1M`, `3M`, `1Y`) saved data names with a variant name (see serde below). The toolbar and Pine Studio offer every timeframe through the [timeframe picker](../workspace-toolbar.md#timeframe-picker).
 - `Timeframe::parse`: digits, then an optional unit, spaces allowed. No unit is minutes (`22` is
-  `22m`); `m` is minutes and `M` months, the rest take either case (`h d w y`); `1Y` is `12M`, `2Y`
-  is refused, seconds (`s`) are refused. It reads the old labels and provider tokens too.
-- Three spellings: `Display`/`label()` for the UI (`22m`, `3h`, `2D`, `1W`, `3M`, `1Y`), `interval()`
-  for the token every provider is asked for (`22m`, `3h`, `2d`, `1w`, `3M`, `1Y`: the legacy six are
+  `22m`); `m` is minutes and `M` months, the rest take either case (`s h d w y`); `1Y` is `12M`, `2Y`
+  is refused. It reads the old labels and provider tokens too.
+- Three spellings: `Display`/`label()` for the UI (`30s`, `22m`, `3h`, `2D`, `1W`, `3M`, `1Y`), `interval()`
+  for the token every provider is asked for (`30s`, `22m`, `3h`, `2d`, `1w`, `3M`, `1Y`: the legacy six are
   byte-identical to what providers always got) and, for saved data, serde: the six `LEGACY` values
   serialize as `"Hour"`, `"Day"`, `"Week"`, `"Month"`, `"Quarter"`, `"Year"` so older builds and
   synced layouts decode them; anything else is its label (`"22m"`). Decoding takes both.
   `nominal_ms()` is exact to weeks; months are 30 days, a quarter 91 and a year 365.
 - Buckets are `model::market::bucket` and nothing else cuts them (providers, chart and Pine): UTC,
-  minutes and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from
+  seconds, minutes and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from
   1970-01-01, weeks start on Monday, months count from 1970-01 (so `3M` is the calendar quarter,
   `12M` the year). A bucket closes 1 ms before the next opens.
 - Missing interval: fold finer bars with `bucket::fold(candles, timeframe, truncated)`. Never

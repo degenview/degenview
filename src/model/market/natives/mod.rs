@@ -217,7 +217,9 @@ impl DataSource {
             | Self::Alpaca
             | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
-            Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => true,
+            // Their lines are drawn from points a minute or more apart.
+            Self::Polymarket | Self::Kalshi => !timeframe.is_subminute(),
+            Self::CoinMarketCap => true,
         }
     }
 

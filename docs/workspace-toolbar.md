@@ -85,7 +85,7 @@ one per tab: `Chart` is `ToolbarAction::SetTimeframe` (`reload_for_timeframe`, t
 `announce_timeframe` when it changed).
 
 - **Field** (`kit::search_box` with the clock icon): read live by `Timeframe::parse`, so `22m`, `3h`,
-  `2D`, `1W`, `3M`, `1Y`, and a bare `22` (minutes). Seconds are refused ("Seconds aren't supported");
+  `2D`, `1W`, `3M`, `1Y`, `30s` (seconds go to 59), and a bare `22` (minutes);
   any refusal shows its message in one caption line and Return does nothing. A valid timeframe no chip
   shows gets a row above the sections, "Chart 22m" with its description. An empty field points at the
   current timeframe.

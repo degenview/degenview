@@ -111,7 +111,7 @@ pub struct MarketCandlesParams {
     /// The provider's own symbol, as `degenview_search_symbols` returns it.
     #[schemars(length(min = 1, max = 128))]
     pub symbol: String,
-    /// The bar length: a count and a unit (m minutes, h hours, D days, W weeks, M months, or 1Y),
+    /// The bar length: a count and a unit (s seconds, m minutes, h hours, D days, W weeks, M months, or 1Y),
     /// for example 15m, 4h, 1D, 2W, 3M.
     #[schemars(length(min = 1, max = 16))]
     pub timeframe: String,
@@ -597,7 +597,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_get_market_candles",
-        description = "Read the price candles of any market straight from its provider, with no chart needed: the newest `limit` bars (default 200, max 1000) at any timeframe (a count and unit: m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 15m, 4h, 1D, 2W, 3M), oldest first, as rows under named `columns` (time, open, high, low, close, volume). The same bars a chart of that market would load, through the same provider calls and caches, so it can lag a live chart by a refresh. Slow providers (CoinGecko, DEXScreener) are rate limited and may take several seconds. Older history than the newest `limit` bars is not available here; open a chart and scroll back, or use degenview_get_candles on one. Volume is null where a provider reports none. For many markets at once use degenview_get_quotes.",
+        description = "Read the price candles of any market straight from its provider, with no chart needed: the newest `limit` bars (default 200, max 1000) at any timeframe (a count and unit: s seconds, m minutes, h hours, D days, W weeks, M months, or 1Y; e.g. 30s, 15m, 4h, 1D, 2W, 3M), oldest first, as rows under named `columns` (time, open, high, low, close, volume). The same bars a chart of that market would load, through the same provider calls and caches, so it can lag a live chart by a refresh. Slow providers (CoinGecko, DEXScreener) are rate limited and may take several seconds. Older history than the newest `limit` bars is not available here; open a chart and scroll back, or use degenview_get_candles on one. Volume is null where a provider reports none. For many markets at once use degenview_get_quotes.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
