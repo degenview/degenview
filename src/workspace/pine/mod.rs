@@ -200,16 +200,20 @@ impl ChartWorkspace {
             return Err(IndicatorError::UnsupportedOnLineChart);
         }
         let script_id = bundled::script_id(indicator);
-        let existing = chart
+        // The picker may have added it more than once: it is on the chart when any copy is drawn.
+        let copies: Vec<(u64, bool)> = chart
             .chart
             .pine_instances()
             .iter()
-            .find(|instance| instance.script_id.as_deref() == Some(script_id.as_str()))
-            .map(|instance| (instance.id, instance.visible));
-        match existing {
-            Some((_, true)) => Ok(IndicatorOutcome::AlreadyApplied),
-            Some((instance, false)) => {
-                self.change_pine_instance(chart_id, instance, None, Some(true));
+            .filter(|instance| instance.script_id.as_deref() == Some(script_id.as_str()))
+            .map(|instance| (instance.id, instance.visible))
+            .collect();
+        if copies.iter().any(|(_, visible)| *visible) {
+            return Ok(IndicatorOutcome::AlreadyApplied);
+        }
+        match copies.first() {
+            Some((instance, _)) => {
+                self.change_pine_instance(chart_id, *instance, None, Some(true));
                 Ok(IndicatorOutcome::Updated)
             }
             None => self
@@ -834,6 +838,64 @@ mod tests {
             workspace.apply_bundled_indicator(999, rsi),
             Err(IndicatorError::NoSuchChart)
         );
+    }
+
+    #[test]
+    fn applying_a_bundled_indicator_counts_any_visible_copy() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let rsi = bundled::find("rsi").unwrap();
+        // The picker adds another copy of a bundled indicator each time it is asked.
+        assert!(
+            workspace
+                .apply_indicator_action(btc, &ui::chart::indicator_strip::Action::AddBundled(rsi))
+        );
+        assert!(
+            workspace
+                .apply_indicator_action(btc, &ui::chart::indicator_strip::Action::AddBundled(rsi))
+        );
+        let ids: Vec<u64> = workspace.charts[0]
+            .chart
+            .pine_instances()
+            .iter()
+            .map(|instance| instance.id)
+            .collect();
+        assert_eq!(ids.len(), 2);
+        let visible = |workspace: &ChartWorkspace| -> Vec<bool> {
+            workspace.charts[0]
+                .chart
+                .pine_instances()
+                .iter()
+                .map(|instance| instance.visible)
+                .collect()
+        };
+
+        workspace.charts[0].chart.set_pine_visible(ids[0], false);
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::AlreadyApplied),
+            "one is drawn: nothing to do"
+        );
+        assert_eq!(
+            visible(&workspace),
+            [false, true],
+            "the hidden one stays hidden"
+        );
+
+        workspace.charts[0].chart.set_pine_visible(ids[1], false);
+        assert_eq!(
+            workspace.apply_bundled_indicator(btc, rsi),
+            Ok(IndicatorOutcome::Updated)
+        );
+        assert_eq!(
+            visible(&workspace),
+            [true, false],
+            "exactly one is shown again"
+        );
+        assert_eq!(workspace.charts[0].chart.pine_instances().len(), 2);
     }
 
     #[test]

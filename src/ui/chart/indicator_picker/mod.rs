@@ -134,16 +134,28 @@ pub struct IndicatorPicker {
     previews: Previews,
 }
 
+/// The favorites a stored list names, each under the key the catalog uses today and listed once, in
+/// the order first kept. A key written for an indicator that has since moved (`native:rsi`, now
+/// `bundled:rsi`) is read as the one that replaced it, and one this build no longer has is dropped.
+fn canonical_favorites(stored: Vec<String>) -> Vec<String> {
+    let mut favorites: Vec<String> = Vec::with_capacity(stored.len());
+    for key in stored.iter().filter_map(|stored| EntryKey::parse(stored)) {
+        let key = key.stored();
+        if !favorites.contains(&key) {
+            favorites.push(key);
+        }
+    }
+    favorites
+}
+
 impl IndicatorPicker {
     pub fn new(store: Option<SharedStore>) -> Self {
-        // A favorite that names an indicator this build no longer has is dropped.
-        let favorites: Vec<String> = store
-            .as_ref()
-            .and_then(|store| store.lock().ok()?.setting::<Vec<String>>(FAVORITES_KEY))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|stored| EntryKey::parse(stored).is_some())
-            .collect();
+        let favorites = canonical_favorites(
+            store
+                .as_ref()
+                .and_then(|store| store.lock().ok()?.setting::<Vec<String>>(FAVORITES_KEY))
+                .unwrap_or_default(),
+        );
         Self {
             open: false,
             store,

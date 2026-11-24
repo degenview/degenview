@@ -299,6 +299,36 @@ fn favorites_are_kept_in_the_store_and_come_back() {
 }
 
 #[test]
+fn favorites_stored_under_an_old_key_come_back_under_the_one_the_catalog_uses() {
+    use super::sections::{self, Section};
+    let store: SharedStore = Arc::new(Mutex::new(
+        crate::store::Store::open_in_memory().expect("open"),
+    ));
+    // RSI was `native:rsi` before it became the bundled indicator; a list written then (or by an
+    // older build on another Mac) can hold both spellings.
+    store
+        .lock()
+        .unwrap()
+        .set_setting(
+            FAVORITES_KEY,
+            &["native:rsi", "bundled:macd", "bundled:rsi", "bundled:gone"],
+        )
+        .expect("saved");
+    let picker = IndicatorPicker::new(Some(store));
+    assert_eq!(picker.favorites, ["bundled:rsi", "bundled:macd"]);
+    assert!(picker.is_favorite(&EntryKey::Bundled("rsi")));
+
+    let all = catalog::all(&[]);
+    let blocks = sections::blocks(Section::Favorites, &all, &picker.favorite_set(), 1);
+    let listed: Vec<_> = blocks
+        .iter()
+        .flat_map(|block| block.entries.iter().map(|entry| entry.title.as_str()))
+        .collect();
+    assert!(listed.contains(&"RSI"), "{listed:?}");
+    assert_eq!(listed.len(), 2, "{listed:?}");
+}
+
+#[test]
 fn a_narrow_window_drops_the_detail_panel_and_still_draws() {
     let mut rig = Rig::new(760.0);
     rig.type_text("rsi");

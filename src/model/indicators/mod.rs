@@ -266,7 +266,7 @@ pub fn ema(candles: &[Kline], period: usize) -> Vec<Option<f64>> {
     values
 }
 
-/// Relative Strength Index with Wilder's smoothing (α = 1/period).
+/// Relative Strength Index with Wilder's smoothing (α = 1/period), as the RSI pane draws it.
 pub fn rsi(candles: &[Kline], period: usize) -> Vec<Option<f64>> {
     let mut values = vec![None; candles.len()];
     if period == 0 || candles.len() <= period {
@@ -299,13 +299,14 @@ pub fn rsi(candles: &[Kline], period: usize) -> Vec<Option<f64>> {
     values
 }
 
+/// The reading for average `gain` and `loss`. No losses is 100, flat market included: that is the
+/// definition of Pine's `ta.rsi` (TradingView's), which draws the RSI pane, and the readings are
+/// kept equal to the pane.
 fn rsi_from(gain: f64, loss: f64) -> f64 {
     if loss > 0.0 {
         100.0 - 100.0 / (1.0 + gain / loss)
-    } else if gain > 0.0 {
-        100.0
     } else {
-        50.0
+        100.0
     }
 }
 
@@ -469,6 +470,15 @@ mod tests {
             .collect();
         let values = rsi(&candles, 14);
         assert_eq!(values[14], Some(100.0));
+    }
+
+    #[test]
+    fn rsi_of_a_market_that_does_not_move_is_100_like_the_pane() {
+        let candles: Vec<Kline> = (0..20).map(|_| candle(50.0, 50.0, 50.0)).collect();
+        let values = rsi(&candles, 14);
+        assert_eq!(values[13], None);
+        assert_eq!(values[14], Some(100.0));
+        assert_eq!(values[19], Some(100.0));
     }
 
     #[test]

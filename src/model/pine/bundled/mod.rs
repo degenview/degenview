@@ -293,6 +293,56 @@ mod tests {
         }
     }
 
+    /// The pane and the readings the MCP server hands out (`model::rsi`) are one study: they
+    /// agree on every bar, including a market that does not move at all.
+    #[test]
+    fn the_rsi_pane_and_the_rsi_readings_agree_on_every_bar() {
+        let flat = |count: usize, from: usize| -> Vec<Kline> {
+            let mut series = bars(count);
+            for bar in series.iter_mut().skip(from) {
+                bar.open = 100.0;
+                bar.high = 100.0;
+                bar.low = 100.0;
+                bar.close = 100.0;
+            }
+            series
+        };
+        let cases = [
+            ("moving", bars(120)),
+            ("flat throughout", flat(40, 0)),
+            ("flat after a move", flat(60, 30)),
+            ("too short", bars(10)),
+        ];
+        let indicator = find("rsi").unwrap();
+        for (name, series) in cases {
+            let (output, failure) = crate::host::pine::run_script_checked(
+                indicator.source,
+                &series,
+                &symbol(),
+                &std::collections::HashMap::new(),
+            );
+            assert!(failure.is_none(), "{name}");
+            let pane = &output
+                .plots
+                .iter()
+                .find(|plot| plot.title.as_deref() == Some("RSI"))
+                .expect("an RSI plot")
+                .values;
+            let readings = crate::model::rsi(&series, 14);
+            assert_eq!(pane.len(), readings.len(), "{name}");
+            for (bar, (shown, read)) in pane.iter().zip(&readings).enumerate() {
+                match (shown, read) {
+                    (None, None) => {}
+                    (Some(shown), Some(read)) => assert!(
+                        (shown - read).abs() < 1e-9,
+                        "{name}, bar {bar}: the pane says {shown}, the readings {read}"
+                    ),
+                    other => panic!("{name}, bar {bar}: {other:?}"),
+                }
+            }
+        }
+    }
+
     #[test]
     fn ids_are_unique_and_script_ids_name_them() {
         let ids: HashSet<&str> = ALL.iter().map(|indicator| indicator.id).collect();
