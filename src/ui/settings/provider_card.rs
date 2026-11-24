@@ -6,6 +6,7 @@
 //! per field of the descriptor. Nothing here knows which provider it is drawing, so a new provider
 //! needs no code on this page.
 
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{FieldValues, SnapshotPrefs};
 use crate::service::keychain::snapshot_secrets::{SecretState, SnapshotSecrets};
 use crate::service::snapshot::providers::{
@@ -220,13 +221,13 @@ impl ProviderForm {
         let Some(test) = &mut self.test else {
             return;
         };
-        let Some(outcome) = test.poll_or(|| Err("The test stopped unexpectedly.".to_owned()))
+        let Some(outcome) = test.poll_or(|| Err(tr!("The test stopped unexpectedly.").to_owned()))
         else {
             return;
         };
         self.test = None;
         self.test_status = Some(match outcome {
-            Ok(()) => StatusMessage::ok(format!("{label} accepted a test image.")),
+            Ok(()) => StatusMessage::ok(tr!("{label} accepted a test image.", label = label)),
             Err(message) => StatusMessage::error(message),
         });
     }
@@ -245,9 +246,9 @@ fn state_badge(
 ) -> Option<(&'static str, Tone)> {
     match (enabled, readiness) {
         (false, _) => None,
-        (true, _) if checking => Some(("Checking", Tone::Neutral)),
-        (true, Readiness::Ready) => Some(("Active", Tone::Good)),
-        (true, Readiness::Needs(_)) => Some(("Setup needed", Tone::Warning)),
+        (true, _) if checking => Some((tr!("Checking"), Tone::Neutral)),
+        (true, Readiness::Ready) => Some((tr!("Active"), Tone::Good)),
+        (true, Readiness::Needs(_)) => Some((tr!("Setup needed"), Tone::Warning)),
     }
 }
 
@@ -341,7 +342,7 @@ fn body(
 ) {
     let descriptor = provider.descriptor();
     if !descriptor.setup_steps.is_empty() {
-        titled_group(ui, "Set up", |ui| {
+        titled_group(ui, tr!("Set up"), |ui| {
             for (index, step) in descriptor.setup_steps.iter().enumerate() {
                 step_row(ui, index + 1, step);
             }
@@ -360,6 +361,7 @@ fn body(
             FieldKind::Text => {
                 let response = field(
                     ui,
+                    ("snapshot-field", descriptor.id, spec.key),
                     spec.title,
                     Some(spec.hint),
                     spec.placeholder,
@@ -379,6 +381,7 @@ fn body(
                 let hint = secret_hint(spec, state);
                 let response = field(
                     ui,
+                    ("snapshot-field", descriptor.id, spec.key),
                     spec.title,
                     Some(&hint),
                     spec.placeholder,
@@ -428,15 +431,15 @@ fn actions_row(
         if descriptor.testable {
             let testing = form.is_testing();
             let can_test = !testing && form.ready_as_typed(provider, settings, present.clone());
-            if kit::sheet_button(ui, "Test", false, can_test)
-                .on_hover_text("Sends a one-pixel test image to check the settings.")
+            if kit::sheet_button(ui, tr!("Test"), false, can_test)
+                .on_hover_text(tr!("Sends a one-pixel test image to check the settings."))
                 .clicked()
             {
                 form.start_test(ui.ctx(), provider, settings, input.secrets);
             }
             if testing {
                 ui.add(LoadingIndicator::new().size(14.0));
-                muted(ui, "Checking…");
+                muted(ui, tr!("Checking…"));
             }
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -458,10 +461,13 @@ fn actions_row(
 fn secret_hint(spec: &FieldSpec, state: SecretState) -> String {
     match (state, spec.env) {
         (SecretState::Saved, _) => {
-            "Saved in your system's secure storage. Type a new one to replace it.".to_owned()
+            tr!("Saved in your system's secure storage. Type a new one to replace it.").to_owned()
         }
         (SecretState::FromEnvironment, Some(variable)) => {
-            format!("Taken from {variable}. Type one to use it instead.")
+            tr!(
+                "Taken from {variable}. Type one to use it instead.",
+                variable = variable
+            )
         }
         _ => spec.hint.to_owned(),
     }
@@ -540,17 +546,22 @@ fn header(
     );
     // Said in words as well: at a narrow width the state is only a coloured dot.
     let word = match (enabled, readiness) {
-        (false, _) => "off",
-        (true, _) if checking => "on, checking",
-        (true, Readiness::Ready) => "on",
-        (true, Readiness::Needs(_)) => "on, setup needed",
+        (false, _) => tr!("off"),
+        (true, _) if checking => tr!("on, checking"),
+        (true, Readiness::Ready) => tr!("on"),
+        (true, Readiness::Needs(_)) => tr!("on, setup needed"),
     };
     let response = crate::ui::accessibility::label(
         response,
-        format!(
-            "{}, {word}, {}",
-            descriptor.name,
-            if open { "expanded" } else { "collapsed" }
+        tr!(
+            "{name}, {state}, {fold}",
+            name = descriptor.name,
+            state = word,
+            fold = if open {
+                tr!("expanded")
+            } else {
+                tr!("collapsed")
+            }
         ),
     )
     .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -581,7 +592,12 @@ fn header(
     );
     let mut on = enabled;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(slot));
-    let flipped = kit::switch(&mut child, &mut on, &format!("Use {}", descriptor.name)).clicked();
+    let flipped = kit::switch(
+        &mut child,
+        &mut on,
+        &tr!("Use {name}", name = descriptor.name),
+    )
+    .clicked();
 
     let left = tile.right() + 12.0;
     let right = slot.left() - 12.0;

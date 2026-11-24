@@ -138,17 +138,27 @@ pub fn plain_field(
     )
 }
 
+/// The identity of a [`field`]: its focus, its text edit and whether a secret is shown are kept under
+/// it. It comes from `id_salt`, a fixed name for the field; never from its title, which is words in
+/// the language in use (a field would lose its focus and its reveal when the language changes, and two
+/// fields with the same title would share both).
+pub(crate) fn field_id(id_salt: impl std::hash::Hash + std::fmt::Debug) -> Id {
+    Id::new("settings-field").with(id_salt)
+}
+
 /// A labelled text field in the app's field style. A secret field hides its text and offers an
-/// eye button to reveal it, so a pasted key can be checked before saving.
+/// eye button to reveal it, so a pasted key can be checked before saving. `id_salt` names the field
+/// (see [`field_id`]).
 pub fn field(
     ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
     title: &str,
     hint: Option<&str>,
     prompt: &str,
     value: &mut String,
     secret: bool,
 ) -> egui::Response {
-    let id = egui::Id::new(("settings-field", title));
+    let id = field_id(id_salt);
     let revealed_id = id.with("revealed");
     let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
     ui.spacing_mut().item_spacing.y = 0.0;
@@ -205,4 +215,72 @@ pub fn field(
         ));
     }
     edit.expect("the field's text edit ran")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::render_tests::Screen;
+
+    /// One frame of two fields: `titles` are their words, `salts` their names.
+    fn frame(screen: &mut Screen, locale: Locale, salts: [&'static str; 2], titles: [&str; 2]) {
+        let mut values = [String::new(), String::new()];
+        with_locale(locale, || {
+            screen.run(Vec::new(), |ui| {
+                let [first, second] = &mut values;
+                field(ui, salts[0], titles[0], None, "", first, true);
+                field(ui, salts[1], titles[1], None, "", second, false);
+            });
+        });
+    }
+
+    fn focused(screen: &Screen, salt: &'static str) -> bool {
+        screen.ctx.memory(|memory| memory.has_focus(field_id(salt)))
+    }
+
+    /// A field is the same field when the language changes: it keeps its focus (and its reveal, which
+    /// lives under the same id) while its title is other words.
+    #[test]
+    fn a_field_keeps_its_focus_when_its_title_changes_language() {
+        let mut screen = Screen::new(vec2(400.0, 300.0));
+        let salts = ["password", "user"];
+        frame(
+            &mut screen,
+            Locale::ENGLISH,
+            salts,
+            ["Password", "User name"],
+        );
+        screen
+            .ctx
+            .memory_mut(|memory| memory.request_focus(field_id("password")));
+        frame(
+            &mut screen,
+            Locale::ENGLISH,
+            salts,
+            ["Password", "User name"],
+        );
+        assert!(focused(&screen, "password"));
+        frame(
+            &mut screen,
+            Locale::PSEUDO,
+            salts,
+            ["[Þåššŵöŕð ~~]", "[Ûšéŕ ñåmé ~~]"],
+        );
+        frame(
+            &mut screen,
+            Locale::PSEUDO,
+            salts,
+            ["[Þåššŵöŕð ~~]", "[Ûšéŕ ñåmé ~~]"],
+        );
+        assert!(
+            focused(&screen, "password"),
+            "focus survives the language change"
+        );
+        assert!(!focused(&screen, "user"));
+        // The same title does not share the field: the title is not its identity.
+        frame(&mut screen, Locale::ENGLISH, salts, ["Name", "Name"]);
+        frame(&mut screen, Locale::ENGLISH, salts, ["Name", "Name"]);
+        assert!(focused(&screen, "password") && !focused(&screen, "user"));
+    }
 }

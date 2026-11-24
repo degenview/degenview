@@ -665,7 +665,7 @@ fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
 fn typing_a_base64_secret_never_stalls_a_frame() {
     let rig = rig();
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    let label = broker.descriptor().credential_fields[1].label;
+    let credential = &broker.descriptor().credential_fields[1];
     let secret = "M".repeat(86) + "==";
     let mut state = brokers::BrokersState::default();
     state.open_for_test("coinbase");
@@ -683,7 +683,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         slowest.set(slowest.get().max(start.elapsed()));
     };
     step(vec![], &mut state);
-    let id = egui::Id::new(("broker-secret", label));
+    let id = crate::ui::settings::brokers::secret_block_id(broker.descriptor().id, credential.key);
     // One by one, as a person types (focus is kept as long as the box stays).
     for (index, ch) in secret.chars().enumerate() {
         if index == 0 {
@@ -943,4 +943,72 @@ fn the_trading_panel_can_be_resized_on_every_tab_with_and_without_orders() {
             "{name} / {tab:?}: dragging the top edge up by 80 should make the panel taller: {before} -> {after} ({results:?})"
         );
     }
+}
+
+/// Text the panel draws that is data, not interface: a broker's name, an account and a ticker.
+const PANEL_DATA: &[&str] = &["Coinbase", "Default portfolio", "BTC-USD"];
+
+/// The same on the page, and the sandbox's own description: `degenview_brokers` writes it (its
+/// descriptors are not ours to put through `tr!`), and it is the one English paragraph left.
+const PAGE_DATA: &[&str] = &[
+    "Coinbase",
+    "Default portfolio",
+    "Its answers are fixed examples",
+    "Use it to try the order ticket",
+    "There is nothing to create",
+    "No key is used",
+];
+
+/// The Brokers page and the live panel in the pseudo-locale, in both themes: text without brackets
+/// was never put through `tr!`, and a label that is cut shows its missing `]`. With
+/// `DEGENVIEW_GALLERY_DIR` set the pictures are written out to look at.
+#[test]
+fn the_brokers_page_and_the_panel_draw_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::ui::render_tests::gallery_dir;
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = live_rig();
+    with_locale(Locale::PSEUDO, || {
+        for light in [false, true] {
+            let suffix = if light { "light" } else { "dark" };
+            let theme_pref = if light {
+                egui::ThemePreference::Light
+            } else {
+                egui::ThemePreference::Dark
+            };
+            let mut state = BrokerPanelState::default();
+            let mut screen = Screen::new(Vec2::new(1_100.0, 400.0));
+            screen.ctx.set_theme(theme_pref);
+            let output = show_panel(&mut screen, &mut state, &rig.host, 380.0);
+            assert!(shapes(&output) > 0, "{suffix}: the panel drew nothing");
+            let loose = crate::ui::trade::pseudo_text::untranslated(&output, PANEL_DATA);
+            assert!(
+                loose.is_empty(),
+                "{suffix}: panel text not through tr!: {loose:?}"
+            );
+            if gallery_dir().is_some() {
+                screen.save(&format!("live-panel-pseudo-{suffix}"), output);
+            }
+
+            let mut page_state = brokers::BrokersState::default();
+            page_state.open_for_test("coinbase");
+            page_state.open_for_test("coinbase-sandbox");
+            let mut page = Screen::new(Vec2::new(620.0, 1_100.0));
+            page.ctx.set_theme(theme_pref);
+            let output = frames(&mut page, 3, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    brokers::body(ui, &mut page_state, &rig.hub);
+                });
+            });
+            assert!(shapes(&output) > 0, "{suffix}: the page drew nothing");
+            let loose = crate::ui::trade::pseudo_text::untranslated(&output, PAGE_DATA);
+            assert!(
+                loose.is_empty(),
+                "{suffix}: page text not through tr!: {loose:?}"
+            );
+            if gallery_dir().is_some() {
+                page.save(&format!("live-settings-pseudo-{suffix}"), output);
+            }
+        }
+    });
 }

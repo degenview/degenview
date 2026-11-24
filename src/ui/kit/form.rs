@@ -99,7 +99,7 @@ pub fn segments<T: Copy + PartialEq>(
 
 /// The room [`segments`] takes for `options`, whichever one is chosen.
 pub fn segments_width<T>(ui: &Ui, options: &[Segment<'_, T>]) -> f32 {
-    segment_widths(ui, options, None).iter().sum::<f32>() + 2.0 * outline::INSET
+    track_width(&segment_widths(ui, options, None))
 }
 
 fn segment_labels<T: Copy + PartialEq>(
@@ -151,6 +151,11 @@ fn segment_widths<T>(ui: &Ui, options: &[Segment<'_, T>], fill: Option<f32>) -> 
     }
 }
 
+/// The whole control: its segments and the inset around them.
+fn track_width(widths: &[f32]) -> f32 {
+    widths.iter().sum::<f32>() + 2.0 * outline::INSET
+}
+
 fn segments_with<T: Copy + PartialEq>(
     ui: &mut Ui,
     id: Id,
@@ -161,8 +166,8 @@ fn segments_with<T: Copy + PartialEq>(
 ) -> Option<T> {
     let labels = segment_labels(ui, options, selected);
     let widths = segment_widths(ui, options, fill);
-    let total = widths.iter().sum::<f32>() + 2.0 * outline::INSET;
-    let (track, _) = ui.allocate_exact_size(vec2(total, outline::HEIGHT), Sense::hover());
+    let (track, _) =
+        ui.allocate_exact_size(vec2(track_width(&widths), outline::HEIGHT), Sense::hover());
     outline::paint_track(ui.painter(), track, outline::RADIUS, outline::Wash::Rest);
     let plate_height = outline::HEIGHT - 2.0 * outline::INSET;
     let mut picked = None;

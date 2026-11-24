@@ -9,6 +9,7 @@
 use crate::host::editor_theme::{
     CustomTheme, EditorThemeHost, FileRead, FileSave, FontStatus, View,
 };
+use crate::i18n::{tr, tr_n};
 use crate::model::editor_theme::{
     BuiltInTheme, LineHeight, MAX_FONT_SIZE, MAX_NAME_CHARS, MIN_FONT_SIZE, Palette, SurfaceColor,
     SyntaxRole, ThemeId, ThemeSelection, ThemeSource, clamp_size,
@@ -117,14 +118,14 @@ fn tiles(view: &View) -> Vec<Tile<'_>> {
     let mut tiles = vec![Tile {
         selection: ThemeSelection::Auto,
         name: crate::model::editor_theme::AUTOMATIC_NAME.to_owned(),
-        caption: "Follows the app".to_owned(),
+        caption: tr!("Follows the app").to_owned(),
         palettes: vec![BuiltInTheme::Dark.palette(), BuiltInTheme::Light.palette()],
         custom: None,
     }];
     tiles.extend(BuiltInTheme::ALL.iter().map(|built_in| Tile {
         selection: ThemeSelection::BuiltIn(*built_in),
         name: built_in.name().to_owned(),
-        caption: "Built-in".to_owned(),
+        caption: tr!("Built-in").to_owned(),
         palettes: vec![built_in.palette()],
         custom: None,
     }));
@@ -132,9 +133,8 @@ fn tiles(view: &View) -> Vec<Tile<'_>> {
         selection: ThemeSelection::Custom(custom.theme.id),
         name: custom.theme.name.clone(),
         caption: match custom.theme.override_count() {
-            0 => "Custom".to_owned(),
-            1 => "Custom · 1 change".to_owned(),
-            count => format!("Custom · {count} changes"),
+            0 => tr!("Custom").to_owned(),
+            count => tr_n!(count, "Custom · {count} change", "Custom · {count} changes"),
         },
         palettes: vec![custom.theme.palette()],
         custom: Some(custom),
@@ -179,7 +179,7 @@ pub fn page(
         page_shell(
             ui,
             section,
-            "Choose how your Pine Script editor looks.",
+            tr!("Choose how your Pine Script editor looks."),
             |ui| overview(ui, state, host, &view),
         );
     } else if let Mode::Editing(editing) = &mut state.mode {
@@ -212,14 +212,16 @@ fn overview(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, vi
     }
     section(
         ui,
-        "Editor Theme",
-        Some("The colors of the code, the gutter and the editor around them."),
+        tr!("Editor Theme"),
+        Some(tr!(
+            "The colors of the code, the gutter and the editor around them."
+        )),
         |ui| {
             theme_tiles(ui, state, host, view);
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                if kit::push_button(ui, Some(Icon::Plus), "Create Theme", true).clicked() {
+                if kit::push_button(ui, Some(Icon::Plus), tr!("Create Theme"), true).clicked() {
                     state.dialog = Some(Dialog::Create {
                         name: String::new(),
                         source: 0,
@@ -229,7 +231,8 @@ fn overview(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, vi
                 }
                 if crate::platform::has_file_dialogs() {
                     let idle = state.flow.is_none();
-                    if kit::push_button(ui, Some(Icon::Download), "Import…", idle).clicked() {
+                    if kit::push_button(ui, Some(Icon::Download), tr!("Import…"), idle).clicked()
+                    {
                         state.flow = Some(Flow::Import(host.choose_file()));
                     }
                 }
@@ -240,23 +243,23 @@ fn overview(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, vi
             }
         },
     );
-    section(ui, "Typography", None, |ui| {
+    section(ui, tr!("Typography"), None, |ui| {
         typography(ui, state, host, view);
     });
     section(
         ui,
-        "Theme Customization",
-        Some(
-            "Change syntax colors, editor backgrounds, selection colors and the other colors the editor paints.",
-        ),
+        tr!("Theme Customization"),
+        Some(tr!(
+            "Change syntax colors, editor backgrounds, selection colors and the other colors the editor paints."
+        )),
         |ui| customization(ui, state, host, view),
     );
     section(
         ui,
-        "Live Preview",
-        Some(
-            "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme.",
-        ),
+        tr!("Live Preview"),
+        Some(tr!(
+            "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme."
+        )),
         |ui| {
             let width = ui.available_width();
             let frame = egui::Frame::new()
@@ -411,9 +414,9 @@ fn row_arrow(ui: &mut Ui, viewport: Rect, right: bool, row_id: Id) -> bool {
     let response = crate::ui::accessibility::label(
         response,
         if right {
-            "Show more themes"
+            tr!("Show more themes")
         } else {
-            "Show earlier themes"
+            tr!("Show earlier themes")
         },
     );
     let painter = ui.painter();
@@ -547,7 +550,7 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
     let response = crate::ui::accessibility::label_as(
         response,
         egui::WidgetType::RadioButton,
-        format!("{} editor theme", tile.name),
+        tr!("{name} editor theme", name = tile.name),
     );
     let focused = response.has_focus();
     if response.gained_focus() {
@@ -672,7 +675,7 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
         .interact(menu_rect, id.with("menu"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let menu_response =
-        crate::ui::accessibility::label(menu_response, format!("Actions for {}", tile.name));
+        crate::ui::accessibility::label(menu_response, tr!("Actions for {name}", name = tile.name));
     painter.circle_filled(menu_rect.center(), 11.0, Color32::from_black_alpha(110));
     icons::paint(
         &painter,
@@ -686,12 +689,20 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
     ] {
         popup.show(|ui| {
             kit::menu_scope(ui, 0.0);
+            let custom_rows = [
+                tr!("Edit…"),
+                tr!("Duplicate"),
+                tr!("Rename…"),
+                tr!("Export…"),
+                tr!("Delete…"),
+            ];
+            let built_in_rows = [tr!("Duplicate & Customize"), tr!("Export…")];
             kit::menu_fit(
                 ui,
                 if tile.custom.is_some() {
-                    &["Edit…", "Duplicate", "Rename…", "Export…", "Delete…"][..]
+                    &custom_rows[..]
                 } else {
-                    &["Duplicate & Customize", "Export…"][..]
+                    &built_in_rows[..]
                 },
             );
             if let Some(chosen) = tile_menu(ui, tile) {
@@ -714,28 +725,29 @@ fn tile_menu(ui: &mut Ui, tile: &Tile) -> Option<TileAction> {
     match (tile.selection, tile.custom) {
         (_, Some(custom)) => {
             let id = custom.theme.id;
-            if row(ui, Icon::Pencil, "Edit…", false) {
+            if row(ui, Icon::Pencil, tr!("Edit…"), false) {
                 action = Some(TileAction::Customize(tile.selection));
             }
-            if row(ui, Icon::CopyDoc, "Duplicate", false) {
+            if row(ui, Icon::CopyDoc, tr!("Duplicate"), false) {
                 action = Some(TileAction::Duplicate(ThemeSource::Custom(id)));
             }
-            if row(ui, Icon::TextFormat, "Rename…", false) {
+            if row(ui, Icon::TextFormat, tr!("Rename…"), false) {
                 action = Some(TileAction::Rename(id));
             }
-            if row(ui, Icon::Download, "Export…", false) {
+            if row(ui, Icon::Download, tr!("Export…"), false) {
                 action = Some(TileAction::Export(ThemeSource::Custom(id)));
             }
             kit::menu_separator(ui);
-            if row(ui, Icon::Trash, "Delete…", true) {
+            if row(ui, Icon::Trash, tr!("Delete…"), true) {
                 action = Some(TileAction::Delete(id));
             }
         }
         (selection, None) => {
-            if row(ui, Icon::Palette, "Duplicate & Customize", false) {
+            if row(ui, Icon::Palette, tr!("Duplicate & Customize"), false) {
                 action = Some(TileAction::Customize(selection));
             }
-            if selection != ThemeSelection::Auto && row(ui, Icon::Download, "Export…", false) {
+            if selection != ThemeSelection::Auto && row(ui, Icon::Download, tr!("Export…"), false)
+            {
                 action = Some(TileAction::Export(source_of(selection)));
             }
         }
@@ -829,25 +841,33 @@ pub(in crate::ui) fn typography_controls(
     let mut change = TypographyChange::default();
     ui.spacing_mut().item_spacing.y = 8.0;
     let hint = match shown.status {
-        FontStatus::Missing(name) => {
-            format!("“{name}” is not installed on this Mac, so the default is used until it is.")
+        FontStatus::Missing(name) => tr!(
+            "“{name}” is not installed on this Mac, so the default is used until it is.",
+            name = name
+        ),
+        FontStatus::Failed(name, why) => {
+            tr!(
+                "“{name}” could not be loaded: {why}",
+                name = name,
+                why = why
+            )
         }
-        FontStatus::Failed(name, why) => format!("“{name}” could not be loaded: {why}"),
-        FontStatus::Loading(name) => format!("Loading “{name}”…"),
-        _ => "Built in: JetBrains Mono. Or any monospaced font installed on this Mac.".to_owned(),
+        FontStatus::Loading(name) => tr!("Loading “{name}”…", name = name),
+        _ => tr!("Built in: JetBrains Mono. Or any monospaced font installed on this Mac.")
+            .to_owned(),
     };
     // A control and, beside it while a theme sets the value, its reset: room for both.
     card::card_reserving(
         ui,
         Icon::TextFormat,
-        "Font",
+        tr!("Font"),
         Some(&hint),
         font_picker::BUTTON_WIDTH + RESET_ROOM,
         |ui| {
             reset_button(
                 ui,
                 shown.resettable[0],
-                "Use the editor's own font",
+                tr!("Use the editor's own font"),
                 &mut change.reset[0],
             );
             change.family = font_picker::show(
@@ -865,14 +885,18 @@ pub(in crate::ui) fn typography_controls(
     card::card_reserving(
         ui,
         Icon::Sliders,
-        "Font size",
-        Some(&format!("{MIN_FONT_SIZE} to {MAX_FONT_SIZE} points.")),
+        tr!("Font size"),
+        Some(&tr!(
+            "{min} to {max} points.",
+            min = MIN_FONT_SIZE,
+            max = MAX_FONT_SIZE
+        )),
         SIZE_WIDTH + RESET_ROOM,
         |ui| {
             reset_button(
                 ui,
                 shown.resettable[1],
-                "Use the editor's own size",
+                tr!("Use the editor's own size"),
                 &mut change.reset[1],
             );
             change.size = size_field(ui, controls, salt, shown.size);
@@ -881,14 +905,14 @@ pub(in crate::ui) fn typography_controls(
     card::card_reserving(
         ui,
         Icon::List,
-        "Line height",
-        Some("The space each line of code gets."),
+        tr!("Line height"),
+        Some(tr!("The space each line of code gets.")),
         LINE_HEIGHT_WIDTH + RESET_ROOM,
         |ui| {
             reset_button(
                 ui,
                 shown.resettable[2],
-                "Use the editor's own line height",
+                tr!("Use the editor's own line height"),
                 &mut change.reset[2],
             );
             let labels: Vec<String> = LineHeight::ALL
@@ -943,7 +967,7 @@ fn size_field(ui: &mut Ui, controls: &mut Controls, salt: &str, size: f32) -> Op
             kit::plain_field(ui, id, &mut text, "", kit::size::BODY, kit::REGULAR, 34.0)
         })
         .inner;
-    let response = crate::ui::accessibility::label(response, "Font size in points");
+    let response = crate::ui::accessibility::label(response, tr!("Font size in points"));
     if response.changed() {
         controls.size_text = Some(text.clone());
     }
@@ -1022,7 +1046,10 @@ fn typography(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, 
         ui.add_space(2.0);
         ui.add(
             egui::Label::new(kit::text(
-                format!("“{name}” sets some of these itself. Change them under Edit ▸ Typography."),
+                tr!(
+                    "“{name}” sets some of these itself. Change them under Edit ▸ Typography.",
+                    name = name
+                ),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -1038,15 +1065,17 @@ fn customization(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHos
     let custom = matches!(view.selected, ThemeSelection::Custom(_));
     let (title, hint, button) = if custom {
         (
-            "Edit this theme",
-            "Change any color it paints, with the editor beside you.",
-            "Edit Current Theme",
+            tr!("Edit this theme"),
+            tr!("Change any color it paints, with the editor beside you."),
+            tr!("Edit Current Theme"),
         )
     } else {
         (
-            "Make your own",
-            "Built-in themes can't be changed. Duplicate & Customize makes a copy that is yours to edit.",
-            "Duplicate & Customize",
+            tr!("Make your own"),
+            tr!(
+                "Built-in themes can't be changed. Duplicate & Customize makes a copy that is yours to edit."
+            ),
+            tr!("Duplicate & Customize"),
         )
     };
     card::card_reserving(ui, Icon::Palette, title, Some(hint), 190.0, |ui| {
@@ -1075,18 +1104,24 @@ fn poll(state: &mut PineStudioState, host: &EditorThemeHost) {
             Some(Ok(Some(text))) => {
                 state.status = Some(match host.import(&text) {
                     Ok(imported) => {
-                        let skipped = match imported.skipped.len() {
-                            0 => String::new(),
-                            1 => format!(
-                                " One value in the file was not usable and was skipped: {}",
-                                imported.skipped[0]
+                        let name = &imported.name;
+                        let skipped = imported.skipped.first();
+                        let said = match (imported.skipped.len(), skipped) {
+                            (0, _) | (_, None) => tr!("Imported “{name}”.", name = name),
+                            (1, Some(value)) => tr!(
+                                "Imported “{name}”. One value in the file was not usable and was skipped: {value}",
+                                name = name,
+                                value = value
                             ),
-                            count => format!(
-                                " {count} values in the file were not usable and were skipped, such as: {}",
-                                imported.skipped[0]
+                            (count, Some(value)) => tr_n!(
+                                count,
+                                "Imported “{name}”. {count} value in the file was not usable and was skipped, such as: {value}",
+                                "Imported “{name}”. {count} values in the file were not usable and were skipped, such as: {value}",
+                                name = name,
+                                value = value
                             ),
                         };
-                        (format!("Imported “{}”.{skipped}", imported.name), false)
+                        (said, false)
                     }
                     Err(error) => (error, true),
                 });
@@ -1102,7 +1137,7 @@ fn poll(state: &mut PineStudioState, host: &EditorThemeHost) {
                     .file_name()
                     .map(|file| file.to_string_lossy().into_owned())
                     .unwrap_or(name);
-                state.status = Some((format!("Exported “{file}”."), false));
+                state.status = Some((tr!("Exported “{file}”.", file = file), false));
             }
             Some(Ok(None)) => {}
             Some(Err(error)) => state.status = Some((error, true)),
@@ -1130,12 +1165,12 @@ fn dialogs(ctx: &egui::Context, state: &mut PineStudioState, host: &EditorThemeH
             match name_dialog(
                 ctx,
                 "editor-theme-create",
-                "Create Editor Theme",
-                "Start from a theme you like, then change what you want.",
+                tr!("Create Editor Theme"),
+                tr!("Start from a theme you like, then change what you want."),
                 &mut name,
                 &mut focus,
                 problem.as_deref().or(error.as_deref()),
-                "Create Theme",
+                tr!("Create Theme"),
                 Some((&mut source, &sources)),
             ) {
                 Outcome::Confirm => {
@@ -1176,12 +1211,15 @@ fn dialogs(ctx: &egui::Context, state: &mut PineStudioState, host: &EditorThemeH
             match name_dialog(
                 ctx,
                 "editor-theme-rename",
-                "Rename Theme",
-                "Names are for you: any characters, up to 48 of them.",
+                tr!("Rename Theme"),
+                &tr!(
+                    "Names are for you: any characters, up to {max} of them.",
+                    max = MAX_NAME_CHARS
+                ),
                 &mut name,
                 &mut focus,
                 problem.as_deref().or(error.as_deref()),
-                "Rename",
+                tr!("Rename"),
                 None,
             ) {
                 Outcome::Confirm => match host.rename(id, &name) {
@@ -1213,22 +1251,25 @@ fn dialogs(ctx: &egui::Context, state: &mut PineStudioState, host: &EditorThemeH
         }
         Dialog::Delete(id) => {
             let name = host.theme(id).map(|theme| theme.name).unwrap_or_default();
-            let message = format!(
-                "“{name}” will be deleted. {}",
-                if view.selected == ThemeSelection::Custom(id) {
-                    "The editor goes back to following the app."
-                } else {
-                    "Nothing else changes."
-                }
-            );
+            let message = if view.selected == ThemeSelection::Custom(id) {
+                tr!(
+                    "“{name}” will be deleted. The editor goes back to following the app.",
+                    name = name
+                )
+            } else {
+                tr!(
+                    "“{name}” will be deleted. Nothing else changes.",
+                    name = name
+                )
+            };
             match kit::confirm(
                 ctx,
                 Id::new("editor-theme-delete"),
                 &kit::Confirm {
                     icon: Icon::Trash,
-                    title: "Delete this theme?",
+                    title: tr!("Delete this theme?"),
                     message: &message,
-                    destructive: "Delete Theme",
+                    destructive: tr!("Delete Theme"),
                 },
             ) {
                 Some(kit::ConfirmOutcome::Confirmed) => {
@@ -1241,17 +1282,18 @@ fn dialogs(ctx: &egui::Context, state: &mut PineStudioState, host: &EditorThemeH
         }
         Dialog::ResetAll(id) => {
             let name = host.theme(id).map(|theme| theme.name).unwrap_or_default();
-            let message = format!(
-                "Every color and the typography of “{name}” go back to the theme it started from. Reset Changes will bring them back until you press Done."
+            let message = tr!(
+                "Every color and the typography of “{name}” go back to the theme it started from. Reset Changes will bring them back until you press Done.",
+                name = name
             );
             match kit::confirm(
                 ctx,
                 Id::new("editor-theme-reset"),
                 &kit::Confirm {
                     icon: Icon::Undo,
-                    title: "Reset this theme?",
+                    title: tr!("Reset this theme?"),
                     message: &message,
-                    destructive: "Reset Theme",
+                    destructive: tr!("Reset Theme"),
                 },
             ) {
                 Some(kit::ConfirmOutcome::Confirmed) => {
@@ -1327,7 +1369,8 @@ fn field_select(
     let response = ui
         .interact(rect, id, Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let response = crate::ui::accessibility::label(response, format!("Based on: {current}"));
+    let response =
+        crate::ui::accessibility::label(response, tr!("Based on: {current}", current = current));
     if response.has_focus() {
         ui.painter().rect_stroke(
             rect.expand(1.0),
@@ -1382,13 +1425,13 @@ fn name_dialog(
         sheet::inset(ui, |ui| {
             sheet::header(ui, Icon::Palette, title, subtitle, theme::ACCENT);
             ui.add_space(20.0);
-            caption(ui, "Name");
+            caption(ui, tr!("Name"));
             crate::ui::chart::settings::templates::text_field(
                 ui,
                 Id::new((id, "name")),
                 Icon::Tag,
                 name,
-                "Theme name",
+                tr!("Theme name"),
                 focus,
                 MAX_NAME_CHARS,
             );
@@ -1403,7 +1446,7 @@ fn name_dialog(
             }
             if let Some((selected, sources)) = based_on {
                 ui.add_space(18.0);
-                caption(ui, "Based on");
+                caption(ui, tr!("Based on"));
                 let labels: Vec<&str> = sources.iter().map(|(label, _)| label.as_str()).collect();
                 if let Some(picked) = field_select(
                     ui,
@@ -1421,7 +1464,7 @@ fn name_dialog(
             if kit::sheet_button(ui, action, true, valid).clicked() {
                 outcome = Outcome::Confirm;
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
                 outcome = Outcome::Cancel;
             }
         });

@@ -195,9 +195,14 @@ fn empty_stack(
 /// The Side column of the positions and closed-trades tables: 72 points, or what the LONG and SHORT
 /// tags need in the language in use, whichever is more.
 fn side_column_width(ui: &egui::Ui) -> f32 {
-    72.0_f32
-        .max(grid::tag_width(ui, PaperPositionSide::Long.badge_text()))
-        .max(grid::tag_width(ui, PaperPositionSide::Short.badge_text()))
+    grid::tags_width(
+        ui,
+        72.0,
+        [
+            PaperPositionSide::Long.badge_text(),
+            PaperPositionSide::Short.badge_text(),
+        ],
+    )
 }
 
 /// The width of a `small_button` with `label`.
@@ -501,10 +506,7 @@ pub fn history_table(ui: &mut egui::Ui, events: &[PaperOrderEvent], ctx: Context
     }
     let sorted = newest_first_events(events);
     // The Event column holds a status badge, which is wider in some languages.
-    let event_width = sorted
-        .iter()
-        .map(|event| kit::status_badge_size(ui, event.kind.label()).x + 2.0 * grid::CELL_PAD)
-        .fold(130.0_f32, f32::max);
+    let event_width = grid::badges_width(ui, 130.0, sorted.iter().map(|event| event.kind.label()));
     let cols: [Col; 4] = [
         col(tr!("Time"), 140.0, 0.0, false),
         col(tr!("Symbol"), 130.0, 0.0, false),
