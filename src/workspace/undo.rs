@@ -545,6 +545,28 @@ mod tests {
     }
 
     #[test]
+    fn putting_the_tool_down_takes_the_ruler_with_it() {
+        let mut workspace = empty_workspace(9);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        let ruler = Drawing::Ruler {
+            id: 50,
+            a: crate::model::Anchor {
+                time_ms: 0,
+                price: 1.0,
+            },
+            b: crate::model::Anchor {
+                time_ms: 9,
+                price: 2.0,
+            },
+        };
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(ruler)]);
+        workspace.toggle_tool(Tool::Ruler);
+        workspace.disarm_tool();
+        assert_eq!(workspace.tools.active_tool(), Tool::Cursor);
+        assert_eq!(drawing_ids(&workspace, chart), vec![1], "the ruler is gone");
+    }
+
+    #[test]
     fn a_burst_of_restyles_is_one_undo_step() {
         let mut workspace = empty_workspace(10);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);

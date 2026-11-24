@@ -89,6 +89,14 @@ impl ChartWorkspace {
         actions
     }
 
+    /// Back to the crosshair after the drawing layer put its tool down (a drawing was placed, or the
+    /// ruler's measurement was read). A measurement goes away with its tool, as on every other way
+    /// of putting it down.
+    pub(in crate::workspace) fn disarm_tool(&mut self) {
+        self.tools.disarm();
+        self.drop_rulers();
+    }
+
     /// Arms the Zoom In mode, or puts it down when it is armed. It takes the pointer from any
     /// drawing tool, as a drawing tool takes it from Zoom In.
     pub(in crate::workspace) fn toggle_zoom_in(&mut self) {
