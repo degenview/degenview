@@ -105,6 +105,19 @@ impl DrawingTools {
         }
     }
 
+    /// Puts `tool` in hand, whatever held the pointer before (Zoom In and a drawing tool are one
+    /// choice). Arming the tool that is already armed changes nothing.
+    pub(in crate::workspace) fn arm(&mut self, tool: Tool) {
+        self.zoom_armed = false;
+        self.active = tool;
+    }
+
+    /// Puts Zoom In in hand, taking the pointer from any drawing tool.
+    pub(in crate::workspace) fn arm_zoom(&mut self) {
+        self.zoom_armed = true;
+        self.active = Tool::Cursor;
+    }
+
     /// Lets go of whatever holds the pointer: Zoom In or a drawing tool (they are one choice), back
     /// to the resting cursor. Esc, a right-click on the chart, a placed one-shot drawing and the
     /// cursor tile all end here. Reports whether something was held.

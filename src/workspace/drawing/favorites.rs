@@ -160,7 +160,7 @@ mod tests {
         workspace.press_favorite(Favorite::Cursor(CursorMode::Dot));
         assert_eq!(workspace.tools.active_tool(), Tool::Cursor);
         assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
-        workspace.toggle_zoom_in();
+        workspace.arm_zoom_in();
         workspace.press_favorite(Favorite::Cursor(CursorMode::Dot));
         assert!(
             !workspace.tools.is_zoom_armed(),

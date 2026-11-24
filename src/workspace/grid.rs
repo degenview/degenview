@@ -323,6 +323,7 @@ impl ChartWorkspace {
         let drawing_preview: Option<(u64, Drawing)> = self.tools.previewed_draft();
         let mut drawing_escape = false;
         self.reserve_escape_for_favorites_menu(ui.ctx());
+        self.reserve_escape_for_tool_menus(ui.ctx());
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
         let mut live_actions = Vec::new();

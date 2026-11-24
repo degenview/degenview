@@ -37,11 +37,12 @@ an anchor needs the lines and the tags), and Esc or the tile brings it back.
   position, which is a frame behind). Only when the dot hid the pointer on the last frame, only the
   chart the pointer is over, only on the plot (a script pane has no crosshair to mark, so it keeps
   the system pointer). Live only; snapshots never contain it.
-- **Tile and menu.** `tool_sidebar::cursor_tile` works like the rail's other menu tiles
-  (`menu_tile`). One click picks the chosen cursor the tile shows (`SetCursor(chosen_cursor())`,
-  which also puts an armed tool and Zoom In down, as Esc does), and opens nothing. The menu
-  (`ui/workspace/cursor_menu.rs`) opens from the tile's corner (the small triangle), a right-click,
-  or Right arrow while the tile has focus. Width is measured from the labels (`cursor_menu::width`), never guessed; the picked row is a light
+- **Tile and menu.** `tool_sidebar::cursor_tile` is a `flyout_tile` like the rail's other menu
+  tiles ([Tool strip tiles](drawing-tools.md#tool-strip-tiles)). With a drawing tool or Zoom In in hand a click
+  picks the chosen cursor the tile shows (`SetCursor(chosen_cursor())`, which also puts them down,
+  as Esc does) and opens nothing; with the cursor already in hand (the tile is lit) the same click
+  opens the menu (`ui/workspace/cursor_menu.rs`), and shuts it again. The tile's arrow and Right arrow
+  while the tile has focus open it without picking; a right-click does nothing. Width is measured from the labels (`cursor_menu::width`), never guessed; the picked row is a light
   plate with dark text so it reads in both themes.
 
 ## The Eraser

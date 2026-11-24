@@ -25,10 +25,35 @@ state is marked **doc** or **lib**; what they do not state, and was chosen here,
 **inferred**. Nothing was compared pixel for pixel against TradingView (no access), so the visual
 parity checklist at the end is a manual test matrix, not a result.
 
+## Tool strip tiles
+
+Every tile of the rail that opens a menu (Cursors, Lines, Fibonacci and Gann, Patterns, Forecasting,
+Shapes, Text and notes) follows one rule, `tool_sidebar::flyout_tile`, so a click never means two
+things. Observed on TradingView, signed in, on its Cursor, Trendline, Fib and Measure tiles:
+
+- **The tile arms what it shows**, the last tool used from its menu, and opens nothing. Arming
+  closes any menu that was open and takes the pointer from whatever was in hand.
+- **A tile whose tool is already in hand opens its menu on the click**, and the next click shuts
+  it; the tool stays armed. The Cursors tile is lit while nothing else is in hand, so the cursor is
+  a tool in this rule: with a tool or Zoom In in hand its click picks the cursor, with the cursor
+  in hand its click opens the cursor menu.
+- **The arrow opens the menu and never arms**: a strip down the tile's right edge (`FLYOUT_STRIP`, a
+  fifth of TradingView's tile; the whole height, not a corner square) with a chevron that shows while
+  the pointer is over the tile or the menu is open. It toggles the menu whatever is in hand. The Right
+  arrow key does the same on a focused tile.
+- **Picking a row arms it at once**, closes the menu and becomes what the tile shows.
+- **Escape shuts an open menu and nothing else** (`close_menu_on_escape`, called before the charts
+  read the key); the next Escape puts the tool down. Another tile's click closes the menu and arms.
+- Single-tool tiles (Ruler, Zoom in) arm and stay armed: a second click does not put them down.
+  The shortcuts and the favorites bar still toggle (`toggle_tool`); only the tiles never do.
+- **Inferred, not seen:** TradingView arms a tool on a synthetic right-click of a tile; the app does
+  nothing on a right-click (it used to open the menu), which keeps one gesture per meaning. Menu
+  rows highlight no armed tool here.
+
 ## Lines, channels and pitchforks
 
 The Lines tile (second on the strip) shows the last tool used from its menu and opens
-LINES / CHANNELS / PITCHFORKS from its corner, a right-click or the Right arrow. The Fibonacci and
+LINES / CHANNELS / PITCHFORKS from its arrow (see [Tool strip tiles](#tool-strip-tiles)). The Fibonacci and
 Gann tools have the tile below it and are in neither menu. Alt (Option on a Mac) with **T**, **H**, **V** and **C** arms
 the trend line, horizontal line, vertical line and crossline (**doc**, community posts); **J** arms
 the horizontal ray (TradingView's default, which no help page states: **inferred**). Hotkeys leave
@@ -418,11 +443,11 @@ placement, selected (handles, halo, toolbar), hovered, locked, with text, and un
 | Fill alpha over dark and light chart backgrounds | Rectangle, Ellipse, Arc |
 | Arrow-mark size staying fixed while zooming the price axis | up and down |
 | Handle size and hit area on a trackpad | rectangle corners |
-| Grouped menu: clipping at the window edge, scrolling in a short window, keyboard | tile corner |
+| Grouped menu: clipping at the window edge, scrolling in a short window, keyboard | tile arrow |
 | Floating toolbar placement above, below and for a shape larger than the plot | big circle |
 | Properties dialog pages and the template menu | every tool |
 | Properties dialog: equal gaps after every heading, inputs aligned on the right edge, one hairline above the footer, no resize when switching tabs | trend line, Fib, Arrow, Rectangle, arrow mark, Brush |
-| Lines menu: width, row alignment, shortcut column, scrolling in a short window, keyboard | Lines tile corner |
+| Lines menu: width, row alignment, shortcut column, scrolling in a short window, keyboard | Lines tile arrow |
 | Text along a line: sharpness at 1x and 2x, readable at every slope, above/on/below, a very short line | trend line, extended line, channel |
 | "Add text" place and the editor: IME, clipboard, Return/Shift+Return/Escape, no shortcut firing | selected trend line |
 | Option+T/H/J/V/C while typing in the editor and in a text field | macOS |
