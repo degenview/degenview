@@ -37,9 +37,9 @@ things. Observed on TradingView, signed in, on its Cursor, Trendline, Fib and Me
   it; the tool stays armed. The Cursors tile is lit while nothing else is in hand, so the cursor is
   a tool in this rule: with a tool or Zoom In in hand its click picks the cursor, with the cursor
   in hand its click opens the cursor menu.
-- **The arrow opens the menu and never arms**: a strip down the tile's right edge (`FLYOUT_STRIP`, a
-  fifth of TradingView's tile; the whole height, not a corner square) with a chevron that shows while
-  the pointer is over the tile or the menu is open. It toggles the menu whatever is in hand. The Right
+- **The arrow opens the menu and never arms**: the small triangle in the tile's bottom-right corner,
+  a `FLYOUT_CORNER` square. TradingView's arrow is a strip down the tile's right edge; the corner is
+  the app's choice, the behaviour is the same. It toggles the menu whatever is in hand. The Right
   arrow key does the same on a focused tile.
 - **Picking a row arms it at once**, closes the menu and becomes what the tile shows.
 - **Escape shuts an open menu and nothing else** (`close_menu_on_escape`, called before the charts

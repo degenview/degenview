@@ -664,8 +664,8 @@ fn link_tile(
         });
 }
 
-/// Width of the strip down a menu tile's right edge that opens its menu: TradingView's arrow.
-const FLYOUT_STRIP: f32 = 10.0;
+/// Side of the square in a menu tile's bottom-right corner that opens its menu: the arrow.
+const FLYOUT_CORNER: f32 = 16.0;
 
 /// The id of the tile that has `key` (a tile whose tooltip changes with its state names itself).
 fn tile_id(key: &str) -> Id {
@@ -699,8 +699,8 @@ pub fn close_menu_on_escape(ctx: &egui::Context) -> bool {
 ///
 /// - a click on the tile arms what it shows (`true` is returned), unless the pointer already holds
 ///   that: then the same click opens the menu, or shuts it again;
-/// - the arrow, a strip down the tile's right edge (a chevron shows while the pointer is over the
-///   tile), and the Right arrow key open or shut the menu and never arm anything;
+/// - the arrow, the small triangle in the tile's bottom-right corner, and the Right arrow key open
+///   or shut the menu and never arm anything;
 /// - a right-click does nothing.
 ///
 /// The menu beside a tile (see `flyout_tile`).
@@ -727,29 +727,27 @@ fn flyout_tile(
         width,
     } = *flyout;
     let response = tile_button(ui, rect, tile, strip_right);
-    let arrow = Rect::from_min_max(
-        pos2(rect.right() - FLYOUT_STRIP, rect.top()),
-        rect.right_bottom(),
+    let arrow = Rect::from_min_size(
+        rect.right_bottom() - Vec2::splat(FLYOUT_CORNER),
+        Vec2::splat(FLYOUT_CORNER),
     );
     // Made after the tile, so it is the one the pointer lands on where the two overlap.
     let arrow_response = ui
         .interact(arrow, tile_id(tile.key).with("arrow"), Sense::click())
         .on_hover_text(arrow_label);
     let arrow_response = crate::ui::accessibility::label(arrow_response, arrow_label);
-    let popup_id = egui::Popup::default_response_id(&response);
-    if response.hovered() || arrow_response.hovered() || egui::Popup::is_id_open(ui.ctx(), popup_id)
-    {
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(arrow.center(), Vec2::splat(10.0)),
-            Icon::ChevronRight,
-            if arrow_response.hovered() {
-                theme::text_primary()
-            } else {
-                theme::text_secondary()
-            },
-        );
-    }
+    // The triangle says the tile has a menu; it brightens under the pointer.
+    let tip = rect.right_bottom() - vec2(4.0, 4.0);
+    let tint = if arrow_response.hovered() || response.hovered() {
+        theme::text_primary()
+    } else {
+        kit::primary(0.75)
+    };
+    ui.painter().add(egui::Shape::convex_polygon(
+        vec![tip, tip - vec2(5.0, 0.0), tip - vec2(0.0, 5.0)],
+        tint.gamma_multiply(if arrow_response.hovered() { 1.0 } else { 0.7 }),
+        Stroke::NONE,
+    ));
     let clicked = response.clicked();
     let toggle = arrow_response.clicked()
         || (clicked && held)
@@ -1880,39 +1878,37 @@ mod tests {
     }
 
     #[test]
-    fn the_arrow_is_a_narrow_strip_and_the_rest_of_the_tile_arms() {
+    fn the_arrow_is_the_bottom_right_corner_and_the_rest_of_the_tile_arms() {
         let size = vec2(900.0, 900.0);
         let input = state();
-        let tile_left = (WIDTH - BUTTON) / 2.0;
-        let tile_right = tile_left + BUTTON;
-        // Every point of the tile's top row, left to right: the strip is the last FLYOUT_STRIP.
-        for step in 0..(BUTTON as i32) {
-            let x = tile_left + step as f32 + 0.5;
-            let ctx = egui::Context::default();
-            let mut time = 0.0;
-            for _ in 0..3 {
-                frame(&ctx, &mut time, size, Vec::new(), &input);
-            }
-            let actions = click(&ctx, &mut time, size, pos2(x, 60.0), &input);
-            if x < tile_right - FLYOUT_STRIP {
-                assert_eq!(
-                    actions,
-                    vec![ToolSidebarAction::Arm(Tool::TrendLine)],
-                    "x {x}"
+        let (left, top) = ((WIDTH - BUTTON) / 2.0, 10.0 + BUTTON + SPACING);
+        // Every point of the Lines tile on a 2 point grid: only the corner square opens the menu.
+        for column in 0..(BUTTON as i32 / 2) {
+            for row in 0..(BUTTON as i32 / 2) {
+                let at = pos2(
+                    left + column as f32 * 2.0 + 1.0,
+                    top + row as f32 * 2.0 + 1.0,
                 );
-            } else {
-                assert!(actions.is_empty(), "x {x}: {actions:?}");
+                let ctx = egui::Context::default();
+                let mut time = 0.0;
+                for _ in 0..3 {
+                    frame(&ctx, &mut time, size, Vec::new(), &input);
+                }
+                let actions = click(&ctx, &mut time, size, at, &input);
+                let in_corner =
+                    at.x >= left + BUTTON - FLYOUT_CORNER && at.y >= top + BUTTON - FLYOUT_CORNER;
+                if in_corner {
+                    assert!(actions.is_empty(), "{at:?}: {actions:?}");
+                    assert!(open_after(&ctx, &mut time, size, &input), "{at:?}");
+                } else {
+                    assert_eq!(
+                        actions,
+                        vec![ToolSidebarAction::Arm(Tool::TrendLine)],
+                        "{at:?}"
+                    );
+                    assert!(!open_after(&ctx, &mut time, size, &input), "{at:?}");
+                }
             }
-        }
-        // The strip, not a square in the corner: the top and the bottom of the tile open it too.
-        for y in [46.0, 60.0, 73.0] {
-            let ctx = egui::Context::default();
-            let mut time = 0.0;
-            for _ in 0..3 {
-                frame(&ctx, &mut time, size, Vec::new(), &input);
-            }
-            click(&ctx, &mut time, size, pos2(tile_right - 3.0, y), &input);
-            assert!(open_after(&ctx, &mut time, size, &input), "y {y}");
         }
     }
 
