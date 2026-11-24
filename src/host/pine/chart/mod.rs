@@ -8,8 +8,8 @@
 mod tests;
 mod worker;
 
-use crate::model::Kline;
 use crate::model::pine::instance::{PineInstance, StoredInput, VisualOrder};
+use crate::model::{Kline, Timeframe};
 use crate::pine::compiler::program::{ChartTheme, SymbolInfo, VisualOutput};
 use crate::pine::logs::LogHistory;
 use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow, style_rows};
@@ -98,12 +98,37 @@ pub struct ChartFrame<'a> {
     /// The bars the chart is: the market's candles, or the bars a price-based type built.
     pub bars: &'a [Kline],
     pub symbol: &'a SymbolInfo,
+    /// The timeframe the market's candles are in, when the chart knows it.
+    pub timeframe: Option<Timeframe>,
     /// The length of the chart's bars, when their times cannot say (price-based charts).
     pub bar_seconds: Option<f64>,
     /// The colours the chart is drawn on: what `chart.bg_color` and `chart.fg_color` read.
     pub theme: ChartTheme,
     /// The open times of the first and last bar on screen, for a script that reads them.
     pub visible_range: Option<(i64, i64)>,
+}
+
+/// What a run's output is of: the market and how the chart is drawn (`symbol`), and the length of
+/// its bars. Two runs of one script over equal series differ only by what the script, its inputs
+/// or the colours changed, so what the earlier drew still describes the bars and can stay up while
+/// the next runs. Another series (a new market, timeframe or chart type) is drawn on other bars:
+/// what was computed for the old ones means nothing on them and is never shown.
+#[derive(Clone, Debug, PartialEq)]
+struct Series {
+    symbol: SymbolInfo,
+    timeframe: Option<Timeframe>,
+    /// The chart's own bar length, for a price-based chart (`ChartFrame::bar_seconds`'s bits).
+    bar_seconds: Option<u64>,
+}
+
+impl Series {
+    fn of(chart: &ChartFrame<'_>) -> Self {
+        Self {
+            symbol: chart.symbol.clone(),
+            timeframe: chart.timeframe,
+            bar_seconds: chart.bar_seconds.map(f64::to_bits),
+        }
+    }
 }
 
 /// One run's `log.*()` messages. The epoch tells a restarted run from the one before it, which
@@ -123,8 +148,8 @@ pub struct InstanceStatus<'a> {
 struct Run {
     source: String,
     inputs: HashMap<String, StoredInput>,
-    symbol: SymbolInfo,
-    bar_seconds: Option<u64>,
+    /// The series the run was started for: its output is of these bars.
+    series: Series,
     /// The chart colours the script ran against; a change of app theme runs it again.
     theme: ChartTheme,
     worker: PineWorker,
@@ -311,7 +336,7 @@ impl ChartRuns {
             last_is_closed: last_candle_is_closed(chart.bars, now_ms),
         };
         let bars = Arc::clone(&bars.bars);
-        let bar_seconds = chart.bar_seconds.map(f64::to_bits);
+        let series = Series::of(chart);
         let visible_ids: HashSet<u64> = instances
             .iter()
             .filter(|instance| instance.visible)
@@ -323,12 +348,11 @@ impl ChartRuns {
             let configured = self.runs.get(&instance.id).is_some_and(|run| {
                 run.source == instance.source
                     && run.inputs == instance.inputs
-                    && run.symbol == *chart.symbol
-                    && run.bar_seconds == bar_seconds
+                    && run.series == series
                     && run.theme == chart.theme
             });
             if !configured {
-                self.start(repaint, chart, instance);
+                self.start(repaint, chart, instance, series.clone());
             }
             let Some(run) = self.runs.get_mut(&instance.id) else {
                 continue;
@@ -400,18 +424,27 @@ impl ChartRuns {
         outputs
     }
 
-    /// Starts a new run of `instance`, in a new epoch, keeping the last valid output of the run it
-    /// replaces on screen until the new one has its own.
-    fn start(&mut self, repaint: &egui::Context, chart: &ChartFrame<'_>, instance: &PineInstance) {
+    /// Starts a new run of `instance` over `series`, in a new epoch. What the run it replaces last
+    /// drew stays on screen until the new one has its own, if it was of the same series; of
+    /// another one only where the script draws (its own pane or the main chart) is kept, so the
+    /// chart does not lose and regain panes while the new run goes.
+    fn start(
+        &mut self,
+        repaint: &egui::Context,
+        chart: &ChartFrame<'_>,
+        instance: &PineInstance,
+        series: Series,
+    ) {
         self.epochs += 1;
-        let previous_valid = self
+        let previous = self
             .runs
             .remove(&instance.id)
-            .and_then(|run| run.last_valid.clone());
-        let placement_known = previous_valid.is_some();
-        let shown = previous_valid
-            .clone()
-            .unwrap_or_else(|| Arc::new(VisualOutput::default()));
+            .and_then(|run| run.last_valid.map(|valid| (run.series == series, valid)));
+        let (shown, last_valid, placement_known) = match previous {
+            Some((true, valid)) => (Arc::clone(&valid), Some(valid), true),
+            Some((false, valid)) => (Arc::new(valid.placement()), None, true),
+            None => (Arc::new(VisualOutput::default()), None, false),
+        };
         let worker = PineWorker::new(
             WorkerConfig {
                 theme: chart.theme,
@@ -427,8 +460,7 @@ impl ChartRuns {
             Run {
                 source: instance.source.clone(),
                 inputs: instance.inputs.clone(),
-                symbol: chart.symbol.clone(),
-                bar_seconds: chart.bar_seconds.map(f64::to_bits),
+                series,
                 theme: chart.theme,
                 worker,
                 requested: None,
@@ -440,7 +472,7 @@ impl ChartRuns {
                 styled_with: None,
                 output: shown,
                 error: None,
-                last_valid: previous_valid,
+                last_valid,
                 busy_since: None,
             },
         );

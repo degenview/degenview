@@ -1,5 +1,6 @@
 //! A chart that keeps its card while its market changes (the Pine Studio's preview): what the
-//! card draws for the new market after a price range was placed for the old one.
+//! card draws for the new market after a price range was placed for the old one, and that what a
+//! script drew for the old one is never drawn over it.
 
 use super::canvas_tests::{Harness, SIZE, gather, series};
 use super::*;
@@ -79,4 +80,56 @@ fn a_price_range_placed_for_another_market_leaves_the_new_one_off_screen_until_r
 
     h.card.reset_view();
     assert!(wicks_in_window(&mut h) > 100);
+}
+
+/// A script that repaints every candle in fuchsia (`#E040FB`), a colour nothing else on the chart
+/// uses.
+const REPAINT: &str = "//@version=6\nindicator(\"Repaint\", overlay = true)\n\
+    plotcandle(open, high, low, close, color = color.fuchsia, wickcolor = color.fuchsia, \
+    bordercolor = color.fuchsia)\n";
+
+fn repainted_candles(harness: &mut Harness) -> usize {
+    let (shapes, _) = harness.frame();
+    gather(&shapes)
+        .rects
+        .iter()
+        .filter(|(_, fill)| *fill == Color32::from_rgb(0xe0, 0x40, 0xfb))
+        .count()
+}
+
+/// Frames until the script has repainted the candles on screen.
+fn wait_for_repaint(harness: &mut Harness) {
+    for _ in 0..300 {
+        if repainted_candles(harness) > 0 {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("the script never repainted the candles");
+}
+
+#[test]
+fn a_script_that_repaints_candles_does_not_draw_them_over_another_timeframe() {
+    let mut h = harness(DataSource::Binance, series(120));
+    h.card.set_pine_source(Some(REPAINT.to_owned()));
+    wait_for_repaint(&mut h);
+
+    // The workspace's timeframe changed and the new market candles arrived: the first frame over
+    // them must not carry what the run over the old timeframe drew.
+    h.card.set_timeframe(Timeframe::HOUR_4);
+    h.candles = aapl(40);
+    assert_eq!(repainted_candles(&mut h), 0);
+    wait_for_repaint(&mut h);
+}
+
+#[test]
+fn a_script_that_repaints_candles_does_not_draw_them_over_another_market() {
+    let mut h = harness(DataSource::Binance, series(120));
+    h.card.set_pine_source(Some(REPAINT.to_owned()));
+    wait_for_repaint(&mut h);
+
+    h.candles = aapl(40);
+    h.source = DataSource::Alpaca;
+    assert_eq!(repainted_candles(&mut h), 0);
+    wait_for_repaint(&mut h);
 }

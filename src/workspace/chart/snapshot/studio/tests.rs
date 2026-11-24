@@ -11,7 +11,7 @@ use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale, layout_file_na
 use crate::service::snapshot::export::ExportError;
 use crate::store::SharedStore;
 use crate::ui::shortcut;
-use crate::workspace::test_support::rectangle;
+use crate::workspace::test_support::{rectangle, wait_for};
 use eframe::egui::{Event, Key, Modifiers, Pos2, vec2};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -119,30 +119,25 @@ fn session(rig: &Rig) -> &StudioSession {
 
 /// Runs frames until the picture of what is wanted has been made, and drawn.
 fn picture(rig: &mut Rig) {
-    for _ in 0..3_000 {
+    wait_for("the picture", || {
         rig.frame(Vec::new());
         let previews = &session(rig).previews;
-        if previews.shown().is_some() && !previews.is_busy() {
-            // The picture can land after this frame drew the preview, which then still showed
-            // "Drawing the image…": one more frame draws it, so its widget is there to find.
-            rig.frame(Vec::new());
-            return;
+        if previews.shown().is_none() || previews.is_busy() {
+            return false;
         }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    panic!("the picture was never made");
+        // The picture can land after this frame drew the preview, which then still showed
+        // "Drawing the image…": one more frame draws it, so its widget is there to find.
+        rig.frame(Vec::new());
+        true
+    });
 }
 
 /// Runs frames until the snapshot job ends.
 fn finished(rig: &mut Rig) {
-    for _ in 0..3_000 {
+    wait_for("the snapshot's end", || {
         rig.frame(Vec::new());
-        if rig.workspace.snapshot.running.is_none() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    panic!("the snapshot never finished");
+        rig.workspace.snapshot.running.is_none()
+    });
 }
 
 fn fake(rig: &mut Rig) -> Arc<Fake> {
