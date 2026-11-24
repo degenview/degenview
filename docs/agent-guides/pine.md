@@ -128,6 +128,24 @@
   uses the running period. Classic published formulas (reference lists none); Woodie's uses the
   setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
   (Pearson on mid-ranks) x 100.
+- `timeframe.change(tf)` is per call site, like `ta.change`: `ta::State::bar_times` (in
+  `RuntimeState::ta_states`, key `site_key`) holds the open time of the bar the site last ran on
+  and of the one before (`ta::previous_bar_time`), and the call compares the current bar with the
+  second. The first run of a site is false (no earlier run to compare with), a site that a branch,
+  a short-circuit, a `switch` arm or a conditionally called function skips keeps the last bar it ran
+  on, the runs of one bar (a loop) all see the same earlier bar, and two call sites, or one
+  function reached from two sites, never share it. Inside `request.security` the site's state is
+  the request's own. It does not read the chart's previous bar (`last_committed_open_time` is only
+  the guard against a repeated bar). Measured on TradingView (probe R2, BINANCE:BTCUSDT 4h, 84
+  fixed bars, 2026-11-01..11-15, the call counted per day): global every bar 14; `if` over the
+  window 13; `if inw and hour == 4` 13 (the chart-bar rule gives 0); `if hour == 4` that also runs
+  before the window 14; the two sides of an `if`/`else` 13 and 13; ternary, `and`, `switch` arm 13;
+  a function called conditionally 13, from two sites 13 and 13; two sites on every bar 13 and 13;
+  `"D"` and `"W"` at `hour == 4` 14 and 2; a `for i = 0 to 2` loop 39 (13 days x 3 runs, not
+  13); inside `request.security("240", ...)` 14 (`hour == 4`) and 13 (window). DegenView gives
+  the same 22 values on the same candles. Not measured: a series-string timeframe that changes between runs of
+  one site (the previous bar is compared under the current timeframe). `ta.*` in a `for` loop
+  still pushes one history entry per run (audit items 20/21), which `timeframe.change` does not.
 - `session.*` reads `trading_session::MarketSessions` by `syminfo.type`: crypto 24x7 UTC (session =
   UTC day); `stock` New York 09:30-16:00 weekdays, pre- from 04:00, post- to 20:00. Charts show the
   regular session, so `isfirstbar`/`islastbar` equal their `_regular` forms; a bar of a day or more

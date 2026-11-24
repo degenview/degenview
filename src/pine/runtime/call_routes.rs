@@ -32,7 +32,7 @@ impl Session {
             "{name} is routed to a family that does not own it"
         );
         match route {
-            Route::Scalar => self.scalar_call(name, arguments, range, context),
+            Route::Scalar => self.scalar_call(name, arguments, site, range, context),
             Route::Collection => self.collection_call(name, arguments, range, context),
             Route::Math => self.math_call(name, arguments, context).map(Some),
             Route::Strings => self.strings_call(name, arguments, range, context).map(Some),
