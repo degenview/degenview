@@ -1,10 +1,9 @@
 //! The Indicators page: the built-in indicators and their settings.
 
 use super::ChartSettingsContext;
-use crate::i18n::{tr, tr_n};
+use crate::i18n::tr;
 use crate::model::{
-    BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, EMA_PERIODS, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD,
-    SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
+    BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, EMA_PERIODS, SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
 };
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -21,7 +20,6 @@ pub(super) fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
     );
     ui.spacing_mut().item_spacing.y = 8.0;
     let source = c.source;
-    let loaded = c.loaded_candles;
     let config = &mut *c.indicators;
     // Line sources report one price per timestamp and no turnover at all.
     if !source.is_line_chart() {
@@ -39,31 +37,6 @@ pub(super) fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
             card::switch_enabled(ui, &mut config.show_volume, source.provides_volume());
         });
     }
-    // RSI has no value for its first `period` candles, so a short range draws a stub of a
-    // line or none at all.
-    let rsi_hint = if loaded > 0 && loaded <= RSI_PERIOD {
-        tr_n!(
-            loaded,
-            "Only {count} candle loaded — RSI needs more than {period}. Zoom out or pick a longer range.",
-            "Only {count} candles loaded — RSI needs more than {period}. Zoom out or pick a longer range.",
-            period = RSI_PERIOD
-        )
-    } else {
-        tr!(
-            "Momentum from 0–100 across the bottom, with guides at {low} and {high}.",
-            low = RSI_OVERSOLD as i64,
-            high = RSI_OVERBOUGHT as i64
-        )
-    };
-    card::card(
-        ui,
-        Icon::Waveform,
-        &format!("RSI ({RSI_PERIOD})"),
-        Some(&rsi_hint),
-        |ui| {
-            card::switch(ui, &mut config.show_rsi);
-        },
-    );
     card::card(
         ui,
         Icon::ChartLine,

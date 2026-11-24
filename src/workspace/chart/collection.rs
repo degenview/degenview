@@ -5,6 +5,7 @@ use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::host::trading::TradingHub;
 use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::pine::bundled;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{
@@ -38,6 +39,8 @@ pub struct ChartSummary {
     pub indicators: IndicatorConfig,
     /// `(instance id, script name)` of each applied Pine script.
     pub pine_instances: Vec<(u64, String)>,
+    /// The ids of the bundled indicators drawn on the chart: applied, with their eye on.
+    pub bundled_shown: Vec<&'static str>,
 }
 
 /// What the MCP candle and drawing tools read off one market chart. Borrowed from the workspace,
@@ -97,6 +100,19 @@ impl ChartWorkspace {
                     .pine_instances()
                     .iter()
                     .map(|instance| (instance.id, instance.name.clone()))
+                    .collect(),
+                bundled_shown: chart
+                    .chart
+                    .pine_instances()
+                    .iter()
+                    .filter(|instance| instance.visible)
+                    .filter_map(|instance| {
+                        let id = instance
+                            .script_id
+                            .as_deref()?
+                            .strip_prefix(bundled::SCRIPT_ID_PREFIX)?;
+                        bundled::find(id).map(|indicator| indicator.id)
+                    })
                     .collect(),
             })
             .collect()

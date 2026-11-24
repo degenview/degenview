@@ -71,6 +71,11 @@ impl EntryKey {
     pub fn parse(stored: &str) -> Option<Self> {
         let (kind, id) = stored.split_once(':')?;
         match kind {
+            // RSI was a native indicator until it got a pane of its own as a bundled one: a
+            // favorite stored then names the bundled one now.
+            "native" if id == "rsi" => {
+                bundled::find("rsi").map(|indicator| Self::Bundled(indicator.id))
+            }
             "native" => BuiltIn::ALL
                 .into_iter()
                 .find(|built_in| built_in.id() == id)
@@ -119,14 +124,6 @@ impl CatalogEntry {
                     "Bars of the volume traded in each candle, coloured by whether the candle closed up or down. Not available on line charts, which carry no volume."
                 ),
                 &["vol"],
-            ),
-            BuiltIn::Rsi => (
-                Family::Momentum,
-                tr!("Relative Strength Index, 14 periods."),
-                tr!(
-                    "Wilder's momentum oscillator, from 0 to 100, with the 70 and 30 levels drawn. Above 70 is conventionally overbought and below 30 oversold."
-                ),
-                &["relative strength index", "rsi 14"],
             ),
             BuiltIn::Ema => (
                 Family::Trend,
@@ -314,6 +311,12 @@ mod tests {
         for entry in all(&scripts()) {
             assert_eq!(EntryKey::parse(&entry.key.stored()), Some(entry.key));
         }
+        // RSI was a native indicator before it became the bundled one with a pane of its own.
+        assert_eq!(
+            EntryKey::parse("native:rsi"),
+            Some(EntryKey::Bundled("rsi")),
+            "a favorite stored then still finds it"
+        );
         assert_eq!(EntryKey::parse("bundled:gone"), None);
         assert_eq!(EntryKey::parse("native:gone"), None);
         assert_eq!(EntryKey::parse("nonsense"), None);

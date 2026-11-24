@@ -475,9 +475,6 @@ impl ChartCard {
         if let Some(bands) = &series.bollinger {
             self.draw_bollinger(&clipped, &x_for, scale, bands);
         }
-        if !series.rsi.is_empty() {
-            self.draw_rsi(&clipped, plot, &x_for, &series.rsi);
-        }
         if !series.trend_flips.is_empty() {
             self.draw_trend_flips(&clipped, plot, &x_for, scale, shown, &series.trend_flips);
         }

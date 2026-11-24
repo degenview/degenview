@@ -114,8 +114,6 @@ pub struct ChartSettingsContext<'a> {
     pub title: &'a str,
     pub symbol: &'a str,
     pub source: DataSource,
-    /// How many candles the chart has loaded, for the RSI warm-up note.
-    pub loaded_candles: usize,
     pub indicators: &'a mut IndicatorConfig,
     pub card: &'a mut ChartCard,
     /// The chart's price-scale mode, which is not part of its appearance.

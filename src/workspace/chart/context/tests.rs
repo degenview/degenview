@@ -571,7 +571,7 @@ fn removing_indicators_asks_first_and_undo_brings_them_back() {
     {
         let chart = rig.chart_mut(chart);
         BuiltIn::Ema.set_applied(&mut chart.indicators, true);
-        BuiltIn::Rsi.set_applied(&mut chart.indicators, true);
+        BuiltIn::Bollinger.set_applied(&mut chart.indicators, true);
         let id = chart
             .chart
             .add_pine_instance(None, "My script", "//@version=6");
@@ -592,7 +592,7 @@ fn removing_indicators_asks_first_and_undo_brings_them_back() {
     rig.workspace.undo(&rig.ctx);
     let restored = rig.chart_mut(chart);
     assert!(BuiltIn::Ema.applied(&restored.indicators));
-    assert!(BuiltIn::Rsi.applied(&restored.indicators));
+    assert!(BuiltIn::Bollinger.applied(&restored.indicators));
     assert_eq!(restored.chart.pine_instances().len(), 1);
     assert_eq!(restored.chart.pine_instances()[0].name, "My script");
     rig.workspace.redo(&rig.ctx);

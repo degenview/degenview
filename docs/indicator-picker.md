@@ -30,7 +30,7 @@ a portfolio card is not a target) through `apply_indicator_action`, so undo is o
   prediction market or a CoinMarketCap gauge, `DataSource::takes_indicators`), is blocked with the
   reason shown; blocked entries are dimmed and Return does nothing. The toolbar's Indicators button
   is disabled on such a chart too.
-- **Favorites** are `native:rsi` / `bundled:macd` / `script:<id>` strings in the
+- **Favorites** are `native:ema` / `bundled:macd` / `script:<id>` strings in the
   `indicatorPicker.favorites` setting (portable, last writer wins, see `sync::record::policy`); a key this
   build no longer knows is dropped on load. Not verified against real CloudKit.
 
@@ -65,9 +65,20 @@ Families (`Family`: Trend, Momentum, Volatility, Volume & Flow, Structure) are w
 measures. Every family must have at least one entry (a test checks it). Natives get their family,
 summary and aliases in `CatalogEntry::native`.
 
+**Placement is a promise.** A native built-in is drawn by the chart inside the price plot (volume as a
+band under the candles, the others over the candles) and never has a pane of its own: anything that
+needs a pane and a scale of its own is a bundled Pine indicator. Volume is the one native the
+catalog still lists under "Separate pane", for want of a third placement for a band. RSI was a native one drawn as a band
+of the price plot while the catalog called it "Separate pane"; it is now the bundled `rsi`. The
+favorite `native:rsi` that was stored then is read as `bundled:rsi` (`EntryKey::parse`), and a layout
+that kept RSI as the `show_rsi` flag of its built-in indicators gets the bundled RSI when the chart
+opens (`Chart::adopt_legacy_rsi`, hidden if its eye was off); the flag is still written, always
+false, so an older build can read the row. A test draws every bundled indicator and checks that its
+pane count matches its `overlay` flag.
+
 ## Bundled indicators
 
-`model/pine/bundled/mod.rs` lists 20 Pine indicators, each a `.pine` file in `model/pine/bundled/`
+`model/pine/bundled/mod.rs` lists 21 Pine indicators, each a `.pine` file in `model/pine/bundled/`
 included with `include_str!`. They are not the demo scripts (`pine_studio::library::demo`, which are copied
 once into the user's library and then belong to the user): a bundled indicator is always available
 and is never written to the Scripts folder.

@@ -805,7 +805,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(11);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
-        workspace.charts[0].indicators.show_rsi = true;
+        workspace.charts[0].indicators.show_ema = true;
 
         assert!(replace(
             &mut workspace,
@@ -816,7 +816,7 @@ mod tests {
         ));
         assert_eq!(market(&workspace), (DataSource::Coinbase, "ETH-USD".into()));
         assert!(
-            workspace.charts[0].indicators.show_rsi,
+            workspace.charts[0].indicators.show_ema,
             "a market keeps them"
         );
         assert_eq!(workspace.history.undo.len(), 1);
@@ -875,7 +875,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(12);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
-        workspace.charts[0].indicators.show_rsi = true;
+        workspace.charts[0].indicators.show_ema = true;
         workspace.charts[0]
             .chart
             .add_pine_instance(None, "Mine", "plot(close)");
@@ -891,7 +891,7 @@ mod tests {
 
             workspace.undo(&ctx);
             assert_eq!(market(&workspace), (DataSource::Binance, "BTCUSDT".into()));
-            assert!(workspace.charts[0].indicators.show_rsi);
+            assert!(workspace.charts[0].indicators.show_ema);
             assert_eq!(workspace.charts[0].chart.pine_instances().len(), 1);
             workspace.redo(&ctx);
             assert!(workspace.charts[0].chart.pine_instances().is_empty());

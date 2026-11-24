@@ -259,44 +259,6 @@ impl ChartCard {
         }
     }
 
-    pub(super) fn draw_rsi(
-        &self,
-        painter: &egui::Painter,
-        plot: Rect,
-        x_for: &dyn Fn(usize) -> f32,
-        values: &[Option<f64>],
-    ) {
-        if !values.iter().any(|value| value.is_some()) {
-            return;
-        }
-        let pane = Rect::from_min_max(
-            Pos2::new(plot.left(), plot.bottom() - plot.height() * 0.28),
-            plot.right_bottom(),
-        );
-        let y_for = |reading: f64| pane.bottom() - (reading as f32 / 100.0) * pane.height();
-
-        for level in [crate::model::RSI_OVERBOUGHT, crate::model::RSI_OVERSOLD] {
-            let y = y_for(level);
-            painter.add(egui::Shape::dashed_line(
-                &[Pos2::new(pane.left(), y), Pos2::new(pane.right(), y)],
-                Stroke::new(1.0, theme::grid()),
-                4.0,
-                3.0,
-            ));
-        }
-
-        let stroke = Stroke::new(1.0, theme::RSI);
-        let mut previous: Option<Pos2> = None;
-        for (index, value) in values.iter().enumerate() {
-            let Some(value) = value else { continue };
-            let point = Pos2::new(x_for(index), y_for(*value));
-            if let Some(previous) = previous {
-                painter.line_segment([previous, point], stroke);
-            }
-            previous = Some(point);
-        }
-    }
-
     /// Labelled up/down triangles at confirmed Supertrend regime changes. Each marker (triangle
     /// plus "Bullish"/"Bearish" pill) is clamped inside the plot so a flip at a price extreme
     /// stays readable.

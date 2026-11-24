@@ -366,7 +366,6 @@ fn every_row_leads_with_the_glyph_of_what_it_is() {
             None,
         ))
     };
-    assert_eq!(builtin(BuiltIn::Rsi), Icon::Waveform);
     assert_eq!(builtin(BuiltIn::Volume), Icon::BarChart);
     assert_eq!(builtin(BuiltIn::Ema), Icon::ChartUptrend);
     assert_eq!(

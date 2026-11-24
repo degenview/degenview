@@ -165,7 +165,6 @@ impl BuiltIn {
     pub(in crate::ui) fn icon(self) -> Icon {
         match self {
             Self::Volume => Icon::BarChart,
-            Self::Rsi => Icon::Waveform,
             Self::Ema => Icon::ChartUptrend,
             Self::Bollinger => Icon::Bands,
             Self::TrendFlips => Icon::Cycle,
@@ -1055,11 +1054,10 @@ mod tests {
         let empty = IndicatorConfig::default();
         let full = IndicatorConfig {
             show_volume: true,
-            show_rsi: true,
             show_ema: true,
             show_bollinger: true,
             show_trend_flips: true,
-            hide_rsi: true,
+            hide_bollinger: true,
             ..IndicatorConfig::default()
         };
         let mut card = ChartCard::default();
@@ -1080,8 +1078,8 @@ mod tests {
     fn the_x_removes_a_built_in_or_a_script_and_every_chip_has_one() {
         let item = |kind| Item::bare(kind, "x", true);
         assert_eq!(
-            remove_action(&item(Kind::BuiltIn(BuiltIn::Rsi))),
-            Action::Remove(BuiltIn::Rsi)
+            remove_action(&item(Kind::BuiltIn(BuiltIn::Bollinger))),
+            Action::Remove(BuiltIn::Bollinger)
         );
         assert_eq!(
             remove_action(&item(Kind::Script(7))),
@@ -1107,7 +1105,6 @@ mod tests {
         use crate::ui::render_tests::Screen;
         let config = IndicatorConfig {
             show_volume: true,
-            show_rsi: true,
             show_ema: true,
             show_bollinger: true,
             show_trend_flips: true,
@@ -1129,7 +1126,7 @@ mod tests {
             })
         };
         let last = frame(&mut screen, Vec::new());
-        let pill = text_pos(&last, "+3").expect("three chips fold into a pill");
+        let pill = text_pos(&last, "+2").expect("two chips fold into a pill");
         let click = |pressed| egui::Event::PointerButton {
             pos: pill,
             button: egui::PointerButton::Primary,
@@ -1165,7 +1162,7 @@ mod tests {
     fn chip_titles_and_controls_follow_the_indicator() {
         let item = |kind, visible| Item::bare(kind, "x", visible);
         assert_eq!(
-            control_buttons(&item(Kind::BuiltIn(BuiltIn::Rsi), true)).len(),
+            control_buttons(&item(Kind::BuiltIn(BuiltIn::Bollinger), true)).len(),
             1
         );
         assert_eq!(
@@ -1208,11 +1205,10 @@ mod tests {
         }
         let config = IndicatorConfig {
             show_volume: true,
-            show_rsi: true,
             show_ema: true,
             show_bollinger: true,
             show_trend_flips: true,
-            hide_rsi: true,
+            hide_bollinger: true,
             ..IndicatorConfig::default()
         };
         let mut card = ChartCard::default();

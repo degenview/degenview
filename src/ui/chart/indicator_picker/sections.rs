@@ -86,7 +86,7 @@ pub struct Block {
 
 /// The stored keys of the indicators Discover leads with, when they exist.
 const POPULAR: [&str; 8] = [
-    "native:rsi",
+    "bundled:rsi",
     "native:ema",
     "native:bollinger",
     "bundled:macd",
