@@ -153,12 +153,32 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
     }
     sections.push((Section::Indicators, indicators));
 
-    // Topmost first, numbered per tool from the bottom so a name stays with its drawing. A drawing
-    // this version cannot read (a tool, or a field, from a newer build) is listed too, so it is not
-    // just invisible: it can be deleted, nothing else.
-    let mut counts: std::collections::HashMap<&'static str, usize> =
+    // Topmost first. A name is its drawing's rank among the drawings of its tool by id, oldest
+    // first, so it stays with the drawing when the stack is reordered (by id, not by place: a
+    // drawing dropped to the bottom still reads "Trend line 4"). A drawing this version cannot
+    // read (a tool, or a field, from a newer build) is listed too, so it is not just invisible: it
+    // can be deleted, nothing else.
+    let name_of = |drawing: &Drawing| drawing.tool().map_or(tr!("Drawing"), |tool| tool.label());
+    let listed = |drawing: &&Drawing| {
+        !matches!(drawing, Drawing::Unreadable(_))
+            && drawing.tool().is_some()
+            && !drawing.is_ruler()
+    };
+    let mut ids: std::collections::HashMap<&'static str, Vec<u64>> =
         std::collections::HashMap::new();
-    let mut unreadable = 0;
+    for drawing in inputs.drawings.iter().filter(listed) {
+        ids.entry(name_of(drawing)).or_default().push(drawing.id());
+    }
+    let mut unreadable_ids: Vec<u64> = inputs
+        .drawings
+        .iter()
+        .filter(|drawing| matches!(drawing, Drawing::Unreadable(_)))
+        .map(Drawing::stored_id)
+        .collect();
+    for list in ids.values_mut().chain([&mut unreadable_ids]) {
+        list.sort_unstable();
+    }
+    let rank = |list: &[u64], id: u64| list.partition_point(|other| *other < id) + 1;
     let mut drawings: Vec<Row> = inputs
         .drawings
         .iter()
@@ -166,10 +186,12 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
             if let Drawing::Unreadable(_) = drawing {
                 // A row that is not even a drawing (no id) is not an object.
                 let id = drawing.stored_id();
-                unreadable += 1;
                 return (id != 0).then(|| Row {
                     key: Key::Drawing(id),
-                    label: tr!("From a newer version {number}", number = unreadable),
+                    label: tr!(
+                        "From a newer version {number}",
+                        number = rank(&unreadable_ids, id)
+                    ),
                     detail: tr!("Update DegenView to see it").to_owned(),
                     shown: None,
                     locked: None,
@@ -177,19 +199,17 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
                     count: 0,
                 });
             }
-            if drawing.tool().is_none() || drawing.is_ruler() {
+            if !listed(&drawing) {
                 return None;
             }
-            let name = drawing.tool().map_or(tr!("Drawing"), |tool| tool.label());
-            let number = counts.entry(name).or_insert(0);
-            *number += 1;
+            let name = name_of(drawing);
             Some(Row {
                 key: Key::Drawing(drawing.id()),
                 label: tr_c!(
                     "a numbered drawing, such as Trend Line 3",
                     "{name} {number}",
                     name = name,
-                    number = number
+                    number = rank(&ids[name], drawing.id())
                 ),
                 detail: drawing
                     .summary()
@@ -414,6 +434,31 @@ mod tests {
         // The bottom drawing is number 1 whatever the order shown.
         let bottom = rows.iter().find(|row| row.key == Key::Drawing(10)).unwrap();
         assert_eq!(bottom.label, "Trend line 1");
+    }
+
+    #[test]
+    fn a_drawing_keeps_its_name_when_the_stack_is_reordered() {
+        let config = IndicatorConfig::default();
+        // Stacked 30, 10, 20 from the bottom: ids 10, 20, 30 are numbered 1, 2, 3 whatever the order.
+        let drawings = [line(30), line(10), line(20)];
+        let rows = rows(&inputs(&config, &[], &drawings), "");
+        let label = |id| {
+            rows.iter()
+                .find(|row| row.key == Key::Drawing(id))
+                .map(|row| row.label.as_str())
+        };
+        assert_eq!(label(10), Some("Trend line 1"));
+        assert_eq!(label(20), Some("Trend line 2"));
+        assert_eq!(label(30), Some("Trend line 3"));
+        let order: Vec<Key> = rows
+            .iter()
+            .filter(|row| matches!(row.key, Key::Drawing(_)))
+            .map(|row| row.key)
+            .collect();
+        assert_eq!(
+            order,
+            [Key::Drawing(20), Key::Drawing(10), Key::Drawing(30)]
+        );
     }
 
     #[test]

@@ -104,23 +104,30 @@ pub fn show(
     }
     let list = visible(rows, &state.collapsed, filtering);
     let list_height = (list.len() as f32 * ROW_HEIGHT).min(ui.available_height());
-    let area = egui::ScrollArea::vertical()
-        .id_salt("object-tree-rows")
-        .auto_shrink([false, true])
-        .max_height(list_height)
-        .show_rows(ui, ROW_HEIGHT, list.len(), |ui, range| {
+    // Rows touch: the area sizes its content from the spacing it is shown with, so it must not
+    // add a gap per row that is never drawn (it made the list scroll with nothing to scroll to,
+    // and put the rows' places off the rows' own height).
+    let area = ui
+        .scope(|ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            if state.dragging.is_some() {
-                scroll_towards_pointer(ui);
-            }
-            for row in &list[range] {
-                if let Key::Heading(section) = row.key {
-                    heading(ui, row, section, state, filtering);
-                } else {
-                    row_ui(ui, row, selected, state, filtering, &mut actions);
-                }
-            }
-        });
+            egui::ScrollArea::vertical()
+                .id_salt("object-tree-rows")
+                .auto_shrink([false, true])
+                .max_height(list_height)
+                .show_rows(ui, ROW_HEIGHT, list.len(), |ui, range| {
+                    if state.dragging.is_some() {
+                        scroll_towards_pointer(ui);
+                    }
+                    for row in &list[range] {
+                        if let Key::Heading(section) = row.key {
+                            heading(ui, row, section, state, filtering);
+                        } else {
+                            row_ui(ui, row, selected, state, filtering, &mut actions);
+                        }
+                    }
+                })
+        })
+        .inner;
     if let Some(key) = state.dragging {
         let rows_area = RowsArea {
             rect: area.inner_rect,
