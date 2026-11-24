@@ -7,6 +7,7 @@ use eframe::egui::{self, vec2};
 
 use super::state::{SheetState, Stage};
 use super::{open_orders, review, status};
+use crate::i18n::tr;
 use crate::model::broker::ticket::{self};
 use crate::trading::backend::TradingBackend;
 use crate::trading::confirm;
@@ -111,18 +112,24 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
     let mut price_hint = quote.as_ref().and_then(|quote| {
         let increment = Some(rules.price_increment);
         match (quote.last, quote.reference(side)) {
-            (Some(last), _) => Some(format!("Last {}", figures::price_label(last, increment))),
-            (None, Some(reference)) => Some(format!(
-                "{} {}",
-                if side == Side::Buy { "Ask" } else { "Bid" },
-                figures::price_label(reference, increment)
+            (Some(last), _) => Some(tr!(
+                "Last {price}",
+                price = figures::price_label(last, increment)
             )),
+            (None, Some(reference)) => {
+                let price = figures::price_label(reference, increment);
+                Some(if side == Side::Buy {
+                    tr!("Ask {price}", price = price)
+                } else {
+                    tr!("Bid {price}", price = price)
+                })
+            }
             _ => None,
         }
     });
 
     if state.draft.uses_stop_price() {
-        fields::label_row(ui, "Stop price", price_hint.take().as_deref());
+        fields::label_row(ui, tr!("Stop price"), price_hint.take().as_deref());
         number(
             ui,
             &mut state.draft.stop_text,
@@ -139,7 +146,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
         ui.add_space(12.0);
     }
     if state.draft.uses_limit_price() {
-        fields::label_row(ui, "Limit price", price_hint.take().as_deref());
+        fields::label_row(ui, tr!("Limit price"), price_hint.take().as_deref());
         number(
             ui,
             &mut state.draft.price_text,
@@ -158,9 +165,9 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
 
     let spends = state.draft.spend_in_quote;
     let (size_label, size_unit) = if spends {
-        ("Spend", quote_unit)
+        (tr!("Spend"), quote_unit)
     } else {
-        ("Amount", rules.base_asset.as_str())
+        (tr!("Amount"), rules.base_asset.as_str())
     };
     // The most the account could put into this order, as far as it is known.
     let most = if spends {
@@ -208,9 +215,9 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
     if rules.caps.quote_sized_market && side == Side::Buy && draft_class == OrderClass::Market {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            kit::switch(ui, &mut state.draft.spend_in_quote, "Spend an amount");
+            kit::switch(ui, &mut state.draft.spend_in_quote, tr!("Spend an amount"));
             ui.label(kit::text(
-                format!("Spend an amount of {quote_unit}"),
+                tr!("Spend an amount of {unit}", unit = quote_unit),
                 kit::size::BODY,
                 kit::REGULAR,
                 theme::text_primary(),
@@ -264,8 +271,10 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
 
     // The button.
     ui.add_space(12.0);
-    let side_word = state.draft.side_label();
-    let label = format!("{side_word} {}", rules.base_asset);
+    let label = match side {
+        Side::Buy => tr!("Buy {asset}", asset = rules.base_asset),
+        Side::Sell => tr!("Sell {asset}", asset = rules.base_asset),
+    };
     let tint = match side {
         Side::Buy => theme::UP,
         Side::Sell => theme::DOWN,
@@ -351,7 +360,7 @@ fn presets(ui: &mut egui::Ui, state: &mut SheetState, context: &FormContext) {
             Some(funds) if funds.value > Decimal::ZERO => {
                 state.draft.size_text = plain((funds.value * fraction).round_dp(2));
             }
-            _ => state.say("There is nothing to spend.", true),
+            _ => state.say(tr!("There is nothing to spend."), true),
         }
         return;
     }
@@ -366,10 +375,16 @@ fn presets(ui: &mut egui::Ui, state: &mut SheetState, context: &FormContext) {
             if size >= rules.min_size && size > Decimal::ZERO {
                 state.draft.size_text = plain(size);
             } else {
-                state.say("That is below the smallest order this market takes.", true);
+                state.say(
+                    tr!("That is below the smallest order this market takes."),
+                    true,
+                );
             }
         }
-        None => state.say("The account cannot afford the smallest order here.", true),
+        None => state.say(
+            tr!("The account cannot afford the smallest order here."),
+            true,
+        ),
     }
 }
 
@@ -389,35 +404,35 @@ fn summary(
     let value = check.estimate.notional;
     let fee = venue_fee.or(check.estimate.fee);
     let mut rows = vec![fields::SummaryRow {
-        label: "Order value".to_owned(),
+        label: tr!("Order value").to_owned(),
         value: amount(value),
         strong: false,
         info: None,
     }];
     rows.push(fields::SummaryRow {
         label: match value.zip(fee).and_then(|(value, fee)| figures::fee_percent(fee, value)) {
-            Some(percent) => format!("Trading fee ({percent}%)"),
-            None => "Trading fee".to_owned(),
+            Some(percent) => tr!("Trading fee ({percent}%)", percent = percent),
+            None => tr!("Trading fee").to_owned(),
         },
         value: amount(fee),
         strong: false,
-        info: Some(
-            "What trading this order is expected to cost. The venue's own check replaces the estimate once it has run.",
-        ),
+        info: Some(tr!(
+            "What trading this order is expected to cost. The venue's own check replaces the estimate once it has run."
+        )),
     });
     // Margin only says something when it is not simply the order's value (leverage).
     if let Some(margin) = check.estimate.margin
         && value != Some(margin)
     {
         rows.push(fields::SummaryRow {
-            label: "Margin".to_owned(),
+            label: tr!("Margin").to_owned(),
             value: amount(Some(margin)),
             strong: false,
             info: None,
         });
     }
     rows.push(fields::SummaryRow {
-        label: "Total".to_owned(),
+        label: tr!("Total").to_owned(),
         value: amount(figures::order_total(side, value, fee, venue_total)),
         strong: true,
         info: None,
@@ -430,7 +445,7 @@ fn summary(
 fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check: &DraftCheck) {
     let caps = &rules.caps;
     if caps.time_in_force.len() > 1 && state.draft.uses_limit_price() {
-        fields::label_row(ui, "Time in force", None);
+        fields::label_row(ui, tr!("Time in force"), None);
         let labels: Vec<String> = caps
             .time_in_force
             .iter()
@@ -453,13 +468,13 @@ fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check
     }
     let mut switches: Vec<(&str, &mut bool)> = Vec::new();
     if caps.post_only && state.draft.class == OrderClass::Limit {
-        switches.push(("Post only", &mut state.draft.post_only));
+        switches.push((tr!("Post only"), &mut state.draft.post_only));
     }
     if caps.reduce_only {
-        switches.push(("Reduce only", &mut state.draft.reduce_only));
+        switches.push((tr!("Reduce only"), &mut state.draft.reduce_only));
     }
     if caps.brackets {
-        switches.push(("Take profit / stop loss", &mut state.draft.bracket));
+        switches.push((tr!("Take profit / stop loss"), &mut state.draft.bracket));
     }
     for (label, value) in switches {
         ui.horizontal(|ui| {
@@ -480,13 +495,13 @@ fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             ui.columns(2, |columns| {
-                fields::labelled_icon(&mut columns[0], Icon::Target, theme::UP, "Take profit");
+                fields::labelled_icon(&mut columns[0], Icon::Target, theme::UP, tr!("Take profit"));
                 number(
                     &mut columns[0],
                     &mut state.draft.take_profit_text,
                     &NumberInput {
                         scope: "take-profit",
-                        placeholder: "Optional",
+                        placeholder: tr!("Optional"),
                         unit,
                         step: None,
                         start: None,
@@ -494,13 +509,13 @@ fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check
                     check,
                     DraftField::TakeProfit,
                 );
-                fields::labelled_icon(&mut columns[1], Icon::Shield, theme::DOWN, "Stop loss");
+                fields::labelled_icon(&mut columns[1], Icon::Shield, theme::DOWN, tr!("Stop loss"));
                 number(
                     &mut columns[1],
                     &mut state.draft.stop_loss_text,
                     &NumberInput {
                         scope: "stop-loss",
-                        placeholder: "Optional",
+                        placeholder: tr!("Optional"),
                         unit,
                         step: None,
                         start: None,
@@ -521,7 +536,7 @@ fn available_line(ui: &mut egui::Ui, backend: &dyn TradingBackend, market: &Mark
     ui.add_space(12.0);
     let label = kit::galley(
         ui,
-        "Available",
+        tr!("Available"),
         kit::size::CAPTION + 1.0,
         kit::REGULAR,
         theme::text_secondary(),

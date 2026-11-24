@@ -1,6 +1,7 @@
 //! The Statistics hero: the total P&L, how it splits between realized and unrealized, and the
 //! last day's move.
 
+use crate::i18n::tr;
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::PortfolioStatistics;
 use crate::ui::icons::{self, Icon};
@@ -69,7 +70,7 @@ pub(super) fn statistics_hero(
         ui,
         pos2(chip.right() + 9.0, chip.center().y),
         Align2::LEFT_CENTER,
-        "Total P&L",
+        tr!("Total P&L"),
         15.0,
         SEMIBOLD,
         theme::text_primary(),
@@ -78,7 +79,7 @@ pub(super) fn statistics_hero(
         ui,
         pos2(name.right() + 6.0, chip.center().y),
         Align2::LEFT_CENTER,
-        "\u{00B7} All time",
+        tr!("· All time"),
         15.0,
         REGULAR,
         secondary,
@@ -111,7 +112,7 @@ pub(super) fn statistics_hero(
             ui,
             pos2(figure.right() + 5.0, caption_middle),
             Align2::LEFT_CENTER,
-            "on cost basis",
+            tr!("on cost basis"),
             kit::size::CAPTION,
             REGULAR,
             secondary,
@@ -122,7 +123,7 @@ pub(super) fn statistics_hero(
             ui,
             pos2(inner.left(), caption_middle),
             Align2::LEFT_CENTER,
-            "No cost basis yet",
+            tr!("No cost basis yet"),
             kit::size::CAPTION,
             REGULAR,
             secondary,
@@ -134,7 +135,7 @@ pub(super) fn statistics_hero(
     let edge = change_block(
         ui,
         f,
-        "24h",
+        tr!("24h"),
         stats.day_change.map(|d| d.amount),
         stats.day_change.and_then(|d| d.percentage),
         pos2(inner.right(), middle),
@@ -162,7 +163,7 @@ fn composition(ui: &Ui, f: PortfolioValueFormatter, room: Rect, stats: &Portfoli
         ui,
         pos2(room.left(), top),
         Align2::LEFT_TOP,
-        "Breakdown",
+        tr!("Breakdown"),
         kit::size::CAPTION,
         REGULAR,
         secondary,
@@ -202,7 +203,7 @@ fn composition(ui: &Ui, f: PortfolioValueFormatter, room: Rect, stats: &Portfoli
         );
     }
 
-    for (index, (label, figure)) in [("Unrealized", open), ("Realized", banked)]
+    for (index, (label, figure)) in [(tr!("Unrealized"), open), (tr!("Realized"), banked)]
         .into_iter()
         .enumerate()
     {

@@ -3,6 +3,7 @@
 //! sources or the stock source as you type (debounced, off the UI thread) and hands back the
 //! chosen `SearchResult`; the host turns it into a `PortfolioAsset`.
 
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::work_queue::{self, PendingAll};
 use crate::service::{ProviderError, SearchResult};
@@ -51,9 +52,9 @@ impl PickerTab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::Crypto => "Crypto",
-            Self::Stocks => "Stocks",
-            Self::Predictions => "Predictions",
+            Self::Crypto => tr!("Crypto"),
+            Self::Stocks => tr!("Stocks"),
+            Self::Predictions => tr!("Predictions"),
         }
     }
 
@@ -76,9 +77,9 @@ impl PickerTab {
 
     pub fn placeholder(self) -> &'static str {
         match self {
-            Self::Crypto => "Ticker symbol (e.g. BTC or PEPE)",
-            Self::Stocks => "US stock symbol or company name (e.g. AAPL)",
-            Self::Predictions => "Search markets (e.g. Bitcoin, Fed, election)",
+            Self::Crypto => tr!("Ticker symbol (e.g. BTC or PEPE)"),
+            Self::Stocks => tr!("US stock symbol or company name (e.g. AAPL)"),
+            Self::Predictions => tr!("Search markets (e.g. Bitcoin, Fed, election)"),
         }
     }
 }
@@ -450,13 +451,13 @@ fn show_body(
         }
     } else if !searching && state.has_answer() {
         if let Some(error) = state.first_error() {
-            widgets::no_results(ui, "Search Failed", &error);
+            widgets::no_results(ui, tr!("Search Failed"), &error);
         } else {
             let query = state.query.trim().to_owned();
             widgets::no_results(
                 ui,
-                &format!("No Results for “{query}”"),
-                "Check the spelling or try a new search.",
+                &tr!("No Results for “{query}”", query = query),
+                tr!("Check the spelling or try a new search."),
             );
         }
     }
@@ -473,7 +474,9 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                 PickerTab::Crypto => {
                     let items =
                         CRYPTO_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Binance));
-                    if let Some(index) = suggestions::suggestion_grid(ui, "Suggestions", &items) {
+                    if let Some(index) =
+                        suggestions::suggestion_grid(ui, tr!("Suggestions"), &items)
+                    {
                         search = Some(CRYPTO_SUGGESTIONS[index]);
                     }
                 }
@@ -482,7 +485,7 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                         STOCK_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Alpaca));
                     if let Some(index) = suggestions::suggestion_grid(
                         ui,
-                        "Popular US stocks and ETFs · free IEX feed",
+                        tr!("Popular US stocks and ETFs · free IEX feed"),
                         &items,
                     ) {
                         search = Some(STOCK_SUGGESTIONS[index]);
@@ -491,7 +494,8 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                 PickerTab::Predictions => {
                     let items =
                         prediction_topics().map(|(title, _, icon)| Chip::Symbol(title, icon));
-                    if let Some(index) = suggestions::suggestion_grid(ui, "Popular topics", &items)
+                    if let Some(index) =
+                        suggestions::suggestion_grid(ui, tr!("Popular topics"), &items)
                     {
                         search = Some(prediction_topics()[index].1);
                     }
@@ -534,7 +538,7 @@ fn show_footer(
         {
             *outcome = Some(AssetPickerOutcome::Choose(Box::new(selected)));
         }
-        if widgets::sheet_button(ui, "Cancel", false, true).clicked() {
+        if widgets::sheet_button(ui, tr!("Cancel"), false, true).clicked() {
             *outcome = Some(AssetPickerOutcome::Cancel);
         }
     });

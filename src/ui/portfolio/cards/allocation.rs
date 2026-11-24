@@ -3,6 +3,7 @@
 //! total until a slice is hovered. The geometry is pure and tested; the painting follows it.
 
 use super::{fitted, loading_pill, reveal};
+use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::card::CardData;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -75,7 +76,7 @@ pub(super) fn visible_rows(height: f32, total: usize) -> usize {
 
 pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Option<Pos2>) {
     if data.loading {
-        loading_pill(ui, area, "Loading market data…");
+        loading_pill(ui, area, tr!("Loading market data…"));
         return;
     }
     let slices = slices(&data.holdings);
@@ -84,8 +85,8 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Optio
             ui,
             area,
             Icon::PieChart,
-            "No Allocations",
-            "Priced holdings appear here.",
+            tr!("No Allocations"),
+            tr!("Priced holdings appear here."),
         );
         return;
     }
@@ -276,7 +277,7 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Optio
         let hidden = slices.len() - rows;
         let galley = kit::galley(
             ui,
-            &format!("+{hidden} more"),
+            &tr!("+{hidden} more", hidden = hidden),
             11.0,
             kit::REGULAR,
             theme::text_tertiary(),
@@ -335,15 +336,7 @@ fn paint_centre(
                 theme::text_primary(),
             ),
             (
-                format!(
-                    "{} {}",
-                    data.holdings.len(),
-                    if data.holdings.len() == 1 {
-                        "asset"
-                    } else {
-                        "assets"
-                    }
-                ),
+                tr_n!(data.holdings.len(), "{count} asset", "{count} assets"),
                 10.5,
                 kit::REGULAR,
                 theme::text_secondary(),

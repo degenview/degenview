@@ -36,6 +36,10 @@ msgstr ""
 msgid "% of account"
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "% of value"
+msgstr ""
+
 #: src/ui/workspace/toolbar.rs
 msgid "(unsaved)"
 msgstr ""
@@ -48,11 +52,25 @@ msgstr ""
 msgid "+ Row"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "+ {count} unpriced asset"
+msgid_plural "+ {count} unpriced assets"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "+ {count} unpriced asset · Cached exchange rates"
+msgid_plural "+ {count} unpriced assets · Cached exchange rates"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/chart/card/overlay_card.rs
 msgid "+{count} more"
 msgstr ""
 
 #: src/ui/chart/card/values_tooltip.rs
+#: src/ui/portfolio/cards/allocation.rs
+#: src/ui/portfolio/cards/top_performers.rs
 msgid "+{hidden} more"
 msgstr ""
 
@@ -70,6 +88,15 @@ msgstr ""
 
 #: src/model/portfolio/statistics.rs
 msgid "1 year"
+msgstr ""
+
+#: src/ui/portfolio/overview/hero.rs
+#: src/ui/portfolio/statistics/hero.rs
+msgid "24h"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "24h %"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/detail.rs
@@ -184,6 +211,10 @@ msgid ""
 "A later bar's range touches the previous close. Only days that gapped count."
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "A ledger of every trade"
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "A line between the gutter and the code. Fully transparent draws none."
 msgstr ""
@@ -197,6 +228,10 @@ msgstr ""
 msgid ""
 "A moving average that weights recent closes more. Choose its period from the "
 "chip on the chart (9, 20, 50, 100 or 200)."
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "A portfolio with this name already exists."
 msgstr ""
 
 #: src/workspace/drawing/links.rs
@@ -245,6 +280,10 @@ msgstr ""
 msgid "A token has no spaces and only plain letters, digits and symbols."
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "A trade appears here once a position is closed."
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "ABCD pattern"
 msgstr ""
@@ -275,12 +314,32 @@ msgstr ""
 msgid "Account"
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Account name"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Account size"
 msgstr ""
 
 #: src/trading/edit/mod.rs
 msgid "Action"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+msgid "Actions for {kind}"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/content.rs
+msgid "Actions for {name}"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "Actions for {ticker}"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Actions for {ticker} {kind}"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -301,14 +360,60 @@ msgstr ""
 msgid "Add Another Copy"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "Add Asset"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Add Section…"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/content.rs
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Add Symbol"
+msgstr ""
+
+#: src/ui/portfolio/tab/bar.rs
+#: src/ui/portfolio/tab/mod.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Add Transaction"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid ""
 "Add a Pine script that calls the log functions and its messages appear here."
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "Add a buy or sell, or import your history."
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Add a copy of this transaction, then adjust it."
+msgstr ""
+
 #: src/ui/alert/editor.rs
 #: src/ui/alert/pine_editor.rs
+#: src/ui/portfolio/transaction_editor.rs
 msgid "Add a note (optional)"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/content.rs
+msgid "Add a stock, crypto, or prediction-market item to follow it here."
+msgstr ""
+
+#: src/ui/portfolio/tab/bar.rs
+msgid "Add a transaction"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Add a transaction or import a CSV to get started."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Add a transaction to see what it is worth."
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -327,9 +432,17 @@ msgstr ""
 msgid "Add another copy"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Add as New Chart"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/list.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add as new chart"
+msgstr ""
+
+#: src/ui/trade/venue_pill.rs
+msgid "Add broker…"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -355,6 +468,10 @@ msgstr ""
 #: src/ui/drawing/properties/fib_pages.rs
 #: src/ui/drawing/properties/tests.rs
 msgid "Add level"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Add one by hand, or import many at once."
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -392,11 +509,21 @@ msgid ""
 "Add the address of your snapshot host in Settings ▸ Snapshots to share."
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "Add the buys and sells you have made."
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Add the indicator to the chart."
 msgstr ""
 
+#: src/ui/portfolio/cards/mod.rs
+msgid "Add to Favorites"
+msgstr ""
+
 #: src/ui/chart/card/header.rs
+#: src/ui/portfolio/cards/mod.rs
+#: src/ui/watchlist/sidebar/menus.rs
 msgid "Add to Watchlist"
 msgstr ""
 
@@ -416,6 +543,14 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add to {list}"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "Add transactions to see how your assets perform."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Add transactions, or import a CSV or CoinMarketCap export."
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -458,8 +593,16 @@ msgstr[1] ""
 msgid "Added {market}"
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "Adjustment"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Aggregate"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Airdrop"
 msgstr ""
 
 #: src/model/alert/notification.rs
@@ -531,8 +674,19 @@ msgstr ""
 msgid "All"
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "All Assets"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/portfolio/overview/hero.rs
+#: src/ui/portfolio/tab/bar.rs
+#: src/ui/portfolio/tab/mod.rs
 msgid "All Portfolios"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "All Types"
 msgstr ""
 
 #: src/ui/pine/logs_view/mod.rs
@@ -551,7 +705,14 @@ msgstr ""
 msgid "All venues"
 msgstr ""
 
+#: src/ui/portfolio/overview/summary.rs
+msgid "All-time P&L"
+msgstr ""
+
 #: src/model/portfolio/card.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/holdings.rs
+#: src/ui/portfolio/overview/mod.rs
 msgid "Allocation"
 msgstr ""
 
@@ -604,6 +765,7 @@ msgid "Ambiguous Section"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Amount"
 msgstr ""
 
@@ -641,6 +803,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Angle"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Another portfolio already has this name"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
@@ -687,6 +853,10 @@ msgstr ""
 msgid "Applied “{name}”."
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Applies to every market. 1× means no borrowing."
+msgstr ""
+
 #: src/ui/pine/settings_popover.rs
 msgid "Apply"
 msgstr ""
@@ -729,6 +899,10 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Arc"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Archived"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -774,6 +948,30 @@ msgstr ""
 msgid "As the script declares"
 msgstr ""
 
+#: src/ui/trade/order_sheet/form.rs
+msgid "Ask {price}"
+msgstr ""
+
+#: src/ui/portfolio/charts.rs
+#: src/ui/portfolio/holdings.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Asset"
+msgstr ""
+
+#: src/ui/portfolio/charts.rs
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Assets"
+msgstr ""
+
+#: src/ui/portfolio/overview/top_holdings.rs
+msgid "Assets you hold appear here."
+msgstr ""
+
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "At a loss"
+msgstr ""
+
 #: src/model/drawings/style.rs
 msgid "Atom"
 msgstr ""
@@ -785,6 +983,10 @@ msgstr ""
 
 #: src/ui/replay/bar.rs
 msgid "Auto · {interval}"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Auto-matched"
 msgstr ""
 
 #: src/service/update/install/app_bundle.rs
@@ -805,11 +1007,16 @@ msgstr ""
 
 #: src/trading/paper/stats.rs
 #: src/ui/chart/settings/scripts/mod.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Available"
 msgstr ""
 
 #: src/trading/paper/stats.rs
 msgid "Available funds as a share of equity"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+msgid "Average Cost"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -818,6 +1025,10 @@ msgstr ""
 
 #: src/ui/chart/settings/style.rs
 msgid "Averaged over the market's bars, as of the newest."
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "Avg Cost"
 msgstr ""
 
 #: src/ui/pine/report.rs
@@ -838,6 +1049,14 @@ msgstr ""
 
 #: src/ui/chart/card/values_tooltip.rs
 msgid "BB upper"
+msgstr ""
+
+#: src/ui/trade/tables.rs
+msgid "BUY"
+msgstr ""
+
+#: src/ui/trade/order_sheet/review.rs
+msgid "Back"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -888,6 +1107,10 @@ msgstr ""
 msgid "Balance"
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Balance resets to {amount}."
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Band color"
 msgstr ""
@@ -928,6 +1151,10 @@ msgstr ""
 msgid "Bars pattern"
 msgstr ""
 
+#: src/ui/portfolio/sheets.rs
+msgid "Base currency"
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 msgid "Base level"
 msgstr ""
@@ -963,6 +1190,18 @@ msgstr ""
 msgid ""
 "Below 0.001 the small number counts the zeros after the point: 0.0₅278 is "
 "0.00000278, whatever the decimal places."
+msgstr ""
+
+#: src/ui/portfolio/overview/summary.rs
+msgid "Best Performer"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "Best · {ticker}"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Bid {price}"
 msgstr ""
 
 #: src/model/portfolio/mod.rs
@@ -1068,6 +1307,14 @@ msgstr ""
 msgid "Break long lines to fit a box of the width below."
 msgstr ""
 
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "Break-even"
+msgstr ""
+
+#: src/ui/portfolio/statistics/hero.rs
+msgid "Breakdown"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "Breaks first bar high"
 msgstr ""
@@ -1118,6 +1365,11 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Brushes"
+msgstr ""
+
+#: src/ui/portfolio/cards/value_chart.rs
+#: src/ui/portfolio/overview/history.rs
+msgid "Building history…"
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -1171,7 +1423,23 @@ msgstr ""
 #: src/model/paper/format.rs
 #: src/trading/draft.rs
 #: src/trading/edit/mod.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+#: src/ui/trade/fields.rs
+#: src/ui/trade/order_sheet/open_orders.rs
 msgid "Buy"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Buy BTC"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Buy an asset, or import a ledger."
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Buy {asset}"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -1192,6 +1460,11 @@ msgstr ""
 
 #: src/model/chart/context/mod.rs
 msgid "Buy {symbol} stop"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transactions.rs
+msgid "By Type"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
@@ -1227,6 +1500,10 @@ msgstr ""
 msgid "COMPARED SYMBOLS"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "Cached market value"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Callout"
 msgstr ""
@@ -1236,7 +1513,12 @@ msgid "Can't arm"
 msgstr ""
 
 #: src/model/portfolio/editor.rs
+#: src/ui/paper/account_sheet.rs
 msgid "Can't be negative."
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Can't trade this market here"
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -1249,9 +1531,16 @@ msgstr ""
 #: src/ui/drawing/properties/tests.rs
 #: src/ui/kit/dialog/mod.rs
 #: src/ui/kit/dialog/tests.rs
+#: src/ui/paper/account_sheet.rs
 #: src/ui/pine/settings_popover.rs
+#: src/ui/portfolio/asset_picker.rs
+#: src/ui/portfolio/cmc_import.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/sheets.rs
+#: src/ui/portfolio/transaction_editor.rs
 #: src/ui/replay/bar.rs
 #: src/ui/replay/date_sheet.rs
+#: src/ui/watchlist/sidebar/modals.rs
 #: src/ui/window/update_sheet/mod.rs
 #: src/ui/workspace/layout_prompts.rs
 msgid "Cancel"
@@ -1261,8 +1550,57 @@ msgstr ""
 msgid "Cancel (Esc)"
 msgstr ""
 
+#: src/ui/paper/header.rs
+msgid "Cancel All"
+msgstr ""
+
+#: src/ui/trade/tables.rs
+msgid "Cancel all ({open})"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Cancel all working orders?"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Cancel every working order"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
+#: src/ui/trade/tables.rs
 msgid "Cancel order"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper buy limit order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper buy market order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper buy stop limit order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper buy stop order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper sell limit order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper sell market order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper sell stop limit order at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Cancel paper sell stop order at {price}"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -1276,9 +1614,33 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/trade/tables.rs
+msgid "Cancel selected ({selected})"
+msgstr ""
+
+#: src/ui/trade/order_sheet/open_orders.rs
+msgid "Cancel this order"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Cancel {count} Order"
+msgid_plural "Cancel {count} Orders"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/model/paper/format.rs
 msgid "Canceled"
 msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "Canceled {done} of {total} orders. {error}"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "Canceled {done} of {total} orders. {error} (and {count} more)"
+msgid_plural "Canceled {done} of {total} orders. {error} (and {count} more)"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/model/broker/ticket.rs
 #: src/model/mcp/activity.rs
@@ -1354,6 +1716,10 @@ msgstr ""
 msgid "Change the order of the rows"
 msgstr ""
 
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Change what was recorded for this transaction."
+msgstr ""
+
 #: src/model/watchlist/mod.rs
 msgid "Changes Turned Off"
 msgstr ""
@@ -1366,6 +1732,10 @@ msgstr ""
 msgid ""
 "Changes you make (e.g. symbol) will be synced to other linked tabs with the "
 "same link color."
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Change…"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -1436,9 +1806,19 @@ msgstr ""
 msgid "Charts that already use it keep their look."
 msgstr ""
 
+#: src/ui/trade/tables.rs
+msgid "Check"
+msgstr ""
+
 #: src/ui/alert/center.rs
 #: src/ui/alert/script_list.rs
+#: src/ui/portfolio/asset_picker.rs
+#: src/ui/portfolio/holdings.rs
 msgid "Check the spelling or try a new search."
+msgstr ""
+
+#: src/ui/trade/order_sheet/status.rs
+msgid "Checking the order first."
 msgstr ""
 
 #: src/service/update/install/mod.rs
@@ -1447,6 +1827,10 @@ msgstr ""
 
 #: src/host/update/mod.rs
 msgid "Checking whether this copy can update itself…"
+msgstr ""
+
+#: src/ui/trade/order_sheet/status.rs
+msgid "Checking with {name}…"
 msgstr ""
 
 #: src/host/snapshot/mod.rs
@@ -1501,12 +1885,24 @@ msgstr ""
 msgid "Choose how DegenView looks across every window and chart."
 msgstr ""
 
+#: src/ui/portfolio/tab/bar.rs
+msgid "Choose portfolio"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Choose the asset this transaction is for."
+msgstr ""
+
 #: src/workspace/watchlist.rs
 msgid "Choose watchlist symbols"
 msgstr ""
 
 #: src/ui/replay/bar.rs
 msgid "Choose where the replay starts"
+msgstr ""
+
+#: src/ui/trade/connect_list.rs
+msgid "Choose where to trade"
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -1516,8 +1912,21 @@ msgstr ""
 
 #: src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/session_stats_view/mod.rs
+#: src/ui/portfolio/transactions.rs
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Clear"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/content.rs
+msgid "Clear Filter"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Clear Filters"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Clear Flag"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -1533,6 +1942,7 @@ msgid "Clear conditions"
 msgstr ""
 
 #: src/ui/chart/object_tree/mod.rs
+#: src/ui/watchlist/sidebar/header.rs
 msgid "Clear filter"
 msgstr ""
 
@@ -1571,9 +1981,14 @@ msgstr ""
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/symbol_picker/mod.rs
 #: src/ui/kit/dialog/mod.rs
+#: src/ui/paper/tables.rs
 #: src/ui/snapshot_studio/window/mod.rs
 #: src/ui/window/chrome.rs
 msgid "Close"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Close All"
 msgstr ""
 
 #: src/ui/window/tab_bar/menu.rs
@@ -1597,12 +2012,32 @@ msgstr ""
 msgid "Close Tabs to the Right"
 msgstr ""
 
+#: src/ui/paper/header.rs
+msgid "Close all positions?"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Close at market"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Close every open position at market"
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 msgid "Close line"
 msgstr ""
 
 #: src/ui/chart/object_tree/mod.rs
 msgid "Close object tree"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Close paper long position, {size}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "Close paper short position, {size}"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -1617,8 +2052,26 @@ msgstr ""
 msgid "Close table view"
 msgstr ""
 
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Close the order sheet"
+msgstr ""
+
+#: src/ui/trade/panel_header.rs
+msgid "Close the trading panel"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Close {count} Position"
+msgid_plural "Close {count} Positions"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/window/tab_bar/mod.rs
 msgid "Close {title}"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Closed"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
@@ -1627,6 +2080,24 @@ msgstr ""
 
 #: src/ui/pine/report.rs
 msgid "Closed trades"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "Closed {done} of {total} positions. {error}"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "Closed {done} of {total} positions. {error} (and {count} more)"
+msgid_plural "Closed {done} of {total} positions. {error} (and {count} more)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/paper/tables.rs
+msgid "Closes the long and opens an equal short at market."
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Closes the short and opens an equal long at market."
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -1638,8 +2109,16 @@ msgid ""
 "CoinMarketCap charts have no tradable price, so paper trading skips them."
 msgstr ""
 
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Collapse Section"
+msgstr ""
+
 #: src/ui/chart/buttons.rs
 msgid "Collapse pane"
+msgstr ""
+
+#: src/ui/watchlist/rows.rs
+msgid "Collapse section"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -1690,6 +2169,8 @@ msgid "Colour {hex}"
 msgstr ""
 
 #: src/model/chart/kind.rs
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
 msgid "Columns"
 msgstr ""
 
@@ -1703,6 +2184,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Comments"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "Commission"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -1760,8 +2245,36 @@ msgstr ""
 msgid "Configure Snapshots…"
 msgstr ""
 
+#: src/ui/trade/connect_list.rs
+msgid "Connect"
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Connect it in Settings to trade here."
+msgstr ""
+
+#: src/ui/trade/venue_pill.rs
+msgid "Connected"
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Connecting to {name}…"
+msgstr ""
+
+#: src/ui/trade/venue_pill.rs
+msgid "Connecting…"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Content"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Continue"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Continue to Preview"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -1821,7 +2334,21 @@ msgid "Copied {text}"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
+#: src/ui/watchlist/sidebar/mod.rs
 msgid "Copy"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Copy Qualified Symbol"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Copy Symbol"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Copy as Text"
 msgstr ""
 
 #: src/ui/kit/markdown_view.rs
@@ -1867,6 +2394,16 @@ msgstr ""
 
 #: src/ui/pine/logs_view/mod.rs
 msgid "Copy with time"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+#: src/ui/portfolio/overview/summary.rs
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Cost Basis"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Cost basis, profit and fees are worked out for you."
 msgstr ""
 
 #: src/host/sync/mod.rs
@@ -2102,17 +2639,67 @@ msgstr ""
 msgid "Counterclockwise"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Create"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+#: src/ui/paper/header.rs
+msgid "Create Account"
+msgstr ""
+
 #: src/ui/alert/editor.rs
 #: src/ui/alert/pine_editor.rs
 msgid "Create Alert"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Create New Watchlist…"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+#: src/ui/portfolio/tab/mod.rs
+msgid "Create Portfolio"
+msgstr ""
+
+#: src/ui/portfolio/tab/bar.rs
+msgid "Create Portfolio…"
 msgstr ""
 
 #: src/ui/alert/editor.rs
 msgid "Create Price Alert"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Create Price Alert…"
+msgstr ""
+
 #: src/ui/alert/pine_editor.rs
 msgid "Create Script Alert"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "Create a paper account first; there is nothing to export yet."
+msgstr ""
+
+#: src/ui/portfolio/cards/mod.rs
+msgid "Create a portfolio in the Portfolio tab to see it here."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Create a portfolio to get started."
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Create a portfolio to start tracking investments."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Create a watchlist from the menu above."
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Create one to practise trading with simulated money."
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -2153,6 +2740,7 @@ msgid "Crown"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/portfolio/asset_picker.rs
 msgid "Crypto"
 msgstr ""
 
@@ -2161,6 +2749,7 @@ msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr ""
 
 #: src/ui/alert/editor.rs
+#: src/ui/paper/account_sheet.rs
 msgid "Currency"
 msgstr ""
 
@@ -2170,6 +2759,15 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/dashboards.rs
 msgid "Current Bitcoin/Altcoin season reading"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+msgid "Current Price"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Current Value"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -2271,8 +2869,18 @@ msgstr ""
 msgid "Data error: {error}"
 msgstr ""
 
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Date"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Date & Time"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Date & time"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -2318,6 +2926,10 @@ msgstr ""
 
 #: src/model/mcp/activity.rs
 msgid "Declined"
+msgstr ""
+
+#: src/ui/trade/fields.rs
+msgid "Decrease"
 msgstr ""
 
 #: src/model/editor_theme/typography.rs
@@ -2388,11 +3000,35 @@ msgstr ""
 #: src/ui/alert/script_list.rs
 #: src/ui/chart/object_tree/mod.rs
 #: src/ui/drawing/layer/menu.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/tab/mod.rs
+#: src/ui/portfolio/transactions.rs
+#: src/ui/watchlist/sidebar/modals.rs
 msgid "Delete"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Delete Account"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Delete Account…"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Delete Portfolio"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Delete Section"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Delete Template"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Delete Watchlist…"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -2406,6 +3042,10 @@ msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
 msgid "Delete column"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Delete portfolio"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -2424,7 +3064,17 @@ msgstr ""
 msgid "Delete this layout"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "Delete transaction?"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Delete {name}?"
+msgstr ""
+
 #: src/ui/chart/settings/templates/mod.rs
+#: src/ui/paper/header.rs
+#: src/ui/watchlist/sidebar/modals.rs
 msgid "Delete “{name}”?"
 msgstr ""
 
@@ -2448,6 +3098,11 @@ msgstr ""
 msgid "Denied"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Descending"
+msgstr ""
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Description (optional)"
 msgstr ""
@@ -2457,6 +3112,7 @@ msgid "Descriptions are at most {max} characters."
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
+#: src/ui/paper/tables.rs
 msgid "Details"
 msgstr ""
 
@@ -2482,6 +3138,7 @@ msgstr ""
 
 #: src/ui/alert/banner.rs
 #: src/ui/kit/error_notice.rs
+#: src/ui/paper/panel/mod.rs
 #: src/ui/replay/bar.rs
 msgid "Dismiss"
 msgstr ""
@@ -2498,6 +3155,9 @@ msgstr ""
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/settings/mod.rs
 #: src/ui/chart/settings/templates/mod.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/sheets.rs
+#: src/ui/watchlist/sidebar/modals.rs
 msgid "Done"
 msgstr ""
 
@@ -2512,6 +3172,10 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Double curve"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Double-click a row for its transactions."
 msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
@@ -2572,11 +3236,24 @@ msgstr ""
 msgid "Drag on the chart"
 msgstr ""
 
+#: src/ui/watchlist/rows.rs
+msgid "Drag symbols here"
+msgstr ""
+
 #: src/ui/alert/lines.rs
 msgid "Drag to change the price · right-click for options"
 msgstr ""
 
+#: src/ui/paper/chart_trading.rs
+msgid "Drag to modify; release to commit"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Drag to reorder"
+msgstr ""
+
 #: src/ui/chart/card/header.rs
+#: src/ui/portfolio/cards/mod.rs
 msgid "Drag to reorder charts"
 msgstr ""
 
@@ -2674,11 +3351,21 @@ msgstr ""
 
 #: src/ui/alert/center.rs
 #: src/ui/drawing/layer/menu.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/transactions.rs
 msgid "Duplicate"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Duplicate Transaction"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Duplicate template"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Duplicate, including its transactions"
 msgstr ""
 
 #: src/ui/chart/settings/indicators.rs
@@ -2689,12 +3376,24 @@ msgstr ""
 msgid "EMA period"
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "Each asset's result is charted against the rest."
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 msgid "Each brick covers this much price."
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "Each holding lists its quantity, cost, value and profit."
+msgstr ""
+
 #: src/ui/drawing/properties/levels.rs
 msgid "Each level is drawn on both sides of the median."
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Each position is closed at market."
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -2702,6 +3401,8 @@ msgid "Each row's height, in steps of the chart's last printed price place."
 msgstr ""
 
 #: src/ui/alert/center.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/transactions.rs
 msgid "Edit"
 msgstr ""
 
@@ -2709,8 +3410,20 @@ msgstr ""
 msgid "Edit Price Alert"
 msgstr ""
 
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Edit Transaction"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Edit a row to correct a price or a fee."
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "Edit alert…"
+msgstr ""
+
+#: src/ui/trade/tables.rs
+msgid "Edit price or size"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -2842,8 +3555,13 @@ msgstr ""
 msgid "Enter a limit price."
 msgstr ""
 
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Enter a new name."
+msgstr ""
+
 #: src/model/paper/ticket.rs
 #: src/model/portfolio/editor.rs
+#: src/ui/paper/account_sheet.rs
 msgid "Enter a number."
 msgstr ""
 
@@ -2852,6 +3570,7 @@ msgid "Enter a percent, for example 0.5"
 msgstr ""
 
 #: src/model/broker/ticket.rs
+#: src/ui/trade/order_sheet/status.rs
 msgid "Enter a price."
 msgstr ""
 
@@ -2860,11 +3579,16 @@ msgid "Enter a size."
 msgstr ""
 
 #: src/model/broker/ticket.rs
+#: src/ui/trade/order_sheet/status.rs
 msgid "Enter a stop price."
 msgstr ""
 
 #: src/model/broker/ticket.rs
 msgid "Enter a time in force."
+msgstr ""
+
+#: src/ui/trade/order_sheet/status.rs
+msgid "Enter an amount."
 msgstr ""
 
 #: src/model/broker/ticket.rs
@@ -2884,12 +3608,14 @@ msgid "Entire layout"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
+#: src/ui/paper/tables.rs
 msgid "Entry"
 msgstr ""
 
 #: src/trading/broker/backend.rs
 #: src/trading/paper/stats.rs
 #: src/ui/pine/report.rs
+#: src/ui/trade/stats_strip.rs
 msgid "Equity"
 msgstr ""
 
@@ -2919,8 +3645,28 @@ msgstr ""
 msgid "Evaluating…"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Event"
+msgstr ""
+
 #: src/model/chart/snapshot/studio.rs
 msgid "Every chart, as the window arranges them"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Every position in one table"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid ""
+"Every position, order, fill, history and journal entry in this account is "
+"removed."
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid ""
+"Every position, order, fill, history and journal entry in this account is "
+"removed. This can't be undone."
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -2948,6 +3694,7 @@ msgid "Example"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
+#: src/ui/portfolio/transactions.rs
 msgid "Exchange"
 msgstr ""
 
@@ -2955,8 +3702,20 @@ msgstr ""
 msgid "Exchange rate from {from} to {to} is unavailable."
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Exit"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Expand Section"
+msgstr ""
+
 #: src/ui/chart/buttons.rs
 msgid "Expand pane"
+msgstr ""
+
+#: src/ui/watchlist/rows.rs
+msgid "Expand section"
 msgstr ""
 
 #: src/model/broker/ticket.rs
@@ -2974,15 +3733,49 @@ msgid "Exponential moving average over the closes, drawn on the price scale."
 msgstr ""
 
 #: src/host/portfolio/import_flow.rs
+#: src/ui/paper/panel/mod.rs
 msgid "Export"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Export Current Holdings…"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Export Portfolio History…"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Export Trading Data…"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Export Transactions…"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Export the account's trading data"
 msgstr ""
 
 #: src/service/editor_theme/files.rs
 msgid "Export theme"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Export to File…"
+msgstr ""
+
 #: src/workspace/watchlist.rs
 msgid "Export watchlist"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "Exported {summary} to “{name}”."
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Export…"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -3055,12 +3848,21 @@ msgstr ""
 msgid "Favorites"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Favorites can be renamed but not deleted"
+msgstr ""
+
 #: src/ui/chart/cmc_gauge.rs
 msgid "Fear"
 msgstr ""
 
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Fed decision"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Fee"
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -3071,8 +3873,21 @@ msgstr ""
 msgid "Fee (estimate)"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "Fee exchange rates"
+msgstr ""
+
 #: src/trading/broker/backend.rs
+#: src/ui/paper/tables.rs
 msgid "Fees"
+msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Fees Paid"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Fees paid · {amount}"
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -3085,6 +3900,10 @@ msgstr ""
 
 #: src/workspace/drawing/links.rs
 msgid "Fetched the preview."
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Fetching historical exchange rates…"
 msgstr ""
 
 #: src/workspace/drawing/links.rs
@@ -3179,6 +3998,19 @@ msgstr ""
 msgid "Filled"
 msgstr ""
 
+#: src/ui/trade/tables.rs
+msgid "Filled / Size"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Fills, rejections and account changes are written here."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Filter by Flag"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Filter by exchange"
 msgstr ""
@@ -3199,12 +4031,26 @@ msgstr ""
 msgid "Filter objects"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Filter symbols"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Filter this watchlist"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Filter your watchlists"
 msgstr ""
 
 #: src/ui/pine/report.rs
 msgid "Final equity"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid ""
+"Finding {currency} markets — Binance, then Coinbase, CoinGecko and "
+"DEXScreener…"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -3268,6 +4114,11 @@ msgstr ""
 msgid "Fitted together with {owner}, so they can be read against each other."
 msgstr ""
 
+#: src/ui/portfolio/import_preview.rs
+msgid "Fix the source data and import again."
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
 #: src/ui/window/update_sheet/mod.rs
 msgid "Fixed"
 msgstr ""
@@ -3297,6 +4148,10 @@ msgstr ""
 msgid "Flipped"
 msgstr ""
 
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Focus a market chart: an order is for the chart's market."
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 msgid "Follows the bearish colour until set."
 msgstr ""
@@ -3324,6 +4179,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
 msgid "Forget my default"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "From CoinMarketCap…"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "From a CSV File…"
 msgstr ""
 
 #: src/model/chart/object_tree.rs
@@ -3415,6 +4278,10 @@ msgstr ""
 msgid "General"
 msgstr ""
 
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Getting ready"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Ghost feed"
 msgstr ""
@@ -3477,6 +4344,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Grid color"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Gross"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Group transactions and track them together."
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -3604,8 +4479,16 @@ msgstr ""
 msgid "Hide on the chart"
 msgstr ""
 
+#: src/ui/portfolio/tab/bar.rs
+msgid "Hide portfolio values"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid "Hide settings"
+msgstr ""
+
+#: src/ui/trade/panel_header.rs
+msgid "Hide trading on charts"
 msgstr ""
 
 #: src/ui/pine/style_view.rs
@@ -3625,6 +4508,7 @@ msgstr ""
 
 #: src/model/chart/kind.rs
 #: src/model/chart/table.rs
+#: src/ui/portfolio/statistics/range.rs
 msgid "High"
 msgstr ""
 
@@ -3634,6 +4518,10 @@ msgstr ""
 
 #: src/model/chart/snapshot/mod.rs
 msgid "High resolution (2×)"
+msgstr ""
+
+#: src/ui/portfolio/statistics/range.rs
+msgid "High · {date}"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -3660,6 +4548,10 @@ msgstr ""
 msgid "Historical Replay — add a market chart first"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "Historical exchange rates loaded"
+msgstr ""
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid ""
 "Historical frequencies of this chart's bars, with their sample sizes. Not "
@@ -3684,11 +4576,27 @@ msgid "Historical replay, {state}"
 msgstr ""
 
 #: src/ui/alert/center.rs
+#: src/ui/paper/tables.rs
 msgid "History"
 msgstr ""
 
+#: src/ui/portfolio/charts.rs
+msgid "History builds from transaction dates and available market candles."
+msgstr ""
+
+#: src/ui/portfolio/cards/value_chart.rs
+msgid "History builds from transaction dates and market candles."
+msgstr ""
+
 #: src/trading/broker/backend.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/tab/mod.rs
 msgid "Holdings"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid ""
+"Holdings, cost basis, P&L, allocation, and later history will be recalculated."
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -3810,6 +4718,10 @@ msgstr ""
 msgid "How to work with logs"
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "How your portfolio has performed"
+msgstr ""
+
 #: src/ui/kit/color_picker/inline.rs
 #: src/ui/kit/color_picker/mod.rs
 msgid "Hue"
@@ -3828,8 +4740,64 @@ msgstr ""
 msgid "Image unavailable (waiting to sync)"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/modals.rs
+msgid "Import"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Import Preview"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Import Symbols…"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Import Transactions"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Import Transactions…"
+msgstr ""
+
 #: src/service/editor_theme/files.rs
 msgid "Import a theme"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Import failed"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Import from CoinMarketCap"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Import from CoinMarketCap…"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/modals.rs
+msgid "Import into {name}"
+msgstr ""
+
+#: src/ui/portfolio/tab/bar.rs
+#: src/ui/portfolio/tab/import.rs
+msgid "Import or Export"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Import {count} Transaction"
+msgid_plural "Import {count} Transactions"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/watchlist/sidebar/detail.rs
+msgid "In lists"
+msgstr ""
+
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "In profit"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
@@ -3840,6 +4808,14 @@ msgstr ""
 #: src/ui/snapshot_studio/window/tests.rs
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Include"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Income"
+msgstr ""
+
+#: src/ui/trade/fields.rs
+msgid "Increase"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -3922,6 +4898,10 @@ msgstr ""
 msgid "Integer and decimal literals."
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "Interest"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Interface language"
 msgstr ""
@@ -3959,9 +4939,19 @@ msgstr ""
 msgid "Its own scale"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/modals.rs
+msgid ""
+"Its symbols stay in your other watchlists. Charts, drawings and alerts are not"
+" affected."
+msgstr ""
+
 #: src/model/alert/mod.rs
 #: src/model/portfolio/mod.rs
 msgid "Japanese Yen"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Journal"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -4031,6 +5021,14 @@ msgstr ""
 msgid "Kraken error: {text}"
 msgstr ""
 
+#: src/ui/trade/venue_pill.rs
+msgid "LIVE"
+msgstr ""
+
+#: src/ui/trade/venue_pill.rs
+msgid "LIVE · {name}"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Label"
 msgstr ""
@@ -4076,6 +5074,10 @@ msgstr ""
 msgid "Larger labels, a title block and the DegenView mark"
 msgstr ""
 
+#: src/ui/portfolio/holdings.rs
+msgid "Largest · {name} {share}"
+msgstr ""
+
 #: src/model/watchlist/mod.rs
 msgid "Last"
 msgstr ""
@@ -4106,6 +5108,10 @@ msgstr ""
 
 #: src/ui/chart/settings/overlay.rs
 msgid "Last value tag"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Last {price}"
 msgstr ""
 
 #: src/app/window.rs
@@ -4195,6 +5201,7 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/tests.rs
+#: src/ui/paper/account_sheet.rs
 msgid "Leverage"
 msgstr ""
 
@@ -4208,12 +5215,12 @@ msgid "Light"
 msgstr ""
 
 #: src/model/broker/ticket.rs
-#: src/model/paper/format.rs
 msgid "Limit"
 msgstr ""
 
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Limit price"
 msgstr ""
 
@@ -4305,6 +5312,14 @@ msgstr ""
 
 #: src/ui/alert/pine_editor.rs
 msgid "Line {line}"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/modals.rs
+msgid "Line {line} · {reason}"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Line {line} · {token} · {fee} {currency}"
 msgstr ""
 
 #: src/model/portfolio/csv.rs
@@ -4410,6 +5425,11 @@ msgstr ""
 msgid "Live"
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+#: src/ui/portfolio/tab/mod.rs
+msgid "Live market value"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "Live · Buy {symbol} at market…"
 msgstr ""
@@ -4466,6 +5486,26 @@ msgstr ""
 msgid "Loading image…"
 msgstr ""
 
+#: src/ui/portfolio/cards/allocation.rs
+#: src/ui/portfolio/cards/top_performers.rs
+#: src/ui/portfolio/cards/value.rs
+#: src/ui/portfolio/cards/value_chart.rs
+#: src/ui/portfolio/overview/history.rs
+msgid "Loading market data…"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Loading market value…"
+msgstr ""
+
+#: src/ui/portfolio/overview/hero.rs
+msgid "Loading portfolio value…"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "Loading prices…"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "Loading price…"
 msgstr ""
@@ -4513,7 +5553,6 @@ msgstr ""
 msgid "Logs · {range}"
 msgstr ""
 
-#: src/model/paper/format.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/pine/report.rs
 msgid "Long"
@@ -4525,6 +5564,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Look"
+msgstr ""
+
+#: src/ui/trade/tables.rs
+msgid "Look the order up at the venue; sends it again only if it is not there"
 msgstr ""
 
 #: src/ui/alert/pine_editor.rs
@@ -4542,11 +5585,16 @@ msgstr ""
 
 #: src/model/chart/kind.rs
 #: src/model/chart/table.rs
+#: src/ui/portfolio/statistics/range.rs
 msgid "Low"
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
 msgid "Low line"
+msgstr ""
+
+#: src/ui/portfolio/statistics/range.rs
+msgid "Low · {date}"
 msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
@@ -4570,8 +5618,17 @@ msgstr ""
 msgid "Magnet off"
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "Main"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
 #: src/ui/workspace/layout_prompts.rs
 msgid "Make a Copy"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Make a Copy…"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -4584,6 +5641,14 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "Maker / taker, {tier}"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Manage Portfolios"
+msgstr ""
+
+#: src/ui/portfolio/tab/bar.rs
+msgid "Manage Portfolios…"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
@@ -4599,7 +5664,12 @@ msgid "Manage templates…"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
+#: src/ui/portfolio/transactions.rs
 msgid "Manual"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Margin"
 msgstr ""
 
 #: src/trading/paper/stats.rs
@@ -4614,6 +5684,10 @@ msgstr ""
 msgid "Margins"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Mark"
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Marker"
 msgstr ""
@@ -4623,9 +5697,10 @@ msgid "Marker size"
 msgstr ""
 
 #: src/model/broker/ticket.rs
-#: src/model/paper/format.rs
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/trade/tables.rs
 msgid "Market"
 msgstr ""
 
@@ -4646,6 +5721,10 @@ msgstr ""
 msgid "Market status"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "Market value unavailable · {error}"
+msgstr ""
+
 #: src/ui/chart/settings/compare.rs
 msgid ""
 "Markets on the chart's scale are drawn from where the chart starts, so their "
@@ -4664,8 +5743,16 @@ msgstr ""
 msgid "Match case"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "Match tokens to markets"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Match whole word"
+msgstr ""
+
+#: src/ui/portfolio/tab/import.rs
+msgid "Match {symbol}"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -4678,6 +5765,10 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Matching bracket border"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Match…"
 msgstr ""
 
 #: src/model/chart/replay.rs
@@ -4757,6 +5848,10 @@ msgstr ""
 msgid "Minimum is {minimum}."
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "Mining"
+msgstr ""
+
 #: src/model/pattern/elliott.rs
 msgid "Minor"
 msgstr ""
@@ -4812,6 +5907,7 @@ msgid "Monthly candles"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
+#: src/ui/trade/panel_header.rs
 msgid "More"
 msgstr ""
 
@@ -4820,6 +5916,7 @@ msgid "More Fibonacci and Gann tools"
 msgstr ""
 
 #: src/ui/alert/center.rs
+#: src/ui/paper/tables.rs
 msgid "More actions"
 msgstr ""
 
@@ -4889,6 +5986,14 @@ msgstr ""
 msgid "Move pane up"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "Move this asset's transactions to a different market."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Move to Section"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Move up"
 msgstr ""
@@ -4913,8 +6018,13 @@ msgstr ""
 msgid "Must be below {price}."
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Must be between 1× and 1000×."
+msgstr ""
+
 #: src/model/paper/ticket.rs
 #: src/model/portfolio/editor.rs
+#: src/ui/paper/account_sheet.rs
 msgid "Must be greater than zero."
 msgstr ""
 
@@ -4940,11 +6050,29 @@ msgid "My {tool}"
 msgstr ""
 
 #: src/ui/drawing/properties/content.rs
+#: src/ui/portfolio/sheets.rs
+#: src/ui/watchlist/sidebar/modals.rs
 msgid "Name"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Name it and pick the currency it reports in."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Name the copy."
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
 msgid "Name the highest high and lowest low in view."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Name the new watchlist."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Name the new watchlist. {name} will be added to it."
 msgstr ""
 
 #: src/ui/drawing/properties/content.rs
@@ -4985,6 +6113,10 @@ msgstr ""
 msgid "Needs prices above zero; drawn linear until then."
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Net"
+msgstr ""
+
 #: src/model/portfolio/editor.rs
 msgid "Net proceeds"
 msgstr ""
@@ -5009,8 +6141,36 @@ msgstr ""
 msgid "New"
 msgstr ""
 
+#: src/ui/paper/header.rs
+msgid "New Account…"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "New Paper Account"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "New Portfolio"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "New Portfolio…"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "New Section"
+msgstr ""
+
 #: src/ui/window/tab_bar/menu.rs
 msgid "New Tab"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "New Watchlist"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "New Watchlist…"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
@@ -5027,6 +6187,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
 msgid "New drawings start with the built-in style again"
+msgstr ""
+
+#: src/ui/trade/panel_header.rs
+msgid "New order"
 msgstr ""
 
 #: src/model/broker/chart.rs
@@ -5075,13 +6239,58 @@ msgstr ""
 msgid "No Alerts"
 msgstr ""
 
+#: src/ui/portfolio/cards/allocation.rs
+#: src/ui/portfolio/charts.rs
+msgid "No Allocations"
+msgstr ""
+
+#: src/ui/portfolio/cards/value_chart.rs
+#: src/ui/portfolio/charts.rs
+msgid "No History Yet"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+#: src/ui/portfolio/holdings.rs
+msgid "No Holdings"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/content.rs
+msgid "No Matches"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "No Matching Transactions"
+msgstr ""
+
+#: src/ui/portfolio/overview/top_holdings.rs
+msgid "No Open Positions"
+msgstr ""
+
+#: src/ui/portfolio/cards/mod.rs
+#: src/ui/portfolio/sheets.rs
+msgid "No Portfolios"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "No Price History"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "No Results"
 msgstr ""
 
+#: src/ui/portfolio/statistics/pnl.rs
+msgid "No Results Yet"
+msgstr ""
+
 #: src/ui/alert/center.rs
 #: src/ui/alert/script_list.rs
+#: src/ui/portfolio/asset_picker.rs
 msgid "No Results for “{query}”"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "No Results for “{search}”"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -5089,8 +6298,34 @@ msgstr ""
 msgid "No Script Alerts"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "No Section"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/content.rs
+msgid "No Symbols"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transactions.rs
+msgid "No Transactions"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "No Trigger History"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "No Watchlists"
+msgstr ""
+
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "No Win Rate Yet"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "No account"
 msgstr ""
 
 #: src/model/alert/pine.rs
@@ -5101,8 +6336,16 @@ msgstr ""
 msgid "No bars to show yet"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "No closed trades"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "No copied drawings to paste"
+msgstr ""
+
+#: src/ui/portfolio/statistics/hero.rs
+msgid "No cost basis yet"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
@@ -5127,6 +6370,10 @@ msgstr ""
 msgid "No favorites yet. Star an indicator to keep it here."
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "No fees paid"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "No gaps on this market"
 msgstr ""
@@ -5141,6 +6388,14 @@ msgstr ""
 
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "No indicators on this chart"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "No journal entries"
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "No market in focus"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
@@ -5169,12 +6424,44 @@ msgstr ""
 msgid "No message passes the level, date and search filters."
 msgstr ""
 
+#: src/ui/portfolio/asset_detail.rs
+msgid "No open position — the transactions below net to zero."
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "No open positions"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "No order events"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "No order history"
+msgstr ""
+
+#: src/ui/trade/tables.rs
+msgid "No orders"
+msgstr ""
+
 #: src/ui/chart/settings/canvas.rs
 msgid "No panes"
 msgstr ""
 
+#: src/ui/paper/header.rs
+msgid "No paper account"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "No portfolios yet · Create one to start tracking."
+msgstr ""
+
 #: src/ui/drawing/properties/content.rs
 msgid "No preview fetched. Choose Preview on the card's toolbar to ask for one."
+msgstr ""
+
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "No price"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -5191,6 +6478,10 @@ msgstr ""
 
 #: src/ui/alert/editor.rs
 msgid "No price yet"
+msgstr ""
+
+#: src/ui/portfolio/overview/summary.rs
+msgid "No priced holdings yet"
 msgstr ""
 
 #: src/model/watchlist/quote.rs
@@ -5230,6 +6521,10 @@ msgstr ""
 msgid "No summary of changes is available for this version."
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "No transactions yet."
+msgstr ""
+
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "No visible drawings"
 msgstr ""
@@ -5246,6 +6541,18 @@ msgstr ""
 msgid "No weekday is on, so no day qualifies."
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "No working orders"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "None"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "None of the holdings has price history for this range."
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 #: src/ui/chart/settings/templates/mod.rs
 msgid "None saved yet"
@@ -5260,6 +6567,7 @@ msgid "Not available during replay"
 msgstr ""
 
 #: src/model/broker/chart.rs
+#: src/ui/trade/order_sheet/status.rs
 msgid "Not available during replay."
 msgstr ""
 
@@ -5271,8 +6579,16 @@ msgstr ""
 msgid "Not available in this market."
 msgstr ""
 
+#: src/ui/trade/venue_pill.rs
+msgid "Not connected"
+msgstr ""
+
 #: src/ui/workspace/link_charts.rs
 msgid "Not linked: {charts}. Price-based chart types have no shared time."
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Not matched"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
@@ -5285,6 +6601,10 @@ msgstr ""
 
 #: src/service/update/check.rs
 msgid "Not published by the release workflow, so it needs a manual download."
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "Not saved"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
@@ -5300,6 +6620,12 @@ msgstr ""
 msgid "Note"
 msgstr ""
 
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Notes"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "Nothing Paused"
 msgstr ""
@@ -5312,6 +6638,10 @@ msgstr ""
 msgid "Nothing else here yet"
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "Nothing held yet."
+msgstr ""
+
 #: src/ui/chart/indicator_picker/sections.rs
 msgid "Nothing here."
 msgstr ""
@@ -5320,8 +6650,22 @@ msgstr ""
 msgid "Nothing in your watchlists matches “{query}”."
 msgstr ""
 
+#: src/ui/watchlist/sidebar/content.rs
+msgid "Nothing in {name} matches this filter."
+msgstr ""
+
+#: src/ui/trade/connect_list.rs
+msgid ""
+"Nothing is connected until you choose. You can add or remove places at any "
+"time in Settings."
+msgstr ""
+
 #: src/ui/drawing/content/sheet.rs
 msgid "Nothing is contacted: the card shows what the link says."
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Nothing matches the current search and filters."
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -5338,6 +6682,20 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Nothing to count yet"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid ""
+"Nothing to export yet. Orders, fills and closed trades show up here once you "
+"trade."
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Nothing to import"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Nothing to import yet."
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -5395,6 +6753,8 @@ msgstr ""
 #: src/ui/drawing/properties/mod.rs
 #: src/ui/drawing/properties/tests.rs
 #: src/ui/kit/confirm.rs
+#: src/ui/portfolio/tab/import.rs
+#: src/ui/portfolio/tab/mod.rs
 #: src/ui/workspace/layout_prompts.rs
 msgid "OK"
 msgstr ""
@@ -5515,6 +6875,14 @@ msgstr ""
 msgid "One order is being edited; try again in a moment."
 msgstr ""
 
+#: src/ui/watchlist/sidebar/modals.rs
+msgid ""
+"One symbol per line as SOURCE:SYMBOL, for example BINANCE:BTCUSDT or "
+"COINBASE:ETH-USD. Lines starting with ### become sections. A single "
+"comma-separated line from TradingView is read too; markets DegenView has no "
+"provider for are skipped."
+msgstr ""
+
 #: src/model/market/timeframe/mod.rs
 msgid "One-hour candles"
 msgstr ""
@@ -5537,6 +6905,12 @@ msgstr ""
 
 #: src/model/broker/ticket.rs
 msgid "Only open orders can be edited."
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid ""
+"Only transactions for matched tickers are imported. Skip a ticker to leave all"
+" of its transactions out."
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -5566,6 +6940,10 @@ msgstr ""
 msgid "Open 24/7"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/modals.rs
+msgid "Open File…"
+msgstr ""
+
 #: src/ui/pine/report.rs
 msgid "Open P&L"
 msgstr ""
@@ -5583,6 +6961,7 @@ msgstr ""
 
 #: src/ui/alert/center.rs
 #: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/trade/order_sheet/mod.rs
 msgid "Open Settings"
 msgstr ""
 
@@ -5592,6 +6971,14 @@ msgstr ""
 
 #: src/ui/chart/settings/style.rs
 msgid "Open and close ticks"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Open in Focused Chart"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Open in New Tab"
 msgstr ""
 
 #: src/model/chart/snapshot/mod.rs
@@ -5612,6 +6999,7 @@ msgid "Open link"
 msgstr ""
 
 #: src/trading/broker/backend.rs
+#: src/ui/trade/order_sheet/open_orders.rs
 msgid "Open orders"
 msgstr ""
 
@@ -5631,6 +7019,11 @@ msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Operators"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/trade/order_sheet/form.rs
+msgid "Optional"
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -5662,8 +7055,24 @@ msgstr ""
 msgid "Order placed"
 msgstr ""
 
+#: src/ui/trade/order_sheet/state.rs
+msgid "Order placed."
+msgstr ""
+
 #: src/model/broker/ticket.rs
 msgid "Order rejected"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Order value"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Orders"
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Orders are available as soon as it is connected."
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -5672,6 +7081,10 @@ msgstr ""
 
 #: src/model/broker/ticket.rs
 msgid "Orders sized by an amount to spend cannot be edited."
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Orders unavailable"
 msgstr ""
 
 #: src/ui/drawing/properties/text.rs
@@ -5688,7 +7101,12 @@ msgid "Original"
 msgstr ""
 
 #: src/model/broker/ticket.rs
+#: src/ui/portfolio/transaction_editor.rs
 msgid "Other"
+msgstr ""
+
+#: src/ui/portfolio/charts.rs
+msgid "Other ({count})"
 msgstr ""
 
 #: src/ui/alert/script_list.rs
@@ -5712,12 +7130,32 @@ msgid ""
 "Outputs without a color well take their color bar by bar from the script."
 msgstr ""
 
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "Over {period}"
+msgstr ""
+
 #: src/ui/chart/indicator_picker/sections.rs
 msgid "Overlays"
 msgstr ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "Overview"
+msgstr ""
+
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Own pane"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "P&L"
+msgstr ""
+
+#: src/ui/portfolio/statistics/pnl.rs
+msgid "P&L by Asset"
+msgstr ""
+
+#: src/ui/portfolio/overview/hero.rs
+msgid "P&L · {period}"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
@@ -5756,6 +7194,11 @@ msgstr ""
 msgid "Paper trading is not available for this chart."
 msgstr ""
 
+#: src/ui/paper/panel/mod.rs
+#: src/ui/paper/panel_gallery.rs
+msgid "Paper trading settings"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Parallel channel"
 msgstr ""
@@ -5767,6 +7210,10 @@ msgstr ""
 
 #: src/model/paper/format.rs
 msgid "Partial fill"
+msgstr ""
+
+#: src/ui/portfolio/cards/value.rs
+msgid "Past month"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -5783,6 +7230,10 @@ msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
 msgid "Paste style"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/modals.rs
+msgid "Paste symbols or open a text file."
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -5852,8 +7303,13 @@ msgstr ""
 msgid "Pending"
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Per contract"
+msgstr ""
+
 #: src/model/chart/price_scale.rs
 #: src/ui/chart/settings/compare.rs
+#: src/ui/paper/account_sheet.rs
 msgid "Percent"
 msgstr ""
 
@@ -5889,6 +7345,10 @@ msgstr ""
 
 #: src/ui/replay/bar.rs
 msgid "Pick a start"
+msgstr ""
+
+#: src/ui/portfolio/tab/import.rs
+msgid "Pick the market that matches this CoinMarketCap ticker."
 msgstr ""
 
 #: src/ui/replay/date_sheet.rs
@@ -5958,8 +7418,20 @@ msgstr ""
 msgid "Pivot names"
 msgstr ""
 
+#: src/ui/trade/order_sheet/review.rs
+msgid "Place live order?"
+msgstr ""
+
+#: src/ui/trade/order_sheet/review.rs
+msgid "Place order"
+msgstr ""
+
 #: src/model/paper/format.rs
 msgid "Placed"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Placed, filled and canceled orders are logged here."
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -6037,19 +7509,38 @@ msgstr ""
 msgid "Popular"
 msgstr ""
 
+#: src/ui/portfolio/asset_picker.rs
+msgid "Popular US stocks and ETFs · free IEX feed"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/portfolio/asset_picker.rs
 msgid "Popular topics"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/dashboards.rs
+#: src/ui/portfolio/tab/mod.rs
 msgid "Portfolio"
+msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Portfolio High"
+msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Portfolio Low"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Portfolio Tracker"
 msgstr ""
 
+#: src/ui/portfolio/cards/mod.rs
+msgid "Portfolio Unavailable"
+msgstr ""
+
 #: src/model/portfolio/card.rs
+#: src/ui/portfolio/overview/history.rs
 msgid "Portfolio Value"
 msgstr ""
 
@@ -6059,6 +7550,10 @@ msgstr ""
 
 #: src/service/watchlist_quotes/engine.rs
 msgid "Portfolio cards have no market quote"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Portfolio name"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -6087,6 +7582,14 @@ msgstr ""
 msgid "Position on screen"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Positions"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "Positions appear once a transaction leaves you holding an asset."
+msgstr ""
+
 #: src/trading/paper/stats.rs
 msgid "Positions {positions} · Orders {orders}"
 msgstr ""
@@ -6096,6 +7599,7 @@ msgid "Post"
 msgstr ""
 
 #: src/trading/confirm.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Post only"
 msgstr ""
 
@@ -6121,6 +7625,10 @@ msgstr ""
 msgid "Practice with pretend money. Nothing leaves this computer."
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Practice with simulated money."
+msgstr ""
+
 #: src/ui/drawing/properties/levels.rs
 msgid "Precision"
 msgstr ""
@@ -6134,6 +7642,7 @@ msgid "Prediction market provider"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/portfolio/asset_picker.rs
 msgid "Predictions"
 msgstr ""
 
@@ -6162,7 +7671,15 @@ msgstr ""
 #: src/ui/chart/settings/overlay.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/portfolio/holdings.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/trade/tables.rs
 msgid "Price"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Price ({currency})"
 msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
@@ -6198,6 +7715,10 @@ msgstr ""
 msgid "Price per bar"
 msgstr ""
 
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Price per {ticker}"
+msgstr ""
+
 #: src/model/drawings/tool.rs
 #: src/ui/drawing/properties/style.rs
 msgid "Price range"
@@ -6215,8 +7736,23 @@ msgstr ""
 msgid "Price-Based"
 msgstr ""
 
+#: src/ui/portfolio/cards/allocation.rs
+#: src/ui/portfolio/charts.rs
+#: src/ui/portfolio/statistics/pnl.rs
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "Priced holdings appear here."
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Prices"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Prices and fees in {currency}"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Prices stream in for every asset you hold."
 msgstr ""
 
 #: src/model/pattern/elliott.rs
@@ -6260,6 +7796,10 @@ msgstr ""
 msgid "Profit factor"
 msgstr ""
 
+#: src/ui/paper/header.rs
+msgid "Protective take-profit and stop-loss orders are canceled too."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "Punctuation"
 msgstr ""
@@ -6280,6 +7820,14 @@ msgid ""
 "Puts the chart type and its settings, the colors and the whole canvas back to "
 "the defaults. Indicators, scripts, drawings and alerts stay. The price axis' "
 "decimals stay too."
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/holdings.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Quantity"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -6359,6 +7907,10 @@ msgstr ""
 msgid "Reached {price}"
 msgstr ""
 
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "Reading price history…"
+msgstr ""
+
 #: src/model/broker/chart.rs
 msgid "Reading the market's rules…"
 msgstr ""
@@ -6375,11 +7927,26 @@ msgstr ""
 msgid "Ready"
 msgstr ""
 
+#: src/ui/portfolio/import_preview.rs
+msgid "Ready to import"
+msgstr ""
+
+#: src/ui/trade/connect_list.rs
+msgid "Real money"
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "Real orders on your {broker} account."
 msgstr ""
 
+#: src/ui/paper/tables.rs
+#: src/ui/portfolio/statistics/hero.rs
+msgid "Realized"
+msgstr ""
+
 #: src/trading/paper/stats.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/overview/summary.rs
 msgid "Realized P&L"
 msgstr ""
 
@@ -6402,6 +7969,10 @@ msgstr ""
 msgid "Reconnecting ({reason}). New orders are paused."
 msgstr ""
 
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Record a buy, sell or transfer of this asset."
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Rectangle"
 msgstr ""
@@ -6413,6 +7984,10 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Redo ({shortcut})"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Reduce only"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -6436,6 +8011,14 @@ msgstr ""
 msgid "Relaxed"
 msgstr ""
 
+#: src/ui/portfolio/holdings.rs
+msgid "Remap Asset…"
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "Remap {ticker}"
+msgstr ""
+
 #: src/ui/chart/card/overlay_card.rs
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/chart/settings/compare.rs
@@ -6452,6 +8035,7 @@ msgstr ""
 
 #: src/ui/chart/card/header.rs
 #: src/ui/chart/settings/mod.rs
+#: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
 msgstr ""
 
@@ -6484,9 +8068,17 @@ msgstr ""
 msgid "Remove from Chart"
 msgstr ""
 
+#: src/ui/portfolio/cards/mod.rs
+msgid "Remove from Favorites"
+msgstr ""
+
 #: src/ui/chart/picker_kit/widgets.rs
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Remove from Recent"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Remove from Watchlist"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -6552,6 +8144,7 @@ msgid "Remove {title}"
 msgstr ""
 
 #: src/ui/drawing/properties/templates.rs
+#: src/ui/watchlist/sidebar/mod.rs
 #: src/ui/workspace/layout_prompts.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Rename"
@@ -6561,8 +8154,24 @@ msgstr ""
 msgid "Rename Layout"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Rename Section"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Rename Section…"
+msgstr ""
+
 #: src/ui/window/tab_bar/menu.rs
 msgid "Rename Tab…"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Rename Watchlist"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Rename Watchlist…"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
@@ -6638,13 +8247,30 @@ msgstr ""
 msgid "Replay stopped: no {timeframe} history to replay."
 msgstr ""
 
+#: src/ui/portfolio/tab/bar.rs
+msgid "Reporting currency"
+msgstr ""
+
 #: src/ui/kit/error_notice.rs
 msgid "Request ID {id}"
 msgstr ""
 
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Required"
+msgstr ""
+
 #: src/ui/chart/settings/canvas.rs
 #: src/ui/chart/settings/style.rs
+#: src/ui/portfolio/cmc_import.rs
 msgid "Reset"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "Reset Account"
+msgstr ""
+
+#: src/ui/paper/header.rs
+msgid "Reset Account…"
 msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
@@ -6657,6 +8283,10 @@ msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
 msgid "Reset Colors"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "Reset Paper Account"
 msgstr ""
 
 #: src/ui/pine/settings_popover.rs
@@ -6745,6 +8375,12 @@ msgstr ""
 msgid "Restore pane"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "Restore {count} individually skipped transaction"
+msgid_plural "Restore {count} individually skipped transactions"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/trading/confirm.rs
 msgid "Rests; never takes"
 msgstr ""
@@ -6773,12 +8409,20 @@ msgstr ""
 msgid "Retracement C"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Return"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Return to live market"
 msgstr ""
 
 #: src/ui/window/tab_bar/rename.rs
 msgid "Return to save, Esc to cancel. Empty restores the default."
+msgstr ""
+
+#: src/ui/portfolio/tab/bar.rs
+msgid "Reveal portfolio values"
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -6793,8 +8437,28 @@ msgstr ""
 msgid "Reverse"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Reverse Position"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Reverse {symbol} position?"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Reverse…"
+msgstr ""
+
 #: src/ui/pine/style_view.rs
 msgid "Revert {output} to the script's style"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Review what will be added to your portfolio."
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Reward"
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -6904,6 +8568,10 @@ msgstr ""
 msgid "Running on {name}. Placing an order here takes it over."
 msgstr ""
 
+#: src/ui/trade/tables.rs
+msgid "SELL"
+msgstr ""
+
 #: src/ui/chart/object_tree/mod.rs
 msgid "SYMBOL"
 msgstr ""
@@ -6933,6 +8601,7 @@ msgid "Save"
 msgstr ""
 
 #: src/ui/alert/editor.rs
+#: src/ui/portfolio/transaction_editor.rs
 msgid "Save Changes"
 msgstr ""
 
@@ -7113,8 +8782,16 @@ msgstr ""
 msgid "Search"
 msgstr ""
 
+#: src/ui/portfolio/asset_picker.rs
+msgid "Search Failed"
+msgstr ""
+
 #: src/ui/workspace/empty_state/mod.rs
 msgid "Search a market, or pick up where you left off."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Search and filter by asset, type or date."
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -7122,7 +8799,12 @@ msgid "Search and matches"
 msgstr ""
 
 #: src/ui/alert/center.rs
+#: src/ui/portfolio/holdings.rs
 msgid "Search asset or name"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Search asset, notes, or source"
 msgstr ""
 
 #: src/ui/chart/type_menu.rs
@@ -7147,6 +8829,7 @@ msgid "Search markets"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/portfolio/asset_picker.rs
 msgid "Search markets (e.g. Bitcoin, Fed, election)"
 msgstr ""
 
@@ -7182,6 +8865,10 @@ msgstr ""
 msgid "Search {total} indicators, concepts or aliases"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "Searching exchanges…"
+msgstr ""
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Second arm"
 msgstr ""
@@ -7196,6 +8883,10 @@ msgstr ""
 
 #: src/model/webhook/policy.rs
 msgid "Secrets are limited to {max} characters."
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Sections group symbols under a heading."
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -7241,6 +8932,10 @@ msgid ""
 "Select the destination portfolio before importing CoinMarketCap transactions."
 msgstr ""
 
+#: src/ui/trade/tables.rs
+msgid "Select to cancel several orders at once"
+msgstr ""
+
 #: src/ui/chart/picker_kit/widgets.rs
 msgid "Selected"
 msgstr ""
@@ -7269,7 +8964,15 @@ msgstr ""
 #: src/model/paper/format.rs
 #: src/trading/draft.rs
 #: src/trading/edit/mod.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+#: src/ui/trade/fields.rs
+#: src/ui/trade/order_sheet/open_orders.rs
 msgid "Sell"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Sell {asset}"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -7327,6 +9030,10 @@ msgstr ""
 msgid "Session statistics need hourly or daily bars."
 msgstr ""
 
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Set Flag"
+msgstr ""
+
 #: src/ui/alert/editor.rs
 msgid "Set a level to create the alert."
 msgstr ""
@@ -7371,7 +9078,6 @@ msgstr ""
 msgid "Shapes"
 msgstr ""
 
-#: src/model/paper/format.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/pine/report.rs
 msgid "Short"
@@ -7395,12 +9101,31 @@ msgstr ""
 msgid "Show"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Show 1M Chart"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Show All"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Show Details"
+msgstr ""
+
 #: src/ui/workspace/toolbar.rs
 msgid "Show Market Flow"
 msgstr ""
 
 #: src/ui/workspace/tool_sidebar.rs
 msgid "Show Paper Trading panel"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Show Symbol Subtitle"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -7479,6 +9204,10 @@ msgstr ""
 msgid "Show the time range, the price range and their ratio."
 msgstr ""
 
+#: src/ui/trade/panel_header.rs
+msgid "Show trading on charts"
+msgstr ""
+
 #: src/ui/pine/style_view.rs
 msgid "Show {output}"
 msgstr ""
@@ -7500,6 +9229,10 @@ msgstr ""
 msgid "Shown when the market has any."
 msgstr ""
 
+#: src/ui/portfolio/overview/top_holdings.rs
+msgid "Shows this asset's transactions"
+msgstr ""
+
 #: src/ui/chart/settings/appearance.rs
 msgid "Shows {count} decimal place on the price axis."
 msgid_plural "Shows {count} decimal places on the price axis."
@@ -7511,11 +9244,17 @@ msgid "Shuffle"
 msgstr ""
 
 #: src/trading/confirm.rs
+#: src/ui/paper/tables.rs
+#: src/ui/trade/tables.rs
 msgid "Side"
 msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Signpost"
+msgstr ""
+
+#: src/ui/trade/connect_list.rs
+msgid "Simulated"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -7526,6 +9265,7 @@ msgstr ""
 #: src/trading/edit/mod.rs
 #: src/ui/drawing/properties/content.rs
 #: src/ui/drawing/properties/text.rs
+#: src/ui/paper/tables.rs
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Size"
 msgstr ""
@@ -7536,6 +9276,23 @@ msgstr ""
 
 #: src/ui/chart/settings/style.rs
 msgid "Size in price units"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Skip"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Skip Item"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+#: src/ui/watchlist/sidebar/modals.rs
+msgid "Skipped"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "Skipped unless you match it"
 msgstr ""
 
 #: src/model/portfolio/csv.rs
@@ -7577,6 +9334,11 @@ msgstr ""
 msgid "Solid"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Sort By"
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -7588,12 +9350,25 @@ msgstr ""
 msgid "Source code"
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "Source: {source}"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Speed"
 msgstr ""
 
 #: src/trading/confirm.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Spend"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Spend an amount"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Spend an amount of {unit}"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
@@ -7603,6 +9378,10 @@ msgstr ""
 #: src/model/chart/snapshot/studio.rs
 #: src/model/drawings/style.rs
 msgid "Square"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Staking Reward"
 msgstr ""
 
 #: src/model/watchlist/quote.rs
@@ -7679,6 +9458,14 @@ msgstr ""
 msgid "Start of move"
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "Start over with a fresh balance."
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "Starting balance"
+msgstr ""
+
 #: src/ui/chart/settings/overlay.rs
 msgid "Starts where the chart does, so the axis reads this market's own change."
 msgstr ""
@@ -7690,7 +9477,12 @@ msgid ""
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
+#: src/ui/portfolio/tab/mod.rs
 msgid "Statistics"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Statistics need a transaction to start from."
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -7702,6 +9494,8 @@ msgid "Stats plate"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
+#: src/ui/trade/tables.rs
+#: src/ui/watchlist/sidebar/detail.rs
 msgid "Status"
 msgstr ""
 
@@ -7730,6 +9524,7 @@ msgid "Stock"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
 msgstr ""
 
@@ -7741,15 +9536,10 @@ msgstr ""
 msgid "Stocks need an Alpaca key"
 msgstr ""
 
-#: src/model/paper/format.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Stop"
-msgstr ""
-
-#: src/model/paper/format.rs
-msgid "Stop Limit"
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -7768,8 +9558,13 @@ msgstr ""
 msgid "Stop here"
 msgstr ""
 
+#: src/ui/trade/order_sheet/form.rs
+msgid "Stop loss"
+msgstr ""
+
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Stop price"
 msgstr ""
 
@@ -7841,6 +9636,7 @@ msgid "Suggestion list"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
+#: src/ui/portfolio/asset_picker.rs
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Suggestions"
 msgstr ""
@@ -7870,6 +9666,10 @@ msgstr ""
 msgid "Switch a script on to run it on this chart."
 msgstr ""
 
+#: src/ui/paper/header.rs
+msgid "Switch paper account"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Switch tab"
 msgstr ""
@@ -7882,6 +9682,9 @@ msgstr ""
 #: src/model/chart/object_tree.rs
 #: src/model/watchlist/mod.rs
 #: src/ui/chart/object_tree/mod.rs
+#: src/ui/paper/tables.rs
+#: src/ui/watchlist/rows.rs
+#: src/ui/watchlist/sidebar/detail.rs
 #: src/ui/window/tab_link_menu/mod.rs
 msgid "Symbol"
 msgstr ""
@@ -7922,6 +9725,14 @@ msgstr ""
 msgid "System follows your {computer}'s light or dark setting."
 msgstr ""
 
+#: src/ui/trade/venue_pill.rs
+msgid "TEST"
+msgstr ""
+
+#: src/ui/trade/venue_pill.rs
+msgid "TEST · {name}"
+msgstr ""
+
 #: src/ui/window/tab_bar/menu.rs
 msgid "Tab Title"
 msgstr ""
@@ -7949,6 +9760,14 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Take a snapshot"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Take profit"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Take profit / stop loss"
 msgstr ""
 
 #: src/model/chart/template/mod.rs
@@ -7990,6 +9809,10 @@ msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Templates"
+msgstr ""
+
+#: src/ui/trade/connect_list.rs
+msgid "Test"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -8049,6 +9872,10 @@ msgstr ""
 
 #: src/workspace/drawing/content.rs
 msgid "That image is not available to copy yet."
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "That is below the smallest order this market takes."
 msgstr ""
 
 #: src/model/broker/ticket.rs
@@ -8142,9 +9969,19 @@ msgstr ""
 msgid "The CoinMarketCap CSV is empty."
 msgstr ""
 
+#: src/ui/trade/order_sheet/form.rs
+msgid "The account cannot afford the smallest order here."
+msgstr ""
+
 #: src/trading/paper/backend.rs
 msgid ""
 "The account changed since the order was set up. Nothing was sent. Check the "
+"order again."
+msgstr ""
+
+#: src/ui/trade/order_sheet/state.rs
+msgid ""
+"The account changed since you set this order up. Nothing was sent. Check the "
 "order again."
 msgstr ""
 
@@ -8256,6 +10093,12 @@ msgstr ""
 #: src/ui/kit/dialog/tests.rs
 #: src/workspace/chart/collection.rs
 msgid "The chart leaves this tab. You can add it again from the symbol search."
+msgstr ""
+
+#: src/ui/trade/order_sheet/state.rs
+msgid ""
+"The check of this order is out of date. Nothing was sent. Check the order "
+"again."
 msgstr ""
 
 #: src/workspace/drawing/links.rs
@@ -8378,6 +10221,10 @@ msgstr ""
 msgid "The file dialog failed: {message}"
 msgstr ""
 
+#: src/ui/portfolio/import_preview.rs
+msgid "The file didn't contain any transactions that can be imported."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid ""
 "The fill behind a bracket and its partner, or behind one with no partner."
@@ -8405,6 +10252,10 @@ msgstr ""
 
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "The journal is empty"
 msgstr ""
 
 #: src/ui/settings/appearance.rs
@@ -8499,6 +10350,10 @@ msgid ""
 "again."
 msgstr ""
 
+#: src/ui/trade/order_sheet/status.rs
+msgid "The order could not be checked."
+msgstr ""
+
 #: src/trading/broker/backend.rs
 msgid "The order is being changed. Try again in a moment."
 msgstr ""
@@ -8512,6 +10367,7 @@ msgid "The order is no longer working"
 msgstr ""
 
 #: src/trading/paper/backend.rs
+#: src/ui/trade/order_sheet/status.rs
 msgid "The order is not complete."
 msgstr ""
 
@@ -8764,6 +10620,10 @@ msgid ""
 "The values box under the crosshair is hidden. The crosshair itself stays."
 msgstr ""
 
+#: src/ui/trade/order_sheet/status.rs
+msgid "The venue would refuse this order."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "The vertical guides at each indent level."
 msgstr ""
@@ -8826,6 +10686,14 @@ msgstr ""
 msgid "There is nothing on this chart to take a picture of yet."
 msgstr ""
 
+#: src/ui/trade/order_sheet/form.rs
+msgid "There is nothing to spend."
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "These Transactions Can't Be Valued"
+msgstr ""
+
 #: src/ui/chart/settings/style.rs
 msgid "Thick line"
 msgstr ""
@@ -8855,6 +10723,10 @@ msgstr ""
 msgid "This app's Team ID is not valid."
 msgstr ""
 
+#: src/ui/portfolio/asset_detail.rs
+msgid "This asset has no transactions in this portfolio."
+msgstr ""
+
 #: src/model/broker/chart.rs
 msgid "This broker does not offer this market, so it cannot be traded here."
 msgstr ""
@@ -8871,8 +10743,16 @@ msgstr ""
 msgid "This build has an unrecognised iCloud environment."
 msgstr ""
 
+#: src/ui/paper/account_sheet.rs
+msgid "This can't be undone"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "This can't be undone. Your alerts are kept."
+msgstr ""
+
+#: src/ui/portfolio/cards/mod.rs
+msgid "This card needs the portfolio, which isn't available here."
 msgstr ""
 
 #: src/trading/edit/mod.rs
@@ -8961,6 +10841,16 @@ msgstr ""
 msgid "This needs {short} more than the {free} free."
 msgstr ""
 
+#: src/ui/portfolio/sheets.rs
+msgid ""
+"This permanently deletes the portfolio and its {count} transaction. It can't "
+"be undone."
+msgid_plural ""
+"This permanently deletes the portfolio and its {count} transactions. It can't "
+"be undone."
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/model/session_stats/mod.rs
 msgid "This question needs hourly bars; switch the timeframe to 1H."
 msgstr ""
@@ -8988,6 +10878,10 @@ msgid ""
 "This script was not added from a saved script, so there is no source to open."
 msgstr ""
 
+#: src/ui/trade/order_sheet/review.rs
+msgid "This sends a real order to {name}. Check every line."
+msgstr ""
+
 #: src/host/snapshot/mod.rs
 msgid ""
 "This snapshot host is not in this version of DegenView. Choose another in "
@@ -9010,6 +10904,10 @@ msgstr ""
 msgid "Three quarters by"
 msgstr ""
 
+#: src/ui/portfolio/asset_picker.rs
+msgid "Ticker symbol (e.g. BTC or PEPE)"
+msgstr ""
+
 #: src/model/forecast/style.rs
 msgid "Ticks per row"
 msgstr ""
@@ -9018,7 +10916,9 @@ msgstr ""
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/kit/date_picker.rs
+#: src/ui/paper/tables.rs
 #: src/ui/replay/date_sheet.rs
+#: src/ui/trade/tables.rs
 #: src/ui/window/tab_link_menu/mod.rs
 msgid "Time"
 msgstr ""
@@ -9029,6 +10929,10 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Time cycles"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Time in force"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -9089,6 +10993,10 @@ msgstr ""
 msgid "Top"
 msgstr ""
 
+#: src/ui/portfolio/overview/top_holdings.rs
+msgid "Top Holdings"
+msgstr ""
+
 #: src/model/portfolio/card.rs
 msgid "Top Performers"
 msgstr ""
@@ -9102,6 +11010,9 @@ msgid "Top-left corner"
 msgstr ""
 
 #: src/model/forecast/style.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/trade/order_sheet/form.rs
 msgid "Total"
 msgstr ""
 
@@ -9117,20 +11028,100 @@ msgstr ""
 msgid "Total (venue's estimate)"
 msgstr ""
 
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Total ({currency})"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/statistics/hero.rs
+msgid "Total P&L"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "Total Value"
+msgstr ""
+
 #: src/model/portfolio/editor.rs
 msgid "Total cost"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Total value"
+msgstr ""
+
+#: src/ui/portfolio/statistics/pnl.rs
+msgid "Total, in {currency}"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Track everything you hold"
+msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "Tracking Since"
 msgstr ""
 
 #: src/model/indicators/catalog.rs
 msgid "Traded volume under the candles."
 msgstr ""
 
+#: src/ui/paper/tables.rs
+msgid "Trades"
+msgstr ""
+
 #: src/ui/pine/report.rs
 msgid "Trades ({count})"
 msgstr ""
 
+#: src/ui/trade/order_sheet/form.rs
+msgid "Trading fee"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgid "Trading fee ({percent}%)"
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "Trading settings"
+msgstr ""
+
 #: src/model/chart/kind.rs
 msgid "Traditional"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Transaction"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Transaction not saved"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/statistics/mod.rs
+#: src/ui/portfolio/tab/mod.rs
+#: src/ui/portfolio/transactions.rs
+msgid "Transactions"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid ""
+"Transactions in this portfolio are valued in {currency}. You can still view it"
+" in any currency later."
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Transfer"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Transfer In"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "Transfer Out"
 msgstr ""
 
 #: src/ui/kit/color_picker/inline.rs
@@ -9176,6 +11167,10 @@ msgstr ""
 msgid "Triangle pattern"
 msgstr ""
 
+#: src/ui/trade/tables.rs
+msgid "Trigger"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "Triggered"
 msgstr ""
@@ -9190,6 +11185,10 @@ msgstr ""
 
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Trump"
+msgstr ""
+
+#: src/ui/trade/order_sheet/status.rs
+msgid "Try again"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/rows.rs
@@ -9229,6 +11228,10 @@ msgid "Tweet image"
 msgstr ""
 
 #: src/trading/confirm.rs
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/transactions.rs
+#: src/ui/trade/tables.rs
 msgid "Type"
 msgstr ""
 
@@ -9249,12 +11252,20 @@ msgstr ""
 msgid "US regular hours"
 msgstr ""
 
+#: src/ui/portfolio/asset_picker.rs
+msgid "US stock symbol or company name (e.g. AAPL)"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "UTC days"
 msgstr ""
 
 #: src/model/drawings/style.rs
 msgid "Umbrella"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+msgid "Unavailable"
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs
@@ -9331,6 +11342,16 @@ msgstr ""
 msgid "Unpin"
 msgstr ""
 
+#: src/ui/paper/tables.rs
+#: src/ui/portfolio/statistics/hero.rs
+msgid "Unrealized"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+#: src/ui/portfolio/overview/summary.rs
+msgid "Unrealized P&L"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "Unsupported"
 msgstr ""
@@ -9405,6 +11426,10 @@ msgstr ""
 msgid "Update “{name}”?"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/detail.rs
+msgid "Updated"
+msgstr ""
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Updated {time}"
 msgstr ""
@@ -9436,6 +11461,15 @@ msgstr ""
 
 #: src/ui/drawing/properties/levels.rs
 msgid "Upper line"
+msgstr ""
+
+#: src/ui/portfolio/tab/import.rs
+#: src/ui/portfolio/tab/mod.rs
+msgid "Use Asset"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "Use BUY or SELL in a chart's header to open one."
 msgstr ""
 
 #: src/model/portfolio/editor.rs
@@ -9483,6 +11517,19 @@ msgstr ""
 msgid "User-defined functions"
 msgstr ""
 
+#: src/ui/portfolio/import_preview.rs
+msgid "Validating and importing…"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+#: src/ui/portfolio/transaction_editor.rs
+msgid "Value"
+msgstr ""
+
+#: src/ui/portfolio/statistics/range.rs
+msgid "Value Range"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Value area high and low"
 msgstr ""
@@ -9497,6 +11544,26 @@ msgstr ""
 
 #: src/model/portfolio/card.rs
 msgid "Value over time, from one day to all time"
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Value, profit and allocation fill this page."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Value, profit and allocation follow the market."
+msgstr ""
+
+#: src/ui/portfolio/charts.rs
+msgid "Values hidden"
+msgstr ""
+
+#: src/ui/portfolio/asset_detail.rs
+msgid "Values in {currency}"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "Values in {currency} · Double-click a row for its transactions"
 msgstr ""
 
 #: src/ui/workspace/cursor_menu.rs
@@ -9532,6 +11599,10 @@ msgstr ""
 msgid "Vertical scales remain independent."
 msgstr ""
 
+#: src/ui/portfolio/overview/top_holdings.rs
+msgid "View All"
+msgstr ""
+
 #: src/ui/workspace/tool_sidebar.rs
 msgid "View Price Alerts"
 msgstr ""
@@ -9544,8 +11615,16 @@ msgstr ""
 msgid "View Release"
 msgstr ""
 
+#: src/ui/portfolio/holdings.rs
+msgid "View Transactions"
+msgstr ""
+
 #: src/ui/window/tab_bar/mod.rs
 msgid "View project on GitHub"
+msgstr ""
+
+#: src/ui/portfolio/sheets.rs
+msgid "Viewing"
 msgstr ""
 
 #: src/model/tab/link/mod.rs
@@ -9582,6 +11661,7 @@ msgstr ""
 #: src/model/watchlist/mod.rs
 #: src/ui/chart/symbol_picker/detail.rs
 #: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/watchlist/sidebar/detail.rs
 msgid "Volume"
 msgstr ""
 
@@ -9630,12 +11710,20 @@ msgstr ""
 msgid "Waiting to load"
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "Wallet"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Warning"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Warning underline"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "Warnings don't block the import."
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -9654,8 +11742,25 @@ msgstr ""
 msgid "Watchlist Full"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Watchlist options"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+msgid "Watchlist: {title}"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/watchlist/sidebar/header.rs
 msgid "Watchlists"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/mod.rs
+msgid "Watchlists Unavailable"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/menus.rs
+msgid "Watchlists are unavailable"
 msgstr ""
 
 #: src/ui/chart/settings/canvas.rs
@@ -9753,6 +11858,16 @@ msgstr ""
 msgid "What is lost if the stop is reached."
 msgstr ""
 
+#: src/ui/trade/order_sheet/form.rs
+msgid ""
+"What trading this order is expected to cost. The venue's own check replaces "
+"the estimate once it has run."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "What you put in"
+msgstr ""
+
 #: src/ui/chart/session_stats_view/text.rs
 msgid "When (n = {days}): half by {median} · 90% by {p90}"
 msgstr ""
@@ -9805,12 +11920,29 @@ msgstr ""
 msgid "Width point"
 msgstr ""
 
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "Win Rate"
+msgstr ""
+
 #: src/ui/pine/report.rs
 msgid "Win rate"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "Won’t be imported"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Worked from the volume of the bars the chart draws: no volume, no line."
+msgstr ""
+
+#: src/ui/trade/order_sheet/open_orders.rs
+#: src/ui/trade/tables.rs
+msgid "Working orders rest here until they fill or are cancelled."
+msgstr ""
+
+#: src/ui/portfolio/overview/summary.rs
+msgid "Worst Performer"
 msgstr ""
 
 #: src/ui/drawing/properties/text.rs
@@ -9902,6 +12034,10 @@ msgstr ""
 
 #: src/ui/workspace/layout_prompts.rs
 msgid "Your changes will be lost if you switch layouts without saving."
+msgstr ""
+
+#: src/ui/portfolio/empty.rs
+msgid "Your portfolio at a glance"
 msgstr ""
 
 #: src/model/indicators/catalog.rs
@@ -10004,6 +12140,10 @@ msgstr ""
 msgid "delayed"
 msgstr ""
 
+#: src/ui/portfolio/sheets.rs
+msgid "e.g. Long-term holds"
+msgstr ""
+
 #: src/model/session_stats/mod.rs
 msgid "every day"
 msgstr ""
@@ -10052,6 +12192,10 @@ msgstr ""
 msgid "it unpacks to more data than an update should"
 msgstr ""
 
+#: src/ui/trade/order_sheet/open_orders.rs
+msgid "market"
+msgstr ""
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "max"
 msgstr ""
@@ -10084,6 +12228,10 @@ msgstr ""
 msgid "now"
 msgstr ""
 
+#: src/ui/portfolio/statistics/hero.rs
+msgid "on cost basis"
+msgstr ""
+
 #: src/model/alert/draft/mod.rs
 msgid "once"
 msgstr ""
@@ -10094,6 +12242,10 @@ msgstr ""
 
 #: src/ui/replay/bar.rs
 msgid "or"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "over {period}"
 msgstr ""
 
 #: src/model/session_stats/mod.rs
@@ -10120,8 +12272,18 @@ msgstr ""
 msgid "thin"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "ticker matched"
+msgid_plural "tickers matched"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/replay/bar.rs
 msgid "to cancel"
+msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "today"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -10152,8 +12314,33 @@ msgstr ""
 msgid "waiting to load"
 msgstr ""
 
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "win rate"
+msgstr ""
+
 #: src/model/broker/ticket.rs
+#: src/ui/trade/tables.rs
 msgid "{amount} (spend)"
+msgstr ""
+
+#: src/ui/portfolio/cards/value_chart.rs
+msgid "{amount} vs invested"
+msgstr ""
+
+#: src/ui/portfolio/cards/value_chart.rs
+msgid "{arrow} {amount}"
+msgstr ""
+
+#: src/ui/portfolio/cards/value.rs
+msgid "{arrow} {amount}  24h"
+msgstr ""
+
+#: src/ui/portfolio/cards/value_chart.rs
+msgid "{arrow} {amount} · {percent}"
+msgstr ""
+
+#: src/ui/portfolio/cards/value.rs
+msgid "{arrow} {amount} · {percent}  24h"
 msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
@@ -10182,6 +12369,10 @@ msgid_plural "{base} · {count} webhooks"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/portfolio/tab/mod.rs
+msgid "{caption} · Cached exchange rates"
+msgstr ""
+
 #: src/ui/window/tab_link_menu/mod.rs
 msgid "{color} (click to unlink)"
 msgstr ""
@@ -10193,6 +12384,12 @@ msgstr ""
 #: src/ui/chart/table_view.rs
 msgid "{column} {value}"
 msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "{count} CSV error requires attention"
+msgid_plural "{count} CSV errors require attention"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/alert/center.rs
 msgid "{count} active"
@@ -10209,8 +12406,21 @@ msgid "{count} already in the list"
 msgstr ""
 
 #: src/trading/broker/backend.rs
+#: src/ui/portfolio/cards/allocation.rs
+#: src/ui/portfolio/cmc_import.rs
+#: src/ui/portfolio/empty.rs
+#: src/ui/portfolio/holdings.rs
+#: src/ui/portfolio/import_preview.rs
+#: src/ui/portfolio/overview/mod.rs
+#: src/ui/portfolio/sheets.rs
 msgid "{count} asset"
 msgid_plural "{count} assets"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cards/value.rs
+msgid "{count} asset could not be priced"
+msgid_plural "{count} assets could not be priced"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -10226,6 +12436,12 @@ msgstr[1] ""
 #: src/ui/chart/table_view.rs
 msgid "{count} bars"
 msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "{count} buy"
+msgid_plural "{count} buys"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} chart · {timeframe}"
@@ -10252,6 +12468,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/ui/kit/time_text.rs
+#: src/ui/portfolio/statistics/mod.rs
 msgid "{count} day ago"
 msgid_plural "{count} days ago"
 msgstr[0] ""
@@ -10265,6 +12482,34 @@ msgstr ""
 msgid "{count} drawing will be removed from this chart. You can undo it."
 msgid_plural ""
 "{count} drawings will be removed from this chart. You can undo it."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/paper/tables.rs
+msgid "{count} entry"
+msgid_plural "{count} entries"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "{count} error to fix"
+msgid_plural "{count} errors to fix"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/paper/tables.rs
+msgid "{count} event"
+msgid_plural "{count} events"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid ""
+"{count} fee is in a currency other than USD needs a historical rate to be "
+"converted."
+msgid_plural ""
+"{count} fees are in a currency other than USD need a historical rate to be "
+"converted."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -10333,6 +12578,10 @@ msgid_plural "{count} markets · {hidden} hidden"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "{count} matched"
+msgstr ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} min. ago"
 msgid_plural "{count} min. ago"
@@ -10345,9 +12594,21 @@ msgid_plural "{count} mo. ago"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/portfolio/statistics/mod.rs
+msgid "{count} month ago"
+msgid_plural "{count} months ago"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} more favorite"
 msgid_plural "{count} more favorites"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/trade/order_sheet/open_orders.rs
+msgid "{count} more in the orders panel"
+msgid_plural "{count} more in the orders panel"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -10362,6 +12623,10 @@ msgid "{count} more point: drag it on the chart."
 msgid_plural "{count} more points: drag them on the chart."
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/paper/tables.rs
+msgid "{count} open · Unrealized {pnl}"
+msgstr ""
 
 #: src/model/paper/export.rs
 msgid "{count} order"
@@ -10380,6 +12645,22 @@ msgid_plural "{count} places"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/portfolio/sheets.rs
+msgid "{count} portfolio · Drag to reorder, click a name to rename."
+msgid_plural "{count} portfolios · Drag to reorder, click a name to rename."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid "{count} problem requires attention"
+msgid_plural "{count} problems require attention"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "{count} searching"
+msgstr ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} sec. ago"
 msgid_plural "{count} sec. ago"
@@ -10392,13 +12673,47 @@ msgid_plural "{count} sections"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/portfolio/statistics/mod.rs
+msgid "{count} sell"
+msgid_plural "{count} sells"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "{count} shown"
+msgstr ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "{count} skipped"
 msgstr ""
 
 #: src/ui/kit/timeframe_picker/warning.rs
 msgid "{count} source can't chart {timeframe}"
 msgid_plural "{count} sources can't chart {timeframe}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "{count} to match"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "{count} trade · Win rate {rate}% · Net {net}"
+msgid_plural "{count} trades · Win rate {rate}% · Net {net}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cmc_import.rs
+#: src/ui/portfolio/sheets.rs
+#: src/ui/portfolio/transactions.rs
+msgid "{count} transaction"
+msgid_plural "{count} transactions"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cmc_import.rs
+msgid "{count} transaction to import"
+msgid_plural "{count} transactions to import"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -10422,9 +12737,25 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/portfolio/import_preview.rs
+msgid "{count} warning"
+msgid_plural "{count} warnings"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/kit/time_text.rs
 msgid "{count} wk. ago"
 msgid_plural "{count} wk. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/paper/tables.rs
+msgid "{count} working"
+msgstr ""
+
+#: src/ui/portfolio/statistics/mod.rs
+msgid "{count} year ago"
+msgid_plural "{count} years ago"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -10456,6 +12787,14 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "{currency} free to spend"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "{currency} per contract"
+msgstr ""
+
+#: src/ui/paper/account_sheet.rs
+msgid "{currency} per order"
 msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
@@ -10541,6 +12880,10 @@ msgstr ""
 msgid "{from} – {to}"
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "{from}–{to} of {total}"
+msgstr ""
+
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{hidden} more"
 msgstr ""
@@ -10553,8 +12896,16 @@ msgstr ""
 msgid "{hours}h {minutes}m"
 msgstr ""
 
+#: src/ui/portfolio/transactions.rs
+msgid "{kind} {count}"
+msgstr ""
+
 #: src/ui/chart/object_tree/mod.rs
 msgid "{kind} {label}"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "{kind} {ticker}, {quantity}, {date}"
 msgstr ""
 
 #: src/model/chart/snapshot/mod.rs
@@ -10598,6 +12949,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/ui/chart/session_stats_view/parts.rs
+#: src/ui/watchlist/sidebar/detail.rs
 msgid "{label}: {value}"
 msgstr ""
 
@@ -10635,8 +12987,29 @@ msgstr ""
 msgid "{market}, {subtitle}"
 msgstr ""
 
+#: src/ui/portfolio/cmc_import.rs
+msgid "{matched} of {total}"
+msgstr ""
+
+#: src/ui/portfolio/import_preview.rs
+msgid ""
+"{message}\n"
+"\n"
+"No transactions were imported. Correct the source data, or restart the "
+"CoinMarketCap import and skip the affected ticker or item."
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgid "{message}\n"
+"Order {id}"
+msgstr ""
+
 #: src/ui/window/update_indicator.rs
 msgid "{message} Click to try again."
+msgstr ""
+
+#: src/ui/portfolio/tab/mod.rs
+msgid "{message} Review them in the Transactions tab."
 msgstr ""
 
 #: src/ui/drawing/render.rs
@@ -10651,8 +13024,13 @@ msgstr ""
 msgid "{name} background"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
 #: src/workspace/layout/mod.rs
 msgid "{name} copy"
+msgstr ""
+
+#: src/ui/trade/order_sheet/status.rs
+msgid "{name} could not check this order: {text}"
 msgstr ""
 
 #: src/ui/chart/settings/overlay.rs
@@ -10667,8 +13045,24 @@ msgstr ""
 msgid "{name} has no setting called {key}."
 msgstr ""
 
+#: src/ui/trade/order_sheet/mod.rs
+msgid "{name} is not connected"
+msgstr ""
+
+#: src/ui/trade/order_sheet/mod.rs
+msgid "{name} needs attention"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 msgid "{name} settings…"
+msgstr ""
+
+#: src/ui/portfolio/cards/mod.rs
+msgid "{name} {share}"
+msgstr ""
+
+#: src/ui/trade/venue_pill.rs
+msgid "{name} · {kind}"
 msgstr ""
 
 #: src/ui/chart/card/overlay_card.rs
@@ -10695,6 +13089,10 @@ msgstr ""
 msgid "{name}, on"
 msgstr ""
 
+#: src/ui/portfolio/charts.rs
+msgid "{name}, {share} of portfolio"
+msgstr ""
+
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "{name}: {offset}"
 msgstr ""
@@ -10711,6 +13109,18 @@ msgstr ""
 msgid "{note} — {status}"
 msgstr ""
 
+#: src/ui/portfolio/statistics/win_rate.rs
+msgid "{n} priced"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "{n} unpriced"
+msgstr ""
+
+#: src/ui/trade/tables.rs
+msgid "{open} working"
+msgstr ""
+
 #: src/model/paper/export.rs
 msgid "{orders}, {fills} and {trades}"
 msgstr ""
@@ -10723,6 +13133,10 @@ msgstr ""
 msgid ""
 "{path} is {size} KB, which is too large to be what was asked for (the limit is"
 " {limit} KB)."
+msgstr ""
+
+#: src/ui/portfolio/statistics/range.rs
+msgid "{percent}% of the way up"
 msgstr ""
 
 #: src/ui/drawing/render.rs
@@ -10743,6 +13157,10 @@ msgstr ""
 msgid "{prefix} isn't supported. Searched: {searched}."
 msgstr ""
 
+#: src/ui/portfolio/empty.rs
+msgid "{quantity} at {price}"
+msgstr ""
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid "{question} on {filter}"
 msgstr ""
@@ -10754,6 +13172,12 @@ msgstr ""
 #: src/model/annotation/table.rs
 msgid "{rows} × {columns} table"
 msgstr ""
+
+#: src/ui/portfolio/cards/value.rs
+msgid "{scope} · {count} asset"
+msgid_plural "{scope} · {count} assets"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/chart/card/table.rs
 msgid "{script}: plot {number}"
@@ -10777,6 +13201,26 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/parts.rs
 msgid "{share}% of days, 95% interval {low}% to {high}%"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "{shown} of {count} asset"
+msgid_plural "{shown} of {count} assets"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "{shown} of {count} transaction"
+msgid_plural "{shown} of {count} transactions"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "{side} at {price}"
+msgstr ""
+
+#: src/ui/paper/chart_trading.rs
+msgid "{side} {price} — opens a paper order ticket"
 msgstr ""
 
 #: src/model/broker/ticket.rs
@@ -10805,6 +13249,10 @@ msgstr ""
 
 #: src/model/alert/draft/mod.rs
 msgid "{signed} from the current price"
+msgstr ""
+
+#: src/ui/portfolio/transactions.rs
+msgid "{size} per page"
 msgstr ""
 
 #: src/model/watchlist/text.rs
@@ -10855,6 +13303,10 @@ msgstr ""
 msgid "{theme} theme"
 msgstr ""
 
+#: src/ui/portfolio/asset_detail.rs
+msgid "{ticker} Transactions"
+msgstr ""
+
 #: src/model/alert/draft/mod.rs
 msgid "{ticker} crosses above {price}"
 msgstr ""
@@ -10871,6 +13323,22 @@ msgstr ""
 msgid "{ticker} rises {percent}% to {price}"
 msgstr ""
 
+#: src/ui/portfolio/cards/mod.rs
+msgid "{ticker} {change}"
+msgstr ""
+
+#: src/ui/portfolio/cards/top_performers.rs
+msgid "{ticker} · {change}"
+msgstr ""
+
+#: src/ui/portfolio/holdings.rs
+msgid "{ticker}, {name}, {value}"
+msgstr ""
+
+#: src/ui/portfolio/overview/top_holdings.rs
+msgid "{ticker}: {value} ({share} of portfolio)"
+msgstr ""
+
 #: src/workspace/replay.rs
 msgid ""
 "{timeframe} history starts after the replay position, so the replay moved to "
@@ -10884,6 +13352,12 @@ msgstr ""
 #: src/host/snapshot/mod.rs
 msgid "{title} is kept in the secure storage."
 msgstr ""
+
+#: src/ui/watchlist/rows.rs
+msgid "{title} section, {count} symbol"
+msgid_plural "{title} section, {count} symbols"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/ui/chart/indicator_strip.rs
 msgid "{title} settings"
@@ -10908,6 +13382,24 @@ msgstr ""
 #: src/ui/chart/symbol_picker/predictions/rows.rs
 msgid "{title}, {count} choice"
 msgid_plural "{title}, {count} choices"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/portfolio/cards/mod.rs
+msgid "{title}, {scope} over {range}: {parts}"
+msgstr ""
+
+#: src/ui/portfolio/cards/mod.rs
+msgid "{title}, {scope}: {parts}"
+msgstr ""
+
+#: src/ui/portfolio/cards/mod.rs
+msgid "{title}, {scope}: {value}"
+msgstr ""
+
+#: src/ui/paper/panel/mod.rs
+msgid "{total} failed: {first} (and {count} more)"
+msgid_plural "{total} failed: {first} (and {count} more)"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -10963,8 +13455,16 @@ msgstr ""
 msgid "{width}px dotted"
 msgstr ""
 
+#: src/ui/portfolio/statistics/mod.rs
+msgid "{winners} in profit · {losers} at a loss"
+msgstr ""
+
 #: src/ui/replay/overlay.rs
 msgid "{words} · {time}"
+msgstr ""
+
+#: src/ui/portfolio/statistics/hero.rs
+msgid "· All time"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
@@ -11057,6 +13557,11 @@ msgstr ""
 #: src/ui/drawing/layer/menu.rs
 msgctxt "italic button"
 msgid "I"
+msgstr ""
+
+#: src/ui/paper/tables.rs
+msgctxt "journal entry"
+msgid "Entry"
 msgstr ""
 
 #: src/trading/model.rs
@@ -11218,6 +13723,11 @@ msgstr ""
 #: src/ui/chart/card/crosshair.rs
 msgctxt "readout label: open"
 msgid "O"
+msgstr ""
+
+#: src/ui/watchlist/rows.rs
+msgctxt "sparkline column"
+msgid "1M"
 msgstr ""
 
 #: src/service/update/check.rs

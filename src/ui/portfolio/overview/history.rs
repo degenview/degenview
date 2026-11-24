@@ -1,6 +1,7 @@
 //! The value history card and its range control.
 
 use super::{OverviewInput, OverviewState};
+use crate::i18n::tr;
 use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{MEDIUM, REGULAR};
@@ -19,7 +20,7 @@ pub(super) fn history_card(
         ui,
         height,
         Icon::ChartUptrend,
-        "Portfolio Value",
+        tr!("Portfolio Value"),
         |header, ui| {
             history_range_control(header, &mut state.range);
             let loading =
@@ -34,9 +35,9 @@ pub(super) fn history_card(
                     privacy: input.formatter.privacy,
                     is_loading: loading,
                     loading_message: if input.is_loading_initial {
-                        "Loading market data\u{2026}"
+                        tr!("Loading market data…")
                     } else {
-                        "Building history\u{2026}"
+                        tr!("Building history…")
                     },
                     now_ms: input.now_ms,
                     utc_offset_secs: input.utc_offset_secs,

@@ -29,13 +29,6 @@ impl PaperOrderSide {
 }
 
 impl PaperPositionSide {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Long => tr!("Long"),
-            Self::Short => tr!("Short"),
-        }
-    }
-
     pub fn badge_text(self) -> &'static str {
         match self {
             Self::Long => tr_c!("badge", "LONG"),
@@ -49,15 +42,6 @@ impl PaperPositionSide {
 }
 
 impl PaperOrderType {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Market => tr!("Market"),
-            Self::Limit => tr!("Limit"),
-            Self::Stop => tr!("Stop"),
-            Self::StopLimit => tr!("Stop Limit"),
-        }
-    }
-
     pub fn badge_text(self) -> &'static str {
         match self {
             Self::Market => tr_c!("badge", "MKT"),
@@ -427,7 +411,6 @@ mod tests {
     fn labels_match_the_swift_app() {
         assert_eq!(PaperOrderSide::Buy.badge_text(), "BUY");
         assert_eq!(PaperPositionSide::Short.badge_text(), "SHORT");
-        assert_eq!(PaperOrderType::StopLimit.label(), "Stop Limit");
         assert_eq!(PaperOrderType::StopLimit.badge_text(), "STP LMT");
         assert_eq!(PaperOrderRole::TakeProfit.badge_text(), "TP");
         assert_eq!(PaperOrderEventKind::PartiallyFilled.label(), "Partial fill");

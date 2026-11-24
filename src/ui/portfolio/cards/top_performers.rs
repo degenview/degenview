@@ -4,6 +4,7 @@
 //! started and where it stands.
 
 use super::{chip, loading_pill, tone_color, tooltip};
+use crate::i18n::tr;
 use crate::model::portfolio::card::{CardData, PortfolioCard};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -65,7 +66,7 @@ pub(super) fn paint_summary(ui: &Ui, row: Rect, card: &PortfolioCard, data: &Car
     let Some(best) = data.performance.ranked.first().filter(|_| !data.loading) else {
         let galley = kit::galley(
             ui,
-            &format!("Over {}", card.range.period_name()),
+            &tr!("Over {period}", period = card.range.period_name()),
             12.0,
             kit::MEDIUM,
             theme::text_secondary(),
@@ -85,7 +86,7 @@ pub(super) fn paint_summary(ui: &Ui, row: Rect, card: &PortfolioCard, data: &Car
     }));
     let label = kit::galley(
         ui,
-        &format!("Best · {}", best.ticker),
+        &tr!("Best · {ticker}", ticker = best.ticker),
         12.0,
         kit::SEMIBOLD,
         theme::text_primary(),
@@ -120,9 +121,9 @@ pub(super) fn paint(
     if data.loading || (data.loading_performance && performance.ranked.is_empty()) {
         paint_skeleton(ui, area);
         let message = if data.loading {
-            "Loading market data…"
+            tr!("Loading market data…")
         } else {
-            "Reading price history…"
+            tr!("Reading price history…")
         };
         loading_pill(ui, area, message);
         return;
@@ -132,8 +133,8 @@ pub(super) fn paint(
             ui,
             area,
             Icon::BarChart,
-            "No Holdings",
-            "Add transactions to see how your assets perform.",
+            tr!("No Holdings"),
+            tr!("Add transactions to see how your assets perform."),
         );
         return;
     }
@@ -142,8 +143,8 @@ pub(super) fn paint(
             ui,
             area,
             Icon::BarChart,
-            "No Price History",
-            "None of the holdings has price history for this range.",
+            tr!("No Price History"),
+            tr!("None of the holdings has price history for this range."),
         );
         return;
     }
@@ -311,10 +312,10 @@ pub(super) fn paint(
     if hidden > 0 || has_note {
         let mut parts = Vec::new();
         if hidden > 0 {
-            parts.push(format!("+{hidden} more"));
+            parts.push(tr!("+{hidden} more", hidden = hidden));
         }
         if has_note {
-            parts.push(format!("{} unpriced", performance.unpriced));
+            parts.push(tr!("{n} unpriced", n = performance.unpriced));
         }
         let galley = kit::galley(
             ui,
@@ -344,10 +345,10 @@ pub(super) fn paint(
             area,
             &[
                 (
-                    format!(
-                        "{} · {}",
-                        performer.ticker,
-                        data.formatter.signed_percent(performer.change, 2)
+                    tr!(
+                        "{ticker} · {change}",
+                        ticker = performer.ticker,
+                        change = data.formatter.signed_percent(performer.change, 2)
                     ),
                     13.0,
                     kit::SEMIBOLD,
@@ -364,7 +365,7 @@ pub(super) fn paint(
                     theme::text_secondary(),
                 ),
                 (
-                    format!("over {}", card.range.period_name()),
+                    tr!("over {period}", period = card.range.period_name()),
                     10.5,
                     kit::REGULAR,
                     theme::text_tertiary(),

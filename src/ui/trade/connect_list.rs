@@ -3,6 +3,7 @@
 
 use eframe::egui;
 
+use crate::i18n::tr;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{VenueInfo, VenueKind};
 use crate::ui::broker::badge::LIVE;
@@ -15,7 +16,7 @@ pub fn show(ui: &mut egui::Ui, venues: &[VenueInfo]) -> Option<TradingVenue> {
     ui.add_space(24.0);
     ui.vertical_centered(|ui| {
         ui.label(kit::text(
-            "Choose where to trade",
+            tr!("Choose where to trade"),
             kit::size::TITLE2,
             kit::SEMIBOLD,
             theme::text_primary(),
@@ -23,7 +24,9 @@ pub fn show(ui: &mut egui::Ui, venues: &[VenueInfo]) -> Option<TradingVenue> {
         ui.add_space(4.0);
         ui.add(
             egui::Label::new(kit::text(
-                "Nothing is connected until you choose. You can add or remove places at any time in Settings.",
+                tr!(
+                    "Nothing is connected until you choose. You can add or remove places at any time in Settings."
+                ),
                 kit::size::CAPTION + 1.0,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -52,13 +55,13 @@ pub fn show(ui: &mut egui::Ui, venues: &[VenueInfo]) -> Option<TradingVenue> {
                         theme::text_primary(),
                     ));
                     let (label, tone) = match info.kind {
-                        VenueKind::Live => ("Real money", Tone::Warning),
-                        VenueKind::Test => ("Test", Tone::Neutral),
-                        VenueKind::Simulated => ("Simulated", Tone::Neutral),
+                        VenueKind::Live => (tr!("Real money"), Tone::Warning),
+                        VenueKind::Test => (tr!("Test"), Tone::Neutral),
+                        VenueKind::Simulated => (tr!("Simulated"), Tone::Neutral),
                     };
                     kit::status_badge(ui, label, tone);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if kit::sheet_button(ui, "Connect", false, true).clicked() {
+                        if kit::sheet_button(ui, tr!("Connect"), false, true).clicked() {
                             chosen = Some(info.venue);
                         }
                     });

@@ -712,3 +712,51 @@ fn a_price_clicked_on_the_chart_lands_on_the_tick() {
     rig.frames(&mut screen, &mut state, venue, 3);
     assert_eq!(state.draft.stop_text, "90123.46");
 }
+
+/// The sheet in the pseudo-locale, a limit order with take profit and stop loss in both themes:
+/// every word is put through `tr!` (none shows without brackets) and the longer text fits.
+#[test]
+fn the_sheet_draws_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.enable_paper();
+    with_locale(Locale::PSEUDO, || {
+        for light in [false, true] {
+            let mut screen = Screen::new(Vec2::new(340.0, 1100.0));
+            screen.ctx.set_theme(if light {
+                egui::ThemePreference::Light
+            } else {
+                egui::ThemePreference::Dark
+            });
+            let mut state = SheetState::default();
+            state.start(Side::Buy, Some(OrderClass::StopLimit), None);
+            state.mark_prefilled_for_test();
+            state.draft.size_text = "0.5".to_owned();
+            state.draft.stop_text = "91000".to_owned();
+            state.draft.price_text = "91500".to_owned();
+            state.draft.bracket = true;
+            state.draft.take_profit_text = "95000".to_owned();
+            let output = rig.frames(&mut screen, &mut state, Some(TradingVenue::Paper), 4);
+            // Order types, time in force and the venue's name come from the trading model, which
+            // is not converted yet.
+            let loose = super::pseudo_text::untranslated(
+                &output,
+                &[
+                    "BTC",
+                    "USD",
+                    "PAPER TRADING",
+                    "Market",
+                    "Limit",
+                    "Stop",
+                    "Good til cancelled",
+                ],
+            );
+            screen.save(
+                &format!("sheet-pseudo-{}", if light { "light" } else { "dark" }),
+                output,
+            );
+            assert!(loose.is_empty(), "texts that skipped `tr!`: {loose:?}");
+        }
+    });
+}
