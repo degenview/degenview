@@ -56,6 +56,21 @@ impl ProviderError {
         matches!(self, Self::UnsupportedInterval { .. })
     }
 
+    /// The failure may not come again: the transport failed or the provider was busy or broken
+    /// (see [`http::Error::is_transient`]). An unsupported interval, a missing key, a parse
+    /// failure or the provider's own refusal is not.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Network(error) | Self::Alpaca(error) | Self::CoinMarketCap(error) => {
+                error.is_transient()
+            }
+            Self::Data(_)
+            | Self::MissingKey
+            | Self::Other(_)
+            | Self::UnsupportedInterval { .. } => false,
+        }
+    }
+
     /// The provider said too many requests (HTTP 429).
     pub fn is_rate_limited(&self) -> bool {
         matches!(
@@ -99,6 +114,26 @@ mod tests {
             ProviderError::unsupported(DataSource::Polymarket, Timeframe::MINUTE_1).to_string(),
             "Polymarket has no 1m history"
         );
+    }
+
+    #[test]
+    fn only_a_failure_that_may_pass_is_transient() {
+        for status in [408, 425, 429, 500, 503] {
+            assert!(ProviderError::from(http::Error::Status(status)).is_transient());
+        }
+        assert!(ProviderError::from(http::Error::Network("reset".to_owned())).is_transient());
+        assert!(ProviderError::Alpaca(http::Error::Status(503)).is_transient());
+        for error in [
+            ProviderError::from(http::Error::Status(400)),
+            ProviderError::from(http::Error::Status(404)),
+            ProviderError::from(http::Error::BodyTooLarge(1)),
+            ProviderError::data("bad"),
+            ProviderError::other("no market"),
+            ProviderError::MissingKey,
+            ProviderError::unsupported(DataSource::Gate, Timeframe::SECOND_1),
+        ] {
+            assert!(!error.is_transient(), "{error}");
+        }
     }
 
     #[test]

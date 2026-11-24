@@ -173,7 +173,7 @@ impl Session {
         series.insert("time".to_owned(), RuntimeValue::Int(bar.open_time));
         series.insert(
             "time_close".to_owned(),
-            RuntimeValue::Int(bar.open_time + (self.bar_seconds * 1000.0) as i64),
+            RuntimeValue::Int(self.bar_end(&bar)),
         );
         series.insert(
             "bar_index".to_owned(),

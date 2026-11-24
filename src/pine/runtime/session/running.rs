@@ -35,8 +35,8 @@ impl Session {
         if let Some(seed) = seed.filter(|s| *s > 0.0) {
             self.bar_seconds = seed;
         }
-        if let Some(fixed) = self.fixed_bar_seconds {
-            self.bar_seconds = fixed;
+        if let Some(known) = self.known_bar_seconds() {
+            self.bar_seconds = known;
         } else if bars.len() > 1 {
             self.bar_seconds =
                 (bars[bars.len() - 1].open_time - bars[bars.len() - 2].open_time) as f64 / 1000.0;
@@ -213,7 +213,7 @@ impl Session {
         }
         self.emitted_alerts.clear();
         if is_new
-            && self.fixed_bar_seconds.is_none()
+            && self.known_bar_seconds().is_none()
             && let Some(previous) = self.last_open_time
         {
             self.bar_seconds = (open_time - previous) as f64 / 1000.0;

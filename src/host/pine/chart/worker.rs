@@ -42,6 +42,8 @@ pub(super) struct WorkerConfig {
     pub(super) symbol: SymbolInfo,
     /// The length of the chart's bars, when their times cannot say (price-based charts).
     pub(super) bar_seconds: Option<f64>,
+    /// The length of the timeframe the chart is set to.
+    pub(super) timeframe_seconds: Option<f64>,
 }
 
 enum WorkerEngine {
@@ -137,6 +139,10 @@ impl PineWorker {
                     ) {
                         Ok(controller) => {
                             let controller = controller.with_theme(config.theme).with_logs();
+                            let controller = match config.timeframe_seconds {
+                                Some(seconds) => controller.with_timeframe_seconds(seconds),
+                                None => controller,
+                            };
                             WorkerEngine::Ready(Box::new(match config.bar_seconds {
                                 Some(seconds) => controller.with_bar_seconds(seconds),
                                 None => controller,

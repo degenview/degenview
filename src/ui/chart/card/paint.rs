@@ -408,6 +408,26 @@ impl ChartCard {
         );
     }
 
+    /// A bar's time as the chart writes it: to the second on a candle shorter than a minute.
+    pub(super) fn time_text(&self, epoch_ms: i64) -> String {
+        if self.shows_seconds() {
+            format::timestamp_seconds(epoch_ms)
+        } else {
+            format::timestamp(epoch_ms)
+        }
+    }
+
+    /// Whether the candles are shorter than a minute, so times carry their seconds.
+    pub(super) fn shows_seconds(&self) -> bool {
+        self.timeframe.is_some_and(Timeframe::is_subminute)
+    }
+
+    /// How wide the crosshair's time tag is: 16 characters of the axis font, 19 with seconds.
+    pub(super) fn time_tag_width(&self, style: &CanvasStyle) -> f32 {
+        let characters = if self.shows_seconds() { 19.0 } else { 16.0 };
+        116.0 * style.time_size / 9.0 * characters / 16.0
+    }
+
     /// The time labels, on the bars the vertical grid stands on.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_time_axis(
@@ -425,7 +445,7 @@ impl ChartCard {
             let Some(candle) = candles.get(*index) else {
                 continue;
             };
-            let label = format::timestamp(candle.open_time);
+            let label = self.time_text(candle.open_time);
             let x = x_for(*index);
             // A label that would hang over the plot's right edge waits for the chart to move, as a
             // price label does at the plot's top and bottom: it would run into the price axis and

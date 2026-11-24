@@ -115,11 +115,21 @@ watchlists.
   401 on `before_timestamp` is the end of history.
 - The chart offers 1h+, but Pine's `request.security` may ask any timeframe (5m intrabars, 4h):
   `timeframe_of` turns Pine's seconds into a `Timeframe` and the provider folds it, so an odd length
-  no longer fails with `PINE4021`/`PINE4022`; a length under a minute, or that is no timeframe
-  (`30S`), still does. Pine states lengths in seconds with a 30-day month; `pine::time::bucket` cuts
+  no longer fails with `PINE4021`/`PINE4022`; a length that is no timeframe (90.5 seconds) still
+  does, and one under a minute (`30S`) needs a source with second candles (Binance, OKX, Gate.io). Pine states lengths in seconds with a 30-day month; `pine::time::bucket` cuts
   the buckets the same way as everything else, a length that is no timeframe flooring onto the epoch.
-  `request.security_lower_tf` intrabars are folded in the Pine host from the coarsest of its own
-  base list that nests (`INTRABAR_BASES`), bounded by `MAX_INTRABAR_CANDLES` base candles.
+  `request.security_lower_tf` intrabars are fetched in the base candle of the chart's own source
+  (`DataSource::plan(length).base()`, so 30 s is 10 s candles on Gate.io and 1 s on Binance) and folded
+  with that plan in the Pine host, bounded by `MAX_INTRABAR_CANDLES` base candles. The fetch starts at
+  the opening of the target bucket that holds the window's start, and a first bucket the history
+  still starts inside of (a history cap) is dropped, not shown as a whole candle with its first seconds
+  missing (`fold_intrabars`). A source with no
+  plan for the length falls back to its own series of that length. A fetch that fails with a
+  transient error (`ProviderError::is_transient`: a dropped connection, 408/425/429/5xx) is asked
+  again twice (`service::market::retry::while_transient`, 0.5 s and 1.5 s); one that still fails
+  gives no intrabars (`request.security_lower_tf` returns empty arrays, `request.security` to a finer
+  timeframe raises PINE4021) and the session asks again after 15 s or at the next rebuild, rather than
+  answering with the newest candles of that length, which would leave older bars empty without a word.
 - `service::fetch_klines` runs every provider through `service::normalize` (ascending, one candle per
   open time, finite prices, range holds open and close). GeckoTerminal lists only traded intervals;
   `bucket::fill_gaps` adds flat zero-volume candles for even spacing. Volume units differ (base asset,

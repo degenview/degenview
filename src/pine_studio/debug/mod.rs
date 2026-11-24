@@ -44,6 +44,8 @@ pub struct DebugFeed {
     /// `chart.left_visible_bar_time` and `chart.right_visible_bar_time` sees.
     pub visible_range: Option<(i64, i64)>,
     pub theme: ChartTheme,
+    /// The length of the preview chart's timeframe, in Pine's seconds.
+    pub timeframe_seconds: Option<f64>,
     /// "BTCUSDT · 1D": shown beside the bar context.
     pub label: String,
 }
@@ -591,6 +593,7 @@ impl DebugPanel {
         let mut config = DebugConfig::new(source, feed.symbol, feed.bars, feed.now_ms);
         config.inputs = feed.inputs;
         config.theme = Some(feed.theme);
+        config.timeframe_seconds = feed.timeframe_seconds;
         config.libraries = libraries;
         config.security_data = Some(Box::new(crate::host::pine::KlineSecurityDataProvider));
         config.breakpoints = self.state.specs();

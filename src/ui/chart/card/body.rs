@@ -6,6 +6,7 @@ use super::frame::FrameLayout;
 use super::*;
 use crate::i18n::tr;
 use crate::model::chart::sync::TimeAxis;
+use crate::pine::time::bucket::seconds_of;
 use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 
 /// What one call to [`ChartCard::body`] draws and reports on.
@@ -50,11 +51,19 @@ pub(super) fn symbol_info(symbol: &str, source: DataSource, chart_type: ChartTyp
     }
 }
 
-/// Bars that follow price carry no length of their own: scripts read the candles'. `None` for a
-/// chart drawn from the candles themselves, which scripts already see with their own length.
-pub(super) fn source_bar_seconds(candles: &[Kline], constructed: bool) -> Option<f64> {
+/// Bars that follow price carry no length of their own: scripts read the candles', which are the
+/// chart's timeframe, else (a chart with none set) those of the newest candle. `None` for a chart
+/// drawn from the candles themselves, which scripts already see with their own length.
+pub(super) fn source_bar_seconds(
+    candles: &[Kline],
+    timeframe: Option<Timeframe>,
+    constructed: bool,
+) -> Option<f64> {
     if !constructed {
         return None;
+    }
+    if let Some(timeframe) = timeframe {
+        return Some(seconds_of(timeframe));
     }
     let last = candles.last()?;
     let seconds = (last.close_time - last.open_time + 1) as f64 / 1000.0;
@@ -427,7 +436,8 @@ impl ChartCard {
         self.keep_view_on_its_bars(bars);
         self.begin_sync_frame();
         let symbol_info = body::symbol_info(symbol, source, chart_type);
-        let source_bar_seconds = body::source_bar_seconds(candles, constructed.is_some());
+        let source_bar_seconds =
+            body::source_bar_seconds(candles, self.timeframe, constructed.is_some());
         let placed = self.pine_outputs(ui.ctx(), &symbol_info, bars, source_bar_seconds);
         let outputs = frame::split_forced_overlays(placed, line);
         self.feed_table(
@@ -676,25 +686,43 @@ mod tests {
 
     #[test]
     fn a_chart_of_the_candles_themselves_has_no_source_bar_length() {
-        assert_eq!(source_bar_seconds(&[candle(0, 3_599_999)], false), None);
+        assert_eq!(
+            source_bar_seconds(&[candle(0, 3_599_999)], None, false),
+            None
+        );
     }
 
     #[test]
-    fn constructed_bars_read_the_length_of_the_last_candle() {
+    fn constructed_bars_without_a_timeframe_read_the_length_of_the_last_candle() {
         // An hour: open to close inclusive of the last millisecond.
         assert_eq!(
-            source_bar_seconds(&[candle(0, 3_599_999)], true),
+            source_bar_seconds(&[candle(0, 3_599_999)], None, true),
             Some(3600.0)
         );
         // The last candle decides, and the length is rounded to whole seconds.
         let candles = [candle(0, 59_999), candle(60_000, 60_000 + 899_999)];
-        assert_eq!(source_bar_seconds(&candles, true), Some(900.0));
-        assert_eq!(source_bar_seconds(&[candle(0, 1_499)], true), Some(2.0));
+        assert_eq!(source_bar_seconds(&candles, None, true), Some(900.0));
+        assert_eq!(
+            source_bar_seconds(&[candle(0, 1_499)], None, true),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn constructed_bars_read_the_charts_timeframe_not_a_candle_cut_short_by_midnight() {
+        // A 59 s chart's last candle of the day is 24 s long.
+        let candles = [candle(0, 58_999), candle(86_376_000, 86_376_000 + 23_999)];
+        let timeframe = Timeframe::new(59, crate::model::TimeUnit::Second).unwrap();
+        assert_eq!(
+            source_bar_seconds(&candles, Some(timeframe), true),
+            Some(59.0)
+        );
+        assert_eq!(source_bar_seconds(&candles, Some(timeframe), false), None);
     }
 
     #[test]
     fn no_candles_or_an_empty_span_give_no_source_bar_length() {
-        assert_eq!(source_bar_seconds(&[], true), None);
-        assert_eq!(source_bar_seconds(&[candle(1_000, 500)], true), None);
+        assert_eq!(source_bar_seconds(&[], None, true), None);
+        assert_eq!(source_bar_seconds(&[candle(1_000, 500)], None, true), None);
     }
 }

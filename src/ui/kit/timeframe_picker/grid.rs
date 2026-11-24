@@ -40,8 +40,6 @@ impl Grid {
             shown.sort_by_key(|timeframe| timeframe.nominal_ms());
             (section, shown)
         })
-        // Seconds list only what is pinned until a source serves a preset of them.
-        .filter(|(_, shown)| !shown.is_empty())
         .collect();
         Self { sections }
     }

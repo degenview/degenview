@@ -212,7 +212,7 @@ impl ChartCard {
         let (rows, bar_rows) = self.values_rows(info, index, candle, previous_close, show_volume);
         let font = FontId::monospace(11.0);
         let header = painter.layout_no_wrap(
-            format::timestamp(candle.open_time),
+            self.time_text(candle.open_time),
             font.clone(),
             theme::text_secondary(),
         );

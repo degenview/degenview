@@ -144,6 +144,20 @@
   for alert subscriptions). `timeframe.main_period` uses `Session::chart_bar_seconds`, set by the
   security evaluator while `bar_seconds` is the requested timeframe's. `weekofyear`: Sunday–Saturday,
   week 1 holds January 1 (inferred; reference only says "week number of the year").
+- The chart's bar length (`timeframe.in_seconds()`, the window of a bar's intrabars) is told, not read off
+  the gap between bars: a bucket cut short by midnight (the last of a `59s` day lasts 24 s) or a
+  session's first bar after a night would give a length the chart does not have. The hosts pass the
+  timeframe the chart is set to (`ExecutionController::with_timeframe_seconds`, `time::bucket::seconds_of`,
+  Pine's 30-day month); a price-based chart's candle length (`with_bar_seconds`, which also turns the
+  footprint's intrabars off) comes first; only a caller that passes neither (tests) infers the length.
+  `bar_seconds` is a length (`timeframe.in_seconds()`, comparisons between timeframes), never an extent: where a
+  time-based bar ends is its own close (`Session::bar_end`: `close_time + 1`), which `time_close`, a bar's
+  intrabar window and the completion of a higher-timeframe bar all use. Pine's month is 30 days and a real one
+  has up to 31, and a `59s` day ends in a 24 s bucket. A price-based chart's bars have no close of their own, so
+  they use the length.
+  What the provider could not give for a series (`Session::security_series`, `SeriesAnswer`) is only how things
+  stood: it is asked for again after `security_retry_after` (15 s) and at once after a rebuild, while what it did
+  give (even an empty list) is kept for the session.
 - `strategy.*` statistics: `strategy_builtins::statistic`, computed from the broker per read (trade
   lists) except equity extremes, kept by `Broker` as bars arrive (`EquityExtremes`, rolled back with
   state) and merged with the running bar. Losses negative in averages (`avg_losing_trade`), positive

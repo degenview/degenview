@@ -457,6 +457,7 @@ mod tests {
             bars_label: "Candles".to_owned(),
             ohlc: true,
             volume: true,
+            seconds: false,
             bars: vec![Kline {
                 open_time: 0,
                 close_time: 1,
@@ -529,9 +530,29 @@ mod tests {
     }
 
     #[test]
+    fn the_time_column_holds_a_date_and_a_time_down_to_the_second() {
+        let ctx = egui::Context::default();
+        let mut needed = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let width = |text: &str| {
+                kit::digits(ui, text, CELL_SIZE, kit::REGULAR, Color32::WHITE, 1_000.0)
+                    .size()
+                    .x
+            };
+            needed = PAD * 2.0 + width("2026-10-19") + 8.0 + width("00:00:00");
+        });
+        output.textures_delta.clear();
+        assert!(needed <= TIME_WIDTH, "{needed} of {TIME_WIDTH}");
+    }
+
+    #[test]
     fn a_time_splits_into_its_date_and_time_of_day() {
         assert_eq!(split_time("2026-10-19 00:00"), ("2026-10-19", "00:00"));
         assert_eq!(split_time("2026-10-19"), ("2026-10-19", ""));
+        assert_eq!(
+            split_time("2026-10-19 00:00:07"),
+            ("2026-10-19", "00:00:07")
+        );
     }
 
     #[test]

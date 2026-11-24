@@ -123,6 +123,7 @@ impl PineStudio {
         config.inputs = feed.inputs;
         config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
+        config.timeframe_seconds = feed.timeframe_seconds;
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(crate::host::pine::KlineSecurityDataProvider));
         let ctx = ctx.clone();

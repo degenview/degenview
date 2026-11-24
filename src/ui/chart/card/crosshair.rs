@@ -99,8 +99,8 @@ impl ChartCard {
         };
 
         if caps.axis_tags && !crosshair.frozen {
-            let date = format::timestamp(candle.open_time);
-            let time_tag_width = 116.0 * style.time_size / 9.0;
+            let date = self.time_text(candle.open_time);
+            let time_tag_width = self.time_tag_width(style);
             let time_tag = Rect::from_center_size(
                 Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
                 Vec2::new(time_tag_width, style.time_axis_height() - 6.0),
@@ -202,7 +202,9 @@ impl ChartCard {
     ) -> Vec<(String, String)> {
         let constructed = info.synthetic.and_then(|bars| bars.get(index));
         let price_format = self.appearance.price_format();
-        let mut items = readout_items(info, constructed, candle, price_format);
+        let mut items = readout_items(info, constructed, candle, price_format, &|time| {
+            self.time_text(time)
+        });
         if show_volume {
             items.push((
                 tr_c!("readout label", "Vol").to_owned(),
@@ -295,6 +297,7 @@ fn readout_items(
     constructed: Option<&SyntheticBar>,
     bar: &Kline,
     price_format: PriceFormat,
+    time_text: &dyn Fn(i64) -> String,
 ) -> Vec<(String, String)> {
     let ohlc = || {
         vec![
@@ -363,10 +366,7 @@ fn readout_items(
         info.source_candles.get(made.first_source),
         info.source_candles.get(made.last_source),
     ) {
-        let (first, last) = (
-            format::timestamp(first.open_time),
-            format::timestamp(last.open_time),
-        );
+        let (first, last) = (time_text(first.open_time), time_text(last.open_time));
         items.push((tr!("From candle").to_owned(), first[5..].to_owned()));
         if made.last_source != made.first_source {
             items.push((

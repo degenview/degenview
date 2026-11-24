@@ -368,10 +368,16 @@ impl ChartCard {
             })
             .collect();
 
-        // Every time label is as wide: the same eleven monospaced characters.
+        // Every time label is as wide: the same eleven (fourteen with seconds) monospaced
+        // characters.
         let label_width = painter
             .layout_no_wrap(
-                "00-00 00:00".to_owned(),
+                if self.shows_seconds() {
+                    "00-00 00:00:00"
+                } else {
+                    "00-00 00:00"
+                }
+                .to_owned(),
                 style.time_font(),
                 style.text_color,
             )

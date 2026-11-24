@@ -474,6 +474,7 @@ impl ChartWorkspace {
                 let (bars, run) = crate::host::pine::subscription::ChartRun::feed(
                     chart.chart.construction(chart.source),
                     &chart.candles,
+                    self.timeframe,
                     now_ms,
                 );
                 ChartFeed {
