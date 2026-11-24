@@ -349,35 +349,41 @@ pub(super) fn taker_color(taker: Taker) -> Color32 {
 }
 
 /// What a row says, for a hover and for a screen reader: sizes in the base coin, with what they
-/// are worth.
+/// are worth. One whole message for each fact, a line each, so a language orders and punctuates
+/// every one as it needs and none is a clause of another.
 fn describe(row: &Row, decimals: u8) -> String {
     let worth = |size: f64| usd(size * row.price.as_f64());
-    let mut parts = vec![tr!("Price {price}", price = row.price.format(decimals))];
+    let mut lines = vec![tr!("Price {price}", price = row.price.format(decimals))];
     if row.bid > 0.0 {
-        parts.push(tr!(
-            "bid {size} ({worth})",
+        lines.push(tr!(
+            "Bid {size} ({worth})",
             size = size_text(row.bid),
             worth = worth(row.bid)
         ));
     }
     if row.ask > 0.0 {
-        parts.push(tr!(
-            "ask {size} ({worth})",
+        lines.push(tr!(
+            "Ask {size} ({worth})",
             size = size_text(row.ask),
             worth = worth(row.ask)
         ));
     }
     if row.bought > 0.0 || row.sold > 0.0 {
-        parts.push(tr!(
-            "bought {bought}, sold {sold}",
+        lines.push(tr!(
+            "Bought {bought}, sold {sold}",
             bought = size_text(row.bought),
             sold = size_text(row.sold)
         ));
     }
-    if let Some((figure, _)) = stack_figure(row) {
-        parts.push(tr!("stack {figure} in 10 s", figure = figure));
+    if stack_figure(row).is_some() {
+        let size = size_text(row.pull_stack.abs());
+        lines.push(if row.pull_stack > 0.0 {
+            tr!("Stacked {size} in the last 10 s", size = size)
+        } else {
+            tr!("Pulled {size} in the last 10 s", size = size)
+        });
     }
-    parts.join(", ")
+    lines.join("\n")
 }
 
 fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder, tick: Price) {
@@ -411,5 +417,51 @@ fn scroll(ui: &Ui, state: &mut BookViewState, ladder: &Ladder, area: Rect) {
     if let Some(centre) = state.centre.or_else(|| ladder.centre()) {
         // Scrolling up shows higher prices.
         state.centre = Some(centre + ladder.group.times(rows as i64));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{Locale, with_locale};
+
+    fn row(bid: f64, ask: f64, traded: (f64, f64), pull_stack: f64) -> Row {
+        Row {
+            price: Price::parse("60110").unwrap(),
+            bid,
+            ask,
+            bought: traded.0,
+            sold: traded.1,
+            pull_stack,
+        }
+    }
+
+    #[test]
+    fn a_row_is_described_one_whole_message_a_line() {
+        assert_eq!(describe(&row(0.0, 0.0, (0.0, 0.0), 0.0), 0), "Price 60,110");
+        let busy = describe(&row(0.5, 0.0, (0.1, 0.2), -0.25), 0);
+        let lines: Vec<&str> = busy.lines().collect();
+        assert_eq!(lines.len(), 4, "{busy}");
+        assert_eq!(lines[0], "Price 60,110");
+        assert!(lines[1].starts_with("Bid 0.500 ("), "{}", lines[1]);
+        assert_eq!(lines[2], "Bought 0.100, sold 0.200");
+        assert_eq!(lines[3], "Pulled 0.250 in the last 10 s");
+        let stacked = describe(&row(0.0, 2.0, (0.0, 0.0), 0.5), 0);
+        assert!(stacked.contains("Ask 2.00 ("), "{stacked}");
+        assert!(
+            stacked.ends_with("Stacked 0.500 in the last 10 s"),
+            "{stacked}"
+        );
+    }
+
+    #[test]
+    fn every_line_of_a_row_follows_the_language() {
+        let text = with_locale(Locale::PSEUDO, || {
+            describe(&row(0.5, 2.0, (0.1, 0.2), 0.5), 0)
+        });
+        assert_eq!(text.lines().count(), 5, "{text}");
+        for line in text.lines() {
+            assert!(line.starts_with('[') && line.ends_with(']'), "{line}");
+        }
     }
 }

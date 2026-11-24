@@ -1444,6 +1444,10 @@ msgstr ""
 msgid "Ask {price}"
 msgstr ""
 
+#: src/ui/market_flow/book/ladder.rs
+msgid "Ask {size} ({worth})"
+msgstr ""
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr ""
@@ -1811,6 +1815,10 @@ msgstr ""
 msgid "Bid {price}"
 msgstr ""
 
+#: src/ui/market_flow/book/ladder.rs
+msgid "Bid {size} ({worth})"
+msgstr ""
+
 #: src/ui/market_flow/mod.rs
 msgid "Binance and Bybit announce them as they happen."
 msgstr ""
@@ -1872,6 +1880,7 @@ msgid "Bollinger upper"
 msgstr ""
 
 #: src/ui/market_flow/mod.rs
+#: src/ui/market_flow/tests.rs
 msgid "Book"
 msgstr ""
 
@@ -1908,6 +1917,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Bottom puts the text on the line, top under it."
+msgstr ""
+
+#: src/ui/market_flow/book/ladder.rs
+msgid "Bought {bought}, sold {sold}"
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -7941,6 +7954,7 @@ msgid "Links with a user name or port are not supported."
 msgstr ""
 
 #: src/ui/market_flow/mod.rs
+#: src/ui/market_flow/tests.rs
 msgid "Liquidations"
 msgstr ""
 
@@ -11294,6 +11308,10 @@ msgid ""
 "seconds, not counting what traded"
 msgstr ""
 
+#: src/ui/market_flow/book/ladder.rs
+msgid "Pulled {size} in the last 10 s"
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "Punctuation"
 msgstr ""
@@ -13808,6 +13826,10 @@ msgstr ""
 msgid "Stack"
 msgstr ""
 
+#: src/ui/market_flow/book/ladder.rs
+msgid "Stacked {size} in the last 10 s"
+msgstr ""
+
 #: src/ui/portfolio/transactions.rs
 msgid "Staking Reward"
 msgstr ""
@@ -14394,6 +14416,7 @@ msgid "Taken from {variable}. Type one to use it instead."
 msgstr ""
 
 #: src/ui/market_flow/mod.rs
+#: src/ui/market_flow/tests.rs
 msgid "Taker flow"
 msgstr ""
 
@@ -17649,24 +17672,12 @@ msgstr[1] ""
 msgid "and {rest} more"
 msgstr ""
 
-#: src/ui/market_flow/book/ladder.rs
-msgid "ask {size} ({worth})"
-msgstr ""
-
 #: src/ui/chart/session_stats_view/text.rs
 msgid "bar {index} ({from}–{to} h in)"
 msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
 msgid "bearish"
-msgstr ""
-
-#: src/ui/market_flow/book/ladder.rs
-msgid "bid {size} ({worth})"
-msgstr ""
-
-#: src/ui/market_flow/book/ladder.rs
-msgid "bought {bought}, sold {sold}"
 msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
@@ -17973,10 +17984,6 @@ msgstr ""
 
 #: src/model/session_stats/mod.rs
 msgid "prior day up"
-msgstr ""
-
-#: src/ui/market_flow/book/ladder.rs
-msgid "stack {figure} in 10 s"
 msgstr ""
 
 #: src/model/watchlist/text.rs
