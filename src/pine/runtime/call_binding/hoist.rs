@@ -645,13 +645,16 @@ fn trips(from: &Expression, to: &Expression, step: Option<&Expression>) -> u64 {
         Some(Some(step)) if step != 0.0 => step.abs(),
         Some(_) => return u64::MAX,
     };
-    // The counter steps as a float: past 2^53, or by less than half the gap between the floats at
-    // the end it reaches, `i + stride` is `i` and the loop never ends.
+    // The counter steps as a float (`i += stride`): past 2^53, or by less than the gap between the
+    // floats at the end it reaches (a step of half a gap rounds back to `i` half the time), it
+    // stops moving and the loop never ends. Two gaps always move it.
     let reach = from.abs().max(to.abs());
-    if reach > 9_007_199_254_740_992.0 || reach + stride == reach || reach - stride == reach {
+    let ulp = f64::from_bits(reach.to_bits() + 1) - reach;
+    if reach > 9_007_199_254_740_992.0 || stride < 2.0 * ulp {
         return u64::MAX;
     }
-    let passes = ((to - from).abs() / stride).floor() + 1.0;
+    // Rounding to the floats near `reach` can take half an ulp off a step.
+    let passes = ((to - from).abs() / (stride - ulp / 2.0)).floor() + 1.0;
     if passes >= u64::MAX as f64 {
         u64::MAX
     } else {
@@ -671,6 +674,10 @@ struct Work<'w, 'c> {
     /// did not resolve it, as in a library) the function it is in, or one that calls it: that is
     /// not a recursion, which the compiler refuses, and counts nothing.
     active: std::cell::RefCell<Vec<usize>>,
+    /// How many times a call skipped a function that is being counted, other than the one the call
+    /// is in. What a function costs then lacks that callee's cost: it is right for the function
+    /// that is skipped (it is counted again from its own start) and not to be kept for the rest.
+    foreign_skips: std::cell::Cell<usize>,
 }
 
 impl<'w, 'c> Work<'w, 'c> {
@@ -680,6 +687,7 @@ impl<'w, 'c> Work<'w, 'c> {
             bodies,
             memo: std::cell::RefCell::new(vec![None; bodies.len()]),
             active: std::cell::RefCell::default(),
+            foreign_skips: std::cell::Cell::new(0),
         }
     }
 
@@ -690,6 +698,7 @@ impl<'w, 'c> Work<'w, 'c> {
             bodies: &[],
             memo: std::cell::RefCell::new(calls.work.iter().map(|work| Some(*work)).collect()),
             active: std::cell::RefCell::default(),
+            foreign_skips: std::cell::Cell::new(0),
         }
     }
 
@@ -703,6 +712,7 @@ impl<'w, 'c> Work<'w, 'c> {
         if let Some(known) = self.memo.borrow()[index] {
             return known;
         }
+        let skips = self.foreign_skips.get();
         self.active.borrow_mut().push(index);
         let (parameters, body) = self.bodies[index];
         let defaults = parameters
@@ -712,8 +722,20 @@ impl<'w, 'c> Work<'w, 'c> {
             .fold(0, u64::saturating_add);
         let cost = self.block(body).saturating_add(defaults);
         self.active.borrow_mut().pop();
-        self.memo.borrow_mut()[index] = Some(cost);
+        if self.foreign_skips.get() == skips {
+            self.memo.borrow_mut()[index] = Some(cost);
+        }
         cost
+    }
+
+    /// Whether a call to `callee` counts nothing because it is being counted already.
+    fn skipped(&self, callee: usize) -> bool {
+        let active = self.active.borrow();
+        let skipped = active.contains(&callee);
+        if skipped && active.last() != Some(&callee) {
+            self.foreign_skips.set(self.foreign_skips.get() + 1);
+        }
+        skipped
     }
 
     fn block(&self, statements: &[Statement]) -> u64 {
@@ -758,7 +780,7 @@ impl<'w, 'c> Work<'w, 'c> {
                     .calls
                     .callees(name, *site)
                     .iter()
-                    .filter(|callee| !self.active.borrow().contains(callee))
+                    .filter(|callee| !self.skipped(**callee))
                     .map(|callee| self.function(*callee))
                     .max()
                     .unwrap_or(0);

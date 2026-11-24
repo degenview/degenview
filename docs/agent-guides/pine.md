@@ -464,7 +464,8 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     (100k statements run and loop passes, its callees' loops included) stays where it is, however its
     loops are written, and so does a call whose cost times the passes of the loops around it (a loop
     whose passes are not known counts as all of them) passes it. A loop counts as known only when it
-    ends: bounds past 2^53, or a step below the gap between floats there, never end. What is not
+    ends: bounds past 2^53, or a step below two gaps between the floats there, can stop the
+    counter (half a gap rounds back to the same float on every other value). What is not
     counted: how often a function that holds a moved call is itself called, and a script close to the
     budget can be pushed over it by what does move. A
     history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a

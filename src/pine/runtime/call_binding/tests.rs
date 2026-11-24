@@ -586,6 +586,8 @@ fn a_user_function_moves_only_when_it_only_computes() {
         "f() =>\n    s = 0.0\n    for i = 1e20 to 1e20\n        s += 1.0\n    s\n",
         "f() =>\n    s = 0.0\n    for i = 9007199254740992 to 9007199254740994\n        s += 1.0\n    s\n",
         "f() =>\n    s = 0.0\n    for i = 1e15 to 1e15 by 0.01\n        s += 1.0\n    s\n",
+        // Half a gap rounds back to the same float on every other value (ties to even).
+        "f() =>\n    s = 0.0\n    for i = 4503599627370496 to 4503599627370497 by 0.5\n        s += 1.0\n    s\n",
         // What a call leaves out is evaluated for it: a default is part of the function.
         "f(v = math.random(0, 1)) =>\n    v\n",
         "f(v = time(\"nonsense\")) =>\n    v\n",
@@ -801,6 +803,33 @@ fn a_library_function_that_calls_its_own_overload_is_still_hoisted() {
         .expect("the library compiled");
     assert_eq!(synthetic(&library.statements).len(), 1);
     assert_eq!(outcome(source, &Lib, false), outcome(source, &Lib, true));
+}
+
+#[test]
+fn a_cost_found_while_another_function_is_being_counted_is_not_kept() {
+    // A library's calls are resolved by name only, so counting `a` reaches `p(float, float)` which
+    // reaches `a` again (a fallback, not a recursion). What `p(float, float)` costs there lacks `a`;
+    // kept, it would hide that a call of it costs 90 thousand and is made a thousand times.
+    struct Lib;
+    impl LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Lazy/1").then(|| {
+                "//@version=6\nlibrary(\"Lazy\")\np(float x) =>\n    x\n\
+                 a(float x) =>\n    s = 0.0\n    for i = 0 to 29999\n        s += 1.0\n    s + p(x)\n\
+                 p(float x, float y) =>\n    a(x) + y\n\
+                 export ahead(bool on) =>\n    float r = na\n    for i = 0 to 999\n        r := on ? p(close, 1.0)[1] : na\n    r\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source =
+        "//@version=6\nindicator(\"T\")\nimport user/Lazy/1 as lazy\nplot(lazy.ahead(close > 0))\n";
+    let program = hoisted(source, &Lib);
+    let library = program.imports[0]
+        .library
+        .as_deref()
+        .expect("the library compiled");
+    assert!(synthetic(&library.statements).is_empty());
 }
 
 #[test]
