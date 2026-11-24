@@ -24,6 +24,11 @@ fn the_big_trade_choices_rise() {
     let thresholds: Vec<f64> = BigTrade::ALL.iter().map(|big| big.threshold()).collect();
     assert_eq!(thresholds, [10_000.0, 100_000.0, 1_000_000.0]);
     assert_eq!(BigTrade::default(), BigTrade::HundredThousand);
+    let labels: Vec<&str> = BigTrade::ALL.iter().map(|big| big.label()).collect();
+    assert_eq!(labels, ["≥ $10K", "≥ $100K", "≥ $1M"]);
+    crate::i18n::with_locale(crate::i18n::Locale::PSEUDO, || {
+        assert!(BigTrade::ALL.iter().all(|big| big.label().starts_with('[')));
+    });
 }
 
 fn market(symbol: &str) -> Option<DepthMarket> {

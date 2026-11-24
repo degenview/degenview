@@ -1,6 +1,8 @@
 //! Which exchange and which of its markets a feed is about. Liquidations, taker flow and the order
 //! book all name their sources this way, so adding an exchange starts here.
 
+use crate::i18n::tr;
+
 #[cfg(test)]
 mod tests;
 
@@ -48,10 +50,10 @@ impl Venue {
     }
 
     pub fn label(self) -> String {
-        let market = match self.market {
-            Market::Spot => "spot",
-            Market::Perpetual => "perp",
-        };
-        format!("{} {market}", self.exchange.name())
+        let exchange = self.exchange.name();
+        match self.market {
+            Market::Spot => tr!("{exchange} spot", exchange = exchange),
+            Market::Perpetual => tr!("{exchange} perp", exchange = exchange),
+        }
     }
 }

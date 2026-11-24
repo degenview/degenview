@@ -9,6 +9,7 @@ mod flow;
 #[cfg(test)]
 mod tests;
 
+use crate::i18n::tr;
 use crate::model::liquidation::{Liquidation, MinSize, Side, Snapshot, Totals};
 use crate::model::taker_flow;
 use crate::ui::icons::{self, Icon};
@@ -20,6 +21,7 @@ use eframe::egui::{self, Align, Color32, Layout, Rect, Sense, Ui, pos2, vec2};
 const HEADER_HEIGHT: f32 = 44.0;
 const MARGIN: f32 = 12.0;
 const ROW_HEIGHT: f32 = 26.0;
+/// The least room each of the tape's columns keeps; [`TapeColumns`] widens them to their words.
 const TIME_WIDTH: f32 = 64.0;
 const SIDE_WIDTH: f32 = 44.0;
 const SIZE_WIDTH: f32 = 68.0;
@@ -75,8 +77,8 @@ fn side_color(side: Side) -> Color32 {
 
 fn side_name(side: Side) -> &'static str {
     match side {
-        Side::Long => "Long",
-        Side::Short => "Short",
+        Side::Long => tr!("Long"),
+        Side::Short => tr!("Short"),
     }
 }
 
@@ -112,7 +114,7 @@ pub fn show(ui: &mut Ui, state: &mut MarketFlowState, body: &Body<'_>) -> Option
 fn liquidations(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
     totals(ui, snapshot);
     kit::divider(ui);
-    let footnote_height = footnote_height(ui, LIQUIDATIONS_FOOTNOTE);
+    let footnote_height = footnote_height(ui, liquidations_footnote());
     let list_height = (ui.available_height() - footnote_height).max(60.0);
     let (list, _) = ui.allocate_exact_size(vec2(ui.available_width(), list_height), Sense::hover());
     let mut list_ui = ui.new_child(
@@ -121,7 +123,7 @@ fn liquidations(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
             .layout(Layout::top_down(Align::Min)),
     );
     tape(&mut list_ui, state, snapshot);
-    footnote(ui, LIQUIDATIONS_FOOTNOTE);
+    footnote(ui, liquidations_footnote());
 }
 
 fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>) {
@@ -136,9 +138,9 @@ fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>)
                 ui,
                 egui::Id::new("market-flow-mode"),
                 &[
-                    (Mode::Liquidations, "Liquidations"),
-                    (Mode::TakerFlow, "Taker flow"),
-                    (Mode::Book, "Book"),
+                    (Mode::Liquidations, tr!("Liquidations")),
+                    (Mode::TakerFlow, tr!("Taker flow")),
+                    (Mode::Book, tr!("Book")),
                 ],
                 &mut state.mode,
             );
@@ -149,7 +151,7 @@ fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>)
                     Icon::Xmark,
                     26.0,
                     theme::text_secondary(),
-                    "Close market flow",
+                    tr!("Close market flow"),
                 )
                 .clicked()
                 {
@@ -164,9 +166,9 @@ fn header(ui: &mut Ui, state: &mut MarketFlowState, action: &mut Option<Action>)
 /// between longs and shorts.
 fn totals(ui: &mut Ui, snapshot: &Snapshot) {
     let periods = [
-        ("Last minute", snapshot.minute),
-        ("5 minutes", snapshot.five_minutes),
-        ("Hour", snapshot.hour),
+        (tr!("Last minute"), snapshot.minute),
+        (tr!("5 minutes"), snapshot.five_minutes),
+        (tr!("Hour"), snapshot.hour),
     ];
     let width = ui.available_width() - 2.0 * MARGIN;
     let gap = 12.0;
@@ -231,10 +233,10 @@ fn period(ui: &mut Ui, name: &str, totals: Totals, width: f32) {
             theme::UP,
         );
     }
-    response.on_hover_text(format!(
-        "Longs {} · shorts {}",
-        usd(totals.long),
-        usd(totals.short)
+    response.on_hover_text(tr!(
+        "Longs {long} · shorts {short}",
+        long = usd(totals.long),
+        short = usd(totals.short)
     ));
 }
 
@@ -244,8 +246,8 @@ fn legend(ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 14.0;
         ui.add_space(MARGIN);
         for (side, text) in [
-            (Side::Long, "Longs liquidated"),
-            (Side::Short, "Shorts liquidated"),
+            (Side::Long, tr!("Longs liquidated")),
+            (Side::Short, tr!("Shorts liquidated")),
         ] {
             let (dot, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
             ui.painter()
@@ -270,7 +272,7 @@ fn filter_row(ui: &mut Ui, state: &mut MarketFlowState) {
         |ui| {
             ui.add_space(MARGIN);
             ui.label(kit::text(
-                "Latest",
+                tr!("Latest"),
                 size::CAPTION,
                 MEDIUM,
                 theme::text_secondary(),
@@ -285,7 +287,9 @@ fn filter_row(ui: &mut Ui, state: &mut MarketFlowState) {
                     .iter()
                     .position(|size| *size == state.minimum)
                     .unwrap_or(0);
-                if let Some(chosen) = kit::menu_picker(ui, FILTER_WIDTH, &labels, selected, true) {
+                if let Some(chosen) =
+                    kit::menu_picker_fitted(ui, FILTER_WIDTH, &labels, selected, true)
+                {
                     state.minimum = MinSize::ALL[chosen];
                 }
             });
@@ -298,13 +302,13 @@ fn tape(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
     if snapshot.latest.is_empty() {
         let (title, detail) = if snapshot.count == 0 {
             (
-                "Waiting for liquidations",
-                "Binance and Bybit announce them as they happen.",
+                tr!("Waiting for liquidations"),
+                tr!("Binance and Bybit announce them as they happen."),
             )
         } else {
             (
-                "Nothing this size yet",
-                "Lower the size to see the smaller ones.",
+                tr!("Nothing this size yet"),
+                tr!("Lower the size to see the smaller ones."),
             )
         };
         kit::empty_state(
@@ -316,19 +320,54 @@ fn tape(ui: &mut Ui, state: &mut MarketFlowState, snapshot: &Snapshot) {
         );
         return;
     }
-    columns_header(ui);
+    let columns = TapeColumns::measure(ui);
+    columns_header(ui, &columns);
     egui::ScrollArea::vertical()
         .id_salt("liquidations-tape")
         .auto_shrink([false, false])
         .show_rows(ui, ROW_HEIGHT, snapshot.latest.len(), |ui, range| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             for index in range {
-                row(ui, &snapshot.latest[index], index);
+                row(ui, &snapshot.latest[index], index, &columns);
             }
         });
 }
 
-fn columns_header(ui: &mut Ui) {
+/// The room the tape's time, side and size columns keep: [`TIME_WIDTH`], [`SIDE_WIDTH`] and
+/// [`SIZE_WIDTH`], or what their words need when a language writes them longer.
+struct TapeColumns {
+    time: f32,
+    side: f32,
+    size: f32,
+}
+
+impl TapeColumns {
+    fn measure(ui: &Ui) -> Self {
+        let width = |text: &str, font: f32, weight| {
+            kit::galley(ui, text, font, weight, Color32::WHITE, f32::INFINITY)
+                .size()
+                .x
+                .ceil()
+        };
+        let head = |text: &str| width(text, size::CAPTION, REGULAR);
+        let side = [Side::Long, Side::Short]
+            .into_iter()
+            .map(|side| width(side_name(side), 12.0, MEDIUM))
+            .fold(head(tr!("Side")), f32::max);
+        Self {
+            time: TIME_WIDTH.max(head(tr!("Time")) + 8.0),
+            side: SIDE_WIDTH.max(side),
+            size: SIZE_WIDTH.max(head(tr!("Size"))),
+        }
+    }
+
+    /// Where the side column's right edge is: left of the size column.
+    fn side_right(&self, rect: Rect) -> f32 {
+        rect.right() - MARGIN - self.size - 8.0
+    }
+}
+
+fn columns_header(ui: &mut Ui, columns: &TapeColumns) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
     let painter = ui.painter();
     let color = theme::text_tertiary();
@@ -341,18 +380,22 @@ fn columns_header(ui: &mut Ui) {
             color,
         );
     };
-    put("Time", rect.left() + MARGIN, egui::Align2::LEFT_CENTER);
+    put(tr!("Time"), rect.left() + MARGIN, egui::Align2::LEFT_CENTER);
     put(
-        "Market",
-        rect.left() + MARGIN + TIME_WIDTH,
+        tr!("Market"),
+        rect.left() + MARGIN + columns.time,
         egui::Align2::LEFT_CENTER,
     );
     put(
-        "Side",
-        rect.right() - MARGIN - SIZE_WIDTH - 8.0,
+        tr!("Side"),
+        columns.side_right(rect),
         egui::Align2::RIGHT_CENTER,
     );
-    put("Size", rect.right() - MARGIN, egui::Align2::RIGHT_CENTER);
+    put(
+        tr!("Size"),
+        rect.right() - MARGIN,
+        egui::Align2::RIGHT_CENTER,
+    );
     painter.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
@@ -360,7 +403,7 @@ fn columns_header(ui: &mut Ui) {
     );
 }
 
-fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize) {
+fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize, columns: &TapeColumns) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::hover());
     if !ui.is_rect_visible(rect) {
@@ -388,7 +431,8 @@ fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize) {
         theme::text_tertiary(),
         REGULAR,
     );
-    let market_room = rect.width() - 2.0 * MARGIN - TIME_WIDTH - SIDE_WIDTH - SIZE_WIDTH - 8.0;
+    let market_room =
+        rect.width() - 2.0 * MARGIN - columns.time - columns.side - columns.size - 8.0;
     let market = {
         let galley = kit::galley(
             ui,
@@ -400,7 +444,7 @@ fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize) {
         );
         (
             pos2(
-                rect.left() + MARGIN + TIME_WIDTH,
+                rect.left() + MARGIN + columns.time,
                 mid - galley.size().y / 2.0,
             ),
             galley,
@@ -408,7 +452,7 @@ fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize) {
     };
     let side = text(
         side_name(liquidation.side).to_owned(),
-        rect.right() - MARGIN - SIZE_WIDTH - 8.0,
+        columns.side_right(rect),
         egui::Align2::RIGHT_CENTER,
         side_color(liquidation.side),
         MEDIUM,
@@ -424,28 +468,46 @@ fn row(ui: &mut Ui, liquidation: &Liquidation, index: usize) {
     for (origin, galley) in [time, market, side, figure] {
         painter.galley(origin, galley, Color32::PLACEHOLDER);
     }
-    response.on_hover_text(format!(
-        "{} {}: {} liquidated, {} at {}, {}",
-        liquidation.exchange.name(),
-        liquidation.symbol,
-        side_name(liquidation.side).to_lowercase(),
-        crate::ui::pine::report::PineReportFormat::price(liquidation.quantity),
-        crate::ui::pine::report::PineReportFormat::price(liquidation.price),
-        usd(notional),
-    ));
+    let exchange = liquidation.exchange.name();
+    let symbol = &liquidation.symbol;
+    let quantity = crate::ui::pine::report::PineReportFormat::price(liquidation.quantity);
+    let price = crate::ui::pine::report::PineReportFormat::price(liquidation.price);
+    let worth = usd(notional);
+    response.on_hover_text(match liquidation.side {
+        Side::Long => tr!(
+            "{exchange} {symbol}: long liquidated, {quantity} at {price}, {worth}",
+            exchange = exchange,
+            symbol = symbol,
+            quantity = quantity,
+            price = price,
+            worth = worth
+        ),
+        Side::Short => tr!(
+            "{exchange} {symbol}: short liquidated, {quantity} at {price}, {worth}",
+            exchange = exchange,
+            symbol = symbol,
+            quantity = quantity,
+            price = price,
+            worth = worth
+        ),
+    });
 }
 
-const LIQUIDATIONS_FOOTNOTE: &str = "Binance sends at most the latest liquidation of each market a second, and Bybit's 60 busiest markets are followed, so a busy moment adds up to less than it was.";
+fn liquidations_footnote() -> &'static str {
+    tr!(
+        "Binance sends at most the latest liquidation of each market a second, and Bybit's 60 busiest markets are followed, so a busy moment adds up to less than it was."
+    )
+}
 
 fn footnote_height(ui: &Ui, text: &str) -> f32 {
-    let galley = kit::galley_rows(
+    // Every row of it: a language that writes the note longer gets the room, not an ellipsis.
+    let galley = kit::paragraph(
         ui,
         text,
         size::CAPTION,
         REGULAR,
         theme::text_tertiary(),
         ui.available_width() - 2.0 * MARGIN,
-        4,
     );
     galley.size().y + 20.0
 }

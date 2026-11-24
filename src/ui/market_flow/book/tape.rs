@@ -2,6 +2,7 @@
 
 use super::ladder::taker_color;
 use super::{BookViewState, MARGIN, size_text, usd};
+use crate::i18n::tr;
 use crate::model::depth::{DepthSnapshot, Price, Trade};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
@@ -28,12 +29,13 @@ pub(super) fn show(ui: &mut Ui, state: &BookViewState, snapshot: &DepthSnapshot,
             &tape,
             area,
             crate::ui::icons::Icon::List,
-            "Waiting for trades",
-            "They are listed here as they happen.",
+            tr!("Waiting for trades"),
+            tr!("They are listed here as they happen."),
         );
         return;
     }
-    header(&mut tape);
+    let columns = Columns::measure(&tape);
+    header(&mut tape, &columns);
     egui::ScrollArea::vertical()
         .id_salt("book-tape")
         .auto_shrink([false, false])
@@ -44,13 +46,56 @@ pub(super) fn show(ui: &mut Ui, state: &BookViewState, snapshot: &DepthSnapshot,
             |ui, range| {
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                 for index in range {
-                    row(ui, snapshot.tick, &snapshot.tape.trades[index], state);
+                    row(
+                        ui,
+                        snapshot.tick,
+                        &snapshot.tape.trades[index],
+                        state,
+                        &columns,
+                    );
                 }
             },
         );
 }
 
-fn header(ui: &mut Ui) {
+/// The room the tape's time and size columns keep: [`TIME_WIDTH`] and [`SIZE_WIDTH`], or what their
+/// headings need when a language writes them longer.
+struct Columns {
+    time: f32,
+    size: f32,
+}
+
+impl Columns {
+    fn measure(ui: &Ui) -> Self {
+        let head = |text: &str| {
+            kit::galley(
+                ui,
+                text,
+                size::CAPTION,
+                REGULAR,
+                Color32::WHITE,
+                f32::INFINITY,
+            )
+            .size()
+            .x
+            .ceil()
+        };
+        Self {
+            time: TIME_WIDTH.max(head(tr!("Time")) + 8.0),
+            size: SIZE_WIDTH.max(head(tr!("Size"))),
+        }
+    }
+}
+
+/// Who took, as the tape writes it.
+fn taker_name(taker: Taker) -> &'static str {
+    match taker {
+        Taker::Buy => tr!("Buy"),
+        Taker::Sell => tr!("Sell"),
+    }
+}
+
+fn header(ui: &mut Ui, columns: &Columns) {
     let (rect, _) =
         ui.allocate_exact_size(vec2(ui.available_width(), HEADER_HEIGHT), Sense::hover());
     let painter = ui.painter();
@@ -65,18 +110,18 @@ fn header(ui: &mut Ui) {
             color,
         );
     };
-    put("Time", rect.left() + MARGIN, Align2::LEFT_CENTER);
+    put(tr!("Time"), rect.left() + MARGIN, Align2::LEFT_CENTER);
     put(
-        "Side",
-        rect.left() + MARGIN + TIME_WIDTH,
+        tr!("Side"),
+        rect.left() + MARGIN + columns.time,
         Align2::LEFT_CENTER,
     );
     put(
-        "Price",
-        rect.right() - MARGIN - SIZE_WIDTH - 8.0,
+        tr!("Price"),
+        rect.right() - MARGIN - columns.size - 8.0,
         Align2::RIGHT_CENTER,
     );
-    put("Size", rect.right() - MARGIN, Align2::RIGHT_CENTER);
+    put(tr!("Size"), rect.right() - MARGIN, Align2::RIGHT_CENTER);
     painter.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
@@ -84,7 +129,7 @@ fn header(ui: &mut Ui) {
     );
 }
 
-fn row(ui: &mut Ui, tick: Price, trade: &Trade, state: &BookViewState) {
+fn row(ui: &mut Ui, tick: Price, trade: &Trade, state: &BookViewState, columns: &Columns) {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::hover());
     if !ui.is_rect_visible(rect) {
@@ -114,10 +159,7 @@ fn row(ui: &mut Ui, tick: Price, trade: &Trade, state: &BookViewState) {
         );
     };
     let time = kit::time_text::clock_time_seconds(Some(trade.time_ms));
-    let side = match trade.taker {
-        Taker::Buy => "Buy",
-        Taker::Sell => "Sell",
-    };
+    let side = taker_name(trade.taker);
     let price = trade.price.format(tick.decimals());
     put(
         &time,
@@ -128,14 +170,14 @@ fn row(ui: &mut Ui, tick: Price, trade: &Trade, state: &BookViewState) {
     );
     put(
         side,
-        rect.left() + MARGIN + TIME_WIDTH,
+        rect.left() + MARGIN + columns.time,
         Align2::LEFT_CENTER,
         taker,
         MEDIUM,
     );
     put(
         &price,
-        rect.right() - MARGIN - SIZE_WIDTH - 8.0,
+        rect.right() - MARGIN - columns.size - 8.0,
         Align2::RIGHT_CENTER,
         theme::text_primary(),
         weight,
@@ -147,12 +189,23 @@ fn row(ui: &mut Ui, tick: Price, trade: &Trade, state: &BookViewState) {
         theme::text_primary(),
         weight,
     );
-    let description = format!(
-        "{time}: {} {} at {price}, {}",
-        side.to_lowercase(),
-        size_text(trade.size),
-        usd(notional)
-    );
+    let (amount, worth) = (size_text(trade.size), usd(notional));
+    let description = match trade.taker {
+        Taker::Buy => tr!(
+            "{time}: buy {amount} at {price}, {worth}",
+            time = time,
+            amount = amount,
+            price = price,
+            worth = worth
+        ),
+        Taker::Sell => tr!(
+            "{time}: sell {amount} at {price}, {worth}",
+            time = time,
+            amount = amount,
+            price = price,
+            worth = worth
+        ),
+    };
     accessibility::label_as(response, egui::WidgetType::Label, description.clone())
         .on_hover_text(description);
 }

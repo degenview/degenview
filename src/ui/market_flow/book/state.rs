@@ -1,5 +1,6 @@
 //! What the order-book mode remembers between frames: the viewer's choices, apart from the data.
 
+use crate::i18n::tr;
 use crate::model::depth::{DepthMarket, Price, View};
 
 /// From which size a trade stands out on the tape.
@@ -23,11 +24,11 @@ impl BigTrade {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::TenThousand => "≥ $10K",
-            Self::HundredThousand => "≥ $100K",
-            Self::Million => "≥ $1M",
+            Self::TenThousand => tr!("≥ $10K"),
+            Self::HundredThousand => tr!("≥ $100K"),
+            Self::Million => tr!("≥ $1M"),
         }
     }
 }

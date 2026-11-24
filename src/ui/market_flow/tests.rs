@@ -310,6 +310,124 @@ fn the_panel_draws_every_state_of_every_mode() {
     }
 }
 
+/// Every state of every mode, drawn in the pseudo-locale at the panel's narrowest: no word is left
+/// in English, and none is cut short.
+#[test]
+fn every_word_of_the_panel_is_translated_and_fits_in_the_pseudo_locale() {
+    use crate::i18n::{Locale, with_locale};
+    let full = busy_snapshot(MinSize::Any);
+    let filtered = Snapshot {
+        latest: Vec::new(),
+        ..full.clone()
+    };
+    let empty = Snapshot::default();
+    let flow = busy_flow();
+    let partial = partial_flow();
+    let quiet = taker_flow::Snapshot::default();
+    let connecting = waiting_depth(crate::model::depth::Link::Connecting);
+    let reconnecting = waiting_depth(crate::model::depth::Link::Reconnecting);
+    let unlisted = waiting_depth(crate::model::depth::Link::Unlisted);
+    let live_view = settled_depth(
+        vec2(280.0, 640.0),
+        &mut MarketFlowState::default(),
+        &live_depth,
+    );
+    let none = FlowBody {
+        asset: None,
+        snapshot: None,
+    };
+    let book = |snapshot| {
+        Body::Book(BookBody {
+            feed: Some(feed(snapshot)),
+        })
+    };
+    let cases = [
+        (
+            "liquidations",
+            Mode::Liquidations,
+            Body::Liquidations(&full),
+        ),
+        (
+            "filtered",
+            Mode::Liquidations,
+            Body::Liquidations(&filtered),
+        ),
+        ("empty", Mode::Liquidations, Body::Liquidations(&empty)),
+        ("flow none", Mode::TakerFlow, Body::TakerFlow(none)),
+        (
+            "flow waiting",
+            Mode::TakerFlow,
+            Body::TakerFlow(FlowBody {
+                asset: Some("BTC"),
+                snapshot: Some(&quiet),
+            }),
+        ),
+        (
+            "flow",
+            Mode::TakerFlow,
+            Body::TakerFlow(FlowBody {
+                asset: Some("BTC"),
+                snapshot: Some(&flow),
+            }),
+        ),
+        (
+            "flow partial",
+            Mode::TakerFlow,
+            Body::TakerFlow(FlowBody {
+                asset: Some("BTC"),
+                snapshot: Some(&partial),
+            }),
+        ),
+        ("book none", Mode::Book, Body::Book(BookBody { feed: None })),
+        ("book live", Mode::Book, book(&live_view)),
+        ("book connecting", Mode::Book, book(&connecting)),
+        ("book reconnecting", Mode::Book, book(&reconnecting)),
+        ("book unlisted", Mode::Book, book(&unlisted)),
+    ];
+    with_locale(Locale::PSEUDO, || {
+        for (name, mode, body) in &cases {
+            let mut screen = Screen::new(vec2(280.0, 640.0));
+            let mut state = MarketFlowState {
+                mode: *mode,
+                ..MarketFlowState::default()
+            };
+            let mut last = None;
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    show(ui, &mut state, body);
+                }));
+            }
+            let frame = last.expect("a frame");
+            assert_eq!(
+                Screen::truncated_text(&frame),
+                Vec::<String>::new(),
+                "{name}: text is cut"
+            );
+            let words = Screen::words(&frame);
+            assert!(words.len() > 3, "{name}: nothing was drawn");
+            assert_eq!(
+                Screen::untranslated(&words, &[]),
+                Vec::<&str>::new(),
+                "{name}: text is not translated"
+            );
+        }
+    });
+}
+
+#[test]
+fn the_labels_of_the_panel_follow_the_language() {
+    use crate::i18n::{Locale, with_locale};
+    use crate::model::exchange::Venue;
+    assert_eq!(side_name(Side::Long), "Long");
+    assert_eq!(MinSize::HundredThousand.label(), "$100K and up");
+    assert_eq!(Venue::ALL[1].label(), "Binance perp");
+    with_locale(Locale::PSEUDO, || {
+        assert_ne!(side_name(Side::Short), "Short");
+        assert_ne!(MinSize::Any.label(), "Any size");
+        assert_ne!(Venue::ALL[2].label(), "Bybit spot");
+    });
+}
+
 #[test]
 #[ignore = "writes pictures"]
 fn gallery_of_the_panel() {

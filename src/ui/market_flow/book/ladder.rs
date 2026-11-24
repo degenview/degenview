@@ -3,6 +3,7 @@
 //! row. Scrolling moves the rows; the toolbar brings them back.
 
 use super::{BookViewState, size_text, usd};
+use crate::i18n::{tr, tr_c};
 use crate::model::depth::{DepthSnapshot, Ladder, Price, Row, Scale};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
@@ -19,7 +20,6 @@ const FONT: f32 = 12.0;
 /// A pulled or stacked figure is coloured once it is this share of what rests at the price.
 const NOTABLE_SHARE: f64 = 0.25;
 const BAR_ALPHA: f32 = 0.22;
-const HEADER_TIP: &str = "Pull/Stack: size added (+) or taken away (−) at the price over the last 10 seconds, not counting what traded";
 
 /// The x ranges of the five columns, left to right.
 struct Columns {
@@ -138,30 +138,60 @@ pub(super) fn lines(ladder: &Ladder, capacity: usize) -> Vec<Line> {
 fn header(ui: &Ui, painter: &egui::Painter, area: Rect, columns: &Columns) {
     let color = theme::text_tertiary();
     let y = area.top() + HEADER_HEIGHT / 2.0;
-    let put = |text: &str, x: f32, align: Align2| {
-        painter.text(
-            pos2(x, y),
-            align,
-            text,
-            FontId::proportional(size::CAPTION),
-            color,
+    // A heading shrinks to the room of its column rather than run into the next one.
+    let put = |text: &str, x: f32, align: Align2, room: f32| {
+        let galley = kit::galley_fitted(ui, text, size::CAPTION, kit::REGULAR, color, room);
+        let width = galley.size().x;
+        let left = match align {
+            Align2::RIGHT_CENTER => x - width,
+            Align2::CENTER_CENTER => x - width / 2.0,
+            _ => x,
+        };
+        painter.galley(
+            pos2(left, y - galley.size().y / 2.0),
+            galley,
+            Color32::PLACEHOLDER,
         );
     };
-    put("Stack", columns.stack.1 - 6.0, Align2::RIGHT_CENTER);
-    put("Bid", columns.bid.1 - 6.0, Align2::RIGHT_CENTER);
+    let room = |range: (f32, f32)| range.1 - range.0 - 6.0;
     put(
-        "Price",
+        tr!("Stack"),
+        columns.stack.1 - 6.0,
+        Align2::RIGHT_CENTER,
+        room(columns.stack) + PAD,
+    );
+    put(
+        tr!("Bid"),
+        columns.bid.1 - 6.0,
+        Align2::RIGHT_CENTER,
+        room(columns.bid),
+    );
+    put(
+        tr!("Price"),
         (columns.price.0 + columns.price.1) / 2.0,
         Align2::CENTER_CENTER,
+        columns.price.1 - columns.price.0,
     );
-    put("Ask", columns.ask.0 + 6.0, Align2::LEFT_CENTER);
-    put("Traded", columns.traded.1, Align2::RIGHT_CENTER);
+    put(
+        tr_c!("order book", "Ask"),
+        columns.ask.0 + 6.0,
+        Align2::LEFT_CENTER,
+        room(columns.ask),
+    );
+    put(
+        tr!("Traded"),
+        columns.traded.1,
+        Align2::RIGHT_CENTER,
+        columns.traded.1 - columns.traded.0,
+    );
     let tip = Rect::from_x_y_ranges(
         columns.stack.0 - PAD..=columns.stack.1,
         area.top()..=area.top() + HEADER_HEIGHT,
     );
     ui.interact(tip, ui.id().with("stack-header"), Sense::hover())
-        .on_hover_text(HEADER_TIP);
+        .on_hover_text(tr!(
+            "Pull/Stack: size added (+) or taken away (−) at the price over the last 10 seconds, not counting what traded"
+        ));
     painter.hline(
         area.x_range(),
         area.top() + HEADER_HEIGHT - 0.5,
@@ -322,22 +352,30 @@ pub(super) fn taker_color(taker: Taker) -> Color32 {
 /// are worth.
 fn describe(row: &Row, decimals: u8) -> String {
     let worth = |size: f64| usd(size * row.price.as_f64());
-    let mut parts = vec![format!("Price {}", row.price.format(decimals))];
+    let mut parts = vec![tr!("Price {price}", price = row.price.format(decimals))];
     if row.bid > 0.0 {
-        parts.push(format!("bid {} ({})", size_text(row.bid), worth(row.bid)));
+        parts.push(tr!(
+            "bid {size} ({worth})",
+            size = size_text(row.bid),
+            worth = worth(row.bid)
+        ));
     }
     if row.ask > 0.0 {
-        parts.push(format!("ask {} ({})", size_text(row.ask), worth(row.ask)));
+        parts.push(tr!(
+            "ask {size} ({worth})",
+            size = size_text(row.ask),
+            worth = worth(row.ask)
+        ));
     }
     if row.bought > 0.0 || row.sold > 0.0 {
-        parts.push(format!(
-            "bought {}, sold {}",
-            size_text(row.bought),
-            size_text(row.sold)
+        parts.push(tr!(
+            "bought {bought}, sold {sold}",
+            bought = size_text(row.bought),
+            sold = size_text(row.sold)
         ));
     }
     if let Some((figure, _)) = stack_figure(row) {
-        parts.push(format!("stack {figure} in 10 s"));
+        parts.push(tr!("stack {figure} in 10 s", figure = figure));
     }
     parts.join(", ")
 }
@@ -347,7 +385,7 @@ fn draw_spread(painter: &egui::Painter, rect: Rect, ladder: &Ladder, tick: Price
         return;
     };
     painter.rect_filled(rect, 0.0, theme::quaternary(0.28));
-    let text = format!("Spread {}", spread.format(tick.decimals()));
+    let text = tr!("Spread {spread}", spread = spread.format(tick.decimals()));
     painter.text(
         rect.center(),
         Align2::CENTER_CENTER,

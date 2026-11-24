@@ -15,6 +15,7 @@ use state::BigTrade;
 pub use state::BookViewState;
 
 use super::{MARGIN, footnote, footnote_height, usd};
+use crate::i18n::tr;
 use crate::model::depth::{DepthSnapshot, Link};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -47,24 +48,28 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, body: &BookBody<'_>) 
             ui,
             area,
             Icon::List,
-            "No order book",
-            "The order book follows the focused chart when it is on Binance or Bybit.",
+            tr!("No order book"),
+            tr!("The order book follows the focused chart when it is on Binance or Bybit."),
         );
         return;
     };
     let waiting = match feed.snapshot.link {
         Link::Live => None,
         Link::Connecting => Some((
-            format!("Connecting to {}", feed.exchange),
-            format!("Waiting for the {} book.", feed.symbol),
+            tr!("Connecting to {exchange}", exchange = feed.exchange),
+            tr!("Waiting for the {symbol} book.", symbol = feed.symbol),
         )),
         Link::Reconnecting => Some((
-            format!("Reconnecting to {}", feed.exchange),
-            "The book is shown again as soon as it is back.".to_owned(),
+            tr!("Reconnecting to {exchange}", exchange = feed.exchange),
+            tr!("The book is shown again as soon as it is back.").to_owned(),
         )),
         Link::Unlisted => Some((
-            "No order book".to_owned(),
-            format!("{} does not list {}.", feed.exchange, feed.symbol),
+            tr!("No order book").to_owned(),
+            tr!(
+                "{exchange} does not list {symbol}.",
+                exchange = feed.exchange,
+                symbol = feed.symbol
+            ),
         )),
     };
     if let Some((title, detail)) = waiting {
@@ -88,14 +93,20 @@ fn live(ui: &mut Ui, state: &mut BookViewState, feed: BookFeed<'_>) {
 }
 
 fn footnote_text(feed: BookFeed<'_>) -> String {
-    let since = feed.snapshot.tape.since_ms.map_or_else(
-        || "No trades yet.".to_owned(),
-        |since| format!("Traded since {}.", clock_time_seconds(Some(since))),
-    );
-    format!(
-        "{} spot, {}. Sizes are in the base coin. {since} Stack is size added or taken away over the last 10 seconds.",
-        feed.symbol, feed.exchange
-    )
+    let (symbol, exchange) = (feed.symbol, feed.exchange);
+    match feed.snapshot.tape.since_ms {
+        None => tr!(
+            "{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds.",
+            symbol = symbol,
+            exchange = exchange
+        ),
+        Some(since) => tr!(
+            "{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds.",
+            symbol = symbol,
+            exchange = exchange,
+            time = clock_time_seconds(Some(since))
+        ),
+    }
 }
 
 /// A size in the base coin with as few characters as keep it readable: `1.2K`, `340`, `12.3`,
