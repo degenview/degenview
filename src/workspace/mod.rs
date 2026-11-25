@@ -585,6 +585,10 @@ impl ChartWorkspace {
             self.configure_paper_cards(&host);
         }
         self.configure_broker_cards();
+        // First: egui closes a popup on Escape as it draws and leaves the key to whatever draws
+        // after, so a menu must have taken the key before the rail and the grid are drawn.
+        self.reserve_escape_for_favorites_menu(&ctx);
+        self.reserve_escape_for_tool_menus(&ctx);
         self.handle_keyboard(ui);
         self.handle_clipboard(ui);
         self.tick_content(&ctx);
@@ -740,6 +744,7 @@ impl Drop for ChartWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::paper::PaperHost;
     use crate::model::{IndicatorConfig, SavedView};
     use crate::workspace::test_support::empty_workspace;
 
@@ -753,6 +758,108 @@ mod tests {
         assert!(workspace.quote_coordinator.has_subscriptions());
         workspace.suspend_watchlist_demand();
         assert!(!workspace.quote_coordinator.has_subscriptions());
+    }
+
+    /// One frame of the whole workspace (the rail and the grid, in the order the app draws them),
+    /// returning where a screen reader is told each widget is.
+    fn workspace_frame(
+        ctx: &egui::Context,
+        workspace: &mut ChartWorkspace,
+        paper: &Arc<Mutex<PaperHost>>,
+        time: &mut f64,
+        events: Vec<egui::Event>,
+    ) -> std::collections::HashMap<String, egui::Pos2> {
+        *time += 0.016;
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            time: Some(*time),
+            events,
+            focused: true,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(raw, |ui| {
+            workspace.ui(ui, paper);
+        });
+        output.textures_delta.clear();
+        let mut labels = std::collections::HashMap::new();
+        if let Some(update) = &output.platform_output.accesskit_update {
+            for (_, node) in &update.nodes {
+                if let (Some(label), Some(bounds)) = (node.label(), node.bounds()) {
+                    labels.insert(
+                        label.to_owned(),
+                        egui::pos2(
+                            ((bounds.x0 + bounds.x1) / 2.0) as f32,
+                            ((bounds.y0 + bounds.y1) / 2.0) as f32,
+                        ),
+                    );
+                }
+            }
+        }
+        labels
+    }
+
+    #[test]
+    fn escape_shuts_an_open_tool_menu_before_it_puts_the_tool_down() {
+        use egui::{Event, Key, Modifiers, PointerButton};
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut workspace = empty_workspace(1);
+        workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
+        let store: SharedStore = Arc::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("in-memory store"),
+        ));
+        let paper = Arc::new(Mutex::new(PaperHost::load(store)));
+        let mut time = 0.0;
+        let mut labels = Default::default();
+        workspace.arm_tool(crate::model::Tool::TrendLine);
+        for _ in 0..4 {
+            labels = workspace_frame(&ctx, &mut workspace, &paper, &mut time, Vec::new());
+        }
+        let tile = labels[crate::model::Tool::TrendLine.label()];
+        // The tile is lit, so the click opens its menu instead of arming.
+        let button = |pressed| Event::PointerButton {
+            pos: tile,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        for events in [
+            vec![Event::PointerMoved(tile)],
+            vec![button(true)],
+            vec![button(false)],
+        ] {
+            workspace_frame(&ctx, &mut workspace, &paper, &mut time, events);
+        }
+        for _ in 0..3 {
+            workspace_frame(&ctx, &mut workspace, &paper, &mut time, Vec::new());
+        }
+        assert!(egui::Popup::is_any_open(&ctx), "the tile's menu is open");
+
+        let escape = || {
+            let key = |pressed| Event::Key {
+                key: Key::Escape,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            };
+            vec![key(true), key(false)]
+        };
+        workspace_frame(&ctx, &mut workspace, &paper, &mut time, escape());
+        assert!(
+            !egui::Popup::is_any_open(&ctx),
+            "the first Escape shuts the menu"
+        );
+        assert_eq!(
+            workspace.tools.active_tool(),
+            crate::model::Tool::TrendLine,
+            "and only the menu: the tool is still in hand"
+        );
+        workspace_frame(&ctx, &mut workspace, &paper, &mut time, escape());
+        assert_eq!(workspace.tools.active_tool(), crate::model::Tool::Cursor);
     }
 
     #[test]

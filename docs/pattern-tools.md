@@ -19,8 +19,8 @@ result.
 
 ## Tools
 
-The Patterns tile shows the last tool used from its menu; the corner, a right-click or the Right
-arrow open the menu. Click-click or press-drag places the first two pivots, a click each the rest
+The Patterns tile shows the last tool used from its menu and behaves as every tile with a menu
+(see [Tool strip tiles](drawing-tools.md#tool-strip-tiles)). Click-click or press-drag places the first two pivots, a click each the rest
 (the same `Placement::Points(n)` as every fixed-point tool). Backspace takes the last pivot back;
 Esc, switching tool or a right-click abandons the drawing; nothing is saved or synced until the last
 pivot is placed.
@@ -255,7 +255,7 @@ comparison with TradingView.
 | Degree change in the dialog and in the toolbar; labels follow the line colour | any wave |
 | Cycles across 1H, 1D and 1W, and on a Renko chart (bricks are the bars) | all three |
 | Zooming far in on a time cycle arc, far out on cyclic lines, and a very short sine period | cycles |
-| The Patterns menu: width, section headings, scrolling in a short window, keyboard | the tile's corner |
+| The Patterns menu: width, section headings, scrolling in a short window, keyboard | the tile's arrow |
 | Placing a seven-pivot drawing with Backspace and a right-click | Head and shoulders |
 
 ## Sources
