@@ -58,7 +58,7 @@ column; word for word is wrong in one of them.
   *tú*, infinitive on buttons, *ordenador*, *Ajustes*). Tag the file with the language only (`es`), not
   the region (`es-ES`): `Locale::negotiate` falls back along CLDR's chain, so `es-MX` and `es-419` land
   on `es`. A region-specific file is for a language that really has two written forms
-  (`zh-Hans`/`zh-Hant`, `pt-BR`/`pt-PT`).
+  (`zh`/`zh-Hant`, `pt-BR`/`pt-PT`; CLDR's chain makes Simplified the plain `zh`).
 
 ## Files to change
 

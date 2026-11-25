@@ -1775,9 +1775,7 @@ msgid "Bar {time}"
 msgstr "Barra {time}"
 
 #: src/model/chart/kind.rs src/model/pattern/bars.rs
-#: src/pine_studio/profiler/ui.rs src/ui/chart/card/crosshair.rs
-#: src/ui/chart/settings/style.rs src/ui/drawing/properties/forecast_pages.rs
-#: src/ui/drawing/properties/style.rs src/ui/replay/bar.rs
+#: src/ui/chart/card/crosshair.rs src/ui/chart/settings/style.rs
 msgid "Bars"
 msgstr "Barras"
 
@@ -3217,8 +3215,7 @@ msgstr "Colorea según el valor frente al de la barra anterior en lugar de la ap
 msgid "Colour {hex}"
 msgstr "Color {hex}"
 
-#: src/model/chart/kind.rs src/ui/watchlist/sidebar/header.rs
-#: src/ui/watchlist/sidebar/menus.rs
+#: src/model/chart/kind.rs
 msgid "Columns"
 msgstr "Columnas"
 
@@ -6967,7 +6964,6 @@ msgstr "Aumentar"
 msgid "Indent guides"
 msgstr "Guías de sangría"
 
-#: src/pine_studio/debug/panel/bar_break.rs
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Index"
 msgstr "Índice"
@@ -7551,8 +7547,7 @@ msgstr "Limit, post-only"
 msgid "Limited"
 msgstr "Limitado"
 
-#: src/model/chart/kind.rs src/ui/chart/settings/overlay.rs
-#: src/ui/drawing/properties/style.rs
+#: src/ui/chart/settings/overlay.rs src/ui/drawing/properties/style.rs
 msgid "Line"
 msgstr "Línea"
 
@@ -8165,9 +8160,8 @@ msgstr "Marcador"
 msgid "Marker size"
 msgstr "Tamaño del marcador"
 
-#: src/model/broker/ticket.rs src/trading/confirm.rs src/trading/edit/mod.rs
-#: src/ui/broker/panel.rs src/ui/market_flow/mod.rs
-#: src/ui/portfolio/transaction_editor.rs src/ui/trade/tables.rs
+#: src/trading/confirm.rs src/trading/edit/mod.rs src/ui/broker/panel.rs
+#: src/ui/market_flow/mod.rs src/ui/trade/tables.rs
 msgid "Market"
 msgstr "Mercado"
 
@@ -13277,9 +13271,8 @@ msgid "Sine line"
 msgstr "Línea sinusoidal"
 
 #: src/trading/confirm.rs src/trading/edit/mod.rs src/ui/broker/panel.rs
-#: src/ui/drawing/properties/content.rs src/ui/drawing/properties/text.rs
 #: src/ui/market_flow/book/tape.rs src/ui/market_flow/mod.rs
-#: src/ui/paper/tables.rs src/ui/snapshot_studio/window/toolbar.rs
+#: src/ui/paper/tables.rs
 msgid "Size"
 msgstr "Tamaño"
 
@@ -19427,6 +19420,11 @@ msgctxt "badge"
 msgid "TP"
 msgstr "TP"
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgctxt "bar index"
+msgid "Index"
+msgstr "Índice"
+
 #: src/ui/drawing/layer/menu.rs
 msgctxt "bold button"
 msgid "B"
@@ -19436,6 +19434,11 @@ msgstr "N"
 msgctxt "changed lines of the script"
 msgid "Change"
 msgstr "Cambio"
+
+#: src/model/chart/kind.rs
+msgctxt "chart type"
+msgid "Line"
+msgstr "Línea"
 
 #: src/pine_studio/editor/completion.rs
 msgctxt "completion kind"
@@ -19481,6 +19484,11 @@ msgstr "tipo"
 msgctxt "completion kind"
 msgid "your symbol"
 msgstr "tu símbolo"
+
+#: src/ui/portfolio/transaction_editor.rs
+msgctxt "fill with the market price"
+msgid "Market"
+msgstr "Mercado"
 
 #: src/pine_studio/debug/panel/lists.rs
 msgctxt "hit count field"
@@ -19551,6 +19559,12 @@ msgstr "1h"
 msgctxt "net over the last minute, column head"
 msgid "1m"
 msgstr "1m"
+
+#: src/pine_studio/profiler/ui.rs src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/style.rs src/ui/replay/bar.rs
+msgctxt "number of bars"
+msgid "Bars"
+msgstr "Barras"
 
 #: src/ui/market_flow/book/ladder.rs
 msgctxt "order book"
@@ -19658,8 +19672,8 @@ msgctxt "order type"
 msgid "Limit"
 msgstr "Limit"
 
-#: src/trading/broker/backend.rs src/trading/model.rs
-#: src/trading/paper/backend.rs
+#: src/model/broker/ticket.rs src/trading/broker/backend.rs
+#: src/trading/model.rs src/trading/paper/backend.rs src/ui/trade/tables.rs
 msgctxt "order type"
 msgid "Market"
 msgstr "Mercado"
@@ -19829,6 +19843,12 @@ msgctxt "test environment badge"
 msgid "Test"
 msgstr "Prueba"
 
+#: src/ui/drawing/properties/content.rs src/ui/drawing/properties/text.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "text or image size"
+msgid "Size"
+msgstr "Tamaño"
+
 #: src/service/update/check.rs
 msgctxt "update channel"
 msgid "Release Candidate"
@@ -19853,6 +19873,11 @@ msgstr "Simulado"
 msgctxt "venue kind"
 msgid "Test"
 msgstr "Prueba"
+
+#: src/ui/watchlist/sidebar/header.rs src/ui/watchlist/sidebar/menus.rs
+msgctxt "watchlist columns"
+msgid "Columns"
+msgstr "Columnas"
 
 #: src/ui/window/tab_link_menu/mod.rs
 msgctxt "what a link syncs, in a list"

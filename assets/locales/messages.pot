@@ -1857,12 +1857,8 @@ msgstr ""
 
 #: src/model/chart/kind.rs
 #: src/model/pattern/bars.rs
-#: src/pine_studio/profiler/ui.rs
 #: src/ui/chart/card/crosshair.rs
 #: src/ui/chart/settings/style.rs
-#: src/ui/drawing/properties/forecast_pages.rs
-#: src/ui/drawing/properties/style.rs
-#: src/ui/replay/bar.rs
 msgid "Bars"
 msgstr ""
 
@@ -3415,8 +3411,6 @@ msgid "Colour {hex}"
 msgstr ""
 
 #: src/model/chart/kind.rs
-#: src/ui/watchlist/sidebar/header.rs
-#: src/ui/watchlist/sidebar/menus.rs
 msgid "Columns"
 msgstr ""
 
@@ -7410,7 +7404,6 @@ msgstr ""
 msgid "Indent guides"
 msgstr ""
 
-#: src/pine_studio/debug/panel/bar_break.rs
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Index"
 msgstr ""
@@ -8041,7 +8034,6 @@ msgstr ""
 msgid "Limited"
 msgstr ""
 
-#: src/model/chart/kind.rs
 #: src/ui/chart/settings/overlay.rs
 #: src/ui/drawing/properties/style.rs
 msgid "Line"
@@ -8690,12 +8682,10 @@ msgstr ""
 msgid "Marker size"
 msgstr ""
 
-#: src/model/broker/ticket.rs
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
 #: src/ui/market_flow/mod.rs
-#: src/ui/portfolio/transaction_editor.rs
 #: src/ui/trade/tables.rs
 msgid "Market"
 msgstr ""
@@ -14127,12 +14117,9 @@ msgstr ""
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
-#: src/ui/drawing/properties/content.rs
-#: src/ui/drawing/properties/text.rs
 #: src/ui/market_flow/book/tape.rs
 #: src/ui/market_flow/mod.rs
 #: src/ui/paper/tables.rs
-#: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Size"
 msgstr ""
 
@@ -20606,6 +20593,11 @@ msgctxt "badge"
 msgid "TP"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgctxt "bar index"
+msgid "Index"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgctxt "bold button"
 msgid "B"
@@ -20614,6 +20606,11 @@ msgstr ""
 #: src/pine_studio/menu_bar/edit.rs
 msgctxt "changed lines of the script"
 msgid "Change"
+msgstr ""
+
+#: src/model/chart/kind.rs
+msgctxt "chart type"
+msgid "Line"
 msgstr ""
 
 #: src/pine_studio/editor/completion.rs
@@ -20659,6 +20656,11 @@ msgstr ""
 #: src/pine_studio/editor/completion.rs
 msgctxt "completion kind"
 msgid "your symbol"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgctxt "fill with the market price"
+msgid "Market"
 msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
@@ -20729,6 +20731,14 @@ msgstr ""
 #: src/ui/market_flow/flow.rs
 msgctxt "net over the last minute, column head"
 msgid "1m"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/style.rs
+#: src/ui/replay/bar.rs
+msgctxt "number of bars"
+msgid "Bars"
 msgstr ""
 
 #: src/ui/market_flow/book/ladder.rs
@@ -20839,9 +20849,11 @@ msgctxt "order type"
 msgid "Limit"
 msgstr ""
 
+#: src/model/broker/ticket.rs
 #: src/trading/broker/backend.rs
 #: src/trading/model.rs
 #: src/trading/paper/backend.rs
+#: src/ui/trade/tables.rs
 msgctxt "order type"
 msgid "Market"
 msgstr ""
@@ -21015,6 +21027,13 @@ msgctxt "test environment badge"
 msgid "Test"
 msgstr ""
 
+#: src/ui/drawing/properties/content.rs
+#: src/ui/drawing/properties/text.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "text or image size"
+msgid "Size"
+msgstr ""
+
 #: src/service/update/check.rs
 msgctxt "update channel"
 msgid "Release Candidate"
@@ -21038,6 +21057,12 @@ msgstr ""
 #: src/trading/model.rs
 msgctxt "venue kind"
 msgid "Test"
+msgstr ""
+
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgctxt "watchlist columns"
+msgid "Columns"
 msgstr ""
 
 #: src/ui/window/tab_link_menu/mod.rs

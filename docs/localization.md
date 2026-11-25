@@ -15,8 +15,9 @@ The pieces are the standard ones, so a translator's tools and a new engineer's e
 
 **State.** The runtime, the language setting and Settings ▸ Appearance ▸ Language exist, and the
 shared date helpers (`ui::kit::time_text`, `i18n::datetime`, Settings ▸ Appearance) are translated.
-**Spanish (Spain)** is the first translation (`assets/locales/es.po`, tag `es`), so the language card
-shows in release builds too; it hides itself whenever only one language is offered. The rest of the
+**Spanish (Spain)** (`assets/locales/es.po`, tag `es`) was the first translation and **Simplified
+Chinese** (`assets/locales/zh.po`, tag `zh`) the second, so the language card shows in
+release builds too; it hides itself whenever only one language is offered. The rest of the
 interface is still English literals; moving it over, directory by directory, is the next step.
 
 ## Writing text
@@ -214,7 +215,9 @@ verification are in [Translation](agent-guides/translation.md). The steps for th
 ### Packaging that names languages
 
 Spanish is listed in each of these (the macOS bundle, the Windows installer, the Flatpak metainfo and
-desktop entry); a language added later is added to each, as follows:
+desktop entry) and Simplified Chinese in all but the Windows installer (Inno Setup ships no Chinese
+`.isl`, and one written for the wizard is not part of the translation; the wizard follows English);
+a language added later is added to each, as follows:
 
 - **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
   (`en`) and `CFBundleLocalizations` (`en` plus each tag) to the app's and to the alert agent's
@@ -250,13 +253,39 @@ CLDR's fallback chain instead of English. Trading terms Spanish-speaking traders
 the catalog, so a new message uses the word the neighbouring ones do. Numbers keep the shared format
 (see "Not done yet").
 
+### Simplified Chinese
+
+`assets/locales/zh.po` is written for mainland China in the register of a Mac or trading app:
+informal 你, bare verbs on buttons and menu items, full-width punctuation, one space between Han
+characters and Latin letters, digits or `{values}` as Apple writes them, and no 请. The catalog has one
+plural form (`nplurals=1`; counts take a measure word such as 个 or 根). CLDR makes Simplified the
+default script of Chinese, so the tag is `zh` and `zh-CN`, `zh-SG`, `zh-Hans` and `zh-Hans-CN` reach it
+through the fallback chain, while `zh-TW` and `zh-HK` (`zh-Hant` on the chain) stay on English until a
+`zh-Hant` catalog exists. The macOS bundle lists it as `zh-Hans`, which is Apple's name for it.
+Traders say
+Long, Short, Stop and Take profit in Chinese (做多, 做空, 止损, 止盈), so unlike Spanish they are
+translated; Webhook, VWAP, TPO, Pine and MCP stay in English. Vocabulary is kept by reading the
+catalog.
+
+The font is the system's, found and read by `ui::theme::cjk` only when the language in use is
+Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, Noto Sans CJK or WenQuanYi on
+Linux, also under `/run/host/fonts` for the Flatpak). A machine with none of them shows the
+missing-glyph box for every Han character; nothing is bundled because a font with the catalog's
+characters is megabytes. Han characters a person types or a provider sends (a watchlist name, a
+Chinese market) are drawn only when the interface is Chinese.
+
 ## Not done yet
 
+- **Lists joined in code.** Some messages are short phrases that code joins with `", "`
+  (`model/watchlist/text.rs`, the Tab Linking menu's tooltip, session-stat conditions): another
+  language's separator (Chinese `，` or `、`) is not applied. A locale-aware list formatter
+  (`icu_list`) would fix every site at once and is not a dependency yet.
 - **Right-to-left languages.** egui's text layout does not apply the bidirectional algorithm
   (`epaint` `TODO(emilk): heed bidi characters`) and the layouts are not mirrored. Arabic, Hebrew and
   Persian wait on that.
 - **IME.** The Pine editor handles keys itself and no `Event::Ime` is read; composing Chinese,
   Japanese or Korean there is unchecked. Plain `TextEdit` fields use egui's.
+- **Traditional Chinese** (`zh-Hant`), and Han text under an English interface (see "Simplified Chinese").
 - **Numbers.** Prices and chart axes keep one format (`format.rs`, `model/chart/price_format.rs`);
   decimal and thousands separators (`icu_decimal`) are a decision to make with the first language that
   differs.

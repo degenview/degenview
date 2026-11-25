@@ -222,7 +222,7 @@ pub fn size_text(order: &LiveOrder) -> String {
 /// The type column.
 pub fn type_label(order: &LiveOrder) -> String {
     match order.order_type {
-        OrderType::Market => tr!("Market"),
+        OrderType::Market => tr_c!("order type", "Market"),
         OrderType::Limit if order.post_only => tr!("Limit, post-only"),
         OrderType::Limit => tr!("Limit"),
         OrderType::StopLimit => tr!("Stop-limit"),

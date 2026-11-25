@@ -2,7 +2,7 @@
 //! resolution, the timeline, the cursor's clock and the way back to live. Pure view:
 //! it reads the engine and returns `ReplayBarAction`s for the workspace to apply.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
 use crate::service::system::timezone::local_utc_offset_secs;
 use crate::ui::accessibility;
@@ -752,7 +752,7 @@ fn pickers(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<ReplayBa
     if let Some(index) = picker_chip(
         ui,
         PickerChip {
-            caption: tr!("Bars"),
+            caption: tr_c!("number of bars", "Bars"),
             value: &interval_text(engine, input.resolved_interval),
             tip: tr!(
                 "Replay resolution. Auto picks the finest history that fits; 1 bar steps whole chart bars."

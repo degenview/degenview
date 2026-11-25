@@ -1,3 +1,4 @@
+mod cjk;
 #[cfg(test)]
 mod fonts_tests;
 
@@ -523,7 +524,8 @@ pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 /// system monospace font (SF Mono) first in the monospace one. The fonts egui ships stay as glyph
 /// fallbacks, and a machine without SF Mono simply keeps them. STIX Two Math and Apple Symbols go last
 /// in both families so characters the others lack — "𝓑𝓾𝔂" and other math alphanumerics, arrows,
-/// geometric shapes — draw instead of showing tofu squares.
+/// geometric shapes — draw instead of showing tofu squares. A language written in Han characters adds
+/// the system's font for them (`cjk`).
 fn base_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     fonts
@@ -564,6 +566,18 @@ fn base_fonts() -> egui::FontDefinitions {
                     .or_default()
                     .push(name.to_owned());
             }
+        }
+    }
+    if let Some(data) = cjk::system_font(crate::i18n::current()) {
+        fonts
+            .font_data
+            .insert("han".to_owned(), std::sync::Arc::new(data));
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .push("han".to_owned());
         }
     }
     add_symbol_fallback(&mut fonts);

@@ -3,7 +3,7 @@
 //! groups that do not fit wrap onto a second line.
 
 use super::{Action, Input, Output, PAD, swatches};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::chart::snapshot::studio::{Area, AspectRatio, Include, Style};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, Segment, size};
@@ -51,7 +51,7 @@ impl Group {
         match self {
             Self::Area => tr!("Area"),
             Self::Style => tr!("Style"),
-            Self::Size => tr!("Size"),
+            Self::Size => tr_c!("text or image size", "Size"),
             Self::Background => tr!("Background"),
             Self::Include => tr!("Include"),
         }

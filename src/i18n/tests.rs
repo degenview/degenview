@@ -689,9 +689,10 @@ fn the_plural_formulas_translators_write_agree_with_cldr() {
     use super::plural_forms::PluralForms;
     use icu_plurals::PluralRules;
 
-    let formulas: [(&str, usize, &str); 9] = [
+    let formulas: [(&str, usize, &str); 10] = [
         ("de", 2, "n != 1"),
         ("es", 2, "n != 1"),
+        ("zh", 1, "0"),
         ("fr", 2, "n > 1"),
         ("pt-BR", 2, "n > 1"),
         ("ja", 1, "0"),
