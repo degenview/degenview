@@ -1,6 +1,7 @@
 //! The live chart's layers under the crosshair: the grid, the series, volume, the built-in
 //! indicators, trend-flip markers, the last price and the time axis.
 
+use super::overlays::on_color;
 use super::*;
 
 impl ChartCard {
@@ -396,41 +397,45 @@ impl ChartCard {
             },
         );
         // The price stays on the line it is the price of; the countdown hangs under it, or over
-        // it where the plot ends too soon for a second row.
-        let row = countdown.map_or(0.0, |_| style.countdown_row_height());
-        let below = y + half + row <= plot.bottom();
+        // it where the plot ends too soon for a second row. Both rows start at the same left edge,
+        // the widest of the two centred in the tag.
+        let pitch = countdown.map_or(0.0, |_| style.countdown_pitch());
+        let below = y + half + pitch <= plot.bottom();
         let (top, bottom) = if below {
-            (y - half, y + half + row)
+            (y - half, y + half + pitch)
         } else {
-            (y - half - row, y + half)
+            (y - half - pitch, y + half)
         };
         let tag = Rect::from_min_max(
             Pos2::new(plot.right() + 3.0, top),
             Pos2::new(rect.right() - 3.0, bottom),
         );
         painter.rect_filled(tag, 3.0, color);
-        price_text::paint(
-            painter,
-            Pos2::new(tag.center().x, y),
-            Align2::CENTER_CENTER,
-            &scale.tag_label(self.appearance.price_format(), last.close),
-            style.price_font(),
-            Color32::WHITE,
-        );
-        if let Some(countdown) = countdown {
-            let center_y = if below {
-                y + half + row / 2.0
-            } else {
-                y - half - row / 2.0
-            };
-            price_text::paint(
-                painter,
-                Pos2::new(tag.center().x, center_y),
-                Align2::CENTER_CENTER,
-                &countdown.text(),
-                style.countdown_font(),
-                Color32::WHITE,
-            );
+        let ink = on_color(color);
+        let rows = [
+            Some((
+                scale.tag_label(self.appearance.price_format(), last.close),
+                y,
+            )),
+            countdown
+                .map(|countdown| (countdown.text(), if below { y + pitch } else { y - pitch })),
+        ];
+        let laid_out: Vec<_> = rows
+            .into_iter()
+            .flatten()
+            .map(|(text, row_y)| {
+                (
+                    price_text::PriceText::new(painter, &text, style.price_font(), ink),
+                    row_y,
+                )
+            })
+            .collect();
+        let width = laid_out
+            .iter()
+            .fold(0.0f32, |widest, (text, _)| widest.max(text.size().x));
+        let left = tag.center().x - width / 2.0;
+        for (text, row_y) in &laid_out {
+            text.paint(painter, Align2::LEFT_CENTER, Pos2::new(left, *row_y));
         }
         Some(TagBand { top, bottom })
     }

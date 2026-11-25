@@ -173,11 +173,12 @@ fn color32(color: Rgba) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a)
 }
 
-/// Black or white text, whichever reads on `fill`.
-fn on_color(fill: Color32) -> Color32 {
+/// Black or white text, whichever reads on `fill`: dark on the greens and lighter colours white
+/// text washes out on, white on reds and darker fills.
+pub(super) fn on_color(fill: Color32) -> Color32 {
     let luminance =
         0.299 * f32::from(fill.r()) + 0.587 * f32::from(fill.g()) + 0.114 * f32::from(fill.b());
-    if luminance > 170.0 {
+    if luminance > 140.0 {
         Color32::BLACK
     } else {
         Color32::WHITE

@@ -204,14 +204,10 @@ impl CanvasStyle {
         FontId::monospace(self.price_size)
     }
 
-    /// The countdown under the last price: a step smaller than the price it hangs from.
-    pub fn countdown_font(&self) -> FontId {
-        FontId::monospace((self.price_size * 0.9).round().max(7.0))
-    }
-
-    /// The row the countdown takes under the price's, 13 points at the default size.
-    pub fn countdown_row_height(&self) -> f32 {
-        (self.price_size * 0.9).round().max(7.0) + 4.0
+    /// How far the countdown's row is from the price's: the distance between their centres, 12
+    /// points at the default size. TradingView sets both in one size, a line apart.
+    pub fn countdown_pitch(&self) -> f32 {
+        (self.price_size * 1.2).round()
     }
 
     pub fn time_font(&self) -> FontId {

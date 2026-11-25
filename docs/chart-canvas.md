@@ -196,9 +196,13 @@ hovered label or cell after the tables are drawn (see the Pine guide), and a sna
   keeps current counts down while its REST answer is slow or failing.
 - **Text** (`countdown::format`): `MM:SS` under an hour, `HH:MM:SS` under a day, `4d 3h` from a day
   (hours rounded up), never negative.
-- **Tag.** The price row stays on the price line; the countdown is a second, smaller row of the same
-  filled tag under it, in the same colour. Where the plot ends too soon for the row it goes above
-  the price instead. Comparison-overlay tags keep clear of the whole tag (`TagBand`): the room they have is the plot
+- **Tag.** The price row stays on the price line; the countdown is a second row of the same filled
+  tag, in the same size as the price, a line (1.2 × the price size) under it, or over it where the
+  plot ends too soon for the row. Both rows start at one left edge, the wider of the two centred in
+  the tag, as TradingView lays them out (measured on its canvas: equal glyph heights, rows 14 CSS px
+  apart, left-aligned). The text is black on the greens and light fills and white on the reds and
+  dark ones (`on_color`, shared with the other axis tags), since white on the green is hard to read.
+  Comparison-overlay tags keep clear of the whole tag (`TagBand`): the room they have is the plot
   less the tag, each keeps its side, and one its side has no room for goes to the other, so the
   plot's edge never pushes a tag back over the countdown. The axis is
   measured with the widest text the timeframe can show (`widest_texts`) whenever the setting is on
@@ -216,8 +220,8 @@ Checked on TradingView (BTCUSDT, 2026-11-25): the toggle is *Labels ▸ Countdow
 price scale's right-click menu; a 5m bar read `01:57`, a 1D bar `02:36:39`, a 1W bar `4d 3h` and a
 1M bar `5d 3h`; replay (1D) shows no countdown. Its support page lists the types above, delayed data
 and a market that is not trading as reasons to show none. **Inferred, not verified:** seconds count
-down to `00:00` (floor); the countdown row's size (90 % of the price's) and spacing; its place above
-the price near the plot's bottom; Heikin Ashi; what TradingView shows in the instant a bar has
+down to `00:00` (floor); where the price sits relative to the price line (here on it, the
+countdown below); its place above the price near the plot's bottom; Heikin Ashi; what TradingView shows in the instant a bar has
 closed and the next has not arrived (here the next bar's count); the intraday replay (paid plan).
 
 ## Templates

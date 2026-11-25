@@ -19,25 +19,56 @@ fn harness_with(countdown: Option<Countdown>) -> Harness {
     harness
 }
 
-/// The countdown's text and the price row it hangs under, in the axis column.
+/// The countdown's text and the price row it hangs under (or over), in the axis column.
 fn tag_rows(drawn: &Drawn, text: &str) -> Option<((Pos2, f32), (Pos2, f32))> {
     let (at, _, size) = drawn.texts.iter().find(|(_, shown, _)| shown == text)?;
-    let price = drawn.texts.iter().find(|(price_at, shown, _)| {
-        shown != text
-            && (price_at.x - at.x).abs() < 0.5
-            && price_at.y < at.y
-            && at.y - price_at.y < 24.0
-    })?;
+    // The nearest other text in the column: ticks are further apart than a tag is tall.
+    let price = drawn
+        .texts
+        .iter()
+        .filter(|(price_at, shown, _)| shown != text && (price_at.x - at.x).abs() < 40.0)
+        .min_by(|a, b| (a.0.y - at.y).abs().total_cmp(&(b.0.y - at.y).abs()))
+        .filter(|(price_at, _, _)| (price_at.y - at.y).abs() < 24.0)?;
     Some(((*at, *size), (price.0, price.2)))
 }
 
 #[test]
-fn the_countdown_is_a_smaller_second_row_under_the_price() {
+fn the_countdown_is_a_second_row_in_the_size_of_the_price() {
     let (drawn, _) = harness_with(Some(countdown(125_000))).draw();
     let ((count, count_size), (price, price_size)) =
         tag_rows(&drawn, "02:05").expect("the countdown is drawn under a price");
-    assert!(count_size < price_size, "{count_size} under {price_size}");
+    assert_eq!(count_size, price_size, "TradingView sets both in one size");
     assert!(count.y > price.y + price_size, "a row of its own");
+}
+
+#[test]
+fn the_price_and_the_countdown_start_at_one_left_edge() {
+    let (drawn, _) = harness_with(Some(countdown(125_000))).draw();
+    let ((count, size), (price, _)) = tag_rows(&drawn, "02:05").expect("drawn");
+    let price_text = drawn
+        .texts
+        .iter()
+        .find(|(at, _, _)| *at == price)
+        .map(|(_, text, _)| text.chars().count())
+        .expect("the price");
+    assert!(price_text > 5, "the price is the wider row: {price_text}");
+    // Centres of two monospace texts in one face: with equal left edges, the centres differ by
+    // half the difference of their widths.
+    let glyph = 2.0 * (price.x - count.x) / (price_text as f32 - 5.0);
+    assert!(
+        glyph > size * 0.4 && glyph < size * 0.8,
+        "equal left edges give a glyph of {glyph} for a {size} point face"
+    );
+}
+
+#[test]
+fn the_tag_text_is_dark_on_the_greens_and_white_on_the_reds() {
+    use super::overlays::on_color;
+    use eframe::egui::Color32;
+    assert_eq!(on_color(Color32::from_rgb(48, 209, 88)), Color32::BLACK);
+    assert_eq!(on_color(Color32::from_rgb(242, 54, 69)), Color32::WHITE);
+    assert_eq!(on_color(Color32::from_rgb(20, 20, 20)), Color32::WHITE);
+    assert_eq!(on_color(Color32::from_rgb(250, 250, 250)), Color32::BLACK);
 }
 
 #[test]

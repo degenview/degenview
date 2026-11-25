@@ -264,7 +264,7 @@ impl ChartCard {
                         price_text::PriceText::new(
                             painter,
                             &text,
-                            style.countdown_font(),
+                            style.price_font(),
                             style.text_color,
                         )
                         .size()
