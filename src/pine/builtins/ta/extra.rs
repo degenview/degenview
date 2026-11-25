@@ -33,7 +33,7 @@ pub const FUNCTIONS: [&str; 16] = [
 ];
 
 /// The `ta.*` variables [`cumulative`] computes. A variable's position is where its state lives.
-pub const VARIABLES: [&str; 8] = [
+pub const VARIABLES: [&str; 9] = [
     "ta.obv",
     "ta.accdist",
     "ta.iii",
@@ -42,6 +42,7 @@ pub const VARIABLES: [&str; 8] = [
     "ta.pvt",
     "ta.wad",
     "ta.wvad",
+    "ta.vwap",
 ];
 
 /// A series a function derives from its inputs (`ta.kc`'s two averages, `ta.tsi`'s four) with the
@@ -692,7 +693,8 @@ pub fn tsi(source: &RuntimeValue, short: i64, long: i64, state: &mut State) -> R
 }
 
 /// The cumulative volume variables a script reads without calling: `ta.obv`, `ta.accdist`, `ta.iii`,
-/// `ta.nvi`, `ta.pvi`, `ta.pvt`, `ta.wad` and `ta.wvad`. `None` when `name` is not one of them.
+/// The variables of [`VARIABLES`]: `ta.obv`, `ta.nvi`, `ta.wvad` and the rest fold here, `ta.vwap`
+/// in [`super::evaluate_vwap_variable`]. `None` when `name` is not one of them.
 ///
 /// `state` remembers how many bars it has folded in, so it catches up from the committed history
 /// on a bar where the script did not read the variable, and a repeated read is free.
@@ -704,6 +706,9 @@ pub fn cumulative(
 ) -> Option<RuntimeValue> {
     if !VARIABLES.contains(&name) {
         return None;
+    }
+    if name == "ta.vwap" {
+        return Some(super::evaluate_vwap_variable(current, runtime, state));
     }
     let series = |key: &str| -> Vec<f64> {
         runtime

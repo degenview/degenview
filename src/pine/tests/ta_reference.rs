@@ -183,3 +183,122 @@ plot(ta.sar(0.02, 0.02, 0.2))
     assert_same("sar, reordered", &plotted[6], &plotted[7]);
     assert_same("sar defaults", &plotted[8], &plotted[9]);
 }
+
+#[test]
+fn the_vwap_variable_equals_vwap_of_hlc3_and_can_be_read_more_than_once() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Vwap\", overlay = true)
+plot(ta.vwap)
+plot(ta.vwap(hlc3))
+plot(ta.vwap + 0)
+plot(ta.vwap[1])
+plot(ta.vwap(hlc3)[1])
+",
+        3_000,
+    );
+    assert_same("variable", &plotted[0], &plotted[1]);
+    assert_same("second read", &plotted[0], &plotted[2]);
+    assert_same("history", &plotted[3], &plotted[4]);
+    assert!(plotted[0].iter().flatten().count() > 2_900);
+}
+
+#[test]
+fn a_vwap_variable_read_only_now_and_then_still_covers_every_bar() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Vwap\", overlay = true)
+every = ta.vwap(hlc3)
+sometimes = bar_index % 7 == 6 or bar_index == 9
+plot(sometimes ? ta.vwap : na)
+plot(sometimes ? every : na)
+late = bar_index == 40
+plot(late ? ta.vwap : na)
+plot(late ? every : na)
+",
+        400,
+    );
+    assert_same("every seventh bar", &plotted[0], &plotted[1]);
+    assert_same("first read on bar 40", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 50);
+}
+
+#[test]
+fn the_vwap_variable_works_where_a_script_may_put_it() {
+    // Alone in the script (nothing else reads hlc3 or the function): against a run of the function.
+    let alone = plots(
+        "//@version=6
+indicator(\"Alone\", overlay = true)
+plot(bar_index % 5 == 4 ? ta.vwap : na)
+plot(ta.vwap)
+",
+        600,
+    );
+    let reference = plots(
+        "//@version=6
+indicator(\"Reference\", overlay = true)
+v = ta.vwap(hlc3)
+plot(bar_index % 5 == 4 ? v : na)
+plot(v)
+",
+        600,
+    );
+    assert_same("sparse alone", &alone[0], &reference[0]);
+    assert_same("every bar alone", &alone[1], &reference[1]);
+    // TradingView: a value from bar 0 (the bar's own hlc3), never na while it warms up.
+    assert!(alone[1][0].is_some());
+
+    // Through a user function, a variable declaration, history and a higher timeframe.
+    let plotted = plots(
+        "//@version=6
+indicator(\"Places\", overlay = true)
+f() => ta.vwap
+var float kept = na
+kept := ta.vwap
+v = ta.vwap(hlc3)
+plot(f())
+plot(v)
+plot(kept)
+plot(v)
+plot(ta.vwap[3])
+plot(v[3])
+plot(request.security(syminfo.tickerid, \"5\", ta.vwap))
+plot(request.security(syminfo.tickerid, \"5\", ta.vwap(hlc3)))
+plot(math.max(ta.vwap, close) - math.max(v, close))
+plot(0.0)
+",
+        1_500,
+    );
+    assert_same("user function", &plotted[0], &plotted[1]);
+    assert_same("var declaration", &plotted[2], &plotted[3]);
+    assert_same("history", &plotted[4], &plotted[5]);
+    assert_same("security", &plotted[6], &plotted[7]);
+    assert_same("operand", &plotted[8], &plotted[9]);
+}
+
+#[test]
+fn the_cumulative_variables_keep_a_state_each() {
+    // Read together, every variable must give what it gives alone: they share one table of
+    // states, so a slot taken by two of them would show up here.
+    let alone = |variable: &str| {
+        plots(
+            &format!("//@version=6\nindicator(\"One\")\nplot({variable})\n"),
+            800,
+        )
+        .remove(0)
+    };
+    let names = crate::pine::builtins::ta::extra::VARIABLES;
+    let together = plots(
+        &format!(
+            "//@version=6\nindicator(\"All\")\n{}",
+            names
+                .iter()
+                .map(|name| format!("plot({name})\n"))
+                .collect::<String>()
+        ),
+        800,
+    );
+    for (name, plotted) in names.iter().zip(&together) {
+        assert_same(name, plotted, &alone(name));
+    }
+}

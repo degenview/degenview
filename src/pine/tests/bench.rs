@@ -534,6 +534,21 @@ plot(line)
 plot(direction)
 ";
 
+/// The `ta.vwap` variable, read every bar and once more through its history, and the same two reads
+/// of `ta.vwap(hlc3)`: the variable costs about what the function does.
+pub(crate) const VWAP_VARIABLE: &str = "//@version=6
+indicator(\"VwapVariable\", overlay = true)
+plot(ta.vwap)
+plot(ta.vwap[1])
+";
+
+pub(crate) const VWAP_FUNCTION: &str = "//@version=6
+indicator(\"VwapFunction\", overlay = true)
+v = ta.vwap(hlc3)
+plot(v)
+plot(v[1])
+";
+
 /// `request.security` with `lookahead_on`, with and without the `[1]` idiom.
 pub(crate) const SECURITY_LOOKAHEAD: &str = "//@version=6
 indicator(\"SecurityLookahead\")
@@ -907,6 +922,13 @@ fn workloads() -> Vec<Workload> {
             "supertrend",
             Box::new(move || evaluate(SUPERTREND, &data, false)),
         );
+    }
+    for (name, script) in [
+        ("vwap_variable", VWAP_VARIABLE),
+        ("vwap_function", VWAP_FUNCTION),
+    ] {
+        let data = minute.clone();
+        add(name, Box::new(move || evaluate(script, &data, false)));
     }
     {
         let data = minute.clone();

@@ -529,6 +529,48 @@ pub fn evaluate_vwap(
     ])
 }
 
+/// The `ta.vwap` variable: `ta.vwap(hlc3)` with the default anchor. A script may read it on some
+/// bars only, or several times on one (`ta.vwap[1]` reads it again at the bar's end), so the state
+/// holds one entry per *committed* bar: a read first folds in every committed bar it has not seen,
+/// from the session's histories, then computes the current bar and does not keep it.
+pub fn evaluate_vwap_variable(
+    bar: &Kline,
+    runtime: &crate::pine::runtime::state::RuntimeState,
+    state: &mut State,
+) -> RuntimeValue {
+    let series = |name: &str| runtime.histories.get(name).map_or(&[][..], Vec::as_slice);
+    let (times, highs, lows) = (series("time"), series("high"), series("low"));
+    let (closes, volumes) = (series("close"), series("volume"));
+    let committed = closes.len();
+    state.results.truncate(committed);
+    let number = |values: &[RuntimeValue], index: usize| {
+        values
+            .get(index)
+            .and_then(RuntimeValue::number)
+            .unwrap_or(f64::NAN)
+    };
+    for index in state.results.len()..committed {
+        let folded = Kline {
+            open_time: times
+                .get(index)
+                .and_then(RuntimeValue::int_value)
+                .unwrap_or(0),
+            close_time: 0,
+            open: 0.0,
+            high: number(highs, index),
+            low: number(lows, index),
+            close: number(closes, index),
+            volume: number(volumes, index),
+        };
+        let price = (folded.high + folded.low + folded.close) / 3.0;
+        evaluate_vwap(price, &folded, None, None, state);
+    }
+    let price = (bar.high + bar.low + bar.close) / 3.0;
+    let value = evaluate_vwap(price, bar, None, None, state);
+    state.results.pop();
+    value
+}
+
 /// `ta.dmi(diLength, adxSmoothing)`: `[+DI, −DI, ADX]` from the RMA-smoothed directional movement
 /// and true range. The call site's own state remembers the previous bar; each smoothed series
 /// keeps its history under `key * 16 + n`.

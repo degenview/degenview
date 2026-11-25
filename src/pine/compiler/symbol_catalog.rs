@@ -127,6 +127,7 @@ pub const VARIABLES: &[&str] = &[
     "ta.pvt",
     "ta.wad",
     "ta.wvad",
+    "ta.vwap",
     // Pine variables DegenView cannot supply (reading one gives `na`, with a warning).
     "syminfo.mincontract",
     "syminfo.description",

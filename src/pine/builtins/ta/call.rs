@@ -177,7 +177,7 @@ impl Session {
         Ok(Some(value))
     }
 
-    /// `ta.obv`, `ta.accdist`, … read as variables. None when `name` is not one of them.
+    /// `ta.obv`, `ta.accdist`, `ta.vwap`, … read as variables. None when `name` is not one of them.
     pub(crate) fn cumulative_variable(
         &mut self,
         name: &str,
@@ -198,6 +198,19 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cumulative_variable_is_listed_once_so_its_state_slot_is_its_own() {
+        // The slot is the position in `VARIABLES` (`cumulative_variable`): a name listed twice
+        // would still read, but two reads of it would no longer share one state.
+        for (position, name) in extra::VARIABLES.iter().enumerate() {
+            assert_eq!(
+                extra::VARIABLES.iter().position(|other| other == name),
+                Some(position),
+                "{name} is listed twice"
+            );
+        }
+    }
 
     #[test]
     fn every_function_ta_extra_lists_has_parameters_and_the_reverse() {
