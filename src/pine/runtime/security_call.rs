@@ -276,7 +276,6 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         self.check_nesting("request.security", range)?;
-        self.refresh_series = context.flags.is_realtime;
         let Some(request) = self.security_request(arguments, context, range)? else {
             // An invalid symbol/timeframe the script asked to ignore: na, shaped like the expression.
             return Ok(RuntimeValue::Na);
@@ -308,7 +307,9 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        let Some(candles) = self.lower_timeframe_candles(None, request.interval, 0) else {
+        let Some(candles) =
+            self.lower_timeframe_candles(None, request.interval, 0, context.flags.is_realtime)
+        else {
             return Err(Diagnostic::error(
                 "PINE4021",
                 DiagnosticCategory::Runtime,
@@ -385,7 +386,6 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         self.check_nesting("request.security_lower_tf", range)?;
-        self.refresh_series = context.flags.is_realtime;
         const PARAMETERS: [&str; 7] = [
             "symbol",
             "timeframe",
@@ -443,8 +443,12 @@ impl Session {
         }
         if let Some(seconds) = seconds
             && seconds < self.bar_seconds
-            && let Some(candles) =
-                self.lower_timeframe_candles(values.get("symbol"), seconds, recent_bars)
+            && let Some(candles) = self.lower_timeframe_candles(
+                values.get("symbol"),
+                seconds,
+                recent_bars,
+                context.flags.is_realtime,
+            )
         {
             let grid = match values.get("symbol") {
                 Some(RuntimeValue::String(text)) => self.series_grid(text),
@@ -593,7 +597,7 @@ impl Session {
                 interval,
                 recent_bars: 0,
             };
-            match self.series(key) {
+            match self.series(key, context.flags.is_realtime) {
                 Some(candles) => Some(candles),
                 None => {
                     if ignore_symbol {
@@ -628,12 +632,16 @@ impl Session {
     /// moment, not a fact; see [`SeriesAnswer`]). On a realtime bar a series is asked for again once
     /// [`Session::security_live_refresh`] has passed, since candles open after it was fetched: the
     /// live bar's intrabars (or another symbol's newest candle) would otherwise stay as they were at
-    /// the load, and a new live bar would find none. A refresh the provider fails keeps what the run
-    /// had.
-    pub(in crate::pine) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
+    /// the load, and a new live bar would find none (`realtime`: the request is on a realtime bar).
+    /// A refresh the provider fails keeps what the run had.
+    pub(in crate::pine) fn series(
+        &mut self,
+        key: SecurityKey,
+        realtime: bool,
+    ) -> Option<Arc<Vec<Kline>>> {
         let mut previous = None;
         if let Some(known) = self.security_series.get(&key) {
-            let refresh = self.refresh_series
+            let refresh = realtime
                 && known.candles.is_some()
                 && known.asked.elapsed() >= self.security_live_refresh;
             if !refresh
@@ -767,7 +775,8 @@ impl Session {
             interval: request.interval,
             recent_bars: 0,
         };
-        let Some(candles) = self.series(key) else {
+        // The candles before the chart's first bar are history: never refreshed.
+        let Some(candles) = self.series(key, false) else {
             return Ok(());
         };
         for candle in candles.iter() {
@@ -1049,12 +1058,14 @@ impl Session {
         Ok(result)
     }
 
-    /// The provider's intrabar candles of the chart's own symbol at `seconds`.
+    /// The provider's intrabar candles of the chart's own symbol at `seconds` (`realtime`: the
+    /// request is on a realtime bar, see [`Session::series`]).
     fn lower_timeframe_candles(
         &mut self,
         symbol_value: Option<&RuntimeValue>,
         seconds: f64,
         recent_bars: usize,
+        realtime: bool,
     ) -> Option<Arc<Vec<Kline>>> {
         let symbol = match symbol_value {
             Some(RuntimeValue::String(text)) if !text.is_empty() => text.clone(),
@@ -1066,7 +1077,8 @@ impl Session {
             recent_bars,
         };
         // Asked of the provider once per run, not once per chart bar.
-        self.series(key).filter(|candles| !candles.is_empty())
+        self.series(key, realtime)
+            .filter(|candles| !candles.is_empty())
     }
 
     /// The expression on every intrabar that opens inside the chart bar.

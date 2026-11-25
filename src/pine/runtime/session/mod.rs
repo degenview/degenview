@@ -80,8 +80,6 @@ pub struct Session {
     /// How old a series the provider gave may be before a realtime tick asks for it again, so a
     /// finer or foreign series learns of the candles that opened since (see [`SeriesAnswer`]).
     pub security_live_refresh: Duration,
-    /// Whether the request now running is on a realtime bar: the only time a series is refreshed.
-    pub(in crate::pine) refresh_series: bool,
     pub library_constants: FastMap<String, RuntimeValue>,
     pub constants_in_progress: HashSet<String>,
     pub committed: RuntimeState,
