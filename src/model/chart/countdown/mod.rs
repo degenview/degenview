@@ -86,9 +86,13 @@ impl Countdown {
         if forming && (newest.close_time + 1 - close_ms).abs() > CLOSE_TOLERANCE_MS {
             return None;
         }
+        // A bar that has just opened has just under its length left, so the text of a bar of an
+        // hour never reads `01:00:00` for the instant it opens in: the form a bar passes through
+        // depends on its length alone.
+        let opened = bucket_start_ms(input.timeframe, input.now_ms);
         Some(Self {
             close_ms,
-            remaining_ms: close_ms - input.now_ms,
+            remaining_ms: (close_ms - input.now_ms).min(close_ms - opened - 1),
         })
     }
 
@@ -141,16 +145,19 @@ pub fn next_repaint(remaining_ms: i64) -> Duration {
 }
 
 /// The texts [`format`] gives at their widest for a bar of `timeframe`, which the axis is measured
-/// with so its width does not change as the digits do: `59:59` for a bar of under an hour, and
-/// `23:59:59` and `7d 23h` for the longer ones, each form a bar can pass through.
+/// with so its width does not change as the digits do. A bar always has less than its length left
+/// ([`Countdown::resolve`]), so a bar of an hour reads `59:59` at most, one of a day `23:59:59`,
+/// and a longer one `6d 23h` as well.
 pub fn widest_texts(timeframe: Timeframe) -> Vec<String> {
     let nominal = timeframe.nominal_ms();
-    let mut texts = vec![format(59 * MINUTE_MS + 59 * SECOND_MS)];
-    if nominal >= HOUR_MS {
-        texts.push(format(23 * HOUR_MS + 59 * MINUTE_MS + 59 * SECOND_MS));
-    }
     if nominal > DAY_MS {
-        texts.push(format(nominal / DAY_MS * DAY_MS + 23 * HOUR_MS));
+        vec![
+            format(DAY_MS - 1),
+            format((nominal / DAY_MS - 1) * DAY_MS + 23 * HOUR_MS),
+        ]
+    } else if nominal > HOUR_MS {
+        vec![format(DAY_MS - 1)]
+    } else {
+        vec![format(HOUR_MS - 1)]
     }
-    texts
 }

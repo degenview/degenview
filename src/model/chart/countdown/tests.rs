@@ -169,8 +169,9 @@ fn a_week_closes_on_monday_midnight_utc() {
 #[test]
 fn an_intraday_bar_is_cut_short_at_midnight() {
     let timeframe = Timeframe::new(22, TimeUnit::Minute).expect("22m");
-    let late = utc(2026, 11, 25, 23, 50, 0);
-    assert_eq!(remaining(timeframe, late), Some(10 * MINUTE_MS));
+    // The last bucket of the day opens at 23:50 and closes at midnight.
+    let late = utc(2026, 11, 25, 23, 55, 0);
+    assert_eq!(remaining(timeframe, late), Some(5 * MINUTE_MS));
 }
 
 #[test]
@@ -179,8 +180,8 @@ fn the_count_is_exact_at_a_close_and_just_after_it() {
     assert_eq!(remaining(Timeframe::MINUTE_5, close - 1), Some(1));
     assert_eq!(
         remaining(Timeframe::MINUTE_5, close),
-        Some(5 * MINUTE_MS),
-        "the next bar opens at the close"
+        Some(5 * MINUTE_MS - 1),
+        "the next bar opens at the close, with just under its length left"
     );
 }
 
@@ -315,10 +316,40 @@ fn only_sources_with_utc_candles_count_down() {
 #[test]
 fn the_axis_is_measured_with_the_widest_text_of_each_form() {
     assert_eq!(widest_texts(Timeframe::MINUTE_5), ["59:59"]);
-    assert_eq!(widest_texts(Timeframe::HOUR_1), ["59:59", "23:59:59"]);
-    assert_eq!(widest_texts(Timeframe::DAY_1), ["59:59", "23:59:59"]);
+    assert_eq!(widest_texts(Timeframe::HOUR_1), ["59:59"]);
     assert_eq!(
-        widest_texts(Timeframe::WEEK_1),
-        ["59:59", "23:59:59", "7d 23h"]
+        widest_texts(Timeframe::new(4, TimeUnit::Hour).unwrap()),
+        ["23:59:59"]
     );
+    assert_eq!(widest_texts(Timeframe::DAY_1), ["23:59:59"]);
+    assert_eq!(widest_texts(Timeframe::WEEK_1), ["23:59:59", "6d 23h"]);
+}
+
+#[test]
+fn no_text_is_wider_than_the_one_the_axis_is_measured_with() {
+    let width = |text: &str| text.chars().count();
+    for timeframe in [
+        Timeframe::SECOND_1,
+        Timeframe::MINUTE_5,
+        Timeframe::HOUR_1,
+        Timeframe::new(4, TimeUnit::Hour).unwrap(),
+        Timeframe::DAY_1,
+        Timeframe::WEEK_1,
+        Timeframe::MONTH_1,
+        Timeframe::YEAR_1,
+    ] {
+        let widest = widest_texts(timeframe).iter().map(|text| width(text)).max();
+        // Walk a bar: its first instant, its last, and some between.
+        let start = bucket_start_ms(timeframe, utc(2026, 11, 25, 13, 7, 9));
+        let end = next_bucket_start_ms(timeframe, start);
+        for at in [start, start + 1, start + (end - start) / 3, end - 1] {
+            let text = Countdown::resolve(&input(timeframe, Some(&candle(timeframe, at)), at))
+                .expect("counts")
+                .text();
+            assert!(
+                Some(width(&text)) <= widest,
+                "{timeframe:?} at {at}: {text}"
+            );
+        }
+    }
 }
