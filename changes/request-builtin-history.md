@@ -1,0 +1,1 @@
+fixed: A history (`[1]`) of `ta.tr`, `hlcc4`, `dayofweek` and the other builtin variables the engine computes now reads the requested series' previous bar inside `request.security`, as on TradingView, instead of `na`.
