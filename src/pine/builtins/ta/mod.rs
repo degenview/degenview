@@ -102,7 +102,7 @@ impl MacdLeg {
 
 /// The `ta.*` names `evaluate` computes from one source series and a length. The bar-relative ones
 /// (`ta.sar`, `ta.supertrend`) go through `evaluate_price` instead.
-pub const SUPPORTED: [&str; 29] = [
+pub const SUPPORTED: [&str; 27] = [
     "ta.sma",
     "ta.ema",
     "ta.rma",
@@ -110,7 +110,6 @@ pub const SUPPORTED: [&str; 29] = [
     "ta.lowest",
     "ta.change",
     "ta.wma",
-    "ta.stdev",
     "ta.rising",
     "ta.falling",
     "ta.mom",
@@ -121,7 +120,6 @@ pub const SUPPORTED: [&str; 29] = [
     "ta.crossunder",
     "ta.median",
     "ta.range",
-    "ta.variance",
     "ta.dev",
     "ta.swma",
     "ta.cmo",
@@ -165,7 +163,6 @@ pub fn evaluate(
         "ta.lowest" => extremum(inputs, count, f64::min),
         "ta.change" => change(inputs, if count > 0 { count } else { 1 }),
         "ta.wma" => wma(inputs, count),
-        "ta.stdev" => stdev(inputs, count),
         "ta.rising" => trend(inputs, count, true),
         "ta.falling" => trend(inputs, count, false),
         "ta.mom" | "ta.roc" => momentum(inputs, count, name == "ta.roc"),
@@ -176,7 +173,6 @@ pub fn evaluate(
             let low = values.iter().copied().fold(f64::INFINITY, f64::min);
             if values.is_empty() { 0.0 } else { high - low }
         }),
-        "ta.variance" => statistic(inputs, count, variance),
         "ta.dev" => statistic(inputs, count, mean_deviation),
         "ta.swma" => statistic(inputs, 4, |v| (v[0] + 2.0 * v[1] + 2.0 * v[2] + v[3]) / 6.0),
         "ta.cmo" => cmo(inputs, count),
@@ -1299,18 +1295,26 @@ mod tests {
     fn weighted_and_dispersion_statistics_over_a_window() {
         let wma = numbers(&run("ta.wma", &[1.0, 2.0, 3.0], 3));
         assert!(close(wma[2], (1.0 + 4.0 + 9.0) / 6.0));
-        let stdev = numbers(&run(
-            "ta.stdev",
-            &[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0],
-            8,
+        let dispersion = |name: &str, biased: bool| {
+            let mut state = State::default();
+            let series = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
+            let results: Vec<RuntimeValue> = series
+                .iter()
+                .map(|value| evaluate_dispersion(name, &float(*value), 8, biased, &mut state))
+                .collect();
+            numbers(&results)
+        };
+        assert!(
+            close(dispersion("ta.stdev", true)[7], 2.0),
+            "population standard deviation"
+        );
+        assert!(close(dispersion("ta.variance", true)[7], 4.0));
+        // `biased = false` divides by n - 1.
+        assert!(close(dispersion("ta.variance", false)[7], 32.0 / 7.0));
+        assert!(close(
+            dispersion("ta.stdev", false)[7],
+            (32.0_f64 / 7.0).sqrt()
         ));
-        assert!(close(stdev[7], 2.0), "population standard deviation");
-        let variance = numbers(&run(
-            "ta.variance",
-            &[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0],
-            8,
-        ));
-        assert!(close(variance[7], 4.0));
         assert!(close(
             numbers(&run("ta.dev", &[1.0, 2.0, 3.0, 4.0], 4))[3],
             1.0
