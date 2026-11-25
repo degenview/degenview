@@ -142,7 +142,7 @@ pub fn body(
                 } else {
                     fitted(ui, &widths)
                 };
-                if let Some(pick) = kit::menu_picker(ui, width, &widths, at, true) {
+                if let Some(pick) = kit::menu_picker_fitted(ui, width, &widths, at, true) {
                     send(OverlayCommand::SetWidth(id, WIDTHS[pick]));
                 }
                 let dashes: Vec<String> =
@@ -156,7 +156,7 @@ pub fn body(
                 } else {
                     fitted(ui, &dashes)
                 };
-                if let Some(pick) = kit::menu_picker(ui, width, &dashes, at, true) {
+                if let Some(pick) = kit::menu_picker_fitted(ui, width, &dashes, at, true) {
                     send(OverlayCommand::SetDash(id, LineDash::ALL[pick]));
                 }
             });
@@ -178,7 +178,7 @@ pub fn body(
                 } else {
                     fitted(ui, &sources)
                 };
-                if let Some(pick) = kit::menu_picker(ui, width, &sources, at, true) {
+                if let Some(pick) = kit::menu_picker_fitted(ui, width, &sources, at, true) {
                     send(OverlayCommand::SetSource(id, PriceSource::ALL[pick]));
                 }
                 if density.roomy() {
@@ -213,7 +213,7 @@ pub fn body(
                 } else {
                     fitted(ui, &labels)
                 };
-                if let Some(pick) = kit::menu_picker(ui, width, &labels, at, true) {
+                if let Some(pick) = kit::menu_picker_fitted(ui, width, &labels, at, true) {
                     send(OverlayCommand::SetScale(id, choices[pick]));
                 }
                 hint(ui, &scale_hint(overlay, own_scales, mode));

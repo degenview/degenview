@@ -296,7 +296,7 @@ fn question(ui: &mut Ui, state: &mut StatsViewState) {
         .position(|outcome| *outcome == state.outcome)
         .unwrap_or(0);
     let width = ui.available_width();
-    if let Some(chosen) = kit::menu_picker(ui, width, &labels, selected, true) {
+    if let Some(chosen) = kit::menu_picker_fitted(ui, width, &labels, selected, true) {
         state.outcome = Outcome::ALL[chosen];
     }
     paragraph(

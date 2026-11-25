@@ -722,9 +722,10 @@ pub fn footer_note(tab: PaperTab, facts: &FooterFacts) -> String {
             if facts.positions.is_empty() {
                 tr!("No open positions").to_owned()
             } else {
-                tr!(
+                tr_n!(
+                    facts.positions.len(),
                     "{count} open · Unrealized {pnl}",
-                    count = facts.positions.len(),
+                    "{count} open · Unrealized {pnl}",
                     pnl = fmt::signed_money(facts.unrealized_total, currency)
                 )
             }
@@ -733,7 +734,7 @@ pub fn footer_note(tab: PaperTab, facts: &FooterFacts) -> String {
             if facts.working_orders == 0 {
                 tr!("No working orders").to_owned()
             } else {
-                tr!("{count} working", count = facts.working_orders)
+                tr_n!(facts.working_orders, "{count} working", "{count} working")
             }
         }
         PaperTab::History => {

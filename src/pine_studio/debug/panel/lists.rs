@@ -711,7 +711,7 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                     .iter()
                     .position(|kind| *kind == editor.hit)
                     .unwrap_or(0);
-                if let Some(index) = kit::menu_picker(ui, 168.0, &titles, selected, true) {
+                if let Some(index) = kit::menu_picker_fitted(ui, 168.0, &titles, selected, true) {
                     editor.hit = HitKind::ALL[index];
                 }
                 if editor.hit != HitKind::Always {

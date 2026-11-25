@@ -2,7 +2,7 @@
 //! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
 use super::cursor_menu::{self, CursorMenuAction};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_n};
 use crate::model::drawings::favorites::Favorite;
 use crate::model::{ChartSyncSettings, CursorMode, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
@@ -567,9 +567,10 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
     let mut y = strip.bottom() - 10.0 - BUTTON;
     let bell = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
     let bell_label = if input.unseen_alerts > 0 {
-        tr!(
+        tr_n!(
+            input.unseen_alerts,
             "View Price Alerts, {count} new",
-            count = input.unseen_alerts
+            "View Price Alerts, {count} new"
         )
     } else {
         tr!("View Price Alerts").to_owned()

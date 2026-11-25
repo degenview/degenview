@@ -210,7 +210,7 @@ fn background_row(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle)
                 .iter()
                 .position(|mode| *mode == background.mode)
                 .unwrap_or(0);
-            if let Some(index) = kit::menu_picker(ui, 96.0, &modes, selected, true) {
+            if let Some(index) = kit::menu_picker_fitted(ui, 96.0, &modes, selected, true) {
                 background.mode = BackgroundMode::ALL[index];
             }
             fill_preview(ui, preview);
@@ -265,7 +265,7 @@ fn dash_labels() -> Vec<String> {
 
 fn dash_picker(ui: &mut Ui, dash: &mut LineDash) {
     let selected = LineDash::ALL.iter().position(|d| d == dash).unwrap_or(0);
-    if let Some(index) = kit::menu_picker(ui, 92.0, &dash_labels(), selected, true) {
+    if let Some(index) = kit::menu_picker_fitted(ui, 92.0, &dash_labels(), selected, true) {
         *dash = LineDash::ALL[index];
     }
 }
@@ -384,7 +384,7 @@ fn watermark_row(ui: &mut Ui, canvas: &mut ChartCanvas, default: Rgba) {
         if watermark.mode != WatermarkMode::Hidden {
             color_control(ui, tr!("Watermark"), &mut watermark.color, default);
         }
-        if let Some(index) = kit::menu_picker(ui, 120.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 120.0, &labels, selected, true) {
             watermark.mode = options[index].0;
         }
     });
@@ -426,7 +426,7 @@ fn scales_rows(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle) {
                 &mut scales.text_color,
                 swatch(defaults.text_color),
             );
-            if let Some(index) = kit::menu_picker(ui, 88.0, &sizes, selected, true) {
+            if let Some(index) = kit::menu_picker_fitted(ui, 88.0, &sizes, selected, true) {
                 scales.text_size = ScaleTextSize::ALL[index];
             }
         },
@@ -480,7 +480,7 @@ fn visibility_row(ui: &mut Ui, icon: Icon, title: &str, hint: &str, value: &mut 
         .position(|(option, _)| option == value)
         .unwrap_or(0);
     if let Some(index) = card::card_reserving(ui, icon, title, Some(hint), 190.0, |ui| {
-        kit::menu_picker(ui, 170.0, &labels, selected, true)
+        kit::menu_picker_fitted(ui, 170.0, &labels, selected, true)
     }) {
         *value = options[index].0;
     }

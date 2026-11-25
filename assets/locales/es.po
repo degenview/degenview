@@ -16415,7 +16415,9 @@ msgstr "Ver alertas de precio"
 
 #: src/ui/workspace/tool_sidebar.rs
 msgid "View Price Alerts, {count} new"
-msgstr "Ver alertas de precio, {count} nuevas"
+msgid_plural "View Price Alerts, {count} new"
+msgstr[0] "Ver alertas de precio, {count} nueva"
+msgstr[1] "Ver alertas de precio, {count} nuevas"
 
 #: src/ui/window/update_sheet/mod.rs
 msgid "View Release"
@@ -17574,6 +17576,18 @@ msgstr "{allowed} de {total}"
 msgid "{amount} (spend)"
 msgstr "{amount} (a gastar)"
 
+#: src/ui/chart/table_view.rs
+msgid "{amount} bar"
+msgid_plural "{amount} bars"
+msgstr[0] "{amount} barra"
+msgstr[1] "{amount} barras"
+
+#: src/ui/chart/session_stats_view/result.rs
+msgid "{amount} day"
+msgid_plural "{amount} days"
+msgstr[0] "{amount} día"
+msgstr[1] "{amount} días"
+
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "{amount} vs invested"
 msgstr "{amount} frente a lo invertido"
@@ -17674,7 +17688,9 @@ msgstr[1] "{count} scripts de Pine"
 
 #: src/ui/alert/center.rs
 msgid "{count} active"
-msgstr "{count} activas"
+msgid_plural "{count} active"
+msgstr[0] "{count} activa"
+msgstr[1] "{count} activas"
 
 #: src/pine_studio/drawer/mod.rs src/ui/alert/pine_editor.rs
 #: src/ui/settings/sync.rs
@@ -17709,10 +17725,6 @@ msgid "{count} bar"
 msgid_plural "{count} bars"
 msgstr[0] "{count} barra"
 msgstr[1] "{count} barras"
-
-#: src/ui/chart/table_view.rs
-msgid "{count} bars"
-msgstr "{count} barras"
 
 #: src/ui/portfolio/statistics/mod.rs
 msgid "{count} buy"
@@ -17798,10 +17810,6 @@ msgid_plural "{count} days ago"
 msgstr[0] "hace {count} día"
 msgstr[1] "hace {count} días"
 
-#: src/ui/chart/session_stats_view/result.rs
-msgid "{count} days"
-msgstr "{count} días"
-
 #: src/mcp/chart/mod.rs
 msgid "{count} drawing"
 msgid_plural "{count} drawings"
@@ -17876,7 +17884,9 @@ msgstr[1] "{count} cabeceras"
 
 #: src/pine_studio/drawer/mod.rs
 msgid "{count} historical"
-msgstr "{count} históricas"
+msgid_plural "{count} historical"
+msgstr[0] "{count} histórica"
+msgstr[1] "{count} históricas"
 
 #: src/pine_studio/inputs.rs
 msgid "{count} hour"
@@ -17889,6 +17899,12 @@ msgid "{count} hr. ago"
 msgid_plural "{count} hr. ago"
 msgstr[0] "hace {count} h"
 msgstr[1] "hace {count} h"
+
+#: src/ui/chart/indicator_strip.rs
+msgid "{count} indicator"
+msgid_plural "{count} indicators"
+msgstr[0] "{count} indicador"
+msgstr[1] "{count} indicadores"
 
 #: src/workspace/chart/context/mod.rs
 msgid "{count} indicator will be removed from this chart. Saved scripts are kept, and you can undo it."
@@ -17907,10 +17923,6 @@ msgid "{count} indicator, the {compared} compared symbols included, will be remo
 msgid_plural "{count} indicators, the {compared} compared symbols included, will be removed from this chart. Saved scripts are kept, and you can undo it."
 msgstr[0] "Se quitará {count} indicador, incluidos los {compared} símbolos comparados, de este gráfico. Los scripts guardados se conservan y puedes deshacerlo."
 msgstr[1] "Se quitarán {count} indicadores, incluidos los {compared} símbolos comparados, de este gráfico. Los scripts guardados se conservan y puedes deshacerlo."
-
-#: src/ui/chart/indicator_strip.rs
-msgid "{count} indicators"
-msgstr "{count} indicadores"
 
 #: src/ui/settings/sync.rs
 msgid "{count} item"
@@ -17990,7 +18002,9 @@ msgstr[1] "{count} mercados · ocultos: {hidden}"
 
 #: src/ui/portfolio/cmc_import.rs
 msgid "{count} matched"
-msgstr "{count} emparejados"
+msgid_plural "{count} matched"
+msgstr[0] "{count} emparejado"
+msgstr[1] "{count} emparejados"
 
 #: src/ui/kit/time_text.rs
 msgid "{count} min. ago"
@@ -18054,7 +18068,9 @@ msgstr[1] "{count} órdenes con nombre en “{account}”"
 
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
-msgstr "{count} abiertas · No realizado {pnl}"
+msgid_plural "{count} open · Unrealized {pnl}"
+msgstr[0] "{count} abierta · No realizado {pnl}"
+msgstr[1] "{count} abiertas · No realizado {pnl}"
 
 #: src/model/paper/export.rs
 msgid "{count} order"
@@ -18161,11 +18177,15 @@ msgstr[1] "{count} ventas"
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "{count} shown"
-msgstr "{count} mostrados"
+msgid_plural "{count} shown"
+msgstr[0] "{count} mostrado"
+msgstr[1] "{count} mostrados"
 
 #: src/ui/portfolio/cmc_import.rs
 msgid "{count} skipped"
-msgstr "{count} omitidos"
+msgid_plural "{count} skipped"
+msgstr[0] "{count} omitido"
+msgstr[1] "{count} omitidos"
 
 #: src/ui/kit/timeframe_picker/warning.rs
 msgid "{count} source can't chart {timeframe}"
@@ -18216,7 +18236,9 @@ msgstr[1] "{count} disparos registrados. Borrar el historial conserva tus alerta
 
 #: src/ui/alert/center.rs
 msgid "{count} triggered"
-msgstr "{count} disparadas"
+msgid_plural "{count} triggered"
+msgstr[0] "{count} disparada"
+msgstr[1] "{count} disparadas"
 
 #: src/trading/broker/backend.rs
 msgid "{count} unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected."
@@ -18257,7 +18279,9 @@ msgstr[1] "hace {count} sem."
 
 #: src/ui/paper/tables.rs
 msgid "{count} working"
-msgstr "{count} pendientes"
+msgid_plural "{count} working"
+msgstr[0] "{count} pendiente"
+msgstr[1] "{count} pendientes"
 
 #: src/ui/portfolio/statistics/mod.rs
 msgid "{count} year ago"

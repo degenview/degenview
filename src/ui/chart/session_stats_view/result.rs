@@ -6,7 +6,7 @@ use super::parts::{
     callout, interval_bar, key_value, link, paragraph, section_header, share_row, text_width,
 };
 use super::text;
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_n};
 use crate::model::session_stats::{MarketHours, Note, Stats, Unavailable};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
@@ -223,7 +223,12 @@ fn timing_card(ui: &mut Ui, timing: &crate::model::session_stats::Timing, bar_ms
     card(ui, |ui| {
         section_header(ui, tr!("When it happens"), |ui| {
             ui.label(kit::text(
-                tr!("{count} days", count = text::count(timing.n)),
+                tr_n!(
+                    timing.n,
+                    "{amount} day",
+                    "{amount} days",
+                    amount = text::count(timing.n)
+                ),
                 kit::size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_tertiary(),
