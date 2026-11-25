@@ -2,6 +2,7 @@
 //! READMEs that the SIL OFL requires to travel with it are there and say the right things, that they are
 //! shipped in every kind of download, and that the font draws as the editor needs.
 
+use crate::i18n::Locale;
 use crate::model::editor_theme::{BUNDLED_FONT, SYSTEM_FONT};
 use crate::ui::editor_appearance::{EDITOR_FAMILY, EditorFont};
 use crate::ui::theme;
@@ -11,6 +12,8 @@ use sha2::{Digest, Sha256};
 const FONT: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
 const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 const NOTO: &[u8] = include_bytes!("../../../assets/fonts/NotoSansSymbols2-subset.ttf");
+const NOTO_SC: &[u8] = include_bytes!("../../../assets/fonts/NotoSansSC-language-names.otf");
+const NOTO_SC_LICENCE: &str = include_str!("../../../assets/fonts/OFL-NotoSansSC.txt");
 const JETBRAINS_LICENCE: &str = include_str!("../../../assets/fonts/OFL-JetBrainsMono.txt");
 const INTER_LICENCE: &str = include_str!("../../../assets/fonts/OFL-Inter.txt");
 const NOTO_LICENCE: &str = include_str!("../../../assets/fonts/OFL-NotoSansSymbols2.txt");
@@ -60,6 +63,21 @@ fn the_ui_font_is_the_file_the_readme_describes() {
 }
 
 #[test]
+fn the_language_names_font_is_the_file_the_readme_describes() {
+    let line = FONTS_README
+        .lines()
+        .find(|line| line.starts_with("sha256 ") && line.contains("NotoSansSC-language-names.otf"))
+        .expect("the README states the subset's hash");
+    assert!(
+        line.contains(&sha256(NOTO_SC)),
+        "{} vs {line}",
+        sha256(NOTO_SC)
+    );
+    assert!(FONTS_README.contains("3,960 bytes"));
+    assert_eq!(NOTO_SC.len(), 3_960);
+}
+
+#[test]
 fn the_licence_texts_are_the_ofl_with_the_right_copyright() {
     for (text, holder) in [
         (
@@ -67,6 +85,7 @@ fn the_licence_texts_are_the_ofl_with_the_right_copyright() {
             "Copyright 2020 The JetBrains Mono Project Authors",
         ),
         (NOTO_LICENCE, "Copyright 2022 The Noto Project Authors"),
+        (NOTO_SC_LICENCE, "Copyright 2014-2021 Adobe"),
         (
             INTER_LICENCE,
             "Copyright (c) 2016 The Inter Project Authors",
@@ -78,7 +97,9 @@ fn the_licence_texts_are_the_ofl_with_the_right_copyright() {
             !first.contains("Reserved Font Name"),
             "the READMEs say there is none: {first}"
         );
-        assert!(text.contains("SIL Open Font License, Version 1.1"));
+        // Upstreams wrap their preamble differently, so the sentence is read across lines.
+        let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(words.contains("SIL Open Font License, Version 1.1"));
         assert!(text.contains("SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007"));
         assert!(
             text.contains("PERMISSION & CONDITIONS") || text.contains("PERMISSION AND CONDITIONS")
@@ -99,6 +120,8 @@ fn the_readmes_name_the_fonts_their_licence_and_their_files() {
             "OFL-JetBrainsMono.txt",
             "OFL-NotoSansSymbols2.txt",
             "OFL-Inter.txt",
+            "Noto Sans SC",
+            "OFL-NotoSansSC.txt",
             "The Inter Project Authors",
             "The JetBrains Mono Project Authors",
             "The Noto Project Authors",
@@ -128,6 +151,8 @@ fn every_file_the_readmes_point_at_exists() {
         "assets/fonts/JetBrainsMonoNL-Regular.ttf",
         "assets/fonts/NotoSansSymbols2-subset.ttf",
         "assets/fonts/Inter-Regular.ttf",
+        "assets/fonts/NotoSansSC-language-names.otf",
+        "assets/fonts/OFL-NotoSansSC.txt",
         "assets/fonts/OFL-Inter.txt",
         "assets/fonts/OFL-JetBrainsMono.txt",
         "assets/fonts/OFL-NotoSansSymbols2.txt",
@@ -159,12 +184,17 @@ fn the_licence_texts_ship_with_every_kind_of_download() {
             "{what}: Noto's licence"
         );
         assert!(text.contains("OFL-Inter.txt"), "{what}: Inter's licence");
+        assert!(
+            text.contains("OFL-NotoSansSC.txt"),
+            "{what}: Noto Sans SC's licence"
+        );
     }
     assert!(BUNDLE_SCRIPT.contains("Contents/Resources/Licenses"));
     assert!(FLATPAK.contains("/app/share/licenses/es.nico.degenview"));
     // Linux and Windows archives both.
     assert_eq!(RELEASE.matches("OFL-JetBrainsMono.txt").count(), 2);
     assert_eq!(RELEASE.matches("OFL-Inter.txt").count(), 2);
+    assert_eq!(RELEASE.matches("OFL-NotoSansSC.txt").count(), 2);
 }
 
 #[test]
@@ -255,6 +285,28 @@ fn what_the_bundled_font_lacks_falls_back_to_the_rest_of_the_chain() {
         for symbol in ['▲', '★', '✔', '⚠'] {
             let width = ui.fonts_mut(|fonts| fonts.glyph_width(&font, symbol));
             assert!(width > 0.0 && (width - tofu).abs() > 0.01, "{symbol} draws");
+        }
+    })
+    .textures_delta
+    .clear();
+}
+
+/// The language picker lists every language by its own name, in an English interface too, which
+/// reads no Chinese font from the system. A new language whose name fails here needs its characters
+/// added to the bundled subset (`assets/fonts/README.md`).
+#[test]
+fn every_language_s_own_name_draws_whatever_the_interface_language() {
+    let ctx = context();
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            let font = egui::FontId::new(14.0, family);
+            for locale in Locale::all() {
+                let name = locale.native_name();
+                assert!(
+                    ui.fonts_mut(|fonts| fonts.has_glyphs(&font, name)),
+                    "{name} in {font:?}"
+                );
+            }
         }
     })
     .textures_delta

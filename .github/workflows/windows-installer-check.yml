@@ -96,7 +96,7 @@ jobs:
 
           foreach ($path in @(
               "$dir\degenview.exe", "$dir\unins000.exe",
-              "$dir\licenses\OFL-JetBrainsMono.txt", "$dir\licenses\OFL-NotoSansSymbols2.txt", "$dir\licenses\OFL-Inter.txt",
+              "$dir\licenses\OFL-JetBrainsMono.txt", "$dir\licenses\OFL-NotoSansSymbols2.txt", "$dir\licenses\OFL-Inter.txt", "$dir\licenses\OFL-NotoSansSC.txt",
               "$dir\licenses\FONTS.md",
               "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\DegenView.lnk")) {
             if (-not (Test-Path -LiteralPath $path)) { throw "missing after install: $path" }

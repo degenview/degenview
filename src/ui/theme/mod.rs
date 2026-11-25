@@ -525,7 +525,7 @@ pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 /// fallbacks, and a machine without SF Mono simply keeps them. STIX Two Math and Apple Symbols go last
 /// in both families so characters the others lack — "𝓑𝓾𝔂" and other math alphanumerics, arrows,
 /// geometric shapes — draw instead of showing tofu squares. A language written in Han characters adds
-/// the system's font for them (`cjk`).
+/// the system's font for them, and the languages' own names have a bundled one (`cjk`).
 fn base_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     fonts
@@ -580,6 +580,7 @@ fn base_fonts() -> egui::FontDefinitions {
                 .push("han".to_owned());
         }
     }
+    add_language_names_fallback(&mut fonts);
     add_symbol_fallback(&mut fonts);
     fonts
 }
@@ -678,6 +679,22 @@ fn install_fonts(ctx: &egui::Context) {
 /// this is called when the choice changes, not every frame.
 pub fn install_editor_font(ctx: &egui::Context, font: &EditorFontSource) {
     ctx.set_fonts(font_definitions(font));
+}
+
+/// The characters of the languages' own names that no other font is sure to have, in both families:
+/// the language picker lists them whatever language is in use.
+fn add_language_names_fallback(fonts: &mut egui::FontDefinitions) {
+    fonts.font_data.insert(
+        "language-names".to_owned(),
+        std::sync::Arc::new(cjk::language_names_font(INTER)),
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push("language-names".to_owned());
+    }
 }
 
 /// A subset of Noto Sans Symbols 2 (`assets/fonts`), the last fallback in both families. Neither

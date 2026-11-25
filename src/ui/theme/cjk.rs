@@ -1,9 +1,13 @@
-//! The Han font a Chinese interface is drawn with.
+//! The fonts that draw Han characters.
 //!
 //! egui draws from the fonts it is given and has no system fallback, and neither Inter nor egui's own
-//! fonts have a Han character. A Chinese font is a file of the system, never bundled (a font with the
-//! characters a catalog needs is megabytes), and is read only when the language in use needs it: the
-//! files are 20 MB and more.
+//! fonts have a Han character. Two things need one, whatever the other does:
+//!
+//! * A Chinese interface. Its font is a file of the system, never bundled (a font with the
+//!   characters a catalog needs is megabytes), and is read only when the language in use needs it:
+//!   the files are 20 MB and more.
+//! * The language picker, which lists every language by its own name in every language. A bundled
+//!   subset holding just the Han characters of those names serves it ([`language_names_font`]).
 //!
 //! `zh` is Simplified Chinese (CLDR's default script for the language; Traditional is `zh-Hant`).
 //!
@@ -118,12 +122,28 @@ pub(super) fn system_font(locale: Locale, reference: &[u8]) -> Option<egui::Font
     faces(locale).into_iter().find_map(|face| {
         let bytes = std::fs::read(&face.path).ok()?;
         let offset = baseline_offset(&bytes, face.index, reference)?;
-        let mut data = egui::FontData::from_owned(bytes).tweak(egui::FontTweak {
-            y_offset_factor: offset,
-            ..Default::default()
-        });
+        let mut data = shifted(egui::FontData::from_owned(bytes), offset);
         data.index = face.index;
         Some(data)
+    })
+}
+
+/// Noto Sans SC cut down to the Han characters of the languages' own names (`assets/fonts`, SIL OFL
+/// 1.1; how to regenerate it is in `assets/fonts/README.md`). It follows the system's font in the
+/// chain, so a Chinese interface draws all its text in one face.
+const LANGUAGE_NAMES: &[u8] = include_bytes!("../../../assets/fonts/NotoSansSC-language-names.otf");
+
+/// The bundled font for the languages' own names, on the baseline of `reference` like
+/// [`system_font`]'s.
+pub(super) fn language_names_font(reference: &[u8]) -> egui::FontData {
+    let offset = baseline_offset(LANGUAGE_NAMES, 0, reference).unwrap_or_default();
+    shifted(egui::FontData::from_static(LANGUAGE_NAMES), offset)
+}
+
+fn shifted(data: egui::FontData, y_offset_factor: f32) -> egui::FontData {
+    data.tweak(egui::FontTweak {
+        y_offset_factor,
+        ..Default::default()
     })
 }
 
@@ -269,6 +289,11 @@ mod tests {
         assert_eq!(baseline_offset(INTER, 0, INTER), Some(0.0));
         let shift = baseline_offset(JETBRAINS, 0, INTER).expect("both parse");
         assert!((shift - 0.003_77).abs() < 1e-4, "{shift}");
+    }
+
+    #[test]
+    fn the_language_names_font_has_the_tables_its_baseline_is_read_from() {
+        assert!(baseline_offset(LANGUAGE_NAMES, 0, INTER).is_some());
     }
 
     #[test]

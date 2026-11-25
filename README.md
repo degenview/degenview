@@ -165,4 +165,4 @@ DegenView is an independent project and is not affiliated with TradingView.
 ## License
 
 DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE.md) (`GPL-3.0-only`).
-The two fonts built into the app keep their own licences, see [Licensing](docs/licensing.md).
+The fonts built into the app keep their own licences, see [Licensing](docs/licensing.md).
