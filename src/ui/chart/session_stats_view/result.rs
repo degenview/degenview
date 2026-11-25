@@ -3,7 +3,8 @@
 //! the bars behind it. Each is a card; none reads anything but the `Stats` it is given.
 
 use super::parts::{
-    callout, interval_bar, key_value, link, paragraph, section_header, share_row, text_width,
+    TEXT_SIZE, callout, interval_bar, key_value, label_column, link, paragraph, section_header,
+    share_row, text_width,
 };
 use super::text;
 use crate::i18n::{tr, tr_n};
@@ -16,7 +17,6 @@ use eframe::egui::{Sense, Ui, pos2, vec2};
 pub const SMALL_SAMPLE: usize = 30;
 const HERO_SIZE: f32 = 34.0;
 const HERO_HEIGHT: f32 = 44.0;
-const HALF_LABEL: f32 = 44.0;
 const YEAR_LABEL: f32 = 36.0;
 
 /// What the answer asks the panel to do.
@@ -199,23 +199,12 @@ fn stability_card(ui: &mut Ui, halves: &crate::model::session_stats::Stability) 
                 .on_hover_text(tip);
         });
         let texts = [text::share(&halves.older), text::share(&halves.newer)];
+        let older = tr!("Older");
+        let newer = tr!("Newer");
+        let half_label = label_column(ui, &[older, newer], TEXT_SIZE);
         let column = text_width(ui, &texts);
-        share_row(
-            ui,
-            tr!("Older"),
-            HALF_LABEL,
-            column,
-            &halves.older,
-            &texts[0],
-        );
-        share_row(
-            ui,
-            tr!("Newer"),
-            HALF_LABEL,
-            column,
-            &halves.newer,
-            &texts[1],
-        );
+        share_row(ui, older, half_label, column, &halves.older, &texts[0]);
+        share_row(ui, newer, half_label, column, &halves.newer, &texts[1]);
     });
 }
 

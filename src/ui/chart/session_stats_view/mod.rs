@@ -24,15 +24,13 @@ use crate::ui::{accessibility, kit, theme};
 use eframe::egui::{
     self, Align, Layout, Rect, Sense, Stroke, Ui, WidgetInfo, WidgetType, pos2, vec2,
 };
-use parts::{centered_row, link, paragraph, section_header, section_label};
+use parts::{centered_row, label_column, link, paragraph, section_header, section_label};
 use std::sync::Arc;
 use std::time::Duration;
 
 const TOOLBAR_HEIGHT: f32 = 44.0;
 const MARGIN: f32 = 16.0;
 const CONTROL_HEIGHT: f32 = 32.0;
-/// The column the control rows keep their labels in.
-const LABEL_WIDTH: f32 = 72.0;
 const DAY_HEIGHT: f32 = 28.0;
 const FIELD_TEXT: f32 = kit::size::SUBHEADLINE + 1.0;
 /// How long the copy button says "copied".
@@ -328,7 +326,9 @@ fn conditions(ui: &mut Ui, state: &mut StatsViewState) {
         );
     }
 
-    control_row(ui, tr!("Gap"), |ui, width| {
+    let labels = [tr!("Gap"), tr!("Gap size"), tr!("Prior day")];
+    let label_width = label_column(ui, &[labels[0], labels[1], labels[2]], kit::size::BODY);
+    control_row(ui, labels[0], label_width, |ui, width| {
         kit::segmented_filling(
             ui,
             egui::Id::new("session-stats-gap"),
@@ -341,7 +341,7 @@ fn conditions(ui: &mut Ui, state: &mut StatsViewState) {
             width,
         );
     });
-    control_row(ui, tr!("Gap size"), |ui, width| {
+    control_row(ui, labels[1], label_width, |ui, width| {
         // The dash and the spacing round it come out of the width before it is shared.
         let dash = kit::galley(
             ui,
@@ -387,7 +387,7 @@ fn conditions(ui: &mut Ui, state: &mut StatsViewState) {
             kit::Tone::Warning.text(),
         );
     }
-    control_row(ui, tr!("Prior day"), |ui, width| {
+    control_row(ui, labels[2], label_width, |ui, width| {
         kit::segmented_filling(
             ui,
             egui::Id::new("session-stats-prior"),
@@ -403,17 +403,17 @@ fn conditions(ui: &mut Ui, state: &mut StatsViewState) {
 }
 
 /// A label in a fixed column and a control filling the rest of the line.
-fn control_row(ui: &mut Ui, label: &str, contents: impl FnOnce(&mut Ui, f32)) {
+fn control_row(ui: &mut Ui, label: &str, label_width: f32, contents: impl FnOnce(&mut Ui, f32)) {
     centered_row(ui, CONTROL_HEIGHT, |ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        let (rect, _) = ui.allocate_exact_size(vec2(LABEL_WIDTH, CONTROL_HEIGHT), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(vec2(label_width, CONTROL_HEIGHT), Sense::hover());
         let galley = kit::galley(
             ui,
             label,
             kit::size::BODY,
             kit::REGULAR,
             theme::text_primary(),
-            LABEL_WIDTH,
+            label_width,
         );
         ui.painter().galley(
             pos2(rect.left(), rect.center().y - galley.size().y / 2.0),

@@ -6189,7 +6189,7 @@ msgstr "Porcentaje mínimo del gap"
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Gap size"
-msgstr "Tamaño del gap"
+msgstr "Tamaño gap"
 
 #: src/service/watchlist_quotes/provider.rs
 msgid "Gate.io refused the request (HTTP 403): it is not available in every country"
@@ -9652,7 +9652,7 @@ msgstr "Antigua"
 
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Older and newer half"
-msgstr "Mitad antigua y mitad reciente"
+msgstr "Mitades"
 
 #: src/workspace/chart/mod.rs src/workspace/overlay/mod.rs
 msgid "Older candles stopped loading"
