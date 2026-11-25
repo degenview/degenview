@@ -20,42 +20,14 @@ struct Face {
     index: u32,
 }
 
-/// Where Simplified Chinese fonts are on macOS, Windows and Linux, in the order tried. Linux
-/// distributions put Noto Sans CJK in different directories (the Flatpak sandbox shows the host's
-/// under `/run/host/fonts`), and its collection holds Japanese, Korean, Simplified, Traditional and
-/// Hong Kong faces, in that order.
-const SIMPLIFIED: &[(&str, u32)] = &[
+/// Simplified Chinese fonts macOS ships: Hiragino Sans GB, then STHeiti.
+const SIMPLIFIED_MACOS: &[(&str, u32)] = &[
     ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0),
     ("/System/Library/Fonts/STHeiti Light.ttc", 0),
-    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 2),
-    ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", 2),
-    (
-        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-        2,
-    ),
-    (
-        "/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Regular.ttc",
-        2,
-    ),
-    (
-        "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
-        0,
-    ),
-    ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", 0),
-    (
-        "/usr/share/fonts/wenquanyi/wqy-microhei/wqy-microhei.ttc",
-        0,
-    ),
-    ("/run/host/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 2),
-    ("/run/host/fonts/noto-cjk/NotoSansCJK-Regular.ttc", 2),
-    (
-        "/run/host/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Regular.ttc",
-        2,
-    ),
 ];
 
-/// Microsoft YaHei, Windows's Simplified Chinese UI font, and the older ones, in the system's
-/// font folder.
+/// Microsoft YaHei, Windows's Simplified Chinese UI font, and the older ones, in the system's font
+/// folder.
 const SIMPLIFIED_WINDOWS: &[(&str, u32)] = &[("msyh.ttc", 0), ("simsun.ttc", 0), ("simhei.ttf", 0)];
 
 /// The faces `locale` can be drawn with, best first. Empty for a language Inter covers.
@@ -71,14 +43,43 @@ fn faces(locale: Locale) -> Vec<Face> {
                         index: *index,
                     })
                 });
-            let others = SIMPLIFIED.iter().map(|(path, index)| Face {
+            let macos = SIMPLIFIED_MACOS.iter().map(|(path, index)| Face {
                 path: PathBuf::from(path),
                 index: *index,
             });
-            others.chain(windows).collect()
+            fontconfig("zh-cn")
+                .into_iter()
+                .chain(macos)
+                .chain(windows)
+                .collect()
         }
         _ => Vec::new(),
     }
+}
+
+/// The font the system's fontconfig picks for `lang` (`fc-match`), on the platforms that have it.
+/// Linux distributions each put Noto Sans CJK, WenQuanYi or Droid in another directory and file
+/// name (and the Flatpak sandbox shows the host's under `/run/host/fonts`); fontconfig is what
+/// knows which is installed, so no path is guessed.
+fn fontconfig(lang: &str) -> Option<Face> {
+    if !cfg!(all(unix, not(target_os = "macos"))) {
+        return None;
+    }
+    let output = std::process::Command::new("fc-match")
+        .args(["--format", "%{file}\n%{index}", &format!(":lang={lang}")])
+        .output()
+        .ok()?;
+    parse_fontconfig_match(&String::from_utf8(output.stdout).ok()?)
+}
+
+/// `file` and `index` as fontconfig prints them. For a variable font's named instance the index
+/// carries the instance in its high 16 bits, and the face in the low ones.
+fn parse_fontconfig_match(output: &str) -> Option<Face> {
+    let (path, index) = output.trim().rsplit_once('\n')?;
+    Some(Face {
+        path: PathBuf::from(path),
+        index: index.trim().parse::<u32>().ok()? & 0xFFFF,
+    })
 }
 
 /// The first of `locale`'s fonts the machine has, `None` when the language needs none or no file
@@ -185,7 +186,6 @@ mod tests {
     #[test]
     fn simplified_chinese_tries_every_platform_and_each_path_is_absolute() {
         let tried = faces(Locale::from_tag("zh").expect("Chinese is offered"));
-        assert!(tried.len() >= SIMPLIFIED.len());
         assert!(tried.iter().all(|face| face.path.is_absolute()));
         assert!(
             tried
@@ -193,6 +193,25 @@ mod tests {
                 .any(|face| face.path.ends_with("Hiragino Sans GB.ttc")),
             "macOS has a font to try"
         );
+    }
+
+    #[test]
+    fn fontconfig_names_the_file_and_the_face() {
+        let face = parse_fontconfig_match(
+            "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc\n2\n",
+        )
+        .expect("a file and an index");
+        assert_eq!(
+            face.path,
+            PathBuf::from("/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc")
+        );
+        assert_eq!(face.index, 2);
+        // A named instance of a variable font: instance 1, face 2.
+        let instance = parse_fontconfig_match("/fonts/Noto.ttc\n65538").expect("parses");
+        assert_eq!(instance.index, 2);
+        assert!(parse_fontconfig_match("").is_none());
+        assert!(parse_fontconfig_match("/fonts/Noto.ttc").is_none());
+        assert!(parse_fontconfig_match("/fonts/Noto.ttc\nnot a number").is_none());
     }
 
     /// The numbers are the fonts' own `hhea`/`OS/2` values (Inter 1984, -494 over 2048;

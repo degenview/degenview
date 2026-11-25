@@ -268,8 +268,9 @@ translated; Webhook, VWAP, TPO, Pine and MCP stay in English. Vocabulary is kept
 catalog.
 
 The font is the system's, found and read by `ui::theme::cjk` only when the language in use is
-Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, Noto Sans CJK or WenQuanYi on
-Linux, also under `/run/host/fonts` for the Flatpak). A machine with none of them shows the
+Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, and on Linux whichever font
+fontconfig picks for `:lang=zh-cn`, asked with `fc-match`, because each distribution puts Noto Sans
+CJK or WenQuanYi under another name; the Flatpak sandbox's fontconfig sees the host's fonts). A machine with none of them shows the
 missing-glyph box for every Han character; nothing is bundled because a font with the catalog's
 characters is megabytes.
 
