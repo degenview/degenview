@@ -53,6 +53,15 @@
   in [`ta.*` against TradingView](../pine-ta-parity.md#a-missing-source-bar). Every other `ta.*`
   function is unmeasured here. Never add a per-bar growing field to
   `ta::State` for this (cloned on every realtime tick).
+- `ta.*` edge rules measured on TradingView (probes P09-P11): `ta.cmo` is `na` on a window where
+  nothing moved (0/0); `ta.cci` repeats its previous value when the window is flat; `ta.mfi` is 100
+  whenever the down flow is 0 (up flow or not) and, because a missing change counts the source on both
+  sides as the reference code reads it, has its first value on bar `length - 1`; `ta.stoch` repeats the
+  previous raw %K when the source sits exactly on a window with no range (a source 5e-11 off it is `na`) and is
+  `na` when the range is 0 and the source is elsewhere; `ta.percentile_linear_interpolation` and
+  `array.percentile_linear_interpolation` interpolate at the 0-based position `p * n - 0.5` held
+  in `[0, n - 1]` (nearest rank is `ceil(p * n)` and already matched). `ta.wvad` on a bar without a range
+  is `na`: **not measured** on TradingView.
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
@@ -160,7 +169,8 @@
   `ignored_features::ignored_values` (PINE7004) is empty but kept for the next unsupported constant.
 - `ta.pivot_point_levels`: running period OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`),
   starting at each anchor bar; levels set at a period's end hold until the next ends; `developing`
-  uses the running period. Classic published formulas (reference lists none); Woodie's uses the
+  uses the running period; Woodie with `developing = true` is a runtime error (`PINE4035`, naming
+  TradingView's RE10128). Classic published formulas (reference lists none); Woodie's uses the
   setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
   (Pearson on mid-ranks) x 100.
 - `timeframe.change(tf)` is per call site, like `ta.change`: `ta::State::bar_times` (in

@@ -1,0 +1,3 @@
+fixed: ta.cmo, ta.cci, ta.mfi and ta.stoch now give TradingView's values when the price has not moved over their window, and ta.mfi starts one bar earlier. Saved scripts that use them plot and trade differently.
+fixed: ta.percentile_linear_interpolation and array.percentile_linear_interpolation now interpolate like TradingView, and never go beyond the lowest and highest value. Saved scripts that use them plot and trade differently.
+fixed: ta.pivot_point_levels with the Woodie type and developing = true now stops the script with an error, like on TradingView, instead of drawing levels.

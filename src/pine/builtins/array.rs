@@ -712,7 +712,9 @@ pub(crate) fn statistic(name: &str, bound: &Bound, items: &[RuntimeValue]) -> Ru
             let Some(percentage) = bound.get("percentage").and_then(RuntimeValue::number) else {
                 return RuntimeValue::Na;
             };
-            let position = percentage.clamp(0.0, 100.0) / 100.0 * (count - 1.0);
+            // Hazen's position, `p * n - 0.5` counting from 0, held inside the array (TradingView).
+            let position =
+                (percentage.clamp(0.0, 100.0) / 100.0 * count - 0.5).clamp(0.0, count - 1.0);
             let lower = position.floor() as usize;
             let upper = (numbers.len() - 1).min(lower + 1);
             float(numbers[lower] + (numbers[upper] - numbers[lower]) * (position - lower as f64))

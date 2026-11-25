@@ -144,7 +144,7 @@ pub fn evaluate(
         "ta.dev" => statistic(inputs, count, mean_deviation),
         "ta.swma" => statistic(inputs, 4, |v| (v[0] + 2.0 * v[1] + 2.0 * v[2] + v[3]) / 6.0),
         "ta.cmo" => cmo(inputs, count),
-        "ta.cci" => cci(inputs, count),
+        "ta.cci" => cci(inputs, count, state.results.last()),
         "ta.hma" => hma(inputs, count),
         "ta.highestbars" => extremum_bars(inputs, count, true),
         "ta.lowestbars" => extremum_bars(inputs, count, false),
@@ -1048,26 +1048,22 @@ fn cmo(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
     let changes: Vec<f64> = window.windows(2).map(|pair| pair[1] - pair[0]).collect();
     let up: f64 = changes.iter().filter(|c| **c > 0.0).sum();
     let down: f64 = -changes.iter().filter(|c| **c < 0.0).sum::<f64>();
-    float(if up + down == 0.0 {
-        0.0
-    } else {
-        100.0 * (up - down) / (up + down)
-    })
+    // Nothing moved: 0 / 0, which is `na` on TradingView.
+    optional((up + down != 0.0).then(|| 100.0 * (up - down) / (up + down)))
 }
 
-/// Commodity channel index: the distance from the mean in units of 0.015 mean deviations.
-fn cci(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
+/// Commodity channel index: the distance from the mean in units of 0.015 mean deviations. A window
+/// of equal values has no deviation to divide by, and TradingView repeats the previous value there.
+fn cci(inputs: &[RuntimeValue], length: usize, previous: Option<&RuntimeValue>) -> RuntimeValue {
     let Some(window) = last_window(inputs, length) else {
         return RuntimeValue::Na;
     };
+    if window.iter().all(|value| *value == window[0]) {
+        return previous.cloned().unwrap_or(RuntimeValue::Na);
+    }
     let current = window[window.len() - 1];
     let mean = window.iter().sum::<f64>() / length as f64;
-    let deviation = mean_deviation(&window);
-    float(if deviation == 0.0 {
-        0.0
-    } else {
-        (current - mean) / (0.015 * deviation)
-    })
+    float((current - mean) / (0.015 * mean_deviation(&window)))
 }
 
 /// The weighted average of the `length` values ending at `end` (inclusive), or None.
@@ -1545,8 +1541,8 @@ mod tests {
         assert_eq!(numbers(&run("ta.cmo", &[1.0, 2.0, 3.0], 2))[2], Some(100.0));
         assert_eq!(
             numbers(&run("ta.cmo", &[1.0, 1.0, 1.0], 2))[2],
-            Some(0.0),
-            "no movement"
+            None,
+            "no movement is 0 / 0"
         );
         assert!(close(
             numbers(&run("ta.cmo", &[1.0, 3.0, 2.0], 2))[2],
@@ -1556,9 +1552,13 @@ mod tests {
         assert!(close(cci[2], (3.0 - 2.0) / (0.015 * (2.0 / 3.0))));
         assert_eq!(
             numbers(&run("ta.cci", &[5.0, 5.0, 5.0], 3))[2],
-            Some(0.0),
-            "flat: no deviation"
+            None,
+            "flat from the start: nothing to repeat"
         );
+        let held = numbers(&run("ta.cci", &[1.0, 2.0, 3.0, 3.0, 3.0, 3.0], 3));
+        assert!(held[3].is_some());
+        assert_eq!(held[4], held[3], "a flat window repeats the previous value");
+        assert_eq!(held[5], held[3]);
     }
 
     #[test]

@@ -228,8 +228,8 @@ impl PivotPeriod {
 /// has none of. A period starts at each bar where `anchor` is true (and at the first bar); the
 /// levels set when one ends hold until the next ends, and are `na` before the first. With
 /// `developing` they are instead worked out from the bars of the running period so far, this bar
-/// included. Woodie's pivot weighs the open of the period that follows (the bar that sets the levels)
-/// in the same way, so a developing Woodie uses the running period's own open.
+/// included. Woodie's pivot weighs the open of the period that follows, which a running period does
+/// not have, so the call refuses `developing` for it (`call.rs`, as TradingView does).
 ///
 /// `None` when `kind` is not one of [`PIVOT_TYPES`].
 pub fn pivot_point_levels(
@@ -517,7 +517,8 @@ pub fn percentile(
     values.sort_by(f64::total_cmp);
     let n = values.len();
     if interpolate {
-        let position = percentage / 100.0 * (n as f64 - 1.0);
+        // Hazen's position, `p * n - 0.5` counting from 0, held inside the window (TradingView).
+        let position = (percentage / 100.0 * n as f64 - 0.5).clamp(0.0, n as f64 - 1.0);
         let below = position.floor() as usize;
         let above = position.ceil() as usize;
         out(Some(
@@ -550,18 +551,27 @@ pub fn valuewhen(
         .map_or(RuntimeValue::Na, |index| state.seconds[index].clone())
 }
 
-/// `ta.mfi(series, length)`: the money flow index.
+/// `ta.mfi(series, length)`: the money flow index, `100 - 100 / (1 + up / down)` over the last
+/// `length` bars' volume-weighted flows, as the reference code reads it: a missing change (the
+/// first bar) is neither up nor down, so the source counts on both sides and the first value is on
+/// bar `length - 1`. No down flow, with or without an up flow, is 100 (TradingView).
 pub fn mfi(source: &RuntimeValue, length: i64, bar: &Kline, state: &mut State) -> RuntimeValue {
     let previous = state.inputs.last().and_then(RuntimeValue::number);
     state.inputs.push(source.clone());
-    let flow = match (source.number(), previous) {
-        (Some(now), Some(before)) => {
-            let up = if now - before <= 0.0 { 0.0 } else { now };
-            let down = if now - before >= 0.0 { 0.0 } else { now };
-            Some((bar.volume * up, bar.volume * down))
-        }
-        _ => None,
-    };
+    let flow = source.number().map(|now| {
+        let change = previous.map(|before| now - before);
+        let up = if change.is_some_and(|change| change <= 0.0) {
+            0.0
+        } else {
+            now
+        };
+        let down = if change.is_some_and(|change| change >= 0.0) {
+            0.0
+        } else {
+            now
+        };
+        (bar.volume * up, bar.volume * down)
+    });
     state
         .results
         .push(flow.map_or(RuntimeValue::Na, |(up, down)| {
@@ -584,7 +594,11 @@ pub fn mfi(source: &RuntimeValue, length: i64, bar: &Kline, state: &mut State) -
         upper += pair[0].number().unwrap_or(0.0);
         lower += pair[1].number().unwrap_or(0.0);
     }
-    out(Some(100.0 - 100.0 / (1.0 + upper / lower)))
+    out(Some(if lower == 0.0 {
+        100.0
+    } else {
+        100.0 - 100.0 / (1.0 + upper / lower)
+    }))
 }
 
 /// `ta.vwma(source, length)`: the volume-weighted moving average.
@@ -618,6 +632,9 @@ fn range(state: &State, length: usize) -> Option<(f64, f64)> {
 }
 
 /// `ta.stoch(source, high, low, length)`: where the source sits in the high-low range, 0 to 100.
+/// A window with no range has nothing to divide by: when the source sits exactly on its value (0 / 0)
+/// the previous value stays, otherwise there is none (TradingView, probes P10 and P11; a source
+/// 5e-11 off the window is already `na`, so the test is exact).
 pub fn stoch(
     source: &RuntimeValue,
     high: &RuntimeValue,
@@ -625,22 +642,31 @@ pub fn stoch(
     length: i64,
     state: &mut State,
 ) -> RuntimeValue {
+    let previous = state.results.last().cloned().unwrap_or(RuntimeValue::Na);
     let (Some(source), Some(high), Some(low)) = (source.number(), high.number(), low.number())
     else {
         // A gap in the inputs poisons the window: keep the history aligned with `na` bars.
         state.highs.push(f64::NAN);
         state.lows.push(f64::NAN);
+        state.results.push(RuntimeValue::Na);
         return RuntimeValue::Na;
     };
     state.highs.push(high);
     state.lows.push(low);
-    let Some((highest, lowest)) = range(state, count(length)) else {
-        return RuntimeValue::Na;
+    let value = match range(state, count(length)) {
+        Some((highest, lowest)) if highest.is_finite() && lowest.is_finite() => {
+            if highest != lowest {
+                out(Some(100.0 * (source - lowest) / (highest - lowest)))
+            } else if source == highest {
+                previous
+            } else {
+                RuntimeValue::Na
+            }
+        }
+        _ => RuntimeValue::Na,
     };
-    out(
-        (highest.is_finite() && lowest.is_finite() && highest != lowest)
-            .then(|| 100.0 * (source - lowest) / (highest - lowest)),
-    )
+    state.results.push(value.clone());
+    value
 }
 
 /// `ta.wpr(length)`: Williams %R, from the bar's own high, low and close.
@@ -890,11 +916,12 @@ fn williams_accumulation_distribution(
     total + gain
 }
 
-/// Not cumulative: the volume-weighted position of the close within the bar.
+/// Not cumulative: the volume-weighted position of the close within the bar; 0 / 0 on a bar
+/// without a range is na (not measured on TradingView).
 fn williams_variable_accumulation_distribution(bar: &Kline) -> f64 {
     let span = bar.high - bar.low;
     if span == 0.0 {
-        0.0
+        f64::NAN
     } else {
         (bar.close - bar.open) / span * bar.volume
     }
@@ -939,6 +966,18 @@ mod pivot_and_rank_tests {
         let wvad = cumulative(variable("ta.wvad").unwrap(), &bar, &runtime, &mut state);
         close_to(&wvad, (105.0 - 100.0) / 20.0 * 10.0);
         assert!(state.results.is_empty(), "a per-bar variable keeps nothing");
+        let flat = Kline {
+            open: 100.0,
+            high: 100.0,
+            low: 100.0,
+            close: 100.0,
+            ..bar
+        };
+        assert_eq!(
+            cumulative(variable("ta.wvad").unwrap(), &flat, &runtime, &mut state),
+            RuntimeValue::Na,
+            "0 / 0 is na"
+        );
         // A running total still folds every committed bar once, and a second read adds nothing.
         let first = cumulative(variable("ta.obv").unwrap(), &bar, &runtime, &mut state);
         assert_eq!(state.results.len(), 50);
