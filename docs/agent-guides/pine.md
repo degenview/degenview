@@ -382,6 +382,11 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   `reset` clears it, so a reloaded history asks the provider again. Not done: TradingView's
   `timeframe.in_seconds("M")` is 2,628,003 (3M 7,884,009, 12M 31,536,036, probe T2), the engine's
   month is 30 days (2,592,000); both sides of every comparison use the same nominal month.
+- **Returned references.** `ReferenceExport` copies arrays, maps, matrices and user-defined objects
+  from the request's state to the chart's. It remaps nested references as part of the same copy
+  (including inside tuples), so repeated references still point to one object and cycles survive.
+  Missing or unsupported handles, such as drawings, become `na` rather than being read in the
+  chart's state.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 

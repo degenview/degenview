@@ -92,6 +92,10 @@ impl Map {
             .collect()
     }
 
+    pub(super) fn values_mut(&mut self) -> impl Iterator<Item = &mut RuntimeValue> {
+        self.storage.values_mut()
+    }
+
     pub fn contains(&self, key: &MapKey) -> bool {
         self.storage.contains_key(key)
     }
@@ -170,6 +174,10 @@ impl Matrix {
 
     pub fn all_elements(&self) -> &[RuntimeValue] {
         &self.elements
+    }
+
+    pub(super) fn all_elements_mut(&mut self) -> &mut [RuntimeValue] {
+        &mut self.elements
     }
 
     pub fn contains(&self, row: usize, column: usize) -> bool {
