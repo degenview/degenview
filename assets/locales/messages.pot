@@ -1492,6 +1492,7 @@ msgstr ""
 msgid "Arithmetic, comparison, assignment and ?: operators."
 msgstr ""
 
+#: src/model/cursor/mod.rs
 #: src/model/drawings/style.rs
 #: src/model/drawings/tool.rs
 msgid "Arrow"
@@ -2579,11 +2580,6 @@ msgstr ""
 
 #: src/pine_studio/drawer/simulation.rs
 msgid "Chance of a loss"
-msgstr ""
-
-#: src/model/watchlist/mod.rs
-#: src/pine_studio/menu_bar/edit.rs
-msgid "Change"
 msgstr ""
 
 #: src/model/watchlist/mod.rs
@@ -4230,6 +4226,10 @@ msgid ""
 "to trade."
 msgstr ""
 
+#: src/model/cursor/mod.rs
+msgid "Cross"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "Crossed above"
 msgstr ""
@@ -4779,6 +4779,10 @@ msgstr ""
 msgid "Delta"
 msgstr ""
 
+#: src/model/cursor/mod.rs
+msgid "Demonstration"
+msgstr ""
+
 #: src/model/mcp/activity.rs
 #: src/ui/settings/window.rs
 msgid "Denied"
@@ -4859,6 +4863,10 @@ msgstr ""
 
 #: src/ui/pine/logs_view/mod.rs
 msgid "Disable logging"
+msgstr ""
+
+#: src/mcp/state.rs
+msgid "Disabled"
 msgstr ""
 
 #: src/ui/webhook/settings.rs
@@ -4956,6 +4964,10 @@ msgstr ""
 #: src/pine_studio/library/unsaved.rs
 #: src/ui/workspace/layout_prompts.rs
 msgid "Don’t Save"
+msgstr ""
+
+#: src/model/cursor/mod.rs
+msgid "Dot"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -5644,6 +5656,10 @@ msgstr ""
 msgid "Equity"
 msgstr ""
 
+#: src/model/cursor/mod.rs
+msgid "Eraser"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Error"
 msgstr ""
@@ -5907,6 +5923,7 @@ msgstr ""
 msgid "Extreme Greed"
 msgstr ""
 
+#: src/mcp/state.rs
 #: src/model/mcp/activity.rs
 #: src/ui/webhook/settings.rs
 msgid "Failed"
@@ -8448,6 +8465,12 @@ msgstr ""
 #: src/ui/settings/mcp/server.rs
 #: src/ui/settings/window.rs
 msgid "MCP Server"
+msgstr ""
+
+#: src/host/mcp/mod.rs
+msgid ""
+"MCP credentials cannot be protected against edits to the database on this Mac "
+"({error})"
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
@@ -12727,6 +12750,7 @@ msgstr ""
 msgid "Run the profiler to see where the time goes."
 msgstr ""
 
+#: src/mcp/state.rs
 #: src/pine_studio/debug/panel/mod.rs
 msgid "Running"
 msgstr ""
@@ -14161,6 +14185,10 @@ msgstr ""
 msgid "Start profiling"
 msgstr ""
 
+#: src/mcp/state.rs
+msgid "Starting"
+msgstr ""
+
 #: src/ui/paper/account_sheet.rs
 msgid "Starting balance"
 msgstr ""
@@ -14336,6 +14364,10 @@ msgstr ""
 
 #: src/pine_studio/ai/mod.rs
 msgid "Stopped."
+msgstr ""
+
+#: src/mcp/state.rs
+msgid "Stopping"
 msgstr ""
 
 #: src/pine_studio/debug/panel/mod.rs
@@ -14901,6 +14933,18 @@ msgstr ""
 
 #: src/model/portfolio/csv.rs
 msgid "The CoinMarketCap CSV is empty."
+msgstr ""
+
+#: src/host/mcp/mod.rs
+msgid ""
+"The Keychain key that protects the saved MCP credentials could not be read, so"
+" the server stays off. Restart DegenView to try again."
+msgstr ""
+
+#: src/host/mcp/mod.rs
+msgid ""
+"The Keychain key that protects the saved MCP credentials is missing, so they "
+"cannot be trusted. The server stays off."
 msgstr ""
 
 #: src/ui/trade/order_sheet/form.rs
@@ -15558,6 +15602,12 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "The same size, different candles."
+msgstr ""
+
+#: src/host/mcp/mod.rs
+msgid ""
+"The saved MCP credentials do not match the seal kept in the Keychain, so they "
+"were changed outside DegenView. The server stays off."
 msgstr ""
 
 #: src/host/mcp/confirmation.rs
@@ -16649,6 +16699,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Type a ticker, a company or a pair: BTC, AAPL, ETHUSDT."
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "Type any timeframe: 22m, 3h, 2D"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -17952,8 +18006,16 @@ msgid_plural "chance of {symbol} · {count} choices"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "chart and pin"
+msgstr ""
+
 #: src/pine_studio/debug/panel/mod.rs
 msgid "chart bar {bar}"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "chart it"
 msgstr ""
 
 #: src/service/update/code_signature.rs
@@ -18162,6 +18224,10 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "min"
+msgstr ""
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "move"
 msgstr ""
 
 #: src/pine_studio/ai/panel.rs
@@ -20274,6 +20340,11 @@ msgctxt "bold button"
 msgid "B"
 msgstr ""
 
+#: src/pine_studio/menu_bar/edit.rs
+msgctxt "changed lines of the script"
+msgid "Change"
+msgstr ""
+
 #: src/pine_studio/editor/completion.rs
 msgctxt "completion kind"
 msgid "built-in function"
@@ -20506,6 +20577,16 @@ msgstr ""
 #: src/model/chart/table.rs
 msgctxt "price"
 msgid "Open"
+msgstr ""
+
+#: src/model/watchlist/mod.rs
+msgctxt "price change, column header"
+msgid "Change"
+msgstr ""
+
+#: src/model/watchlist/mod.rs
+msgctxt "price change, spoken in full"
+msgid "Change"
 msgstr ""
 
 #: src/ui/chart/card/crosshair.rs

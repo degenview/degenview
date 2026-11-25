@@ -11,6 +11,7 @@
 
 pub mod demo;
 
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 
 /// How the operating system's pointer is drawn over the plot.
@@ -68,11 +69,11 @@ impl CursorMode {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Cross => "Cross",
-            Self::Dot => "Dot",
-            Self::Arrow => "Arrow",
-            Self::Demonstration => "Demonstration",
-            Self::Eraser => "Eraser",
+            Self::Cross => tr!("Cross"),
+            Self::Dot => tr!("Dot"),
+            Self::Arrow => tr!("Arrow"),
+            Self::Demonstration => tr!("Demonstration"),
+            Self::Eraser => tr!("Eraser"),
         }
     }
 

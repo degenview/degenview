@@ -1429,7 +1429,8 @@ msgstr "Área"
 msgid "Arithmetic, comparison, assignment and ?: operators."
 msgstr "Operadores aritméticos, de comparación, de asignación y ?:."
 
-#: src/model/drawings/style.rs src/model/drawings/tool.rs
+#: src/model/cursor/mod.rs src/model/drawings/style.rs
+#: src/model/drawings/tool.rs
 msgid "Arrow"
 msgstr "Flecha"
 
@@ -2431,7 +2432,18 @@ msgstr "Certificado"
 msgid "Chance of a loss"
 msgstr "Probabilidad de pérdida"
 
-#: src/model/watchlist/mod.rs src/pine_studio/menu_bar/edit.rs
+#: src/model/watchlist/mod.rs
+msgctxt "price change, column header"
+msgid "Change"
+msgstr "Var."
+
+#: src/model/watchlist/mod.rs
+msgctxt "price change, spoken in full"
+msgid "Change"
+msgstr "Variación"
+
+#: src/pine_studio/menu_bar/edit.rs
+msgctxt "changed lines of the script"
 msgid "Change"
 msgstr "Cambio"
 
@@ -3988,6 +4000,10 @@ msgstr "Credenciales"
 msgid "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade."
 msgstr "Las credenciales se guardan en el almacenamiento seguro del sistema y nunca salen de este Mac. No se sincronizan y ningún script, alerta u otro programa puede usarlas para operar."
 
+#: src/model/cursor/mod.rs
+msgid "Cross"
+msgstr "Cruz"
+
 #: src/ui/alert/center.rs
 msgid "Crossed above"
 msgstr "Cruzó por encima"
@@ -4277,6 +4293,10 @@ msgstr "DegenView en GitHub"
 msgid "DegenView sets this header itself."
 msgstr "DegenView establece este encabezado por su cuenta."
 
+#: src/ui/settings/window.rs
+msgid "DegenView will close and reopen."
+msgstr "DegenView se cerrará y se volverá a abrir."
+
 #: src/ui/settings/about.rs
 msgid "DegenView {version} is available"
 msgstr "DegenView {version} está disponible"
@@ -4296,10 +4316,6 @@ msgstr "DegenView {version} está disponible. {note}"
 #: src/ui/settings/about.rs
 msgid "DegenView {version} is ready"
 msgstr "DegenView {version} está listo"
-
-#: src/ui/settings/window.rs
-msgid "DegenView will close and reopen."
-msgstr "DegenView se cerrará y se volverá a abrir."
 
 #: src/app/window.rs
 msgid "DegenView {version} is ready. DegenView will close and reopen."
@@ -4502,6 +4518,10 @@ msgstr "Entrega"
 msgid "Delta"
 msgstr "Delta"
 
+#: src/model/cursor/mod.rs
+msgid "Demonstration"
+msgstr "Demostración"
+
 #: src/model/mcp/activity.rs src/ui/settings/window.rs
 msgid "Denied"
 msgstr "Denegado"
@@ -4578,6 +4598,10 @@ msgstr "Desactivar punto de interrupción"
 #: src/ui/pine/logs_view/mod.rs
 msgid "Disable logging"
 msgstr "Desactivar registro"
+
+#: src/mcp/state.rs
+msgid "Disabled"
+msgstr "Desactivado"
 
 #: src/ui/webhook/settings.rs
 msgid "Disabled: alerts skip this webhook"
@@ -4664,6 +4688,10 @@ msgstr "Hecho"
 #: src/pine_studio/library/unsaved.rs src/ui/workspace/layout_prompts.rs
 msgid "Don’t Save"
 msgstr "No guardar"
+
+#: src/model/cursor/mod.rs
+msgid "Dot"
+msgstr "Punto"
 
 #: src/model/chart/kind.rs src/ui/drawing/properties/fib_pages.rs
 msgid "Dotted"
@@ -5314,6 +5342,10 @@ msgstr "Efímero"
 msgid "Equity"
 msgstr "Patrimonio neto"
 
+#: src/model/cursor/mod.rs
+msgid "Eraser"
+msgstr "Borrador"
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Error"
 msgstr "Error"
@@ -5557,7 +5589,7 @@ msgstr "Miedo extremo"
 msgid "Extreme Greed"
 msgstr "Codicia extrema"
 
-#: src/model/mcp/activity.rs src/ui/webhook/settings.rs
+#: src/mcp/state.rs src/model/mcp/activity.rs src/ui/webhook/settings.rs
 msgid "Failed"
 msgstr "Fallido"
 
@@ -7295,7 +7327,7 @@ msgstr "Etiqueta del último valor"
 msgid "Last {price}"
 msgstr "Último {price}"
 
-#: src/app/window.rs
+#: src/app/window.rs src/ui/settings/window.rs
 msgid "Later"
 msgstr "Más tarde"
 
@@ -7942,6 +7974,10 @@ msgstr "Reduce el tamaño para ver las más pequeñas."
 #: src/ui/settings/mcp/server.rs src/ui/settings/window.rs
 msgid "MCP Server"
 msgstr "Servidor MCP"
+
+#: src/host/mcp/mod.rs
+msgid "MCP credentials cannot be protected against edits to the database on this Mac ({error})"
+msgstr "Las credenciales de MCP no se pueden proteger contra ediciones de la base de datos en este Mac ({error})"
 
 #: src/service/watchlist_quotes/provider.rs
 msgid "MEXC refused the request (HTTP 403): it is not available in every country"
@@ -8667,7 +8703,7 @@ msgstr "Las órdenes nuevas están en pausa: no se puede leer el registro de ór
 msgid "New run"
 msgstr "Nuevo tramo"
 
-#: src/ui/window/tab_bar/mod.rs
+#: src/ui/window/tab_bar/mod.rs src/workspace/mod.rs
 msgid "New tab"
 msgstr "Nueva pestaña"
 
@@ -11651,11 +11687,7 @@ msgstr "Reiniciar"
 msgid "Restart DegenView to finish updating."
 msgstr "Reinicia DegenView para terminar de actualizar."
 
-#: src/ui/settings/window.rs
-msgid "Restart to change the language?"
-msgstr "¿Reiniciar para cambiar el idioma?"
-
-#: src/app/window.rs
+#: src/app/window.rs src/ui/settings/window.rs
 msgid "Restart Now"
 msgstr "Reiniciar ahora"
 
@@ -11670,6 +11702,10 @@ msgstr "Reiniciar con el código nuevo"
 #: src/ui/settings/about.rs
 msgid "Restart to Update"
 msgstr "Reiniciar para actualizar"
+
+#: src/ui/settings/window.rs
+msgid "Restart to change the language?"
+msgstr "¿Reiniciar para cambiar el idioma?"
 
 #: src/app/window.rs
 msgid "Restart to finish updating?"
@@ -11972,7 +12008,7 @@ msgstr "Ejecutar el perfilador"
 msgid "Run the profiler to see where the time goes."
 msgstr "Ejecuta el perfilador para ver dónde se va el tiempo."
 
-#: src/pine_studio/debug/panel/mod.rs
+#: src/mcp/state.rs src/pine_studio/debug/panel/mod.rs
 msgid "Running"
 msgstr "En ejecución"
 
@@ -13315,6 +13351,10 @@ msgstr "Empieza de nuevo con un saldo limpio."
 msgid "Start profiling"
 msgstr "Iniciar perfilado"
 
+#: src/mcp/state.rs
+msgid "Starting"
+msgstr "Iniciando"
+
 #: src/ui/paper/account_sheet.rs
 msgid "Starting balance"
 msgstr "Saldo inicial"
@@ -13481,6 +13521,10 @@ msgstr "Detenido antes de terminar."
 #: src/pine_studio/ai/mod.rs
 msgid "Stopped."
 msgstr "Detenido."
+
+#: src/mcp/state.rs
+msgid "Stopping"
+msgstr "Deteniendo"
 
 #: src/pine_studio/debug/panel/mod.rs
 msgid "Stopping…"
@@ -14019,6 +14063,14 @@ msgstr "El CSV está vacío."
 #: src/model/portfolio/csv.rs
 msgid "The CoinMarketCap CSV is empty."
 msgstr "El CSV de CoinMarketCap está vacío."
+
+#: src/host/mcp/mod.rs
+msgid "The Keychain key that protects the saved MCP credentials could not be read, so the server stays off. Restart DegenView to try again."
+msgstr "No se ha podido leer la clave del Llavero que protege las credenciales de MCP guardadas, así que el servidor sigue apagado. Reinicia DegenView para volver a intentarlo."
+
+#: src/host/mcp/mod.rs
+msgid "The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off."
+msgstr "Falta la clave del Llavero que protege las credenciales de MCP guardadas, así que no es posible fiarse de ellas. El servidor sigue apagado."
 
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
@@ -14632,6 +14684,10 @@ msgstr "Los mismos precios, escritos como los mostrará este gráfico."
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "The same size, different candles."
 msgstr "El mismo tamaño, velas distintas."
+
+#: src/host/mcp/mod.rs
+msgid "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off."
+msgstr "Las credenciales de MCP guardadas no coinciden con el sello guardado en el Llavero, así que se han modificado fuera de DegenView. El servidor sigue apagado."
 
 #: src/host/mcp/confirmation.rs
 msgid "The saved source is overwritten and cannot be undone from here."
@@ -15624,6 +15680,10 @@ msgstr "Escribe un mensaje; hasta entonces el punto de interrupción se detiene 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Type a ticker, a company or a pair: BTC, AAPL, ETHUSDT."
 msgstr "Escribe un ticker, una empresa o un par: BTC, AAPL, ETHUSDT."
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "Type any timeframe: 22m, 3h, 2D"
+msgstr "Escribe un marco temporal: 22m, 3h, 2D"
 
 #: src/ui/settings/sync.rs
 msgid "Type “{word}” to confirm"
@@ -16871,9 +16931,17 @@ msgid_plural "chance of {symbol} · {count} choices"
 msgstr[0] "probabilidad de {symbol} · {count} opción"
 msgstr[1] "probabilidad de {symbol} · {count} opciones"
 
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "chart and pin"
+msgstr "graficar y fijar"
+
 #: src/pine_studio/debug/panel/mod.rs
 msgid "chart bar {bar}"
 msgstr "barra de gráfico {bar}"
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "chart it"
+msgstr "graficar"
 
 #: src/service/update/code_signature.rs
 msgid "checking the signature took too long"
@@ -17078,6 +17146,10 @@ msgstr "máx"
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "min"
 msgstr "mín"
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "move"
+msgstr "mover"
 
 #: src/pine_studio/ai/panel.rs
 msgid "needs a key"
@@ -18531,7 +18603,7 @@ msgstr "{periods} periodos"
 
 #: src/ui/chart/settings/indicators.rs
 msgid "{period}-period average with bands {multiplier} standard deviations either side — wide when volatile, tight when calm."
-msgstr "Media de {period} periodos con bandas a {multiplier} desviaciones típicas por cada lado: anchas con volatilidad, estrechas en calma."
+msgstr "Media de {period} periodos con bandas a {multiplier} desviaciones estándar por cada lado: anchas con volatilidad, estrechas en calma."
 
 #: src/pine_studio/editor/diff_view.rs
 msgid "{position} of {total}"

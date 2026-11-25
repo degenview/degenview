@@ -3,7 +3,7 @@
 //! its gutters offer is here too.
 
 use super::entry::{Entry, Item, Submenu, grouped};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::pine_studio::commands::Cmd;
 use crate::pine_studio::debug::PanelAction;
 use crate::pine_studio::debug::marks::GutterEvent;
@@ -214,7 +214,7 @@ fn change(state: &EditorMenuState) -> Submenu {
                 .collect()
         })
         .unwrap_or_default();
-    Submenu::new(tr!("Change"), entries)
+    Submenu::new(tr_c!("changed lines of the script", "Change"), entries)
         .icon(Icon::Compare)
         .enabled(state.change.is_some())
 }
