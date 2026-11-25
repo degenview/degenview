@@ -5,6 +5,7 @@
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
 use crate::clock::now_ms;
+use crate::i18n::tr;
 use crate::lock::{lock, read, write};
 use crate::mcp::audit::AuditQueue;
 use crate::mcp::transport::cancel::CallRegistry;
@@ -104,11 +105,11 @@ pub enum McpStatus {
 impl McpStatus {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Disabled => "Disabled",
-            Self::Starting => "Starting",
-            Self::Running { .. } => "Running",
-            Self::Stopping => "Stopping",
-            Self::Failed(_) => "Failed",
+            Self::Disabled => tr!("Disabled"),
+            Self::Starting => tr!("Starting"),
+            Self::Running { .. } => tr!("Running"),
+            Self::Stopping => tr!("Stopping"),
+            Self::Failed(_) => tr!("Failed"),
         }
     }
 }

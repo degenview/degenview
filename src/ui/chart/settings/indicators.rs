@@ -52,7 +52,9 @@ pub(super) fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
                 .iter()
                 .position(|&period| period == config.ema_period)
                 .unwrap_or(0);
-            if let Some(index) = kit::menu_picker(ui, 72.0, &labels, selected, config.show_ema) {
+            if let Some(index) =
+                kit::menu_picker_fitted(ui, 72.0, &labels, selected, config.show_ema)
+            {
                 config.ema_period = EMA_PERIODS[index];
             }
         },

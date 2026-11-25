@@ -7,7 +7,7 @@ pub mod quote;
 pub mod text;
 
 use crate::clock::now_ms;
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::{DataSource, InstrumentId};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -146,7 +146,7 @@ impl WatchlistColumn {
     pub fn accessibility_title(self) -> &'static str {
         match self {
             Self::Last => tr!("Last price"),
-            Self::Change => tr!("Change"),
+            Self::Change => tr_c!("price change, spoken in full", "Change"),
             Self::ChangePercent => tr!("Change percent"),
             Self::Volume => tr!("Volume"),
             Self::Exchange => tr!("Exchange"),
@@ -193,7 +193,7 @@ impl WatchlistSortKey {
             Self::Manual => tr!("Manual"),
             Self::Symbol => tr!("Symbol"),
             Self::Last => tr!("Last"),
-            Self::Change => tr!("Change"),
+            Self::Change => tr_c!("price change, column header", "Change"),
             Self::ChangePercent => tr!("Change %"),
             Self::Volume => tr!("Volume"),
         }

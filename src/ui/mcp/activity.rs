@@ -719,7 +719,8 @@ fn client_picker(ui: &mut Ui, state: &mut ActivityState, clients: &[McpActivityC
         .as_ref()
         .and_then(|id| clients.iter().position(|client| client.id == *id))
         .map_or(0, |index| index + 1);
-    if let Some(choice) = kit::menu_picker(ui, CLIENT_PICKER_WIDTH, &labels, selected, true) {
+    if let Some(choice) = kit::menu_picker_fitted(ui, CLIENT_PICKER_WIDTH, &labels, selected, true)
+    {
         state.client_id = choice
             .checked_sub(1)
             .and_then(|index| clients.get(index))
@@ -736,7 +737,8 @@ fn status_picker(ui: &mut Ui, state: &mut ActivityState) {
             .position(|candidate| *candidate == status)
             .map_or(0, |index| index + 1)
     });
-    if let Some(choice) = kit::menu_picker(ui, STATUS_PICKER_WIDTH, &labels, selected, true) {
+    if let Some(choice) = kit::menu_picker_fitted(ui, STATUS_PICKER_WIDTH, &labels, selected, true)
+    {
         state.status = choice
             .checked_sub(1)
             .and_then(|index| McpActivityStatus::ALL.get(index).copied());
@@ -765,7 +767,8 @@ fn range_picker(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
             .unwrap_or(0),
         RangeChoice::Custom => custom_index,
     };
-    let Some(choice) = kit::menu_picker(ui, RANGE_PICKER_WIDTH, &labels, selected, true) else {
+    let Some(choice) = kit::menu_picker_fitted(ui, RANGE_PICKER_WIDTH, &labels, selected, true)
+    else {
         return;
     };
     if choice == custom_index {

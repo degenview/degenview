@@ -292,7 +292,7 @@ pub fn show(
             }
         } else {
             let label = items.len().to_string();
-            let tooltip = tr!("{count} indicators", count = items.len());
+            let tooltip = tr_n!(items.len(), "{count} indicator", "{count} indicators");
             let pill = count_pill(ui, Some(Icon::ChartLine), &label, &tooltip);
             overflow_list(ui, &pill, &items, config, chart_id, &mut action);
         }

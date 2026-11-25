@@ -2,6 +2,7 @@
 //! remain at their call sites; this only bounds network work and classifies failures.
 
 use super::agent::FollowingAgent;
+use crate::i18n::tr;
 use std::sync::LazyLock;
 use std::time::Duration;
 use ureq::http::Response;
@@ -63,10 +64,14 @@ pub enum Retry {
 pub enum Error {
     #[error("HTTP {0}")]
     Status(u16),
-    #[error("response exceeds {0} bytes")]
+    #[error("{}", body_too_large(.0))]
     BodyTooLarge(u64),
     #[error("{0}")]
     Network(String),
+}
+
+fn body_too_large(limit: &u64) -> String {
+    tr!("response exceeds {limit} bytes", limit = limit)
 }
 
 impl Error {

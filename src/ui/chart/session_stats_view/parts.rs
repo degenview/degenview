@@ -9,7 +9,7 @@ use eframe::egui::{self, Align, Color32, Layout, Rect, Sense, Stroke, Ui, Widget
 
 pub const ROW_HEIGHT: f32 = 22.0;
 const BAR_HEIGHT: f32 = 6.0;
-const TEXT_SIZE: f32 = kit::size::SUBHEADLINE + 0.5;
+pub const TEXT_SIZE: f32 = kit::size::SUBHEADLINE + 0.5;
 
 /// The fill of a share bar and of the interval: the label colour, dimmed.
 fn bar_fill() -> Color32 {
@@ -169,6 +169,27 @@ pub fn text_width(ui: &Ui, texts: &[String]) -> f32 {
             .x
         })
         .fold(0.0, f32::max)
+}
+
+/// The width of the widest of `labels` at `size`: the column a group of rows keeps its labels in,
+/// measured from the words so a language with longer ones gets room for them.
+pub fn label_column(ui: &Ui, labels: &[&str], size: f32) -> f32 {
+    labels
+        .iter()
+        .map(|label| {
+            kit::galley(
+                ui,
+                label,
+                size,
+                kit::REGULAR,
+                theme::text_primary(),
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        })
+        .fold(0.0, f32::max)
+        .ceil()
 }
 
 /// A line of `label`, a bar, and `share · hits/n` at the right. The bar takes what a text column

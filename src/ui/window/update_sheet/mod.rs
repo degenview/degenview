@@ -7,7 +7,7 @@
 
 use crate::build_info::VERSION;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::changelog::{Coverage, ReleaseNotes};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, sheet, size};
 use crate::ui::theme;
@@ -236,7 +236,10 @@ fn changes(ui: &mut Ui, notes: &ReleaseNotes, coverage: &Coverage) {
         );
         return;
     }
-    let groups = [(tr!("New"), &notes.new), (tr!("Fixed"), &notes.fixed)];
+    let groups = [
+        (tr_c!("release notes heading", "New"), &notes.new),
+        (tr_c!("release notes heading", "Fixed"), &notes.fixed),
+    ];
     for (index, (title, entries)) in groups
         .into_iter()
         .filter(|(_, entries)| !entries.is_empty())

@@ -15,8 +15,6 @@ enum Kind {
     /// The language the source is written in. It has no catalog.
     Source,
     /// A language people read, translated by a catalog.
-    // Constructed by the rows `docs/localization.md` tells a language to add.
-    #[allow(dead_code)]
     Natural,
     /// A tool for testing the interface, made from the source text (see `pseudo`).
     Pseudo,
@@ -35,12 +33,18 @@ struct Language {
 }
 
 /// Every language, English first. Add a language here, with its catalog (`docs/localization.md`).
-const LANGUAGES: [Language; 2] = [
+const LANGUAGES: [Language; 3] = [
     Language {
         tag: "en",
         native_name: "English",
         kind: Kind::Source,
         catalog: None,
+    },
+    Language {
+        tag: "es",
+        native_name: "Español",
+        kind: Kind::Natural,
+        catalog: Some(include_str!("../../assets/locales/es.po")),
     },
     Language {
         tag: "en-XA",
@@ -61,7 +65,7 @@ impl Locale {
     /// and tests, which shows clipped text, fixed widths and text that was never put through
     /// `tr!`. `en-XA` is the standard tag for it.
     #[cfg(test)]
-    pub const PSEUDO: Locale = Locale(1);
+    pub const PSEUDO: Locale = Locale(2);
 
     /// How many languages there are.
     pub(super) const COUNT: usize = LANGUAGES.len();
@@ -343,7 +347,7 @@ mod tests {
 
     #[test]
     fn an_index_past_the_table_is_english() {
-        assert_eq!(Locale::from_index(1), Locale::PSEUDO);
+        assert_eq!(Locale::from_index(2), Locale::PSEUDO);
         assert_eq!(Locale::from_index(200), Locale::ENGLISH);
     }
 }

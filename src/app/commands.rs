@@ -109,6 +109,10 @@ impl DegenViewApp {
         for action in actions {
             match action {
                 AppAction::Quit => self.request_quit(ctx),
+                AppAction::Restart => {
+                    self.reopen_on_exit = true;
+                    self.request_quit(ctx);
+                }
                 AppAction::QuitDecided { proceed } => {
                     if proceed {
                         // The next script window with edits asks in turn; none left, and it quits.
@@ -268,9 +272,10 @@ impl DegenViewApp {
 
     /// Cancel or a failed save: the quit stays off and no window keeps asking.
     fn call_off_quit(&mut self) {
-        // A restart for an update was waiting on this quit; the app keeps running, so it must not
-        // start the new version when it exits some other time.
+        // A restart was waiting on this quit; the app keeps running, so it must not start again
+        // when it exits some other time.
         self.updates.disarm_relaunch();
+        self.reopen_on_exit = false;
         for tab in self.tabs.slots() {
             if let Ok(mut content) = tab.content.lock()
                 && let TabContent::Pine(pine) = &mut *content

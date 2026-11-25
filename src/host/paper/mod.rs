@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 pub enum PaperHostError {
     #[error("Could not load paper trading: {0}")]
     Load(String),
-    #[error("{}", .0.message())]
+    #[error("{}", .0.text())]
     Engine(PaperTradingError),
     #[error("Could not save paper trading: {0}")]
     Persistence(String),

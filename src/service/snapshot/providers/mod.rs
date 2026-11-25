@@ -22,6 +22,7 @@
 pub mod imgbb;
 pub mod self_hosted;
 
+use crate::i18n::Marked;
 use crate::model::chart::snapshot::{FieldValues, SharedSnapshot, UploadError};
 use crate::service::snapshot::upload::HostResponse;
 use eframe::egui;
@@ -51,7 +52,7 @@ pub struct Choice {
     /// What is saved.
     pub value: &'static str,
     /// What the user reads.
-    pub label: &'static str,
+    pub label: Marked,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -68,9 +69,9 @@ pub struct FieldSpec {
     /// What it is saved under. Never changes once shipped.
     pub key: &'static str,
     /// The label over the field. Unique across providers: it also identifies the widget.
-    pub title: &'static str,
+    pub title: Marked,
     /// The line under the field.
-    pub hint: &'static str,
+    pub hint: Marked,
     /// What an empty field shows.
     pub placeholder: &'static str,
     pub kind: FieldKind,
@@ -84,9 +85,9 @@ pub struct FieldSpec {
     /// that existed before this scheme keeps the account it was saved under).
     pub account: Option<&'static str>,
     /// What the camera menu says while a required field is empty.
-    pub needed: &'static str,
+    pub needed: Marked,
     /// The button that removes a saved secret ("Remove key"); only a secret has one.
-    pub remove_label: &'static str,
+    pub remove_label: Marked,
     /// What is wrong with a typed value, in a sentence; `None` when it is fine. Empty is never
     /// checked: an empty field clears it.
     pub validate: fn(&str) -> Option<&'static str>,
@@ -117,22 +118,23 @@ impl FieldSpec {
 /// A link in a provider's setup, always shown gray and underlined.
 #[derive(Clone, Copy, Debug)]
 pub struct Link {
-    pub label: &'static str,
+    pub label: Marked,
     pub url: &'static str,
 }
 
 pub struct ProviderDescriptor {
     /// Saved in the settings; never changes once shipped.
     pub id: &'static str,
-    pub name: &'static str,
+    /// What the user reads: the service's own name, or a phrase for a kind of host.
+    pub name: Marked,
     /// The line under the name while the provider is off.
-    pub summary: &'static str,
+    pub summary: Marked,
     pub logo: Logo,
     /// Numbered, in order.
-    pub setup_steps: &'static [&'static str],
+    pub setup_steps: &'static [Marked],
     pub links: &'static [Link],
     /// What the user should know before an image goes there: who can see it, whose terms apply.
-    pub notice: &'static str,
+    pub notice: Marked,
     pub fields: &'static [FieldSpec],
     /// Whether the provider can check its settings with a real (tiny) upload.
     pub testable: bool,
@@ -241,7 +243,7 @@ pub trait SnapshotProvider: Send + Sync {
                     .is_some_and(|value| !value.trim().is_empty())
             };
             if !filled {
-                return Readiness::Needs(field.needed.to_owned());
+                return Readiness::Needs(field.needed.text().to_owned());
             }
         }
         Readiness::Ready
@@ -249,7 +251,7 @@ pub trait SnapshotProvider: Send + Sync {
 
     /// Where the image is going, as the user reads it ("ImgBB", "snapshots.example.com").
     fn label(&self, _settings: &FieldValues) -> String {
-        self.descriptor().name.to_owned()
+        self.descriptor().name.text().to_owned()
     }
 
     /// What the user agrees to upload to, remembered per destination: a service's address, or a
@@ -264,7 +266,7 @@ pub trait SnapshotProvider: Send + Sync {
 
     /// The line under the name while the provider is on and ready.
     fn status_line(&self, _settings: &FieldValues) -> String {
-        self.descriptor().summary.to_owned()
+        self.descriptor().summary.text().to_owned()
     }
 
     /// Builds the request that uploads `png`. Fails (without sending anything) for a secret or
@@ -368,7 +370,7 @@ impl Destination {
     }
 
     pub fn notice(&self) -> &'static str {
-        self.provider.descriptor().notice
+        self.provider.descriptor().notice.text()
     }
 }
 
@@ -413,9 +415,9 @@ mod tests {
                 "{} is listed twice",
                 descriptor.id
             );
-            assert!(!descriptor.name.is_empty() && !descriptor.summary.is_empty());
+            assert!(!descriptor.name.msgid().is_empty() && !descriptor.summary.msgid().is_empty());
             assert!(
-                !descriptor.notice.is_empty(),
+                !descriptor.notice.msgid().is_empty(),
                 "{}: say what the user should know",
                 descriptor.id
             );
@@ -428,13 +430,13 @@ mod tests {
                     field.key
                 );
                 assert!(
-                    titles.insert(field.title),
+                    titles.insert(field.title.msgid()),
                     "the title {:?} is used by two fields: it identifies the widget",
-                    field.title
+                    field.title.msgid()
                 );
                 if field.required {
                     assert!(
-                        !field.needed.is_empty(),
+                        !field.needed.msgid().is_empty(),
                         "{}.{} is required, so it needs a `needed` sentence",
                         descriptor.id,
                         field.key

@@ -709,7 +709,7 @@ fn alerts_card(ui: &mut Ui, alerts: &[AlertEvent]) {
         if historical > 0 {
             chrome::chip(
                 ui,
-                &tr!("{count} historical", count = historical),
+                &tr_n!(historical, "{count} historical", "{count} historical"),
                 theme::text_secondary(),
             );
         }
@@ -795,7 +795,7 @@ fn alerts_section(ui: &mut Ui, alerts: &[AlertEvent]) {
                 if historical > 0 {
                     chrome::chip(
                         ui,
-                        &tr!("{count} historical", count = historical),
+                        &tr_n!(historical, "{count} historical", "{count} historical"),
                         theme::text_secondary(),
                     );
                 }

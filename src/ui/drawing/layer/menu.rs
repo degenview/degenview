@@ -1118,7 +1118,7 @@ fn image_controls(ui: &mut Ui, drawing: &Drawing) -> Option<ImageOp> {
                 .total_cmp(&(b.1 - image.opacity).abs())
         })
         .map_or(0, |(index, _)| index);
-    if let Some(index) = kit::menu_picker(ui, 62.0, &labels, current, true) {
+    if let Some(index) = kit::menu_picker_fitted(ui, 62.0, &labels, current, true) {
         op = Some(ImageOp::Opacity(OPACITIES[index]));
     }
     if kit::value_chip(ui, tr!("Keep shape"), image.keep_aspect).clicked() {
@@ -1271,7 +1271,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
                     .total_cmp(&(b.1 - style.text.size).abs())
             })
             .map_or(0, |(index, _)| index);
-        if let Some(index) = kit::menu_picker(ui, 56.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 56.0, &labels, selected, true) {
             next.text.size = FONT_SIZES[index];
         }
         if kit::value_chip(ui, tr_c!("bold button", "B"), style.text.bold).clicked() {
@@ -1295,7 +1295,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
                     .total_cmp(&(b.1 - style.stroke.width).abs())
             })
             .map_or(0, |(index, _)| index);
-        if let Some(index) = kit::menu_picker(ui, 70.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 70.0, &labels, selected, true) {
             next.stroke.width = WIDTHS[index];
         }
     }
@@ -1308,7 +1308,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             .iter()
             .position(|dash| *dash == style.stroke.dash)
             .unwrap_or(0);
-        if let Some(index) = kit::menu_picker(ui, 78.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 78.0, &labels, selected, true) {
             next.stroke.dash = LineDash::ALL[index];
         }
     }
@@ -1322,7 +1322,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             .iter()
             .position(|degree| *degree == style.pattern.degree)
             .unwrap_or(0);
-        if let Some(index) = kit::menu_picker(ui, 176.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 176.0, &labels, selected, true) {
             next.pattern.degree = Degree::ALL[index];
         }
         if kit::value_chip(ui, tr!("Labels"), style.pattern.labels).clicked() {
@@ -1355,7 +1355,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             .iter()
             .position(|source| *source == style.vwap.source)
             .unwrap_or(0);
-        if let Some(index) = kit::menu_picker(ui, 84.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 84.0, &labels, selected, true) {
             next.vwap.source = PriceSource::ALL[index];
         }
     }
@@ -1369,7 +1369,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             .iter()
             .position(|volume| *volume == style.profile.volume)
             .unwrap_or(0);
-        if let Some(index) = kit::menu_picker(ui, 92.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 92.0, &labels, selected, true) {
             next.profile.volume = ProfileVolume::ALL[index];
         }
     }
@@ -1388,7 +1388,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             .iter()
             .position(|mode| *mode == current.mode)
             .unwrap_or(0);
-        if let Some(index) = kit::menu_picker(ui, 112.0, &labels, selected, true) {
+        if let Some(index) = kit::menu_picker_fitted(ui, 112.0, &labels, selected, true) {
             edited.mode = BarsMode::ALL[index];
         }
         if kit::value_chip(ui, tr!("Mirrored"), current.mirrored).clicked() {

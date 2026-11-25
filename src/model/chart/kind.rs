@@ -10,7 +10,7 @@
 //! Pure: no egui types. Colours are `[r, g, b, a]` bytes; `None` follows the chart's up/down
 //! palette (and, for borders and wicks, the body colour).
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::{DataSource, Kline};
 use serde::{Deserialize, Serialize};
 
@@ -288,10 +288,10 @@ impl PriceSource {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Open => tr!("Open"),
+            Self::Open => tr_c!("price", "Open"),
             Self::High => tr!("High"),
             Self::Low => tr!("Low"),
-            Self::Close => tr!("Close"),
+            Self::Close => tr_c!("price", "Close"),
             // Pine's own names for the series, the same in every language.
             Self::Hl2 => "HL2",
             Self::Hlc3 => "HLC3",
@@ -642,7 +642,7 @@ impl ConstructionSource {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Close => tr!("Close"),
+            Self::Close => tr_c!("price", "Close"),
             Self::HighLow => tr!("High/Low"),
         }
     }

@@ -179,8 +179,8 @@ pub fn summary(alerts: &[PriceAlert]) -> String {
     .filter_map(|(state, kind)| {
         let n = count(state);
         (n > 0).then(|| match kind {
-            0 => tr!("{count} active", count = n),
-            1 => tr!("{count} triggered", count = n),
+            0 => tr_n!(n, "{count} active", "{count} active"),
+            1 => tr_n!(n, "{count} triggered", "{count} triggered"),
             _ => tr!("{count} paused", count = n),
         })
     })

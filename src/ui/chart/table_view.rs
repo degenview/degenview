@@ -8,7 +8,7 @@
 //! writes them.
 
 use crate::format::group_thousands;
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_n};
 use crate::model::PriceFormat;
 use crate::model::chart::table::{Column as Field, Order, TableFeed, ValueKind};
 use crate::ui::icons::{self, Icon};
@@ -189,9 +189,11 @@ fn toolbar(
                     chip(ui, &feed.bars_label);
                     chip(
                         ui,
-                        &tr!(
-                            "{count} bars",
-                            count = group_thousands(&feed.len().to_string())
+                        &tr_n!(
+                            feed.len(),
+                            "{amount} bar",
+                            "{amount} bars",
+                            amount = group_thousands(&feed.len().to_string())
                         ),
                     );
                 }

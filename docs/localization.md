@@ -15,7 +15,8 @@ The pieces are the standard ones, so a translator's tools and a new engineer's e
 
 **State.** The runtime, the language setting and Settings ▸ Appearance ▸ Language exist, and the
 shared date helpers (`ui::kit::time_text`, `i18n::datetime`, Settings ▸ Appearance) are translated.
-**No language but English ships**, so the language card is hidden in release builds. The rest of the
+**Spanish (Spain)** is the first translation (`assets/locales/es.po`, tag `es`), so the language card
+shows in release builds too; it hides itself whenever only one language is offered. The rest of the
 interface is still English literals; moving it over, directory by directory, is the next step.
 
 ## Writing text
@@ -29,6 +30,7 @@ the language in use. The English text is the key of the catalogs (gettext's `msg
 | `tr!("{symbol} crossed {price}", symbol = s, price = p)` | `String` | A sentence with values, put in by name. |
 | `tr_n!(count, "{count} alert", "{count} alerts")` | `String` | A counted message: the plural form the language uses for `count`. `{count}` is passed for you. |
 | `tr_c!("month abbreviation", "Jan")` | `&'static str` | English that translates differently in different places (the same word as a verb and as a noun). The context is the first argument (`msgctxt`). |
+| `tr_noop!("Image hosting")` | `i18n::Marked` | Text in a `static` or `const` table (a registry of providers), where a macro cannot run. The text is in the catalogs; read it with `.text()` where it is drawn. |
 
 The compiler checks each message (`i18n::check`, a `const` block in the macros), so a mistake is a
 build error at the call:
@@ -46,8 +48,15 @@ Rules that need a person:
 - **One message, one meaning.** Reuse a text only for the same meaning; use `tr_c!` when two places
   need different translations of the same English (a test fails on a text written both counted and
   plain).
-- **Do not keep the text.** A language chosen in Settings changes what the macros return, so a
-  `&'static str` or `String` from one belongs to the frame being drawn. A cache that must survive a
+- **A table of text is marked, not translated where it is written.** A `static` registry (the snapshot
+  providers) holds `tr_noop!` values and the code that draws it calls `.text()`. A field typed `Marked`
+  cannot be drawn by mistake: it is not a `&str`.
+- **A record of what happened is data, not a sentence.** The paper journal stores the English sentence
+  (for exports and MCP) and a `PaperNote` (what happened); the table writes the sentence from the note in
+  the language in use. A line written before notes existed has none and shows its sentence.
+- **Do not keep the text.** The language can change under a running process (the alert agent follows
+  Settings, a test sets one with `with_locale`), so a `&'static str` or `String` from a macro
+  belongs to the frame being drawn. A cache that must survive a
   frame is made again when `i18n::revision()` changes. (A `const` or `static` cannot hold one: the
   macros are not `const`.)
 - Do not translate what is not interface text: symbols, tickers, Pine source and its errors, log
@@ -121,9 +130,15 @@ languages, plus the pseudo-locale in debug builds. Resolution takes that list as
 the picker cannot show (a pseudo-locale saved by a debug build and read by a release build, whose
 picker is hidden) is kept in the store and not applied, and the system's languages cannot select it
 either. The choice is the `language` setting (`"system"` or a tag), local to the Mac: it is not in
-`sync::record::policy`, so another Mac is not moved. `host::language` reads it at startup and applies a
-change from Settings; `app/tabs.rs` repaints every window when `i18n::revision()` changes, because a
-window with nothing animating would keep the old words.
+`sync::record::policy`, so another Mac is not moved. `host::language` reads it at startup and saves a
+change from Settings (`host::language::save`); the language in the app does not change while it runs,
+because kept text, the native menus and every open window would each switch at a moment of their own.
+Picking a language raises a modal, "Restart to change the language?" (`ask_to_restart` in
+`ui/settings/window.rs`; nothing is asked when the pick is the language already in use). Restart Now
+sends `SettingsAction::Restart` → `AppAction::Restart`: the app quits through the same question as ⌘Q
+and `service::update::install::relaunch_running_app` reopens it. Later keeps the choice saved. A quit
+that is called off cancels the reopen. `app/tabs.rs` still repaints every window when
+`i18n::revision()` changes, which only the alert agent and tests cause.
 
 The system's languages come from `service::system::language`, which asks `sys-locale`.
 
@@ -179,6 +194,9 @@ msgstr[1] "{count} alertas"
 
 ### Adding a language
 
+Agents: the procedure, the quality bar (context-specific wording, glossary, consistency pass) and the
+verification are in [Translation](agent-guides/translation.md). The steps for the code:
+
 1. Add a row to `LANGUAGES` (`tag`, `native_name`, `Kind::Natural`, and its `include_str!` of the
    catalog). Plural rules and date patterns come from the catalog's header and CLDR; no code per
    language.
@@ -195,8 +213,8 @@ msgstr[1] "{count} alertas"
 
 ### Packaging that names languages
 
-None of it names a language today, on purpose: with English the only one, a list of one tells the
-system nothing and a translated name would be a lie. When the first translation ships, each needs:
+Spanish is listed in each of these (the macOS bundle, the Windows installer, the Flatpak metainfo and
+desktop entry); a language added later is added to each, as follows:
 
 - **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
   (`en`) and `CFBundleLocalizations` (`en` plus each tag) to the app's and to the alert agent's
@@ -221,6 +239,17 @@ system nothing and a translated name would be a lie. When the first translation 
   the sandbox passes the locale (`LANG`) the app's language reader looks at (`docs/flatpak.md`).
 - **Docs and the README** have their own languages; see "Not done yet".
 
+### Spanish
+
+`assets/locales/es.po` is written for Spain: informal *tú*, infinitives on buttons and menu items,
+Spain's vocabulary (*ordenador*, *Ajustes*, *pulsar*), and sentence case like the English. It is
+tagged `es`, not `es-ES`, so every other Spanish region (`es-MX` → `es-419` → `es`) gets it through
+CLDR's fallback chain instead of English. Trading terms Spanish-speaking traders say in English
+(Long, Short, Stop, Take profit, Webhook, Pine, Footprint) stay English; the vocabulary for the rest
+(Gráfico, Lista de seguimiento, Cartera, Tenencias, Posición, Repetición, Diario, …) is kept by reading
+the catalog, so a new message uses the word the neighbouring ones do. Numbers keep the shared format
+(see "Not done yet").
+
 ## Not done yet
 
 - **Right-to-left languages.** egui's text layout does not apply the bidirectional algorithm
@@ -240,7 +269,7 @@ system nothing and a translated name would be a lie. When the first translation 
     entries) are in the system's language, not the app's, until the bundle declares its languages
     (see "Packaging that names languages").
   - The language on a machine whose system language changes while the app or the agent runs is read
-    again only at the next start; a choice made in Settings is followed at once.
+    again only at the next start; the alert agent follows a choice made in Settings within a couple of seconds.
   - A delivery failure is stored as English text in the alert history (`delivery.error`): it is
     written once, by whichever process tried, and not translated.
 - **The language of the AI assistant** and of the docs site (its own repository).

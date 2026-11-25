@@ -166,13 +166,27 @@ pub fn apply(prepared: &Prepared) -> Result<(), String> {
 /// certain: the helper starts the new app only after this process is gone, and does not start it at
 /// all if this process is still there when its wait runs out.
 pub fn relaunch(prepared: &Prepared) -> Result<(), String> {
-    spawn_relaunch(prepared).map_err(|error| {
+    spawn_relaunch(Relaunch::Bundle(&prepared.app)).map_err(|error| {
         // Without the helper nobody would reopen the app; the new bundle is in place regardless.
         tr!(
             "Updated, but could not restart: {error}. Reopen DegenView.",
             error = error
         )
     })
+}
+
+/// Starts the helper that reopens the running app once this process has exited, for a change that
+/// only applies at startup. Call it when exit is certain, as for `relaunch`.
+pub fn relaunch_running_app() -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .and_then(|exe| exe.canonicalize())
+        .map_err(|error| error.to_string())?;
+    let bundle = bundle_for_executable(&exe);
+    let target = match &bundle {
+        Some(app) => Relaunch::Bundle(app),
+        None => Relaunch::Executable(&exe),
+    };
+    spawn_relaunch(target).map_err(|error| error.to_string())
 }
 
 fn swap(prepared: &Prepared) -> Result<(), String> {
@@ -219,36 +233,56 @@ fn helper_command(ticks: u32, pid: u32, launch: &[OsString]) -> std::process::Co
     command
 }
 
-/// The helper that reopens `app` with `open -n`. Its arguments are visible to every user on the
-/// Mac, and so are only `forwarded` names; its own environment is cleared down to `helper_env`.
+/// What the relaunch helper starts.
+enum Relaunch<'a> {
+    /// An app bundle, reopened with `open -n`.
+    Bundle(&'a Path),
+    /// A bare executable (a build run from a terminal, not from a bundle).
+    Executable(&'a Path),
+}
+
+/// The helper that reopens `target`. Its arguments are visible to every user on the Mac, and so
+/// are only `forwarded` names; its own environment is cleared down to `helper_env`.
 #[cfg(unix)]
 fn relaunch_command(
-    app: &Path,
+    target: Relaunch,
     pid: u32,
     forwarded: &[(OsString, OsString)],
     helper_env: Vec<(OsString, OsString)>,
 ) -> std::process::Command {
-    let mut launch: Vec<OsString> = vec!["/usr/bin/open".into(), "-n".into()];
-    for (name, value) in forwarded {
+    let assignments = forwarded.iter().map(|(name, value)| {
         let mut assignment = name.clone();
         assignment.push("=");
         assignment.push(value);
-        launch.push("--env".into());
-        launch.push(assignment);
+        assignment
+    });
+    let mut launch: Vec<OsString> = Vec::new();
+    match target {
+        Relaunch::Bundle(app) => {
+            launch.extend(["/usr/bin/open".into(), "-n".into()]);
+            for assignment in assignments {
+                launch.extend(["--env".into(), assignment]);
+            }
+            launch.push(app.into());
+        }
+        Relaunch::Executable(exe) => {
+            launch.push("/usr/bin/env".into());
+            launch.extend(assignments);
+            launch.push(exe.into());
+        }
     }
-    launch.push(app.into());
     let mut command = helper_command(RELAUNCH_WAIT_TICKS, pid, &launch);
     command.env_clear().envs(helper_env);
     command
 }
 
 #[cfg(unix)]
-fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
+fn spawn_relaunch(target: Relaunch) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
 
     relaunch_command(
-        &prepared.app,
+        target,
         std::process::id(),
         &forwarded_env(std::env::vars_os(), FORWARDED_ENV),
         forwarded_env(std::env::vars_os(), HELPER_ENV),
@@ -262,7 +296,7 @@ fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn spawn_relaunch(_: &Prepared) -> std::io::Result<()> {
+fn spawn_relaunch(_: Relaunch) -> std::io::Result<()> {
     Err(std::io::Error::other("unsupported platform"))
 }
 
@@ -483,7 +517,7 @@ mod tests {
             ("DEGENVIEW_CMC_API_KEY", "canary-cmc"),
         ]);
         let command = relaunch_command(
-            Path::new("/Applications/DegenView.app"),
+            Relaunch::Bundle(Path::new("/Applications/DegenView.app")),
             4242,
             &forwarded_env(vars.clone().into_iter(), FORWARDED_ENV),
             forwarded_env(vars.into_iter(), HELPER_ENV),
@@ -502,5 +536,31 @@ mod tests {
         assert!(line.ends_with("/Applications/DegenView.app"), "{line}");
         let envs: Vec<_> = command.get_envs().collect();
         assert!(envs.iter().all(|(name, _)| *name == "HOME"), "{envs:?}");
+    }
+
+    /// A build run from a terminal has no bundle for `open`: the helper starts the executable, with
+    /// the names that are safe to pass, through `env`.
+    #[cfg(unix)]
+    #[test]
+    fn a_bare_executable_is_started_through_env_with_the_forwarded_names() {
+        let forwarded = env(&[("HOME", "/Users/me"), ("DEGENVIEW_CACHE_DIR", "/tmp/cache")]);
+        let command = relaunch_command(
+            Relaunch::Executable(Path::new("/repo/target/release/degenview")),
+            4242,
+            &forwarded,
+            Vec::new(),
+        );
+        let line = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            line.ends_with(
+                "/usr/bin/env HOME=/Users/me DEGENVIEW_CACHE_DIR=/tmp/cache /repo/target/release/degenview"
+            ),
+            "{line}"
+        );
+        assert!(!line.contains("open"), "{line}");
     }
 }

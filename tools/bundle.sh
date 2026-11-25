@@ -76,6 +76,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>es</string></array>
   <key>CFBundleName</key><string>DegenView</string>
   <key>CFBundleDisplayName</key><string>DegenView</string>
   <key>CFBundleIdentifier</key><string>es.nico.degenview</string>
@@ -95,6 +97,8 @@ cat > "$helper/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>es</string></array>
   <key>CFBundleName</key><string>DegenView Alert Agent</string>
   <key>CFBundleDisplayName</key><string>DegenView Alert Agent</string>
   <key>CFBundleIdentifier</key><string>es.nico.degenview.alert-agent</string>
