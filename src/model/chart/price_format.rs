@@ -179,18 +179,18 @@ impl PriceFormat {
 /// Significant digits automatic precision keeps below 1.
 const SMALL_SIGNIFICANT: usize = 4;
 
-/// The places automatic precision gives a price (>= 0.001): none once it is large enough that
-/// decimals are noise, two from 1, then enough to keep four significant digits (`0.5864`,
-/// `0.05864`, `0.003142`). Under 0.001 the zeros are counted instead.
+/// The places automatic precision gives a positive magnitude: none from 1,000, two from 1,
+/// then enough to keep four significant digits. The formatter counts zeros separately for
+/// prices under 0.001, but tick spacing can still use this precision.
 fn auto_places(magnitude: f64) -> usize {
     if magnitude >= GROUPED_FROM {
         0
     } else if magnitude >= 1.0 {
         2
     } else {
-        // 0.5 has no zeros after the point, 0.05 has one: the digits start that much later.
-        let (_, exponent) = scientific(magnitude);
-        (-exponent) as usize - 1 + SMALL_SIGNIFICANT
+        // Choose the decade before rounding: 0.9999 needs four places, not three.
+        let exponent = magnitude.log10().floor();
+        SMALL_SIGNIFICANT - 1 + (-exponent) as usize
     }
 }
 
@@ -291,6 +291,12 @@ mod tests {
     }
 
     #[test]
+    fn automatic_precision_uses_the_price_before_rounding_to_a_new_decade() {
+        assert_eq!(AUTO.format(0.9999), "0.9999");
+        assert_eq!(AUTO.format(0.09999), "0.09999");
+    }
+
+    #[test]
     fn every_automatic_label_below_a_thousand_has_the_places_of_its_size() {
         // The places only ever grow as the price shrinks, so a fall never loses a digit.
         let mut last = 0;
@@ -388,6 +394,14 @@ mod tests {
         // A finer step is not cut to the coarser column.
         assert_eq!(AUTO.format_tick(0.058_5, 0.000_5), "0.05850");
         assert_eq!(AUTO.format_tick(0.058_55, 0.000_05), "0.05855");
+    }
+
+    #[test]
+    fn ticks_keep_their_places_when_the_gap_is_just_below_a_tenth() {
+        let (lower, upper) = (0.8, 0.9);
+        let step = upper - lower;
+        assert_eq!(AUTO.format_tick(lower, step), "0.8000");
+        assert_eq!(AUTO.format_tick(upper, step), "0.9000");
     }
 
     #[test]
