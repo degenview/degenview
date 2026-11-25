@@ -497,7 +497,7 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   every `"ns.member"` literal under `src/pine` in a closed namespace is registered or a known value
   (runtime ⊆ registry).
 - **Closed** namespace (`registry::CLOSED`): unregistered call is `PINE3053` error with "Did you
-  mean". **Value-closed** (`CLOSED_VALUES`): unknown variable read is `PINE3050`. Add a namespace only
+  mean". **Value-closed** (`CLOSED_VALUES`): unknown variable read is `PINE3050`. A builtin *function* read without a call (`plot(ta.sma)`, `x = nz`) is `PINE3050` too, in any namespace, open or closed, unless a value has that name (`ta.tr`, `time`): TradingView calls it an undeclared identifier (`name_check::is_function_read`). Add a namespace only
   when both guards pass and the Pine corpus is unchanged. `request` stays open (own `PINE9003`);
   `syminfo`, `strategy`, `runtime` stay open for values (Pine adds variables; `syminfo.cftc_code`
   failed the corpus). A false error on a working script is worse than a missed typo.
