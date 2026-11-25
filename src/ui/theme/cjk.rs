@@ -47,7 +47,7 @@ fn faces(locale: Locale) -> Vec<Face> {
                 path: PathBuf::from(path),
                 index: *index,
             });
-            fontconfig("zh-cn")
+            fontconfig(&["zh-cn", "zh-sg", "cmn", "zh-tw", "zh-hk"])
                 .into_iter()
                 .chain(macos)
                 .chain(windows)
@@ -57,25 +57,54 @@ fn faces(locale: Locale) -> Vec<Face> {
     }
 }
 
-/// The font the system's fontconfig picks for `lang` (`fc-match`), on the platforms that have it.
-/// Linux distributions each put Noto Sans CJK, WenQuanYi or Droid in another directory and file
-/// name (and the Flatpak sandbox shows the host's under `/run/host/fonts`); fontconfig is what
-/// knows which is installed, so no path is guessed.
-fn fontconfig(lang: &str) -> Option<Face> {
+/// The font the system's fontconfig ranks first among those that cover `languages` (`fc-match -s`),
+/// on the platforms that have it. Linux distributions each put Noto Sans CJK, WenQuanYi or Droid in
+/// another directory and file name (and the Flatpak sandbox shows the host's under
+/// `/run/host/fonts`); fontconfig is what knows which is installed, so no path is guessed.
+///
+/// The first match for a language is not always a font with its characters: with Droid Sans
+/// Fallback alone, `:lang=zh-cn` ranks DejaVu Sans first, because Droid declares `zh-tw` and not
+/// `zh-cn`. So the ranked list is read and the first font that declares the first language of
+/// `languages` is taken; if none does, the first that declares any of the others.
+fn fontconfig(languages: &[&str]) -> Option<Face> {
     if !cfg!(all(unix, not(target_os = "macos"))) {
         return None;
     }
     let output = std::process::Command::new("fc-match")
-        .args(["--format", "%{file}\n%{index}", &format!(":lang={lang}")])
+        .args([
+            "-s",
+            "--format",
+            "%{file}\t%{index}\t%{lang}\n",
+            &format!(":lang={}", languages.first()?),
+        ])
         .output()
         .ok()?;
-    parse_fontconfig_match(&String::from_utf8(output.stdout).ok()?)
+    parse_fontconfig_ranking(&String::from_utf8(output.stdout).ok()?, languages)
 }
 
-/// `file` and `index` as fontconfig prints them. For a variable font's named instance the index
-/// carries the instance in its high 16 bits, and the face in the low ones.
-fn parse_fontconfig_match(output: &str) -> Option<Face> {
-    let (path, index) = output.trim().rsplit_once('\n')?;
+/// The first font of fontconfig's ranking, lines of `file`, `index` and `lang` (the languages it
+/// declares, joined by `|`), that declares `languages[0]`, else the first that declares any of the
+/// rest. The index of a variable font's named instance carries the instance in its high 16 bits
+/// and the face in the low ones.
+fn parse_fontconfig_ranking(output: &str, languages: &[&str]) -> Option<Face> {
+    let fonts: Vec<(&str, &str, Vec<&str>)> = output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            Some((
+                fields.next()?,
+                fields.next()?,
+                fields.next()?.split('|').collect(),
+            ))
+        })
+        .collect();
+    let declares = |wanted: &[&str]| {
+        fonts
+            .iter()
+            .find(|(_, _, langs)| wanted.iter().any(|lang| langs.contains(lang)))
+    };
+    let (path, index, _) =
+        declares(languages.get(..1)?).or_else(|| declares(languages.get(1..)?))?;
     Some(Face {
         path: PathBuf::from(path),
         index: index.trim().parse::<u32>().ok()? & 0xFFFF,
@@ -195,23 +224,38 @@ mod tests {
         );
     }
 
+    const HAN: &[&str] = &["zh-cn", "zh-sg", "cmn", "zh-tw", "zh-hk"];
+
     #[test]
-    fn fontconfig_names_the_file_and_the_face() {
-        let face = parse_fontconfig_match(
-            "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc\n2\n",
-        )
-        .expect("a file and an index");
+    fn fontconfig_names_the_file_and_the_face_of_the_first_font_with_the_language() {
+        let ranking = "/fonts/DejaVuSans.ttf\t0\ten|es|fr\n\
+                       /fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc\t262146\tja|zh-cn|zh-tw\n\
+                       /fonts/Other.ttf\t0\tzh-cn\n";
+        let face = parse_fontconfig_ranking(ranking, HAN).expect("a font with zh-cn");
         assert_eq!(
             face.path,
-            PathBuf::from("/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc")
+            PathBuf::from("/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc")
         );
+        // A named instance of a variable font: the face is in the low 16 bits.
         assert_eq!(face.index, 2);
-        // A named instance of a variable font: instance 1, face 2.
-        let instance = parse_fontconfig_match("/fonts/Noto.ttc\n65538").expect("parses");
-        assert_eq!(instance.index, 2);
-        assert!(parse_fontconfig_match("").is_none());
-        assert!(parse_fontconfig_match("/fonts/Noto.ttc").is_none());
-        assert!(parse_fontconfig_match("/fonts/Noto.ttc\nnot a number").is_none());
+    }
+
+    #[test]
+    fn a_font_that_declares_another_chinese_language_serves_when_none_declares_the_first() {
+        // Droid Sans Fallback declares `zh-tw` but not `zh-cn`, and ranks below DejaVu Sans.
+        let ranking = "/fonts/DejaVuSans.ttf\t0\ten|es\n\
+                       /fonts/DroidSansFallbackFull.ttf\t0\tja|zh-tw|cmn\n";
+        let face = parse_fontconfig_ranking(ranking, HAN).expect("Droid covers Chinese");
+        assert_eq!(face.path, PathBuf::from("/fonts/DroidSansFallbackFull.ttf"));
+        assert_eq!(face.index, 0);
+    }
+
+    #[test]
+    fn a_ranking_with_no_chinese_font_gives_none() {
+        assert!(parse_fontconfig_ranking("/fonts/DejaVuSans.ttf\t0\ten|es\n", HAN).is_none());
+        assert!(parse_fontconfig_ranking("", HAN).is_none());
+        assert!(parse_fontconfig_ranking("/fonts/x.ttf\tnot a number\tzh-cn\n", HAN).is_none());
+        assert!(parse_fontconfig_ranking("/fonts/x.ttf\t0\n", HAN).is_none());
     }
 
     /// The numbers are the fonts' own `hhea`/`OS/2` values (Inter 1984, -494 over 2048;
