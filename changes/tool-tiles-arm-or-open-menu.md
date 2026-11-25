@@ -1,1 +1,0 @@
-fixed: A tool button on the left strip now arms its tool on a click and opens its sub-tool menu only from its arrow, or on a click when its tool is already selected, as on TradingView; Escape shuts an open menu first.
