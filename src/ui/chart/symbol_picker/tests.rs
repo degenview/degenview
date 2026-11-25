@@ -496,6 +496,18 @@ fn a_missing_alpaca_key_is_a_card_with_a_settings_button_not_a_hint() {
     assert!(rig.picker.notice(&listing).is_none());
 }
 
+#[test]
+fn the_notice_button_keeps_one_gap_to_the_card_on_every_side() {
+    let card = Rect::from_min_size(pos2(20.0, 400.0), vec2(520.0, NOTICE_HEIGHT));
+    // Its width follows its label, so a longer translation grows it leftwards, never past the edge.
+    for width in [76.0, 137.0, 210.0] {
+        let button = notice_button_rect(card, width);
+        assert_eq!(button.width(), width);
+        assert_eq!(card.right() - button.right(), button.top() - card.top());
+        assert_eq!(button.top() - card.top(), card.bottom() - button.bottom());
+    }
+}
+
 fn lists() -> Vec<WatchlistGroup> {
     vec![
         WatchlistGroup {
@@ -1427,6 +1439,13 @@ fn gallery_of_the_symbol_picker() {
         ),
         ("symbol-picker-narrow", 640.0, "btc", Scope::All, &bitcoin),
         ("symbol-picker-notice", 1100.0, "eth", Scope::All, &bitcoin),
+        (
+            "symbol-picker-notice-narrow",
+            640.0,
+            "eth",
+            Scope::All,
+            &bitcoin,
+        ),
         (
             "symbol-picker-watchlists",
             1100.0,
