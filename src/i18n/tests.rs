@@ -10,7 +10,7 @@ use super::catalog::{Catalog, Message as Translation};
 use super::extract::{self, Kind, Use};
 use super::plural_forms::PluralForms;
 use super::template::placeholders;
-use super::{Locale, Preference, tr, tr_c, tr_n, with_locale};
+use super::{Locale, Preference, tr, tr_c, tr_n, tr_noop, with_locale};
 
 // MARK: The macros
 
@@ -75,14 +75,27 @@ macro_rules! accepted {
 /// here are compiled by the macros and read by the extractor from the same tokens, so the two cannot
 /// drift apart: a form one accepts and the other refuses fails here.
 #[test]
+fn text_marked_for_a_static_is_translated_where_it_is_read() {
+    static TABLE: [super::Marked; 2] = [tr_noop!("Save"), tr_noop!("Cancel")];
+    assert_eq!(TABLE[0].text(), "Save");
+    assert_eq!(TABLE[1].msgid(), "Cancel");
+    with_locale(Locale::PSEUDO, || {
+        assert_eq!(TABLE[0].text(), "[Šåvé ~~]");
+        // The key stays English: an id built from it does not change with the language.
+        assert_eq!(TABLE[0].msgid(), "Save");
+    });
+}
+
+#[test]
 fn the_extractor_reads_every_form_the_macros_accept() {
     fn generic<A, B>() -> usize {
         std::mem::size_of::<A>() + std::mem::size_of::<B>()
     }
     let n = 2usize;
     let values = [1, 2, 3];
-    let calls: [(&str, Kind, &str, &[&str]); 8] = [
+    let calls: [(&str, Kind, &str, &[&str]); 9] = [
         (accepted!(tr!("Save")), Kind::Plain, "Save", &[]),
+        (accepted!(tr_noop!("Save")), Kind::Plain, "Save", &[]),
         (
             accepted!(tr!("{n}", n = generic::<u8, u16>())),
             Kind::Plain,

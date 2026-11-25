@@ -70,7 +70,10 @@ fn collect(tokens: TokenStream, found: &mut Vec<Use>) -> Result<(), String> {
             Some(TokenTree::Group(call)),
         ) = (&trees[at], trees.get(at + 1), trees.get(at + 2))
             && bang.as_char() == '!'
-            && matches!(name.to_string().as_str(), "tr" | "tr_c" | "tr_n")
+            && matches!(
+                name.to_string().as_str(),
+                "tr" | "tr_c" | "tr_n" | "tr_noop"
+            )
             && call.delimiter() != Delimiter::None
         {
             let line = name.span().start().line;
@@ -101,13 +104,14 @@ type Call = (Kind, String, Vec<String>);
 /// * `tr!(key $(, name = value)* $(,)?)`
 /// * `tr_c!(context, key $(, name = value)* $(,)?)`
 /// * `tr_n!(count, one, other $(, name = value)* $(,)?)`
+/// * `tr_noop!(key)`, a `tr!` for a `static`
 ///
 /// `key`, `context`, `one` and `other` are string literals; `count` and each `value` are any Rust
 /// expression, which `syn` reads the way the compiler does.
 fn read_call(name: &str, stream: TokenStream) -> syn::Result<Call> {
     let grammar = |input: ParseStream| -> syn::Result<Call> {
         let (kind, key) = match name {
-            "tr" => (Kind::Plain, input.parse::<LitStr>()?.value()),
+            "tr" | "tr_noop" => (Kind::Plain, input.parse::<LitStr>()?.value()),
             "tr_c" => {
                 let context = input.parse::<LitStr>()?.value();
                 input.parse::<Token![,]>()?;

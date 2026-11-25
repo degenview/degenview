@@ -482,3 +482,20 @@ fn the_panel_draws_in_the_pseudo_locale() {
         }
     }
 }
+
+#[test]
+fn a_label_column_is_as_wide_as_its_longest_word() {
+    let ctx = egui::Context::default();
+    let mut widths = None;
+    let mut output = ctx.run_ui(RawInput::default(), |ui| {
+        let short = parts::label_column(ui, &["Gap"], kit::size::BODY);
+        let long = parts::label_column(ui, &["Gap", "Tamaño de la brecha"], kit::size::BODY);
+        widths = Some((short, long));
+    });
+    output.textures_delta.clear();
+    let (short, long) = widths.unwrap();
+    assert!(
+        long > short * 2.0,
+        "a longer label must widen the column, not be cut to {short}"
+    );
+}

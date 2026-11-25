@@ -106,7 +106,7 @@ pub(super) fn price_axis(
                 .iter()
                 .position(|candidate| *candidate == mode)
                 .unwrap_or_default();
-            if let Some(index) = kit::menu_picker(ui, 150.0, &labels, selected, true) {
+            if let Some(index) = kit::menu_picker_fitted(ui, 150.0, &labels, selected, true) {
                 picked = Some(PriceScaleMode::ALL[index]);
             }
         },
@@ -121,7 +121,7 @@ pub(super) fn price_axis(
                 .chain((0..=MAX_DECIMALS).map(|places| places.to_string()))
                 .collect();
             let selected = decimals.map_or(0, |places| usize::from(places) + 1);
-            if let Some(index) = kit::menu_picker(ui, 90.0, &labels, selected, true) {
+            if let Some(index) = kit::menu_picker_fitted(ui, 90.0, &labels, selected, true) {
                 card.appearance_mut().axis_decimals = index
                     .checked_sub(1)
                     .and_then(|places| u8::try_from(places).ok());
@@ -143,7 +143,7 @@ pub(super) fn price_axis(
                 .iter()
                 .position(|style| *style == small)
                 .unwrap_or_default();
-            if let Some(index) = kit::menu_picker(ui, 200.0, &labels, selected, true) {
+            if let Some(index) = kit::menu_picker_fitted(ui, 200.0, &labels, selected, true) {
                 card.appearance_mut().axis_small_prices = SmallPrices::ALL[index];
             }
         },

@@ -1,36 +1,62 @@
 //! Why a market provider gave no candles or no search results. The messages are the ones the
 //! chart, the symbol picker and MCP show; code decides on the variant, never on the text.
 
-use super::alpaca::MISSING_KEY;
+use crate::i18n::tr;
 use crate::model::{DataSource, Timeframe};
 use crate::service::net::http;
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProviderError {
     /// The request failed, or the provider answered with an error status.
-    #[error("Network error: {0}")]
+    #[error("{}", network_error(.0))]
     Network(#[from] http::Error),
     /// The same for Alpaca, whose failures name it: they are usually its keys.
-    #[error("Alpaca error: {0}")]
+    #[error("{}", alpaca_error(.0))]
     Alpaca(http::Error),
     /// The same for CoinMarketCap, whose failures name it: they are usually its key or plan.
-    #[error("CoinMarketCap error: {0}")]
+    #[error("{}", coinmarketcap_error(.0))]
     CoinMarketCap(http::Error),
     /// The provider answered with something other than what it documents.
-    #[error("Data error: {0}")]
+    #[error("{}", data_error(.0))]
     Data(String),
     /// No Alpaca keys are saved, so stocks can be neither searched nor charted.
-    #[error("{MISSING_KEY}")]
+    #[error("{}", tr!("Set up your Alpaca API key before using stock charts."))]
     MissingKey,
     /// The provider has nothing for this market, interval or range, or refused it in its own words.
     #[error("{0}")]
     Other(String),
     /// No candle of the source reaches this timeframe: it is never answered with a nearby one.
-    #[error("{} has no {timeframe} history", .provider.display_name())]
+    #[error("{}", no_history(.provider, .timeframe))]
     UnsupportedInterval {
         provider: DataSource,
         timeframe: Timeframe,
     },
+}
+
+// The messages are written where they are shown, in the language in use: `thiserror` takes a
+// call, and the extractor reads a `tr!` whose values are plain expressions.
+fn network_error(error: &http::Error) -> String {
+    tr!("Network error: {error}", error = error)
+}
+
+fn alpaca_error(error: &http::Error) -> String {
+    tr!("Alpaca error: {error}", error = error)
+}
+
+fn coinmarketcap_error(error: &http::Error) -> String {
+    tr!("CoinMarketCap error: {error}", error = error)
+}
+
+fn data_error(error: &str) -> String {
+    tr!("Data error: {error}", error = error)
+}
+
+fn no_history(provider: &DataSource, timeframe: &Timeframe) -> String {
+    tr!(
+        "{provider} has no {timeframe} history",
+        provider = provider.display_name(),
+        timeframe = timeframe
+    )
 }
 
 impl ProviderError {
@@ -105,7 +131,10 @@ mod tests {
             ProviderError::data("expected a candle array").to_string(),
             "Data error: expected a candle array"
         );
-        assert_eq!(ProviderError::MissingKey.to_string(), MISSING_KEY);
+        assert_eq!(
+            ProviderError::MissingKey.to_string(),
+            "Set up your Alpaca API key before using stock charts."
+        );
         assert_eq!(
             ProviderError::other("No CoinMarketCap data").to_string(),
             "No CoinMarketCap data"

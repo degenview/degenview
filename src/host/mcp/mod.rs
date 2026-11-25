@@ -20,6 +20,7 @@ pub mod snapshot;
 pub mod watchlist;
 
 use crate::clock::now_ms;
+use crate::i18n::tr;
 use crate::mcp::bridge::{self, BridgeClient, BridgeInbox, McpError, Request};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::transport::auth::{generate_token, verifier_hex};
@@ -242,9 +243,11 @@ impl McpHost {
         clients: &[McpClient],
         stored: Option<&str>,
     ) -> Result<(), String> {
-        const CHANGED: &str = "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off.";
-        const KEY_LOST: &str = "The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off.";
-        const KEY_UNREADABLE: &str = "The Keychain key that protects the saved MCP credentials could not be read, so the server stays off. Restart DegenView to try again.";
+        let changed = || {
+            tr!(
+                "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off."
+            )
+        };
 
         let Some(keys) = &self.keys else {
             return Ok(());
@@ -252,28 +255,28 @@ impl McpHost {
         let (key, write_seal) = match (keys.load(), stored) {
             (KeyState::Ready(key), Some(stored)) => {
                 if !seal::verify(&key.0, settings, global, clients, stored) {
-                    return Err(CHANGED.into());
+                    return Err(changed().into());
                 }
                 (key, false)
             }
             (KeyState::Ready(key), None) => {
                 if !seal::is_pristine(settings, global, clients) {
-                    return Err(CHANGED.into());
+                    return Err(changed().into());
                 }
                 (key, true)
             }
             (KeyState::Missing, None) => match keys.create() {
                 Ok(key) => (key, true),
                 Err(error) => {
-                    self.notice = Some(format!(
-                        "MCP credentials cannot be protected against edits to the database on this Mac ({})",
-                        error.0
+                    self.notice = Some(tr!(
+                        "MCP credentials cannot be protected against edits to the database on this Mac ({error})",
+                        error = error.0
                     ));
                     return Ok(());
                 }
             },
-            (KeyState::Missing, Some(_)) => return Err(KEY_LOST.into()),
-            (KeyState::Unreadable, _) => return Err(KEY_UNREADABLE.into()),
+            (KeyState::Missing, Some(_)) => return Err(tr!("The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off.").into()),
+            (KeyState::Unreadable, _) => return Err(tr!("The Keychain key that protects the saved MCP credentials could not be read, so the server stays off. Restart DegenView to try again.").into()),
         };
         if write_seal {
             let sealed = seal::seal(&key.0, settings, global, clients);

@@ -215,7 +215,10 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
             Tone::Good,
         ),
         Readiness::Needs(_) => (
-            tr!("{host} needs setting up", host = provider.descriptor().name),
+            tr!(
+                "{host} needs setting up",
+                host = provider.descriptor().name.text()
+            ),
             Tone::Warning,
         ),
     };

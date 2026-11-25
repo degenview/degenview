@@ -3,7 +3,7 @@
 //! means, what is wrong with it, what it would cost) are the crate's `model::ticket`, and each
 //! reason it reports is a value; this module says them. Exact: nothing is rounded to read better.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use degenview_brokers::model::edit::{EditBlock, edit_block};
 use degenview_brokers::model::reducer::{Notice, NoticeKind};
 use degenview_brokers::model::ticket::{TicketField, TicketIssue, TicketProblem};
@@ -172,7 +172,7 @@ pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) ->
 pub fn status_label(status: OrderStatus) -> (&'static str, StatusTone) {
     match status {
         OrderStatus::Pending => (tr!("Pending"), StatusTone::Neutral),
-        OrderStatus::Open => (tr!("Open"), StatusTone::Good),
+        OrderStatus::Open => (tr_c!("order status", "Open"), StatusTone::Good),
         OrderStatus::CancelQueued => (tr!("Cancelling"), StatusTone::Warning),
         OrderStatus::EditQueued => (tr!("Updating"), StatusTone::Warning),
         OrderStatus::Filled => (tr!("Filled"), StatusTone::Good),

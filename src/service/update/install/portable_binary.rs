@@ -187,12 +187,19 @@ pub fn apply(prepared: &Prepared) -> Result<(), String> {
 /// Starts the new exe, which waits for this process to exit before it opens anything. Call it when
 /// exit is certain; the exe is already in place, so a failure only means nobody reopens the app.
 pub fn relaunch(prepared: &Prepared) -> Result<(), String> {
-    spawn_relaunch(prepared).map_err(|error| {
+    spawn_relaunch(&prepared.exe).map_err(|error| {
         tr!(
             "Updated, but could not restart: {error}. Reopen DegenView.",
             error = error
         )
     })
+}
+
+/// Starts the running exe again, which waits for this process to exit before it opens anything, for a
+/// change that only applies at startup. Call it when exit is certain, as for `relaunch`.
+pub fn relaunch_running_app() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    spawn_relaunch(&exe).map_err(|error| error.to_string())
 }
 
 fn swap(prepared: &Prepared) -> Result<(), String> {
@@ -268,7 +275,7 @@ fn relaunch_command(exe: &Path, pid: u32, environment: Environment) -> std::proc
 }
 
 #[cfg(windows)]
-fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
+fn spawn_relaunch(exe: &Path) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
 
@@ -276,7 +283,7 @@ fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
     relaunch_command(
-        &prepared.exe,
+        exe,
         std::process::id(),
         Environment::Only(forwarded_env(std::env::vars_os(), FORWARDED_ENV)),
     )
@@ -289,13 +296,13 @@ fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
+fn spawn_relaunch(exe: &Path) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
 
     // Its own process group, so closing the terminal this one was started from does not take it
     // down with the old process.
-    relaunch_command(&prepared.exe, std::process::id(), Environment::Inherit)
+    relaunch_command(exe, std::process::id(), Environment::Inherit)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

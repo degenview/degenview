@@ -260,14 +260,21 @@ pub(crate) fn no_results(ui: &mut Ui, title: &str, detail: &str) {
         theme::text_primary(),
         rect.width() - 40.0,
     );
-    let detail = galley_words(
-        ui,
+    // A sentence, not a label: it wraps and is centred, whatever the language's length.
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
         detail,
-        size::BODY,
-        400.0,
-        theme::text_secondary(),
-        rect.width() - 40.0,
+        0.0,
+        egui::TextFormat {
+            font_id: FontId::proportional(size::BODY),
+            color: theme::text_secondary(),
+            coords: egui::epaint::text::VariationCoords::new([("wght", 400.0)]),
+            ..Default::default()
+        },
     );
+    job.wrap.max_width = (rect.width() - 40.0).max(1.0);
+    job.halign = egui::Align::Center;
+    let detail = ui.painter().layout_job(job);
     let total = 40.0 + 14.0 + title.size().y + 6.0 + detail.size().y;
     let mut y = rect.center().y - total / 2.0 - 10.0;
     icons::paint(
@@ -283,11 +290,7 @@ pub(crate) fn no_results(ui: &mut Ui, title: &str, detail: &str) {
         theme::text_primary(),
     );
     y += title.size().y + 6.0;
-    painter.galley(
-        pos2(rect.center().x - detail.size().x / 2.0, y),
-        detail,
-        theme::text_secondary(),
-    );
+    painter.galley(pos2(rect.center().x, y), detail, theme::text_secondary());
 }
 
 /// What the footer calls a pick: the event for several ticked choices, else the market.

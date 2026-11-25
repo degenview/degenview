@@ -462,7 +462,7 @@ impl ChartWorkspace {
             return self
                 .layout
                 .active_view_name()
-                .unwrap_or("New tab")
+                .unwrap_or(crate::i18n::tr!("New tab"))
                 .to_owned();
         };
         if chart.card.is_some() {

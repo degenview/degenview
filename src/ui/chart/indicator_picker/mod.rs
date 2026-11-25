@@ -9,7 +9,7 @@ mod preview;
 mod sections;
 
 use super::indicator_strip::Action;
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_n};
 use crate::model::indicators::catalog::{self, CatalogEntry, EntryKey, Family, Origin};
 use crate::model::pine::bundled;
 use crate::model::{DataSource, IndicatorConfig};
@@ -780,7 +780,7 @@ impl IndicatorPicker {
             done = kit::sheet_button(ui, tr!("Done"), true, true).clicked();
             ui.add_space(8.0);
             ui.label(kit::text(
-                tr!("{count} shown", count = shown),
+                tr_n!(shown, "{count} shown", "{count} shown"),
                 size::SUBHEADLINE,
                 kit::REGULAR,
                 theme::text_tertiary(),

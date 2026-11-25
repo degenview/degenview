@@ -25,7 +25,9 @@ use std::path::Path;
 #[cfg(not(any(windows, target_os = "linux")))]
 mod app_bundle;
 #[cfg(not(any(windows, target_os = "linux")))]
-pub use app_bundle::{Prepared, apply, cleanup_stale, install_target, prepare, relaunch};
+pub use app_bundle::{
+    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, relaunch_running_app,
+};
 
 // The portable strategy: replace the one executable. Compiled everywhere under test so its logic is
 // tested on every platform; it is the strategy only on Windows and Linux.
@@ -33,7 +35,8 @@ pub use app_bundle::{Prepared, apply, cleanup_stale, install_target, prepare, re
 mod portable_binary;
 #[cfg(any(windows, target_os = "linux"))]
 pub use portable_binary::{
-    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, wait_for_predecessor,
+    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, relaunch_running_app,
+    wait_for_predecessor,
 };
 
 #[cfg(any(windows, test))]

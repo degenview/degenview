@@ -337,10 +337,10 @@ pub fn tally_legend(tally: &Tally) -> Vec<(TallyKind, String)> {
     .filter(|(_, count)| *count > 0)
     .map(|(kind, count)| {
         let text = match kind {
-            TallyKind::Matched => tr!("{count} matched", count = count),
+            TallyKind::Matched => tr_n!(count, "{count} matched", "{count} matched"),
             TallyKind::Searching => tr!("{count} searching", count = count),
             TallyKind::Unmatched => tr!("{count} to match", count = count),
-            TallyKind::Skipped => tr!("{count} skipped", count = count),
+            TallyKind::Skipped => tr_n!(count, "{count} skipped", "{count} skipped"),
         };
         (kind, text)
     })
@@ -1183,7 +1183,7 @@ fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
         status_dot(
             ui,
             theme::text_tertiary(),
-            &tr!("{count} skipped", count = skipped),
+            &tr_n!(skipped, "{count} skipped", "{count} skipped"),
             kit::REGULAR,
             theme::text_secondary(),
         );

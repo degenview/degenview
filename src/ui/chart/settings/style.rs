@@ -57,7 +57,7 @@ pub fn show(
         }
     };
     if let Some(index) = card::card(ui, Icon::BarChart, tr!("Style"), Some(hint), |ui| {
-        kit::menu_picker(ui, 170.0, &labels, selected, true)
+        kit::menu_picker_fitted(ui, 170.0, &labels, selected, true)
     }) {
         card.set_chart_type(types[index]);
     }

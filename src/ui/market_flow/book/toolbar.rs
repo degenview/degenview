@@ -60,7 +60,7 @@ fn group_picker(ui: &mut Ui, state: &mut BookViewState, ladder: &Ladder) {
         .iter()
         .position(|group| *group == ladder.group)
         .unwrap_or(0);
-    if let Some(chosen) = kit::menu_picker(ui, GROUP_WIDTH, &labels, selected, true) {
+    if let Some(chosen) = kit::menu_picker_fitted(ui, GROUP_WIDTH, &labels, selected, true) {
         state.group = Some(choices[chosen]);
     }
 }

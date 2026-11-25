@@ -6,6 +6,7 @@ pub mod engine;
 pub mod export;
 pub mod format;
 pub mod integrity;
+pub mod note;
 pub mod prefs;
 pub mod ticket;
 
@@ -13,7 +14,9 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::tr;
 use crate::model::DataSource;
+pub use note::PaperNote;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -493,9 +496,23 @@ pub struct PaperOrderEvent {
     pub kind: PaperOrderEventKind,
     /// Epoch milliseconds.
     pub timestamp: i64,
+    /// The sentence as written when it happened, in English: for the exports and MCP.
     #[serde(default)]
     pub message: String,
+    /// What happened, for the table to write in the language in use. A line written before notes
+    /// existed has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<PaperNote>,
     pub order: PaperOrder,
+}
+
+impl PaperOrderEvent {
+    /// What the history says, in the language in use.
+    pub fn text(&self) -> String {
+        self.note
+            .as_ref()
+            .map_or_else(|| self.message.clone(), PaperNote::text)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -529,7 +546,20 @@ pub struct PaperJournalEntry {
     pub account_id: u64,
     /// Epoch milliseconds.
     pub timestamp: i64,
+    /// The sentence as written when it happened, in English.
     pub message: String,
+    /// What happened; see [`PaperOrderEvent::note`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<PaperNote>,
+}
+
+impl PaperJournalEntry {
+    /// What the journal says, in the language in use.
+    pub fn text(&self) -> String {
+        self.note
+            .as_ref()
+            .map_or_else(|| self.message.clone(), PaperNote::text)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -575,7 +605,8 @@ pub struct PaperTradingSnapshot {
     pub quotes: HashMap<String, PaperQuote>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "error", content = "detail", rename_all = "snake_case")]
 pub enum PaperTradingError {
     AccountNotFound,
     OrderNotFound,
@@ -596,6 +627,7 @@ pub enum PaperTradingError {
 }
 
 impl PaperTradingError {
+    /// The reason in English, as stored with an order and given to MCP.
     pub fn message(&self) -> String {
         match self {
             Self::AccountNotFound => "Paper account not found.".to_owned(),
@@ -616,6 +648,37 @@ impl PaperTradingError {
                 "Order rejected: insufficient available funds. Required margin: {required:.2}; available funds: {available:.2}."
             ),
             Self::UnsupportedSymbol => "This symbol is not supported by Paper Trading.".to_owned(),
+        }
+    }
+
+    /// The reason in the language in use, for what the person reads. A message a check wrote
+    /// itself (a quantity or price that is not allowed) stays as it was written.
+    pub fn text(&self) -> String {
+        match self {
+            Self::AccountNotFound => tr!("Paper account not found.").to_owned(),
+            Self::OrderNotFound => tr!("Paper order not found.").to_owned(),
+            Self::InvalidTransition => tr!("The order can no longer be changed.").to_owned(),
+            Self::InvalidQuantity(message) | Self::InvalidPrice(message) => message.clone(),
+            Self::StaleMarketData => {
+                tr!("Order cannot be simulated reliably because market data is stale.").to_owned()
+            }
+            Self::NoMarketData => tr!("No executable market price is available.").to_owned(),
+            Self::UnsupportedCurrencyConversion { from, to } => tr!(
+                "FX conversion from {from} to {to} is unavailable.",
+                from = format!("{from:?}"),
+                to = format!("{to:?}")
+            ),
+            Self::InsufficientFunds {
+                required,
+                available,
+            } => tr!(
+                "Order rejected: insufficient available funds. Required margin: {required}; available funds: {available}.",
+                required = format!("{required:.2}"),
+                available = format!("{available:.2}")
+            ),
+            Self::UnsupportedSymbol => {
+                tr!("This symbol is not supported by Paper Trading.").to_owned()
+            }
         }
     }
 }

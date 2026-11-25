@@ -107,7 +107,8 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
 const LANGUAGE_PICKER_WIDTH: f32 = 220.0;
 
 /// The language card: "Same as the system" and each language by its own name. Draws nothing
-/// while there is only one language to pick. Returns the choice made this frame.
+/// while there is only one language to pick. `current` is the saved choice, which the next start
+/// uses. Returns the choice made this frame.
 pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
     let languages = Locale::selectable();
     if languages.len() < 2 {
@@ -132,9 +133,7 @@ pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
             ui,
             Icon::Globe,
             tr!("Interface language"),
-            Some(tr!(
-                "The language of menus, labels and messages. Market names, prices and Pine scripts stay as they are."
-            )),
+            None,
             LANGUAGE_PICKER_WIDTH,
             |ui| {
                 // A saved language this build does not offer (a copied database) is still named.

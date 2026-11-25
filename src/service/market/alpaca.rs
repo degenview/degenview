@@ -18,9 +18,6 @@ pub struct Alpaca;
 
 pub const ALPACA: Alpaca = Alpaca;
 
-/// What a search or a fetch says when no Alpaca keys are saved.
-pub const MISSING_KEY: &str = "Set up your Alpaca API key before using stock charts.";
-
 fn credentials() -> Result<(String, String), ProviderError> {
     crate::service::keychain::api_keys::alpaca_credentials().ok_or(ProviderError::MissingKey)
 }

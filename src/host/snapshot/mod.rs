@@ -217,7 +217,7 @@ impl SnapshotHost {
             let field = descriptor.field(key).ok_or_else(|| {
                 tr!(
                     "{name} has no setting called {key}.",
-                    name = descriptor.name,
+                    name = descriptor.name.text(),
                     key = key
                 )
             })?;
@@ -226,7 +226,7 @@ impl SnapshotHost {
                 FieldKind::Secret => {
                     return Err(tr!(
                         "{title} is kept in the secure storage.",
-                        title = field.title
+                        title = field.title.text()
                     ));
                 }
                 FieldKind::Text => {
@@ -241,7 +241,7 @@ impl SnapshotHost {
                         return Err(tr!(
                             "{value} is not a choice for {title}.",
                             value = value,
-                            title = field.title
+                            title = field.title.text()
                         ));
                     }
                 }
@@ -289,7 +289,7 @@ impl SnapshotHost {
             .ok_or_else(|| {
                 tr!(
                     "{name} has no secret called {key}.",
-                    name = descriptor.name,
+                    name = descriptor.name.text(),
                     key = key
                 )
             })

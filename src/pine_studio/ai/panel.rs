@@ -6,7 +6,7 @@ use super::models::{self, ModelList};
 use super::plan::Plan;
 use super::prompt::{self, Mode, Turn};
 use super::{Assistant, Entry, Notice, Proposal, ToolStep};
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::pine_studio::editor::diff_view;
 use crate::service::llm::ProviderKind;
 use crate::ui::icons::{self, Icon};
@@ -1077,7 +1077,7 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
             {
                 let ui = &mut right;
                     if ai.is_running() {
-                        if kit::sheet_button(ui, tr!("Stop"), false, true).clicked() {
+                        if kit::sheet_button(ui, tr_c!("stop button", "Stop"), false, true).clicked() {
                             actions.push(PanelAction::Stop);
                         }
                     } else if ui

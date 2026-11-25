@@ -13,7 +13,7 @@ use super::{
     Choice, FieldKind, FieldSpec, Link, Logo, ProviderDescriptor, Purpose, Request, Secrets,
     SnapshotProvider, common_failure,
 };
-use crate::i18n::tr;
+use crate::i18n::{Marked, tr, tr_noop};
 use crate::model::chart::snapshot::{FieldValues, SharedSnapshot, UploadError, checked_link};
 use crate::model::webhook::policy::url_encode;
 use crate::service::net::multipart::Form;
@@ -45,27 +45,27 @@ const DAY: u64 = 24 * 60 * 60;
 static EXPIRIES: [Choice; 6] = [
     Choice {
         value: "1d",
-        label: "1 day",
+        label: tr_noop!("1 day"),
     },
     Choice {
         value: "7d",
-        label: "1 week",
+        label: tr_noop!("1 week"),
     },
     Choice {
         value: "30d",
-        label: "30 days",
+        label: tr_noop!("30 days"),
     },
     Choice {
         value: "90d",
-        label: "90 days",
+        label: tr_noop!("90 days"),
     },
     Choice {
         value: "180d",
-        label: "180 days",
+        label: tr_noop!("180 days"),
     },
     Choice {
         value: "never",
-        label: "Never",
+        label: tr_noop!("Never"),
     },
 ];
 
@@ -97,56 +97,62 @@ fn key_problem(text: &str) -> Option<&'static str> {
 
 static DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     id: ID,
-    name: "ImgBB",
-    summary: "Image hosting with your own API key",
+    name: tr_noop!("ImgBB"),
+    summary: tr_noop!("Image hosting with your own API key"),
     logo: Logo::Image(logo),
     setup_steps: &[
-        "Sign in to ImgBB, or create a free account.",
-        "Open the API page and copy your API key.",
-        "Paste it below and turn ImgBB on.",
+        tr_noop!("Sign in to ImgBB, or create a free account."),
+        tr_noop!("Open the API page and copy your API key."),
+        tr_noop!("Paste it below and turn ImgBB on."),
     ],
     links: &[
         Link {
-            label: "Get an ImgBB API key",
+            label: tr_noop!("Get an ImgBB API key"),
             url: "https://api.imgbb.com/",
         },
         Link {
-            label: "ImgBB terms of service",
+            label: tr_noop!("ImgBB terms of service"),
             url: "https://imgbb.com/tos",
         },
         Link {
-            label: "ImgBB privacy policy",
+            label: tr_noop!("ImgBB privacy policy"),
             url: "https://imgbb.com/privacy",
         },
     ],
-    notice: "Images are uploaded to ImgBB with your API key. Anyone who has the link can open the image, and ImgBB's terms apply. ImgBB is asked to delete the image after the time you choose; with Never it keeps it.",
+    notice: tr_noop!(
+        "Images are uploaded to ImgBB with your API key. Anyone who has the link can open the image, and ImgBB's terms apply. ImgBB is asked to delete the image after the time you choose; with Never it keeps it."
+    ),
     fields: &[
         FieldSpec {
             key: KEY,
-            title: "ImgBB API key",
-            hint: "Kept in your system's secure storage, never in the settings or synced.",
+            title: tr_noop!("ImgBB API key"),
+            hint: tr_noop!(
+                "Kept in your system's secure storage, never in the settings or synced."
+            ),
             placeholder: "",
             kind: FieldKind::Secret,
             required: true,
             default: "",
             env: Some(KEY_ENV),
             account: None,
-            needed: "Add your ImgBB API key in Settings ▸ Snapshots to share.",
-            remove_label: "Remove key",
+            needed: tr_noop!("Add your ImgBB API key in Settings ▸ Snapshots to share."),
+            remove_label: tr_noop!("Remove key"),
             validate: key_problem,
         },
         FieldSpec {
             key: EXPIRY,
-            title: "Keep images for",
-            hint: "ImgBB is asked to delete the image after this time, and the link stops working then.",
+            title: tr_noop!("Keep images for"),
+            hint: tr_noop!(
+                "ImgBB is asked to delete the image after this time, and the link stops working then."
+            ),
             placeholder: "",
             kind: FieldKind::Choice(&EXPIRIES),
             required: false,
             default: "30d",
             env: None,
             account: None,
-            needed: "",
-            remove_label: "",
+            needed: Marked::EMPTY,
+            remove_label: Marked::EMPTY,
             validate: super::no_check,
         },
     ],
@@ -231,8 +237,11 @@ impl SnapshotProvider for ImgBb {
             .and_then(|field| field.choice(settings.get(EXPIRY).map(String::as_str)));
         match choice {
             Some(choice) if choice.value == "never" => tr!("Keeps images for ever").to_owned(),
-            Some(choice) => tr!("Keeps images for {duration}", duration = choice.label),
-            None => DESCRIPTOR.summary.to_owned(),
+            Some(choice) => tr!(
+                "Keeps images for {duration}",
+                duration = choice.label.text()
+            ),
+            None => DESCRIPTOR.summary.text().to_owned(),
         }
     }
 

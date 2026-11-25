@@ -538,6 +538,12 @@ impl DegenViewApp {
                             }
                             ui.ctx().request_repaint();
                         }
+                        SettingsHostAction::Restart => {
+                            if let Ok(mut pending) = app_actions.lock() {
+                                pending.push(AppAction::Restart);
+                            }
+                            ui.ctx().request_repaint();
+                        }
                         SettingsHostAction::OpenLoginItems => {
                             BackgroundAlertService::open_login_items();
                         }

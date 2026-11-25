@@ -2,7 +2,7 @@
 //! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
 use super::cursor_menu::{self, CursorMenuAction};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_n};
 use crate::model::drawings::favorites::Favorite;
 use crate::model::{ChartSyncSettings, CursorMode, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
@@ -173,17 +173,40 @@ impl Menu {
         }
     }
 
-    fn width(self) -> f32 {
-        match self {
-            Self::Lines => 292.0,
-            Self::Fib => 292.0,
-            // Wide enough for "Elliott triple combo wave (W·X·Y·X·Z)".
-            Self::Patterns => 346.0,
-            // Wide enough for "Fixed range volume profile".
-            Self::Forecast => 292.0,
-            Self::Shapes => 248.0,
-            Self::Notes => 248.0,
-        }
+    /// The popup's width: the longest row (its name, and the shortcut's room when it has one, the
+    /// check and the star) and the frame. Measured from the names in use, so a language with longer
+    /// ones is not cut.
+    fn width(self, ui: &Ui) -> f32 {
+        let text = |text: &str| {
+            kit::galley(
+                ui,
+                text,
+                kit::size::BODY,
+                kit::REGULAR,
+                Color32::PLACEHOLDER,
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        };
+        let widest = self
+            .groups()
+            .iter()
+            .flat_map(|group| Tool::in_group(*group))
+            .map(|tool| {
+                let hint = if shortcut::tool(tool).is_some() {
+                    ROW_HINT_ROOM
+                } else {
+                    0.0
+                };
+                text(tool.label()) + ROW_END_ROOM + hint
+            })
+            .fold(0.0, f32::max);
+        // The list scrolls when the window is short: its bar, even a floating one, keeps its width
+        // off the rows' right edge.
+        let scroll = &ui.spacing().scroll;
+        (widest + scroll.allocated_width().max(scroll.floating_width) + kit::MENU_FRAME_MARGIN)
+            .ceil()
     }
 
     /// The height of the whole list: a heading for each group and a row for each tool.
@@ -544,9 +567,10 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
     let mut y = strip.bottom() - 10.0 - BUTTON;
     let bell = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
     let bell_label = if input.unseen_alerts > 0 {
-        tr!(
+        tr_n!(
+            input.unseen_alerts,
             "View Price Alerts, {count} new",
-            count = input.unseen_alerts
+            "View Price Alerts, {count} new"
         )
     } else {
         tr!("View Price Alerts").to_owned()
@@ -853,7 +877,7 @@ fn menu_tile(
         &Flyout {
             arrow_label: menu.arrow_label(),
             held,
-            width: menu.width(),
+            width: menu.width(ui),
         },
         |ui| tool_menu(ui, input, actions, menu),
     );
@@ -927,6 +951,11 @@ fn tool_menu(
     }
 }
 
+/// What a row keeps to the right of its name: the check and the star.
+const ROW_END_ROOM: f32 = 96.0;
+/// What the shortcut takes between the name and the check.
+const ROW_HINT_ROOM: f32 = 56.0;
+
 /// The star's target at the right end of a row: a little larger than the glyph, so it is easy to
 /// hit and cannot be mistaken for the row.
 pub(super) const STAR_TARGET: f32 = 24.0;
@@ -965,14 +994,14 @@ fn menu_row(
     );
     // The shortcut sits between the name and the check.
     let hint = shortcut::tool(tool).map(|shortcut| shortcut.label());
-    let hint_width = if hint.is_some() { 56.0 } else { 0.0 };
+    let hint_width = if hint.is_some() { ROW_HINT_ROOM } else { 0.0 };
     let galley = kit::galley(
         ui,
         tool.label(),
         kit::size::BODY,
         kit::REGULAR,
         color,
-        width - 96.0 - hint_width,
+        width - ROW_END_ROOM - hint_width,
     );
     ui.painter().galley(
         pos2(rect.left() + 38.0, rect.center().y - galley.size().y / 2.0),
@@ -2054,6 +2083,22 @@ mod tests {
         }
     }
 
+    /// A menu is as wide as its longest row needs, no more and no less: nothing is cut and no width
+    /// is guessed.
+    fn assert_menu_fits_its_rows(menu: Rect, which: Menu) {
+        let ctx = egui::Context::default();
+        let mut wanted = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            wanted = which.width(ui);
+        });
+        output.textures_delta.clear();
+        assert!(
+            (menu.width() - wanted).abs() <= 1.0,
+            "{which:?}: the popup is {} wide, its rows need {wanted}",
+            menu.width()
+        );
+    }
+
     #[test]
     fn the_lines_menu_lists_lines_channels_and_pitchforks_in_order() {
         let (menu, armed) = tools_armed_by_the_menu(LINES_ARROW);
@@ -2066,7 +2111,8 @@ mod tests {
         assert_eq!(armed[0], Tool::TrendLine);
         assert_eq!(armed[9], Tool::ParallelChannel);
         assert_eq!(armed[13], Tool::Pitchfork);
-        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Lines.width() - 1.0);
+        assert!(menu.left() >= WIDTH);
+        assert_menu_fits_its_rows(menu, Menu::Lines);
     }
 
     #[test]
@@ -2079,7 +2125,8 @@ mod tests {
         assert_eq!(armed, expected, "every row, in order");
         assert_eq!(armed.len(), Tool::fib_tools().count());
         assert_eq!(armed[0], Tool::FibRetracement);
-        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Fib.width() - 1.0);
+        assert!(menu.left() >= WIDTH);
+        assert_menu_fits_its_rows(menu, Menu::Fib);
     }
 
     #[test]
@@ -2094,7 +2141,8 @@ mod tests {
         assert_eq!(armed[0], Tool::XabcdPattern);
         assert_eq!(armed[6], Tool::ElliottImpulse);
         assert_eq!(armed[11], Tool::CyclicLines);
-        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Patterns.width() - 1.0);
+        assert!(menu.left() >= WIDTH);
+        assert_menu_fits_its_rows(menu, Menu::Patterns);
     }
 
     #[test]
@@ -2109,7 +2157,8 @@ mod tests {
         assert_eq!(armed[0], Tool::LongPosition);
         assert_eq!(armed[6], Tool::AnchoredVwap);
         assert_eq!(armed[9], Tool::PriceRange);
-        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Forecast.width() - 1.0);
+        assert!(menu.left() >= WIDTH);
+        assert_menu_fits_its_rows(menu, Menu::Forecast);
     }
 
     #[test]

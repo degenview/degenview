@@ -13,6 +13,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | The symbol picker (⌘K, Add Chart and a watchlist's plus: markets, prediction markets, indices and portfolio cards), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
 | Any user-facing text, interface languages, `tr!`, dates and times, translation catalogs (`.po`), or the language setting | [Localization](docs/localization.md) |
+| Adding or updating a language, translating `.po` catalogs, or reviewing a translation | [Translation](docs/agent-guides/translation.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | The cursor menu (Cross, Dot, Arrow, Demonstration, Eraser), the crosshair's parts, the pointer shape over a plot, or the values tooltip on long press | [Chart cursors](docs/chart-cursors.md) |
 | The Screenshot Studio, Select portion, snapshot compositions or backgrounds, or the camera menu | [Chart snapshots](docs/snapshots.md) |

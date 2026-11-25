@@ -923,7 +923,8 @@ pub(in crate::ui) fn typography_controls(
                 .iter()
                 .position(|height| *height == shown.line_height)
                 .unwrap_or(1);
-            if let Some(picked) = kit::menu_picker(ui, LINE_HEIGHT_WIDTH, &labels, current, true)
+            if let Some(picked) =
+                kit::menu_picker_fitted(ui, LINE_HEIGHT_WIDTH, &labels, current, true)
                 && LineHeight::ALL[picked] != shown.line_height
             {
                 change.line_height = Some(LineHeight::ALL[picked]);
