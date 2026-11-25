@@ -275,10 +275,12 @@ translated; Webhook, VWAP, TPO, Pine and MCP stay in English. Vocabulary is kept
 catalog.
 
 The font is the system's, found and read by `ui::theme::cjk` only when the language in use is
-Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, and on Linux whichever font
-fontconfig picks for `:lang=zh-cn`, asked with `fc-match`, because each distribution puts Noto Sans
-CJK or WenQuanYi under another name; inside the Flatpak sandbox `fc-match` answers with the host's font
-under `/run/host/fonts`, which the app can read, checked on Fedora). A machine with none of them shows the
+Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, and on Linux the first font of
+fontconfig's ranking (`fc-match -s`) that declares zh-cn, or another Chinese language, because each
+distribution puts Noto Sans CJK, WenQuanYi or Droid under another name and the best match for
+`:lang=zh-cn` can be a font with no Han characters; inside the Flatpak sandbox the ranking lists the
+host's fonts under `/run/host/fonts`, which the app can read. Checked with the real Flatpak build on
+Fedora (Noto Sans CJK) and Kali (Droid Sans Fallback only)). A machine with none of them shows the
 missing-glyph box for every Han character; nothing is bundled because a font with the catalog's
 characters is megabytes.
 
@@ -293,8 +295,9 @@ Chinese market) are drawn only when the interface is Chinese.
 - **Right-to-left languages.** egui's text layout does not apply the bidirectional algorithm
   (`epaint` `TODO(emilk): heed bidi characters`) and the layouts are not mirrored. Arabic, Hebrew and
   Persian wait on that.
-- **IME.** The Pine editor handles keys itself and no `Event::Ime` is read; composing Chinese,
-  Japanese or Korean there is unchecked. Plain `TextEdit` fields use egui's.
+- **IME.** Pinyin composition on macOS works in the symbol search (a plain `TextEdit`) and in the Pine
+  editor: the preedit is drawn underlined and the committed text arrives. Windows, Linux and the other
+  input methods (Japanese, Korean) are unchecked.
 - **Traditional Chinese** (`zh-Hant`), and Han text under an English interface (see "Simplified Chinese").
 - **Numbers.** Prices and chart axes keep one format (`format.rs`, `model/chart/price_format.rs`);
   decimal and thousands separators (`icu_decimal`) are a decision to make with the first language that
