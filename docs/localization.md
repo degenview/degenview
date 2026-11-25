@@ -271,7 +271,12 @@ The font is the system's, found and read by `ui::theme::cjk` only when the langu
 Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, Noto Sans CJK or WenQuanYi on
 Linux, also under `/run/host/fonts` for the Flatpak). A machine with none of them shows the
 missing-glyph box for every Han character; nothing is bundled because a font with the catalog's
-characters is megabytes. Han characters a person types or a provider sends (a watchlist name, a
+characters is megabytes.
+
+egui centres each font's line box in the line and a Chinese font's line gap is large, so its
+characters sit about 0.23 em above Inter's; the font is shifted by the difference of the two
+fonts' own `ascent - height / 2` (read from their tables, `cjk::baseline_offset`), whichever Chinese
+font the machine has. Han characters a person types or a provider sends (a watchlist name, a
 Chinese market) are drawn only when the interface is Chinese.
 
 ## Not done yet
