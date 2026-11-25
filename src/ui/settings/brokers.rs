@@ -317,7 +317,8 @@ fn broker_card(
             status_message(inner, &status.text(), status.is_error);
         }
     }
-    prepared.frame = kit::card_frame(head.hovered());
+    // Stable frame: hover restyle after content forces a second layout pass per mouse move.
+    prepared.frame = kit::card_frame(false);
     prepared.end(ui);
 
     if form.confirming_disconnect {

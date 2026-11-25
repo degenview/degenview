@@ -125,8 +125,9 @@ pub fn card_reserving<R>(
             },
         );
     }
-    let hovered = ui.rect_contains_pointer(prepared.content_ui.min_rect().expand(12.0));
-    prepared.frame = crate::ui::kit::card_frame(hovered);
+    // Keep a stable frame: swapping fill after the content is built forces egui through another
+    // layout pass on every mouse move, which makes Settings feel sticky while charts stay fine.
+    prepared.frame = crate::ui::kit::card_frame(false);
     prepared.end(ui);
     result.expect("the control ran")
 }

@@ -17,6 +17,7 @@
 
 mod ladder;
 mod persist;
+pub mod prefs;
 mod presentation;
 mod record;
 mod session;
@@ -24,13 +25,17 @@ mod session;
 use std::sync::OnceLock;
 
 use eframe::egui;
-use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetup};
+use eframe::egui_wgpu::{SurfaceConfig, WgpuConfiguration, WgpuSetup};
 use eframe::wgpu::Backends;
 
 use crate::crash_report::note;
+use prefs::GraphicsPrefs;
 use presentation::Milestone;
 use record::{Attempt, Choice};
 use session::Session;
+
+/// Surface prefs for this launch; set once before `start` so every try uses them.
+static SURFACE: OnceLock<SurfaceConfig> = OnceLock::new();
 
 /// The backends one try may use, and the line `startup.log` gets about the choice.
 pub struct Selection {
@@ -49,6 +54,14 @@ impl Selection {
         }
     }
 
+    fn from_prefs(backends: Backends) -> Self {
+        Self {
+            backends,
+            note: format!("graphics backends: {backends:?} (Settings)"),
+            attempt: None,
+        }
+    }
+
     fn from_choice(choice: Choice<'_>) -> Self {
         Self {
             backends: choice.rung.backends,
@@ -57,9 +70,13 @@ impl Selection {
         }
     }
 
-    /// `config` with the instance limited to the chosen backends; everything else in it (surface
-    /// settings, power preference, device limits) stays as eframe set it.
+    /// `config` with the instance limited to the chosen backends, and the surface set from the
+    /// prefs loaded for this launch (Settings ▸ Graphics). Power preference and device limits
+    /// stay as eframe set them.
     pub fn configure(&self, mut config: WgpuConfiguration) -> WgpuConfiguration {
+        config.surface = *SURFACE
+            .get()
+            .unwrap_or(&GraphicsPrefs::default().surface_config());
         if let WgpuSetup::CreateNew(setup) = &mut config.wgpu_setup {
             setup.instance_descriptor.backends = self.backends;
         }
@@ -85,28 +102,32 @@ pub enum Outcome<T, E> {
 enum Source {
     /// `WGPU_BACKEND` chose them: nothing is remembered, nothing is retried.
     Environment(Backends),
+    /// Settings ▸ Graphics chose them: same one-shot behaviour as the env override.
+    Prefs(Backends),
     /// The ladder, and what earlier starts taught it.
     Remembered(Box<Session>),
 }
 
 impl Source {
-    fn choose() -> Self {
-        Backends::from_env().map_or_else(
-            || {
-                Self::Remembered(Box::new(Session::open(
-                    crate::paths::data_dir(),
-                    ladder::LADDER,
-                    crate::build_info::BUILD_ID,
-                    session::new_launch_id(),
-                )))
-            },
-            Self::Environment,
-        )
+    fn choose(preferred: Option<Backends>) -> Self {
+        if let Some(backends) = Backends::from_env() {
+            return Self::Environment(backends);
+        }
+        if let Some(backends) = preferred {
+            return Self::Prefs(backends);
+        }
+        Self::Remembered(Box::new(Session::open(
+            crate::paths::data_dir(),
+            ladder::LADDER,
+            crate::build_info::BUILD_ID,
+            session::new_launch_id(),
+        )))
     }
 
     fn select(&self) -> Selection {
         match self {
             Self::Environment(backends) => Selection::from_env(*backends),
+            Self::Prefs(backends) => Selection::from_prefs(*backends),
             Self::Remembered(session) => Selection::from_choice(session.select()),
         }
     }
@@ -134,9 +155,23 @@ impl Source {
 static SOURCE: OnceLock<Source> = OnceLock::new();
 
 /// Runs `run` with the backends for this start, and again with the next rung while it fails before
-/// the renderer is ready.
-pub fn start<T, E>(run: impl FnMut(&Selection) -> Outcome<T, E>) -> Result<T, E> {
-    drive(SOURCE.get_or_init(Source::choose), run)
+/// the renderer is ready. `prefs` sets the surface for every try, and a non-automatic backend
+/// choice forces that backend (unless `WGPU_BACKEND` is set, which still wins).
+pub fn start<T, E>(
+    prefs: GraphicsPrefs,
+    run: impl FnMut(&Selection) -> Outcome<T, E>,
+) -> Result<T, E> {
+    let _ = SURFACE.set(prefs.surface_config());
+    let preferred = prefs.backend.backends();
+    drive(SOURCE.get_or_init(|| Source::choose(preferred)), run)
+}
+
+/// Applies `prefs` to the live wgpu surface on the next paint of every window.
+pub fn apply_surface(frame: &mut eframe::Frame, prefs: GraphicsPrefs) {
+    let wanted = prefs.surface_config();
+    if frame.wgpu_surface_config() != Some(wanted) {
+        frame.set_wgpu_surface_config(wanted);
+    }
 }
 
 /// Called by every window while it builds its UI: logs the first frames to `startup.log`, and tells
@@ -290,10 +325,10 @@ mod tests {
     }
 
     #[test]
-    fn the_selection_limits_the_instance_and_keeps_the_rest_of_the_configuration() {
+    fn the_selection_limits_the_instance_and_applies_the_surface_prefs() {
+        let _ = SURFACE.set(GraphicsPrefs::default().surface_config());
         let selection = Selection::from_env(Backends::DX12);
         let base = eframe::NativeOptions::default().wgpu_options;
-        let low_latency = format!("{:?}", base.surface);
         let configured = selection.configure(base);
         match &configured.wgpu_setup {
             WgpuSetup::CreateNew(setup) => {
@@ -301,6 +336,9 @@ mod tests {
             }
             _ => panic!("the default setup creates its own instance"),
         }
-        assert_eq!(format!("{:?}", configured.surface), low_latency);
+        assert_eq!(
+            configured.surface,
+            GraphicsPrefs::default().surface_config()
+        );
     }
 }

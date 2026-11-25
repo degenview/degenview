@@ -423,6 +423,7 @@ impl DegenViewApp {
         let sync = self.sync.clone();
         let mcp_questions = self.mcp.questions().clone();
         let trading_hub = Arc::clone(&self.trading_hub);
+        // Platform title bar (UI style: secondary windows keep native controls).
         let builder = crate::ui::window::chrome::branded(
             egui::ViewportBuilder::default()
                 .with_title(tr!("Settings"))
@@ -440,71 +441,55 @@ impl DegenViewApp {
             }
             if let Ok(mut host) = host.lock() {
                 let store = lock(&store);
-                let (notifications, health, alerts) = {
-                    let alert = lock(&alert_host);
-                    (
-                        alert.settings().clone(),
-                        alert.health().clone(),
-                        alert.snapshot().alerts.clone(),
-                    )
-                };
-                let subscriptions = store.pine_subscriptions_cached();
-                // How many price and script alerts post to an endpoint, for the delete
-                // confirmation.
+                let alert = lock(&alert_host);
+                let mcp = lock(&mcp_host);
+                // Reuses host snapshots for ~300 ms so pointer moves do not re-clone alerts/MCP.
+                host.prepare_paint(&store, &alert, &mcp);
+                drop((alert, mcp));
+                let paint = host
+                    .paint_data()
+                    .expect("prepare_paint always fills the cache")
+                    .clone();
                 let reference_count = |id| {
-                    alerts
+                    paint
+                        .alerts
                         .iter()
                         .filter(|alert| alert.webhook_endpoint_ids.contains(&id))
                         .count()
-                        + subscriptions
+                        + paint
+                            .subscriptions
                             .iter()
                             .filter(|subscription| subscription.webhook_endpoint_ids.contains(&id))
                             .count()
                 };
                 let now = now_ms();
-                // The MCP host is only read here (no store access), so holding the store
-                // lock above cannot deadlock; its changes are queued and applied per frame.
-                let mcp = {
-                    let mcp = lock(&mcp_host);
-                    (
-                        mcp.status(),
-                        mcp.settings().clone(),
-                        mcp.clients(),
-                        mcp.global_permissions(),
-                        mcp.fresh_token().cloned(),
-                        mcp.load_error().map(str::to_owned),
-                        mcp.notice().map(str::to_owned),
-                        mcp.can_reset(),
-                        mcp.activity(),
-                        mcp.activity_unreadable(),
-                        mcp.tls_fingerprint().map(str::to_owned),
-                    )
-                };
                 let mcp_input = McpSettingsInput {
-                    status: &mcp.0,
-                    settings: &mcp.1,
-                    clients: &mcp.2,
-                    global: &mcp.3,
-                    fresh_token: mcp
-                        .4
+                    status: &paint.mcp.status,
+                    settings: &paint.mcp.settings,
+                    clients: &paint.mcp.clients,
+                    global: &paint.mcp.global,
+                    fresh_token: paint
+                        .mcp
+                        .fresh_token
                         .as_ref()
-                        .map(|fresh| (fresh.client_name.as_str(), fresh.token.as_str())),
-                    load_error: mcp.5.as_deref(),
-                    can_reset: mcp.7,
-                    notice: mcp.6.as_deref(),
-                    activity: &mcp.8,
-                    activity_unreadable: mcp.9,
-                    tls_fingerprint: mcp.10.as_deref(),
+                        .map(|(name, token)| (name.as_str(), token.as_str())),
+                    load_error: paint.mcp.load_error.as_deref(),
+                    can_reset: paint.mcp.can_reset,
+                    notice: paint.mcp.notice.as_deref(),
+                    activity: &paint.mcp.activity,
+                    activity_unreadable: paint.mcp.activity_unreadable,
+                    tls_fingerprint: paint.mcp.tls_fingerprint.as_deref(),
                     now_ms: now,
                     utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(now),
                 };
                 let ctx = ui.ctx().clone();
+                let section_before = host.section();
                 let actions = host.show(
                     &ctx,
                     |state, input| window::show(ui, state, input),
                     &store,
-                    &notifications,
-                    &health,
+                    &paint.notifications,
+                    &paint.health,
                     mcp_input,
                     &updates,
                     &sync,
@@ -512,6 +497,11 @@ impl DegenViewApp {
                     now,
                     &reference_count,
                 );
+                if host.section() != section_before {
+                    // Next frame loads the heavy pieces the new page needs.
+                    host.invalidate_paint();
+                    ui.ctx().request_repaint();
+                }
                 // A question from an MCP client is answered where the user is looking.
                 if ui.input(|input| input.viewport().focused == Some(true)) {
                     mcp_questions.show(ui.ctx());
@@ -522,6 +512,7 @@ impl DegenViewApp {
                             if let Ok(mut mcp) = mcp_host.lock() {
                                 mcp.queue(action);
                             }
+                            host.invalidate_paint();
                             ui.ctx().request_repaint();
                         }
                         SettingsHostAction::UpdateNotifications(settings) => {
@@ -529,6 +520,7 @@ impl DegenViewApp {
                                 AlertRuntimeCommandPayload::UpdateSettings(settings),
                                 now,
                             ));
+                            host.invalidate_paint();
                         }
                         SettingsHostAction::QuitForUpdate => {
                             // Through the same question as ⌘Q: edited scripts are asked
@@ -547,9 +539,16 @@ impl DegenViewApp {
                         SettingsHostAction::RetryRegistration => {
                             registration.retry(now);
                         }
+                        SettingsHostAction::ApplyGraphics(prefs) => {
+                            if let Ok(mut pending) = app_actions.lock() {
+                                pending.push(AppAction::ApplyGraphics(prefs));
+                            }
+                            ui.ctx().request_repaint();
+                        }
                         SettingsHostAction::EndpointDeleted(id) => {
                             // Alerts stop pointing at a webhook that no longer exists.
-                            for alert in alerts
+                            for alert in paint
+                                .alerts
                                 .iter()
                                 .filter(|alert| alert.webhook_endpoint_ids.contains(&id))
                             {
@@ -565,11 +564,12 @@ impl DegenViewApp {
                                     now,
                                 ));
                             }
-                            if subscriptions
+                            if paint
+                                .subscriptions
                                 .iter()
                                 .any(|subscription| subscription.webhook_endpoint_ids.contains(&id))
                             {
-                                let mut next = subscriptions.to_vec();
+                                let mut next = paint.subscriptions.to_vec();
                                 for subscription in &mut next {
                                     subscription
                                         .webhook_endpoint_ids
@@ -580,6 +580,7 @@ impl DegenViewApp {
                                     pine.reload(&store);
                                 }
                             }
+                            host.invalidate_paint();
                         }
                     }
                 }

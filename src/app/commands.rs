@@ -129,6 +129,10 @@ impl DegenViewApp {
                 AppAction::OpenAiSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_ai);
                 }
+                AppAction::ApplyGraphics(prefs) => {
+                    self.graphics_prefs = prefs;
+                    ctx.request_repaint();
+                }
                 AppAction::OpenSnapshotSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_snapshots);
                 }

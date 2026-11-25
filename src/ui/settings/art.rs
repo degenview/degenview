@@ -25,6 +25,7 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
     };
     match section {
         SettingsSection::Appearance => art.appearance(),
+        SettingsSection::Graphics => art.graphics(),
         SettingsSection::PineStudio => art.pine_studio(),
         SettingsSection::Alpaca => art.alpaca(),
         SettingsSection::Brokers => art.brokers(),
@@ -42,6 +43,36 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
 }
 
 impl Art<'_> {
+    /// A display with a frame gauge — Graphics: present timing and the GPU.
+    fn graphics(&self) {
+        let card = self.scene();
+        self.painter.rect_filled(card, 8.0, theme::chrome());
+        let screen = card.shrink2(vec2(10.0, 12.0));
+        self.painter.rect_filled(screen, 4.0, theme::well_fill());
+        let beam = Rect::from_min_max(
+            pos2(screen.left() + 6.0, screen.center().y - 2.0),
+            pos2(screen.right() - 6.0, screen.center().y + 2.0),
+        );
+        self.painter
+            .rect_filled(beam, 2.0, self.tint.gamma_multiply(0.85));
+        for index in 0..5 {
+            let t = index as f32 / 4.0;
+            let x = screen.left() + 8.0 + t * (screen.width() - 16.0);
+            let h = 4.0 + (index as f32 * 2.2);
+            self.painter.rect_filled(
+                Rect::from_center_size(pos2(x, screen.center().y - 10.0), vec2(3.0, h)),
+                1.0,
+                self.tint.gamma_multiply(0.55 + t * 0.4),
+            );
+        }
+        self.glyph(
+            Icon::GaugeHigh,
+            screen.center_bottom() + vec2(0.0, -8.0),
+            14.0,
+            Color32::WHITE.gamma_multiply(0.9),
+        );
+    }
+
     /// Light and dark halves of one card, a chart across both, and a row of colour choices.
     fn appearance(&self) {
         let centre = self.centre - vec2(0.0, 5.0);

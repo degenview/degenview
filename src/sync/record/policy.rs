@@ -375,6 +375,8 @@ mod tests {
             "language",
             // Where the favorite drawing tools' bar sits suits this screen, not another Mac's.
             "drawing.favoritesBar",
+            // Present mode and GPU backend are this machine's GPU and display, not another Mac's.
+            "graphics.prefs",
         ] {
             assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
         }

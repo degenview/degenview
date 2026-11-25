@@ -594,7 +594,9 @@ impl ChartWorkspace {
         self.tick_content(&ctx);
         self.tick_replay();
 
-        ctx.request_repaint_after(Duration::from_millis(250));
+        // Live feeds wake the window when quotes arrive; a slow backstop is enough so an idle
+        // chart does not present every quarter-second beside Settings and steal the GPU queue.
+        ctx.request_repaint_after(Duration::from_secs(1));
 
         let mut actions = egui::Panel::top("workspace_toolbar")
             .exact_size(ui::kit::bar::HEIGHT)

@@ -1,5 +1,5 @@
 //! The app's Settings window: a sidebar of badge-and-title rows beside the selected page —
-//! Appearance, Alpaca, CoinMarketCap, Notifications (how alerts are delivered, and the
+//! Appearance, Graphics, Alpaca, CoinMarketCap, Notifications (how alerts are delivered, and the
 //! background agent's health), Webhooks, Storage (the cache) and About.
 //!
 //! A pure view: it reads settings values and returns `SettingsAction`s for the host.
@@ -32,6 +32,7 @@ pub const MIN_SIZE: Vec2 = Vec2::new(520.0, 480.0);
 pub enum SettingsSection {
     #[default]
     Appearance,
+    Graphics,
     PineStudio,
     Alpaca,
     Brokers,
@@ -48,8 +49,9 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Appearance,
+        Self::Graphics,
         Self::PineStudio,
         Self::Alpaca,
         Self::Brokers,
@@ -75,6 +77,7 @@ impl SettingsSection {
     pub fn title(self) -> &'static str {
         match self {
             Self::Appearance => tr!("Appearance"),
+            Self::Graphics => tr!("Graphics"),
             Self::PineStudio => tr!("Pine Studio"),
             Self::Alpaca => "Alpaca",
             Self::Brokers => tr!("Brokers"),
@@ -95,6 +98,7 @@ impl SettingsSection {
     pub fn tint(self) -> Color32 {
         match self {
             Self::Appearance => Color32::from_rgb(94, 92, 230),
+            Self::Graphics => Color32::from_rgb(255, 149, 0),
             Self::PineStudio => Color32::from_rgb(172, 142, 104),
             Self::Alpaca => Color32::from_rgb(255, 159, 10),
             Self::Brokers => Color32::from_rgb(255, 112, 67),
@@ -115,6 +119,7 @@ impl SettingsSection {
     pub fn key(self) -> &'static str {
         match self {
             Self::Appearance => "appearance",
+            Self::Graphics => "graphics",
             Self::PineStudio => "pinestudio",
             Self::Alpaca => "alpaca",
             Self::Brokers => "brokers",
@@ -158,6 +163,8 @@ pub enum SettingsAction {
     Ai(crate::ui::settings::ai::AiAction),
     /// The Network page changed the proxy.
     Network(crate::ui::settings::network::NetworkAction),
+    /// The Graphics page changed how frames are presented or which backend to start with.
+    Graphics(crate::ui::settings::graphics::GraphicsAction),
     /// An update was swapped in and a helper will reopen the app: quit now.
     QuitForUpdate,
     /// The About page chose which releases updates offer.
@@ -172,6 +179,7 @@ pub struct SettingsInput<'a> {
     pub snapshots: crate::ui::settings::snapshots::SnapshotsInput<'a>,
     pub ai: crate::ui::settings::ai::AiSettingsInput<'a>,
     pub network: crate::ui::settings::network::NetworkInput<'a>,
+    pub graphics: crate::ui::settings::graphics::GraphicsInput<'a>,
     pub updates: &'a crate::host::update::UpdateHost,
     pub sync: &'a crate::host::sync::SyncHost,
     pub trading_hub: &'a std::sync::Arc<crate::host::trading::TradingHub>,
@@ -188,6 +196,7 @@ pub struct SettingsState {
     pub brokers: crate::ui::settings::brokers::BrokersState,
     pub ai: crate::ui::settings::ai::AiSettingsState,
     pub network: crate::ui::settings::network::NetworkState,
+    pub graphics: crate::ui::settings::graphics::GraphicsState,
     pub storage: StorageState,
     pub mcp: McpSettingsState,
     pub snapshots: crate::ui::settings::snapshots::SnapshotsState,
@@ -338,6 +347,7 @@ impl SettingsSection {
     pub(in crate::ui) fn icon(self) -> Icon {
         match self {
             Self::Appearance => Icon::Paintbrush,
+            Self::Graphics => Icon::GaugeHigh,
             Self::PineStudio => Icon::AngleBrackets,
             Self::Alpaca => Icon::ChartLine,
             Self::Brokers => Icon::ArrowLeftRight,
@@ -439,6 +449,25 @@ pub fn show(
                     }
                 },
             );
+        }
+        SettingsSection::Graphics => {
+            let mut graphics_actions = Vec::new();
+            page_shell(
+                &mut page,
+                section,
+                tr!(
+                    "If the mouse feels sticky inside DegenView, leave VSync off. Open Advanced only if you still need to tune it."
+                ),
+                |ui| {
+                    crate::ui::settings::graphics::body(
+                        ui,
+                        &mut state.graphics,
+                        &input.graphics,
+                        &mut graphics_actions,
+                    )
+                },
+            );
+            actions.extend(graphics_actions.into_iter().map(SettingsAction::Graphics));
         }
         SettingsSection::PineStudio => {
             crate::ui::settings::pine_studio::page(

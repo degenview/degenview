@@ -7,6 +7,7 @@ pub(in crate::ui) mod appearance;
 pub mod art;
 pub mod brokers;
 pub mod card;
+pub mod graphics;
 pub mod mcp;
 pub mod network;
 pub mod pine_studio;
