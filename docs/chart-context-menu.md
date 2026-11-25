@@ -18,10 +18,21 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | The time axis | Reset chart view. |
 | Empty plot | The background menu (below). |
 
-A right-click never pans, draws, changes the tool or finishes anything else: drags and clicks that
-move the chart or draw are primary-button only. With a drawing tool armed or a gesture in
-progress, an empty-plot right-click opens nothing (a polyline still finishes on right-click, as
-before).
+`ChartCard::context_request` is the one place that decides, so exactly one thing answers a click. A
+right-click never pans or draws: drags and clicks that move the chart or draw are primary-button only.
+
+**A tool in hand takes the first right-click on the plot.** With a drawing tool or Zoom In armed, a
+right-click on the plot or a script pane puts the tool down, back to the resting cursor, and opens
+nothing; the next right-click opens the menu. Keep drawing changes nothing about it. The put-down is
+the same act as Esc (`DrawingTools::put_down`), requested through `DrawingFrame::put_down`. In the same
+click a polyline or path with two or more vertices is finished and a half-placed drawing is
+abandoned, on the plot and on a script pane alike: `ChartCard::context_request` is the one place
+that decides, and calls `DrawingLayer::release` before it asks to put the tool down.
+The axes open their menu at once and leave the tool armed. Under any cursor (Cross, Dot, Arrow,
+Demonstration, Eraser) the first right-click opens the menu. Observed on TradingView (Measure and
+Zoom In armed, Stay in drawing mode on and off, mid-measure): plot puts the tool down, the next click
+opens the menu; both axes open theirs with the tool still armed. Inferred, not seen: script panes
+(treated as the plot), alert and paper tags (they keep their own menu), polylines.
 
 ### The background menu
 
@@ -221,7 +232,10 @@ Not verifiable from the documentation, so built from the specification and marke
 ## Manual check list
 
 1. Right-click empty plot: menu opens under the pointer; near the right and bottom edges it flips;
-   Esc closes it and leaves the armed tool alone.
+   Esc closes it and leaves the armed tool alone. With a drawing tool or Zoom In armed (Keep drawing
+   on and off) the first right-click only puts it down and the second opens the menu; a half-placed
+   trend line does the same and a polyline mid-draw is committed (also with the click in a script
+   pane), while a price or time axis opens its menu at once.
 2. Copy price, then paste into a text field: a plain number.
 3. Add alert: the editor opens with the level and direction; closing it creates nothing.
 4. Sell limit / Buy stop above price, Buy limit / Sell stop below: the ticket opens, no order exists.

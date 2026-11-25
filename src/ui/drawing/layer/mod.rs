@@ -109,8 +109,9 @@ pub struct DrawingFrame<'a> {
     pub select: Option<Vec<u64>>,
     /// An Escape press was spent cancelling a draft or edit on this card.
     pub escape_consumed: bool,
-    /// A drawing was committed and `keep_drawing` is off: return to the crosshair.
-    pub disarm: bool,
+    /// The held tool is to be put down, back to the crosshair: a drawing was committed with
+    /// `keep_drawing` off, or the chart was right-clicked.
+    pub put_down: bool,
     /// The user asked to edit this drawing's properties (double-click or Enter).
     pub open_properties: Option<u64>,
     /// A style was copied from a drawing (menu).
@@ -175,7 +176,7 @@ impl<'a> DrawingFrame<'a> {
             commands: Vec::new(),
             select: None,
             escape_consumed: false,
-            disarm: false,
+            put_down: false,
             open_properties: None,
             style_copied: None,
             copy_requested: false,
@@ -250,6 +251,12 @@ impl<'a> DrawingFrame<'a> {
     pub fn with_cursor(mut self, cursor: CursorMode) -> Self {
         self.cursor = cursor;
         self
+    }
+
+    /// Whether `response` is a right-click the chart is to answer. A long touch is egui's
+    /// right-click, and when it shows the values it is not also a menu.
+    pub(in crate::ui) fn is_menu_click(&self, response: &Response) -> bool {
+        response.secondary_clicked() && !(self.long_press_values && response.long_touched())
     }
 
     /// The pointer erases drawings.
@@ -738,9 +745,7 @@ impl DrawingLayer {
             let double = response.double_clicked() || response.triple_clicked();
             self.click(point, modifiers, double, frame, proj);
         }
-        // A long touch is egui's right-click; when it shows the values it is not also a menu.
-        if response.secondary_clicked()
-            && !(frame.long_press_values && response.long_touched())
+        if frame.is_menu_click(response)
             && let Some(point) = response
                 .interact_pointer_pos()
                 .or(pointer)
@@ -949,7 +954,7 @@ impl DrawingLayer {
         let ends = frame.tool == Tool::Ruler
             && !frame.keep_drawing
             && frame.drawings.iter().any(Drawing::is_ruler);
-        frame.disarm |= ends;
+        frame.put_down |= ends;
         ends
     }
 
@@ -1232,18 +1237,19 @@ impl DrawingLayer {
     }
 
     fn secondary_click(&mut self, point: Pos2, frame: &mut DrawingFrame, proj: &Projection) {
-        // A right-click finishes an open shape (a polyline's documented alternative to a
-        // double-click) and abandons a drawing of a fixed number of points that is half placed;
-        // otherwise it opens the menu of what is under it.
-        if let Some(Gesture::Draft(draft)) = self.gesture.take() {
-            if is_open(draft.tool) && draft.placed.len() >= 2 {
-                self.finish_open(draft, false, frame, proj);
-            } else if !matches!(draft.tool.spec().placement, Placement::Points(_)) {
-                self.gesture = Some(Gesture::Draft(draft));
-            }
-            return;
-        }
         self.open_menu(point, frame, proj);
+    }
+
+    /// The held tool is being put down (a right-click on the plot or a script pane): an open
+    /// shape (a polyline's documented alternative to a double-click) with two or more vertices
+    /// is finished, and anything else half placed is let go.
+    pub(in crate::ui) fn release(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+        if let Some(Gesture::Draft(draft)) = self.gesture.take()
+            && is_open(draft.tool)
+            && draft.placed.len() >= 2
+        {
+            self.finish_open(draft, false, frame, proj);
+        }
     }
 
     /// Finishes a path or polyline: commits it when it has enough vertices, else drops it.
@@ -1361,11 +1367,11 @@ impl DrawingLayer {
         if tool.caps().has(Caps::CONTENT) {
             // What was chosen is used up: the next one is chosen again.
             frame.content_used = true;
-            frame.disarm = true;
+            frame.put_down = true;
         } else if !frame.keep_drawing && tool != Tool::Ruler {
             // The ruler is read once placed, so its one-shot ends at the next press instead
             // (`ends_measurement`).
-            frame.disarm = true;
+            frame.put_down = true;
         }
     }
 

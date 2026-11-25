@@ -80,6 +80,11 @@ impl ChartCard {
         }
     }
 
+    /// Whether the Zoom In mode holds the pointer on this chart.
+    pub(super) fn is_zoom_armed(&self) -> bool {
+        self.zoom.armed
+    }
+
     /// The view a zoom was applied to since the last call, if one was. The workspace puts the
     /// tool down on it and puts the view on the undo stack.
     pub fn take_zoomed(&mut self) -> Option<ViewStep> {

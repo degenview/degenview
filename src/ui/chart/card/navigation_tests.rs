@@ -55,6 +55,12 @@ struct Rig {
     /// The keys held down, as the window reports them.
     modifiers: Modifiers,
     sent_modifiers: Modifiers,
+    /// Whether a drawing tool stays armed after a drawing is placed.
+    keep_drawing: bool,
+    /// How many times the card asked for the held tool to be put down.
+    put_downs: usize,
+    /// The chart menu the last frame asked for.
+    menu: Option<ContextRequest>,
 }
 
 impl Rig {
@@ -81,6 +87,9 @@ impl Rig {
             focused: true,
             modifiers: Modifiers::NONE,
             sent_modifiers: Modifiers::NONE,
+            keep_drawing: true,
+            put_downs: 0,
+            menu: None,
         };
         rig.frames(&[]);
         rig
@@ -107,14 +116,17 @@ impl Rig {
         );
         let (tool, selected) = (self.tool, self.selected.clone());
         let (selecting, cursor_mode) = (self.selecting, self.cursor_mode);
+        let keep_drawing = self.keep_drawing;
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
+        let (mut put_down, mut menu) = (false, None);
         let mut picked = None;
         let mut consumed = false;
         let mut long_press = false;
         let mut output = self.ctx.run_ui(input, |ui| {
             let mut frame = DrawingFrame::new(drawings, tool, None, 100)
                 .with_selection(selected.clone())
-                .with_cursor(cursor_mode);
+                .with_cursor(cursor_mode)
+                .with_behavior(crate::model::MagnetMode::default(), keep_drawing);
             let mut replay = ReplayChartFrame {
                 selecting,
                 active: false,
@@ -136,6 +148,8 @@ impl Rig {
                 &mut replay,
             );
             rect = pointer.rect.unwrap_or(Rect::NOTHING);
+            menu = pointer.context;
+            put_down = frame.put_down;
             commands = frame.commands.len();
             picked = replay.picked_range;
             consumed = frame.escape_consumed;
@@ -146,6 +160,13 @@ impl Rig {
         self.rect = rect;
         self.commands += commands;
         self.long_press_values = long_press;
+        self.menu = menu;
+        if put_down {
+            // What the workspace does with the card's request.
+            self.put_downs += 1;
+            self.tool = Tool::Cursor;
+            self.card.set_zoom_armed(false);
+        }
         self.escape_consumed |= consumed;
         if picked.is_some() {
             self.picked_range = picked;
@@ -2411,5 +2432,159 @@ fn gallery_of_zoom_in() {
             last = Some(frame(&mut screen, &mut card, Vec::new()));
         }
         screen.save(&format!("zoom-in-done-{name}"), last.expect("a frame"));
+    }
+}
+
+/// A right-click with a tool in hand puts it down; the menu is the next click's.
+mod right_click {
+    use super::*;
+    use crate::model::chart::context::Target;
+
+    /// The target of the menu a right-click at `at` asked for, over the frames it took, if any.
+    fn answer(rig: &mut Rig, at: Pos2) -> Option<Target> {
+        rig.menu = None;
+        rig.frame(vec![egui::Event::PointerMoved(at)]);
+        let mut menu = None;
+        for pressed in [true, false] {
+            rig.frame(vec![egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            }]);
+            menu = menu.or(rig.menu.take());
+        }
+        rig.frame(Vec::new());
+        menu = menu.or(rig.menu.take());
+        menu.map(|request| request.target)
+    }
+
+    #[test]
+    fn the_cursor_opens_the_menu_on_the_first_right_click() {
+        let mut rig = Rig::new();
+        let at = rig.in_plot();
+        assert_eq!(answer(&mut rig, at), Some(Target::Background));
+        assert_eq!(rig.put_downs, 0);
+    }
+
+    #[test]
+    fn a_drawing_tool_is_put_down_by_the_first_right_click_and_the_second_opens_the_menu() {
+        for keep_drawing in [true, false] {
+            let mut rig = Rig::new();
+            rig.keep_drawing = keep_drawing;
+            rig.tool = Tool::Rectangle;
+            let at = rig.in_plot();
+            assert_eq!(answer(&mut rig, at), None, "keep drawing {keep_drawing}");
+            assert_eq!(rig.put_downs, 1);
+            assert_eq!(rig.tool, Tool::Cursor);
+            assert_eq!(answer(&mut rig, at), Some(Target::Background));
+            assert_eq!(rig.put_downs, 1, "the second click puts nothing down");
+        }
+    }
+
+    #[test]
+    fn zoom_in_is_put_down_the_same_way() {
+        let mut rig = Rig::new();
+        rig.card.set_zoom_armed(true);
+        let at = rig.in_plot();
+        assert_eq!(answer(&mut rig, at), None);
+        assert_eq!(rig.put_downs, 1);
+        assert!(!rig.card.is_zoom_armed());
+        assert_eq!(answer(&mut rig, at), Some(Target::Background));
+    }
+
+    #[test]
+    fn the_axes_open_their_menu_at_once_and_keep_the_tool() {
+        let mut rig = Rig::new();
+        rig.tool = Tool::TrendLine;
+        let axis = rig.on_price_axis();
+        assert_eq!(answer(&mut rig, axis), Some(Target::PriceAxis));
+        let time = rig.on_time_axis();
+        assert_eq!(answer(&mut rig, time), Some(Target::TimeAxis));
+        assert_eq!(rig.put_downs, 0);
+        assert_eq!(rig.tool, Tool::TrendLine);
+    }
+
+    #[test]
+    fn a_half_placed_drawing_is_abandoned_and_the_tool_put_down_by_one_click() {
+        let mut rig = Rig::new();
+        rig.tool = Tool::ThreeDrivesPattern;
+        let plot = rig.in_plot();
+        for step in 0..3 {
+            let at = plot + Vec2::new(30.0 * step as f32, 20.0 * step as f32);
+            rig.frame(vec![egui::Event::PointerMoved(at)]);
+            rig.frame(vec![rig.button(at, true)]);
+            rig.frame(vec![rig.button(at, false)]);
+        }
+        assert_eq!(answer(&mut rig, plot), None);
+        assert_eq!(rig.tool, Tool::Cursor);
+        assert_eq!(rig.commands, 0, "nothing was drawn");
+        assert_eq!(answer(&mut rig, plot), Some(Target::Background));
+    }
+
+    const PANE_SCRIPT: &str = "//@version=6\nindicator(\"Pane\")\nplot(close)\n";
+
+    /// A chart with one script pane, and a point inside that pane.
+    fn with_pane() -> (Rig, Pos2) {
+        let mut rig = Rig::new();
+        let id = rig.card.add_pine_instance(None, "Pane", PANE_SCRIPT);
+        wait_for_script(&mut rig, id);
+        rig.frames(&[]);
+        assert_eq!(rig.card.pane_count(), 1, "the script has a pane of its own");
+        // The panes sit below the time axis.
+        let pane = Pos2::new(rig.rect.center().x, rig.rect.bottom() - 20.0);
+        (rig, pane)
+    }
+
+    fn click_plot(rig: &mut Rig, at: Pos2) {
+        rig.frame(vec![egui::Event::PointerMoved(at)]);
+        rig.frame(vec![rig.button(at, true)]);
+        rig.frame(vec![rig.button(at, false)]);
+    }
+
+    #[test]
+    fn an_open_shape_is_finished_by_the_right_click_that_puts_its_tool_down_on_the_plot_or_a_pane()
+    {
+        for tool in [Tool::Polyline, Tool::Path] {
+            for keep_drawing in [true, false] {
+                for in_pane in [false, true] {
+                    let (mut rig, pane) = with_pane();
+                    rig.keep_drawing = keep_drawing;
+                    rig.tool = tool;
+                    let plot = rig.in_plot();
+                    click_plot(&mut rig, plot);
+                    click_plot(&mut rig, plot + Vec2::new(80.0, 30.0));
+                    assert_eq!(rig.commands, 0, "still being drawn");
+                    let at = if in_pane { pane } else { plot };
+                    let case = format!("{tool:?}, keep drawing {keep_drawing}, pane {in_pane}");
+                    assert_eq!(answer(&mut rig, at), None, "{case}");
+                    assert_eq!(rig.put_downs, 1, "{case}");
+                    assert_eq!(rig.tool, Tool::Cursor, "{case}");
+                    assert_eq!(rig.commands, 1, "the shape was committed: {case}");
+                    let next = answer(&mut rig, at);
+                    if in_pane {
+                        assert!(matches!(next, Some(Target::Pane { .. })), "{case}");
+                    } else {
+                        assert_eq!(next, Some(Target::Background), "{case}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_pane_right_click_abandons_a_half_placed_drawing_as_the_plot_does() {
+        let (mut rig, pane) = with_pane();
+        rig.tool = Tool::ThreeDrivesPattern;
+        let plot = rig.in_plot();
+        for step in 0..3 {
+            click_plot(
+                &mut rig,
+                plot + Vec2::new(30.0 * step as f32, 20.0 * step as f32),
+            );
+        }
+        assert_eq!(answer(&mut rig, pane), None);
+        assert_eq!(rig.tool, Tool::Cursor);
+        assert_eq!(rig.commands, 0, "nothing was drawn");
     }
 }

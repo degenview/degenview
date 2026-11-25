@@ -213,7 +213,7 @@ One controller (`ui/drawing/layer/`). A tool's `Placement` decides how anchors a
 - `Single`: one click.
 - `Points(n)`: a drag places the first two anchors, clicks place the rest; click-click works too.
 - `Open`: a click adds a vertex; a double-click, Return, Esc (with at least two vertices),
-  or a right-click finishes; Backspace takes the last vertex back; a click near the first vertex of
+  or a right-click on the plot or a script pane finishes; Backspace takes the last vertex back; a click near the first vertex of
   a polyline closes it. At most 5,000 vertices.
 
 Esc, switching tool, losing window focus, or the card going unseen (another tab) abandons a draft
@@ -284,7 +284,7 @@ a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped ti
 
 The ruler is read after it is placed, so with Keep drawing off it stays armed and on screen until
 the next click or drag, which puts the tool down and takes the measurement with it (`ends_measurement`
-in the layer, `ChartWorkspace::disarm_tool`). On, that click starts another measurement. The report
+in the layer, `ChartWorkspace::put_down_tool`). On, that click starts another measurement. The report
 asked for this; it was not observed on TradingView.
 
 The cursor menu on the strip's first tile has an Eraser that removes drawings by clicking or
