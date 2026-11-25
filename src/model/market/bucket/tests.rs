@@ -1066,6 +1066,75 @@ mod session_grid {
         }
     }
 
+    /// One minute candles of five sessions across the clock change of 1 November 2026, from 08:00 to
+    /// 20:00 New York (the pre and post market included), with prices and volumes that differ.
+    fn minutes_around_the_clock_change() -> Vec<Kline> {
+        let session = crate::model::market::session::open_ms;
+        let mut minutes = Vec::new();
+        let mut index = 0;
+        for (month, date) in [(10, 29), (10, 30), (11, 2), (11, 3), (11, 4)] {
+            let open = session(days_from_civil(2026, month, date));
+            for minute in -90..(390 + 240) {
+                let mut candle = candle(
+                    open + minute * MINUTE_MS,
+                    MINUTE_MS,
+                    100.0 + (index % 37) as f64,
+                );
+                candle.volume = 1.0 + (index % 7) as f64;
+                minutes.push(candle);
+                index += 1;
+            }
+        }
+        minutes
+    }
+
+    #[test]
+    fn folding_from_a_coarser_base_gives_the_same_candles_as_folding_the_minutes() {
+        let grid = Grid::UsEquities;
+        let minutes = minutes_around_the_clock_change();
+        for (base, targets) in [
+            ("5m", vec!["15m", "30m"]),
+            ("15m", vec!["30m", "1h"]),
+            ("30m", vec!["1h", "2h", "3h", "4h", "6h"]),
+        ] {
+            let base_candles = grid.fold(&minutes, tf_text(base), false);
+            for target in targets {
+                let direct = grid.fold(&minutes, tf_text(target), false);
+                let nested = grid.fold(&base_candles, tf_text(target), false);
+                assert_eq!(direct, nested, "{base} then {target}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_fold_keeps_every_regular_hours_minute_and_nothing_else() {
+        let grid = Grid::UsEquities;
+        let minutes = minutes_around_the_clock_change();
+        let regular: f64 = minutes
+            .iter()
+            .filter(|candle| crate::model::market::session::is_open(candle.open_time))
+            .map(|candle| candle.volume)
+            .sum();
+        for target in ["1m", "5m", "22m", "30m", "1h", "4h", "6h"] {
+            let folded = grid.fold(&minutes, tf_text(target), false);
+            let volume: f64 = folded.iter().map(|candle| candle.volume).sum();
+            assert_eq!(volume, regular, "{target}");
+            assert!(
+                folded
+                    .iter()
+                    .all(|candle| crate::model::market::session::is_open(candle.open_time)),
+                "{target}: a candle opens outside the session"
+            );
+            // Buckets are ascending and never overlap.
+            assert!(
+                folded
+                    .windows(2)
+                    .all(|pair| pair[0].close_time < pair[1].open_time),
+                "{target}"
+            );
+        }
+    }
+
     #[test]
     fn a_stocks_first_bucket_of_a_cut_short_answer_is_dropped_like_any_other() {
         let thirty = 30 * MINUTE_MS;
