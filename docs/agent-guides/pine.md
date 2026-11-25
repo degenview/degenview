@@ -332,7 +332,10 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   forming, so it runs as a tick (`ChartBar::has_closed`, no commit) and reads islast + isrealtime and
   not isconfirmed (probe S4, BTCUSDT 1h, a `"5"` request at 13:11: `38 54 9`, the second tick on; a
   script that ran through the candle's close keeps the flags it had then, which a fresh load cannot
-  reproduce).
+  reproduce). A finer request to another symbol takes the same path (`serve_finer_series`), not the
+  higher-timeframe one: the last intrabar stands for the chart bar and the first with `lookahead_on`,
+  on history and on the live bar alike (probe S5: ETHUSDT `"5"` on a BTCUSDT 1h chart reads offset
+  55 / 0 on a history bar and 20 / 0 on the live one at 13:22, like BTCUSDT's own).
   `timeframe.change` in a request is per call site of the request's own state, so it is false on
   the first candle of the series (see the per-site rule above), TradingView-measured.
   A chart bar completes a higher-timeframe candle when its own end (`ChartBar::end`, the end of its

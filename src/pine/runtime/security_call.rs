@@ -267,6 +267,13 @@ impl Session {
             return Ok(RuntimeValue::Na);
         };
         if let Some(candles) = request.foreign.clone() {
+            // A finer series is read through the chart bar's intrabars, whichever symbol it is of:
+            // the last one stands for the bar, the first with `lookahead_on` (TradingView probe S5:
+            // ETHUSDT `"5"` on a live BTCUSDT 1h bar reads its 13:15 candle, and 13:00 with
+            // `lookahead_on`, as the chart's own symbol does).
+            if request.interval < self.bar_seconds {
+                return self.serve_finer_series(&request, &candles, site, context);
+            }
             return self.serve_foreign(&request, &candles, site, context);
         }
         if request.interval < self.bar_seconds {
@@ -294,8 +301,20 @@ impl Session {
                 range,
             ));
         };
+        self.serve_finer_series(request, &candles, site, context)
+    }
+
+    /// The expression on the intrabars `candles` (of any symbol) hold for the chart bar: the value of
+    /// the last stands for the bar, or of the first with `lookahead_on`.
+    fn serve_finer_series(
+        &mut self,
+        request: &SecurityRequest,
+        candles: &[Kline],
+        site: usize,
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
         let intrabars = self.serve_intrabars(
-            &candles,
+            candles,
             request.interval,
             &request.expression,
             site,

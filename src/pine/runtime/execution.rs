@@ -707,4 +707,63 @@ mod tests {
         assert_eq!(at(1, 4), Some(3.0), "4:00, 4:15 and the 4:30 one forming");
         assert_eq!(at(0, 4), Some(2.0), "only the forming one is unconfirmed");
     }
+
+    #[test]
+    fn a_finer_request_to_another_symbol_reads_the_intrabars_like_the_charts_own() {
+        // TradingView probe S5 (a live BTCUSDT 1h bar at 13:18): ETHUSDT `"5"` reads the 13:15 candle
+        // (`9`, forming) and, with `lookahead_on`, the 13:00 one, as the chart's own symbol does.
+        // Here the 15m candles of "OTHER" under a 1h chart read at 4:40.
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(request.security(\"OTHER\", \"15\", time))\n\
+             plot(request.security(\"OTHER\", \"15\", time, lookahead = barmerge.lookahead_on))\n\
+             plot(request.security(\"OTHER\", \"15\", barstate.isconfirmed ? 1.0 : 0.0))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Quarter)),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        assert!(update.error.is_none(), "{:?}", update.error);
+        let at = |plot: usize, bar: usize| update.output.plots[plot].values[bar];
+        let quarter = 900_000.0;
+        assert_eq!(
+            at(0, 3),
+            Some(3.0 * 3_600_000.0 + 3.0 * quarter),
+            "history: the last"
+        );
+        assert_eq!(
+            at(1, 3),
+            Some(3.0 * 3_600_000.0),
+            "history, lookahead_on: the first"
+        );
+        assert_eq!(
+            at(0, 4),
+            Some(4.0 * 3_600_000.0 + 2.0 * quarter),
+            "live: the forming one"
+        );
+        assert_eq!(
+            at(1, 4),
+            Some(4.0 * 3_600_000.0),
+            "live, lookahead_on: the first"
+        );
+        assert_eq!(at(2, 4), Some(0.0), "the forming candle is not confirmed");
+    }
 }
