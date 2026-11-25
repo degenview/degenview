@@ -1,0 +1,1 @@
+fixed: A Pine script that reads a built-in function without calling it (`plot(ta.sma)`, `x = nz`) now shows a compile error on that line, as on TradingView, instead of stopping at run time with "Undefined variable".

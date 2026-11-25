@@ -45,7 +45,13 @@ pub fn validate(
 
     let mut diagnostics = Vec::new();
     for_each_identifier(statements, &mut |name, range| {
-        if !variable_is_defined(name, &declared) || unknown_value(name, &declared) {
+        if is_function_read(name, &declared) {
+            diagnostics.push(error(
+                UNDEFINED_VARIABLE,
+                format!("'{name}' is a function, not a variable: call it, as `{name}(…)`."),
+                range,
+            ));
+        } else if !variable_is_defined(name, &declared) || unknown_value(name, &declared) {
             diagnostics.push(error(
                 UNDEFINED_VARIABLE,
                 format!("Undefined variable '{name}'."),
@@ -73,8 +79,7 @@ fn error(code: &str, message: String, range: SourceRange) -> Diagnostic {
 }
 
 /// Whether `name` reads a value in a value-closed namespace that the namespace does not have
-/// (`barstate.nosuch`). A function read without a call is not reported: that is not a name
-/// mistake.
+/// (`barstate.nosuch`).
 fn unknown_value(name: &str, declared: &HashSet<String>) -> bool {
     let Some((namespace, _)) = name.split_once('.') else {
         return false;
@@ -83,7 +88,18 @@ fn unknown_value(name: &str, declared: &HashSet<String>) -> bool {
         && !declared.contains(namespace)
         && !declared.contains(name)
         && !registry::is_value(name)
-        && !registry::is_function(name)
+}
+
+/// Whether `name` is read as a variable but is a builtin function, with no value of that name
+/// (`plot(ta.sma)`, `x = nz`): TradingView rejects it as an undeclared identifier, and the run
+/// would stop at that line (`PINE4008`). A name that is both a function and a value (`ta.tr`,
+/// `time`, `year`) is a value when read, and a script's own name of the same spelling wins.
+fn is_function_read(name: &str, declared: &HashSet<String>) -> bool {
+    !declared.contains(name)
+        && !declared.contains(head(name))
+        && !registry::is_value(name)
+        && !matches!(name, "true" | "false" | "na" | "ask" | "bid")
+        && is_builtin_function(name)
 }
 
 /// The message for a call into a closed namespace (see `registry`) when `name` is not one of its
@@ -242,7 +258,6 @@ fn variable_is_defined(name: &str, declared: &HashSet<String>) -> bool {
         || symbol_catalog::is_variable(name)
         || symbol_catalog::is_unimplemented_variable(name)
         || symbol_catalog::is_reserved_constant(name)
-        || symbol_catalog::is_function(name)
         || builtins::color(name).is_some()
         || builtins::constant(name).is_some()
         || compiler::is_named_constant(name)
@@ -260,9 +275,20 @@ fn function_is_defined(name: &str, declared: &HashSet<String>) -> bool {
     }
     declared.contains(name)
         || head_is_defined(name, declared)
+        || is_builtin_function(name)
         || symbol_catalog::FUNCTIONS.contains(&name)
         || symbol_catalog::is_unimplemented_function(name)
         || symbol_catalog::OBJECT_TYPES.contains(&name)
+        || misc::UNAVAILABLE_FEEDS.contains(&name)
+        || misc::UNIMPLEMENTED_FUNCTIONS.contains(&name)
+}
+
+/// Whether `name` is a function DegenView runs. Not the functions it knows only by name (the
+/// unimplemented and unavailable ones, the object types): a script that reads one of those may
+/// be reading a variable of a newer Pine release.
+fn is_builtin_function(name: &str) -> bool {
+    symbol_catalog::is_function(name)
+        || registry::is_function(name)
         || UNDOTTED_BUILTINS.contains(&name)
         || visuals::handles(name)
         || drawings::handles(name)
@@ -275,8 +301,7 @@ fn function_is_defined(name: &str, declared: &HashSet<String>) -> bool {
         || strings::SUPPORTED.contains(&name)
         || ta::is_supported(name)
         || extra::FUNCTIONS.contains(&name)
-        || misc::UNAVAILABLE_FEEDS.contains(&name)
-        || misc::UNIMPLEMENTED_FUNCTIONS.contains(&name)
+        || crate::pine::logs::LogLevel::from_function(name).is_some()
 }
 
 /// Callable names without a namespace that the runtime dispatches inline rather than from a table.
@@ -493,6 +518,81 @@ amount = strategy.convert_to_account(12.5)
             codes("plot(nosuchvariable)"),
             ["PINE3050:Undefined variable 'nosuchvariable'."]
         );
+    }
+
+    #[test]
+    fn a_builtin_function_read_as_a_variable_is_an_error() {
+        // The shapes TradingView rejects as `Undeclared identifier` (probed on a 5-minute chart):
+        // a function name with no call, in a namespace or bare, in every place a value goes.
+        for read in [
+            "plot(ta.sma)",
+            "x = ta.sma",
+            "x = ta.sma + 1",
+            "x = ta.sma[1]",
+            "x = math.abs",
+            "x = str.tostring",
+            "x = nz",
+            "x = plot",
+            "x = int",
+            "x = timestamp",
+            "x = alert",
+            "x = timeframe.change",
+            "x = request.security",
+            "x = input.int",
+            "x = array.new_float",
+            "x = color.new",
+            "x = label.new",
+            "x = strategy.entry",
+            "x = log.info",
+            "x = ta.supertrend",
+        ] {
+            let name = read
+                .trim_start_matches("plot(")
+                .trim_start_matches("x = ")
+                .split(['+', '[', ')'])
+                .next()
+                .unwrap()
+                .trim();
+            assert_eq!(
+                codes(read),
+                [format!(
+                    "PINE3050:'{name}' is a function, not a variable: call it, as `{name}(…)`."
+                )],
+                "{read}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_name_that_is_a_value_is_not_a_function_read() {
+        // Each of these compiled on TradingView: builtin variables and constants, also the ones
+        // whose name is a function as well (`ta.tr`, `time`, `year`).
+        let real = "a = ta.vwap + ta.tr + ta.obv + ta.accdist + ta.pvt + ta.wvad + ta.iii\n\
+            b = math.pi + timeframe.multiplier + year + month + hour + time + bar_index\n\
+            c = syminfo.tickerid == timeframe.period ? 1 : 0\n\
+            d = na(close) ? 1 : 0\nf = barstate.islast ? close : open";
+        assert!(codes(real).is_empty(), "{:?}", codes(real));
+        for variable in symbol_catalog::VARIABLES {
+            assert!(
+                !is_function_read(variable, &HashSet::new()),
+                "{variable} is a builtin variable"
+            );
+        }
+    }
+
+    #[test]
+    fn a_function_name_the_script_declares_is_its_own() {
+        // The script's own name wins, as for an undefined variable: a variable, a function, a
+        // namespace (`ta` an import alias or a variable) and a parameter.
+        assert!(codes("sma = 3\nx = sma + 1").is_empty());
+        assert!(codes("ta = 3\nx = ta.sma").is_empty());
+        assert!(codes("f(nz) => nz + 1\nx = f(2)").is_empty());
+        assert!(codes("max = 3\nx = math.max(max, 2)").is_empty());
+    }
+
+    #[test]
+    fn calling_a_function_is_not_reading_it() {
+        assert!(codes("x = ta.sma(close, 3) + nz(close) + math.abs(-1)\nplot(x)").is_empty());
     }
 
     #[test]
