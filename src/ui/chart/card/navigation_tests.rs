@@ -1431,8 +1431,11 @@ fn level(count: usize, base: f64) -> Vec<Kline> {
         .collect()
 }
 
+/// The axis of a chart of `candles`, with no countdown to reserve room for: what is measured is
+/// the price labels alone (the countdown's room is in `countdown_tests`).
 fn axis_width_of(candles: Vec<Kline>) -> f32 {
     let mut rig = Rig::new();
+    rig.card.appearance_mut().canvas.bar_countdown = false;
     rig.candles = candles;
     rig.frames(&[]);
     rig.rect.right() - rig.probe().plot.right()

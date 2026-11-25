@@ -46,6 +46,9 @@ pub(super) struct FrameData<'a> {
     pub constructed: Option<&'a ConstructedSeries>,
     pub outputs: &'a [Placed],
     pub indicators: &'a IndicatorConfig,
+    /// The time the forming bar has left, resolved once for the frame (a snapshot's is the one
+    /// it was taken with). `None` when there is nothing to promise.
+    pub countdown: Option<Countdown>,
 }
 
 impl FrameData<'_> {
@@ -249,6 +252,26 @@ impl ChartCard {
                     .x
             };
             let mut widest = 0.0f32;
+            // The countdown's width comes from what the chart could show, not from what it shows
+            // now, so the axis keeps its width as the digits change and as the countdown comes
+            // and goes with the connection.
+            if let Some(timeframe) = self
+                .timeframe
+                .filter(|_| style.bar_countdown && countdown::eligible(chart_type, data.source))
+            {
+                for text in countdown::widest_texts(timeframe) {
+                    widest = widest.max(
+                        price_text::PriceText::new(
+                            painter,
+                            &text,
+                            style.price_font(),
+                            style.text_color,
+                        )
+                        .size()
+                        .x,
+                    );
+                }
+            }
             if let Some(view) = self.view(
                 framing,
                 bars,
@@ -508,16 +531,16 @@ impl ChartCard {
                 target_at(&targets, pointer).cloned()
             });
 
-        self.draw_last_price(
+        let last_price_tag = self.draw_last_price(
             &main_painter,
             plot,
             rect,
             scale,
             candles,
             shown_synthetic.and_then(|_| bars.last()),
+            data.countdown.filter(|_| style.bar_countdown),
             style,
         );
-        let main_tag_y = candles.last().map(|last| scale.y(last.close));
         self.paint_overlay_tags(
             &main_painter,
             &clipped,
@@ -526,7 +549,7 @@ impl ChartCard {
             &overlay_frame,
             view,
             style,
-            main_tag_y,
+            last_price_tag,
         );
         self.draw_time_axis(painter, rect, shown, &ticks, &x_for, plot.right(), style);
         // The tags of the lines at a price or a time sit on the axes, which the drawings'

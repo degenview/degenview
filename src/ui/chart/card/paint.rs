@@ -1,6 +1,7 @@
 //! The live chart's layers under the crosshair: the grid, the series, volume, the built-in
 //! indicators, trend-flip markers, the last price and the time axis.
 
+use super::overlays::on_color;
 use super::*;
 
 impl ChartCard {
@@ -332,6 +333,9 @@ impl ChartCard {
         }
     }
 
+    /// The last price: a dotted line across the plot and a tag on the axis, which carries the
+    /// time the forming bar has left on a second row when there is a `countdown`. Returns where
+    /// the tag stands, so what else sits on the axis keeps clear of it.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_last_price(
         &self,
@@ -341,8 +345,9 @@ impl ChartCard {
         scale: &PriceScale,
         candles: &[Kline],
         constructed_last: Option<&Kline>,
+        countdown: Option<Countdown>,
         style: &CanvasStyle,
-    ) {
+    ) -> Option<TagBand> {
         let half = style.tag_half_height();
         // A price-based chart's own last close is not what the market last traded at: it gets its
         // own dashed line and an outlined tag, and the solid tag stays the market's.
@@ -371,12 +376,10 @@ impl ChartCard {
                 );
             }
         }
-        let Some(last) = candles.last() else {
-            return;
-        };
+        let last = candles.last()?;
         let y = scale.y(last.close);
         if !plot.y_range().contains(y) {
-            return;
+            return None;
         }
         let previous_close = candles
             .len()
@@ -393,19 +396,48 @@ impl ChartCard {
                 dash: crate::model::chart::kind::LineDash::Dotted,
             },
         );
+        // The price stays on the line it is the price of; the countdown hangs under it, or over
+        // it where the plot ends too soon for a second row. Both rows start at the same left edge,
+        // the widest of the two centred in the tag.
+        let pitch = countdown.map_or(0.0, |_| style.countdown_pitch());
+        let below = y + half + pitch <= plot.bottom();
+        let (top, bottom) = if below {
+            (y - half, y + half + pitch)
+        } else {
+            (y - half - pitch, y + half)
+        };
         let tag = Rect::from_min_max(
-            Pos2::new(plot.right() + 3.0, y - half),
-            Pos2::new(rect.right() - 3.0, y + half),
+            Pos2::new(plot.right() + 3.0, top),
+            Pos2::new(rect.right() - 3.0, bottom),
         );
         painter.rect_filled(tag, 3.0, color);
-        price_text::paint(
-            painter,
-            tag.center(),
-            Align2::CENTER_CENTER,
-            &scale.tag_label(self.appearance.price_format(), last.close),
-            style.price_font(),
-            Color32::WHITE,
-        );
+        let ink = on_color(color);
+        let rows = [
+            Some((
+                scale.tag_label(self.appearance.price_format(), last.close),
+                y,
+            )),
+            countdown
+                .map(|countdown| (countdown.text(), if below { y + pitch } else { y - pitch })),
+        ];
+        let laid_out: Vec<_> = rows
+            .into_iter()
+            .flatten()
+            .map(|(text, row_y)| {
+                (
+                    price_text::PriceText::new(painter, &text, style.price_font(), ink),
+                    row_y,
+                )
+            })
+            .collect();
+        let width = laid_out
+            .iter()
+            .fold(0.0f32, |widest, (text, _)| widest.max(text.size().x));
+        let left = tag.center().x - width / 2.0;
+        for (text, row_y) in &laid_out {
+            text.paint(painter, Align2::LEFT_CENTER, Pos2::new(left, *row_y));
+        }
+        Some(TagBand { top, bottom })
     }
 
     /// A bar's time as the chart writes it: to the second on a candle shorter than a minute.

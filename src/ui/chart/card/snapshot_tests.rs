@@ -20,6 +20,7 @@ pub(super) fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'
         images: None,
         hide_all_drawings: false,
         replay_active: harness.replay_active,
+        countdown: harness.card.countdown,
         include_trading,
         frame: SnapshotFrame::default(),
     }
@@ -116,6 +117,58 @@ fn a_plain_chart_snapshot_paints_what_the_live_chart_paints() {
         Vec::<String>::new(),
         "nothing the snapshot lacks"
     );
+}
+
+fn counting(remaining_ms: i64) -> crate::model::chart::countdown::Countdown {
+    crate::model::chart::countdown::Countdown {
+        close_ms: 1_000_000 + remaining_ms,
+        remaining_ms,
+    }
+}
+
+#[test]
+fn a_countdown_snapshots_as_the_live_chart_draws_it() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness.card.set_countdown(Some(counting(125_000)));
+    let (live, rect) = settled(&mut harness);
+    let snapshot = snapshot_shapes(&harness, rect, false);
+    assert!(
+        snapshot
+            .iter()
+            .any(|clipped| describe(&clipped.shape).contains("02:05")),
+        "the picture carries the countdown"
+    );
+    let (only_live, only_snapshot) = differences(&live, &snapshot);
+    assert_eq!(only_snapshot, Vec::<String>::new());
+    assert_eq!(only_live, Vec::<String>::new());
+}
+
+#[test]
+fn a_snapshot_keeps_the_countdown_it_was_taken_with() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness.card.set_countdown(Some(counting(125_000)));
+    let (_, rect) = settled(&mut harness);
+    let frozen = input(&harness, false).countdown;
+    // The bar closes and the chart counts a new one while the picture is being made.
+    harness.card.set_countdown(Some(counting(299_000)));
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+            ..Default::default()
+        },
+        |ui| {
+            let mut later = input(&harness, false);
+            later.countdown = frozen;
+            harness
+                .card
+                .paint_snapshot(&ui.painter_at(rect), rect, &later)
+                .expect("a chart to paint");
+        },
+    );
+    output.textures_delta.clear();
+    let painted: String = output.shapes.iter().map(|c| describe(&c.shape)).collect();
+    assert!(painted.contains("02:05") && !painted.contains("04:59"));
 }
 
 #[test]

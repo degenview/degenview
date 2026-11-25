@@ -4240,6 +4240,11 @@ msgstr ""
 msgid "Count the zeros"
 msgstr ""
 
+#: src/model/chart/context/mod.rs
+#: src/ui/chart/settings/canvas.rs
+msgid "Countdown to bar close"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Counterclockwise"
 msgstr ""
@@ -15857,6 +15862,10 @@ msgstr ""
 msgid "The last autosave could not be written. Choose Save layout."
 msgstr ""
 
+#: src/ui/chart/settings/canvas.rs
+msgid "The last price's tag shows the price alone."
+msgstr ""
+
 #: src/model/pine/bundled/mod.rs
 msgid "The least-squares line of recent closes with deviation bands."
 msgstr ""
@@ -16303,6 +16312,13 @@ msgstr ""
 msgid "The test stopped unexpectedly."
 msgstr ""
 
+#: src/ui/chart/settings/canvas.rs
+msgid ""
+"The time left in the forming bar, under the last price. Not shown on Renko, "
+"Kagi, Line Break, Point & Figure and Range charts, in a replay, or for markets"
+" without clock-cut bars."
+msgstr ""
+
 #: src/ui/chart/symbol_picker/predictions/trending.rs
 msgid "The trending list stopped loading."
 msgstr ""
@@ -16543,6 +16559,10 @@ msgstr ""
 
 #: src/ui/chart/card/snapshot.rs
 msgid "This chart cannot be saved as an image."
+msgstr ""
+
+#: src/model/chart/context/mod.rs
+msgid "This chart has no bars that close on a clock"
 msgstr ""
 
 #: src/model/broker/chart.rs
@@ -19900,6 +19920,7 @@ msgstr ""
 msgid "{days}d"
 msgstr ""
 
+#: src/model/chart/countdown/mod.rs
 #: src/ui/drawing/render.rs
 msgid "{days}d {hours}h"
 msgstr ""

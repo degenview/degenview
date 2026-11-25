@@ -42,6 +42,7 @@ pub(super) fn parts(fixture: &Fixture, chart_id: u64) -> ChartParts {
         open_notes: Vec::new(),
         images: Images::new(),
         replay_active: false,
+        countdown: None,
         include_trading: false,
         scale_mode: PriceScaleMode::Regular,
         logo: None,

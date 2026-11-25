@@ -173,11 +173,12 @@ fn color32(color: Rgba) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a)
 }
 
-/// Black or white text, whichever reads on `fill`.
-fn on_color(fill: Color32) -> Color32 {
+/// Black or white text, whichever reads on `fill`: dark on the greens and lighter colours white
+/// text washes out on, white on reds and darker fills.
+pub(super) fn on_color(fill: Color32) -> Color32 {
     let luminance =
         0.299 * f32::from(fill.r()) + 0.587 * f32::from(fill.g()) + 0.114 * f32::from(fill.b());
-    if luminance > 170.0 {
+    if luminance > 140.0 {
         Color32::BLACK
     } else {
         Color32::WHITE
@@ -416,7 +417,7 @@ impl ChartCard {
         frame: &OverlayFrame,
         view: &View,
         style: &CanvasStyle,
-        main_tag_y: Option<f32>,
+        last_price_tag: Option<TagBand>,
     ) {
         let half = style.tag_half_height();
         let format = self.appearance.price_format();
@@ -443,7 +444,7 @@ impl ChartCard {
                 _ => inside.push(tag),
             }
         }
-        for (y, fill, text) in spread(axis, half, plot, main_tag_y) {
+        for (y, fill, text) in spread(axis, half, plot, last_price_tag) {
             let tag = Rect::from_min_max(
                 Pos2::new(plot.right() + 3.0, y - half),
                 Pos2::new(rect.right() - 3.0, y + half),
@@ -505,35 +506,112 @@ impl ChartCard {
     }
 }
 
-/// Pushes tags apart so neighbours do not stack, keeping them in the plot; top to bottom.
-fn spread(
-    mut tags: Vec<(f32, Color32, String)>,
+/// Where the last price's tag stands on the axis, top to bottom: one row of the price, or two
+/// with the countdown under it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct TagBand {
+    pub top: f32,
+    pub bottom: f32,
+}
+
+/// One tag on the axis: where it is centred, what it is filled with, what it says.
+type AxisTag = (f32, Color32, String);
+
+/// Pushes tags apart so neighbours do not stack, keeping them in the plot and clear of `avoid`
+/// (the last price's tag, which the chart itself draws); top to bottom.
+///
+/// The room the tags have is the plot less `avoid`: the stretch above it and the stretch below
+/// it. A tag keeps the side of `avoid` it was on; one that its side has no room for goes to the
+/// other, nearest first, so no tag is ever pushed back over `avoid` by the edge of the plot. Only
+/// when there are more tags than the axis holds do they stack over the whole plot, as when there
+/// is nothing to avoid.
+pub(super) fn spread(
+    tags: Vec<AxisTag>,
     half: f32,
     plot: Rect,
-    fixed: Option<f32>,
-) -> Vec<(f32, Color32, String)> {
-    // A tag that sits on one the chart itself draws (its last price) steps off it, to the side it
-    // was already on, instead of hiding it.
-    if let Some(fixed) = fixed {
-        let gap = 2.0 * half + 1.0;
-        for tag in &mut tags {
-            if (tag.0 - fixed).abs() < gap {
-                tag.0 = if tag.0 >= fixed {
-                    fixed + gap
-                } else {
-                    fixed - gap
-                };
-            }
+    avoid: Option<TagBand>,
+) -> Vec<AxisTag> {
+    let Some(band) = avoid else {
+        return stack(tags, half, plot);
+    };
+    let above = Span::new(plot.top(), band.top - 1.0);
+    let below = Span::new(band.bottom + 1.0, plot.bottom());
+    let (above_room, below_room) = (above.capacity(half), below.capacity(half));
+    let middle = (band.top + band.bottom) / 2.0;
+    let (mut upper, mut lower): (Vec<_>, Vec<_>) = tags.into_iter().partition(|tag| tag.0 < middle);
+    // Nearest to the band first on both sides.
+    upper.sort_by(|a, b| b.0.total_cmp(&a.0));
+    lower.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut over_upper = upper.split_off(above_room.min(upper.len()));
+    let mut over_lower = lower.split_off(below_room.min(lower.len()));
+    let spill_down = over_upper.len().min(below_room - lower.len());
+    let spill_up = over_lower.len().min(above_room - upper.len());
+    lower.extend(over_upper.drain(..spill_down));
+    upper.extend(over_lower.drain(..spill_up));
+    if !over_upper.is_empty() || !over_lower.is_empty() {
+        let all = upper
+            .into_iter()
+            .chain(lower)
+            .chain(over_upper)
+            .chain(over_lower);
+        return stack(all.collect(), half, plot);
+    }
+    let mut placed = stack(upper, half, above.rect(plot));
+    placed.extend(stack(lower, half, below.rect(plot)));
+    placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+    placed
+}
+
+/// A stretch of the axis between two heights.
+struct Span {
+    top: f32,
+    bottom: f32,
+}
+
+impl Span {
+    fn new(top: f32, bottom: f32) -> Self {
+        Self { top, bottom }
+    }
+
+    /// How many tags of height `2 * half` fit, one point apart.
+    fn capacity(&self, half: f32) -> usize {
+        let length = self.bottom - self.top;
+        if length < 2.0 * half {
+            0
+        } else {
+            ((length + 1.0) / (2.0 * half + 1.0)).floor() as usize
         }
     }
+
+    /// The plot narrowed to this stretch, which is all `stack` reads of it.
+    fn rect(&self, plot: Rect) -> Rect {
+        Rect::from_min_max(
+            Pos2::new(plot.left(), self.top),
+            Pos2::new(plot.right(), self.bottom.max(self.top)),
+        )
+    }
+}
+
+/// Spreads tags that sit closer than a tag is tall, top to bottom, inside the plot: pushed down
+/// from the top, then back up from the bottom, so a pile at an edge keeps its spacing instead
+/// of collapsing onto one height.
+fn stack(mut tags: Vec<AxisTag>, half: f32, plot: Rect) -> Vec<AxisTag> {
+    let pitch = 2.0 * half + 1.0;
+    let (lowest, highest) = (plot.top() + half, plot.bottom() - half);
     tags.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut floor = f32::MIN;
+    let mut floor = lowest;
     for tag in &mut tags {
-        tag.0 = tag
-            .0
-            .max(floor)
-            .clamp(plot.top() + half, plot.bottom() - half);
-        floor = tag.0 + 2.0 * half + 1.0;
+        tag.0 = tag.0.max(floor);
+        floor = tag.0 + pitch;
+    }
+    let mut ceiling = highest;
+    for tag in tags.iter_mut().rev() {
+        tag.0 = tag.0.min(ceiling);
+        ceiling = tag.0 - pitch;
+    }
+    // More tags than the plot holds: they overlap, but stay in it.
+    for tag in &mut tags {
+        tag.0 = tag.0.clamp(lowest, highest.max(lowest));
     }
     tags
 }

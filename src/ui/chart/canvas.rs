@@ -51,6 +51,8 @@ pub struct CanvasStyle {
     pub pane_buttons: ButtonVisibility,
     /// Whether the crosshair carries its box of values.
     pub ohlc_readout: bool,
+    /// Whether the last price's tag carries the time the forming bar has left.
+    pub bar_countdown: bool,
 }
 
 /// What a picture of the chart changes in its canvas without touching the chart's settings.
@@ -178,6 +180,7 @@ impl CanvasStyle {
             navigation: canvas.buttons.navigation,
             pane_buttons: canvas.buttons.pane,
             ohlc_readout: canvas.ohlc_readout,
+            bar_countdown: canvas.bar_countdown,
         }
     }
 
@@ -199,6 +202,12 @@ impl CanvasStyle {
 
     pub fn price_font(&self) -> FontId {
         FontId::monospace(self.price_size)
+    }
+
+    /// How far the countdown's row is from the price's: the distance between their centres, 12
+    /// points at the default size. TradingView sets both in one size, a line apart.
+    pub fn countdown_pitch(&self) -> f32 {
+        (self.price_size * 1.2).round()
     }
 
     pub fn time_font(&self) -> FontId {

@@ -86,6 +86,8 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 
 ## Types, canvas, and templates
 
+- The countdown to a bar's close (`model::chart::countdown`) is a function of the clock, resolved by the workspace once a frame (`Chart::bar_countdown`) and pushed into the card (`ChartCard::set_countdown`); the card and the snapshot path never read the clock. It lives on the last-price tag (`draw_last_price`), never as a widget or overlay, and the axis is measured with its widest text whatever it shows ([chart canvas](../chart-canvas.md#countdown-to-bar-close)).
+
 - Never modify canonical candles. `model::chart::synthetic` builds price-based types; cached
   `constructed_series` feeds scale, indicators, Pine, alerts, drawings, replay. Standard types keep
   real OHLC for scripts.

@@ -412,6 +412,21 @@ fn the_time_lock_toggles_on_the_clicked_chart_only() {
 }
 
 #[test]
+fn the_countdown_toggles_on_the_clicked_chart_only() {
+    let mut rig = Rig::new();
+    let first = rig.chart("BTCUSDT", 100.0);
+    let second = rig.chart("ETHUSDT", 50.0);
+    let on = |rig: &mut Rig, id| rig.chart_mut(id).chart.appearance().canvas.bar_countdown;
+    assert!(on(&mut rig, first) && on(&mut rig, second));
+    let context = rig.open(first, 100.0);
+    rig.run(context.clone(), Command::ToggleBarCountdown);
+    assert!(!on(&mut rig, first));
+    assert!(on(&mut rig, second), "another chart keeps its own setting");
+    rig.run(context, Command::ToggleBarCountdown);
+    assert!(on(&mut rig, first));
+}
+
+#[test]
 fn settings_open_for_the_clicked_chart_not_the_focused_one() {
     let mut rig = Rig::new();
     let first = rig.chart("BTCUSDT", 100.0);

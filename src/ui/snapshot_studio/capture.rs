@@ -7,6 +7,7 @@
 //! Height dials and the drag measure from. A portion is a chart captured at the size of the
 //! selection, showing exactly the bars and prices the selection covered.
 
+use crate::model::chart::countdown::Countdown;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::snapshot::framing::Base;
 use crate::model::chart::viewport::zoom::Selection;
@@ -40,6 +41,9 @@ pub struct ChartParts {
     /// The pictures the drawings show, decoded.
     pub images: Images,
     pub replay_active: bool,
+    /// The time the forming bar had left when the capture began; every picture and preview made
+    /// from these parts shows that, however long they take to draw.
+    pub countdown: Option<Countdown>,
     /// Draw the paper-trading orders and positions, if the chart shows them.
     pub include_trading: bool,
     pub scale_mode: PriceScaleMode,
@@ -62,6 +66,7 @@ impl ChartParts {
             images: Some(&self.images),
             hide_all_drawings: false,
             replay_active: self.replay_active,
+            countdown: self.countdown,
             include_trading: self.include_trading,
             frame,
         }

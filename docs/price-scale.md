@@ -63,7 +63,8 @@ Labels: Percent carries its sign and never reads `-0%` (zero is `0%`); places fo
 (`+2.5%`) and a tag writes two (`+12.35%`); Indexed is a plain number; thousands are grouped. The
 axis is as wide as the widest of the tick and tag labels, measured in the mode's own text.
 
-On the axis column the **tags** read as the axis does: the last-price tag, the constructed-bar tag,
+On the axis column the **tags** read as the axis does: the last-price tag (its countdown row is a
+time, never a price, and is not touched by the mode), the constructed-bar tag,
 the crosshair pill and a drawing's price tag. **Everything else keeps real prices**: the header and
 the OHLC legend, alert tags and paper order/position pills (trading semantics), Fibonacci and Gann labels, ruler,
 arrow and price-label text, high/low markers, "Copy price", the order and alert entries, indicator
