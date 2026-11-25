@@ -127,7 +127,7 @@ pub(super) fn returns_reference(callee: &str) -> bool {
 
 /// The `expression` argument of a request call, found the way the call binds its arguments: by
 /// name, or as the third argument that has none.
-pub(super) fn expression_argument<'a>(
+pub(crate) fn expression_argument<'a>(
     name: &str,
     arguments: &'a [Argument],
 ) -> Option<&'a Expression> {

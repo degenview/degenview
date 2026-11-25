@@ -6,6 +6,7 @@ pub mod declaration_rules;
 pub mod identifier_rules;
 pub mod ignored_features;
 pub mod name_check;
+pub mod request_rules;
 pub mod structure_validator;
 pub mod type_checker;
 pub mod types;

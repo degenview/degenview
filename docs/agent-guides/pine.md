@@ -101,6 +101,14 @@
 - Builtin variables read with `[]` (`hlcc4[1]`, `ta.tr[1]`) are recorded by `read_history_builtins`
   at each confirmed bar's end; names found once by `history_builtin_names`. Not inside
   `request.security`.
+- `strategy.*` state inside `request.security` is a compile error (`PINE3074`, TradingView's CE10059),
+  `check/request_rules.rs`: every `strategy.*` variable, the `strategy.closedtrades.*()`,
+  `strategy.opentrades.*()`, `strategy.convert_to_*()` and `strategy.default_entry_qty()` functions,
+  in the `expression` argument, through the functions it calls (all the way) and through the value
+  of a variable that is the whole expression (one level). Measured on TradingView (2026-11-25): it
+  stops there (`b = a * 2`, `a + 1`, `a[1]` after `a = strategy.equity` compile), the constants
+  `strategy.long`/`strategy.short` are fine, and `request.security_lower_tf` and the symbol argument
+  are not checked. A request's own broker is empty, so nothing it could read there is meaningful.
 - Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:

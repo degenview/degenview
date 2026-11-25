@@ -106,6 +106,7 @@ fn compile_internal(
         parser.exported_names(),
     ));
     diagnostics.extend(super::builtins::alert::call::validate(&statements));
+    diagnostics.extend(super::check::request_rules::validate(&statements));
     diagnostics.extend(super::logs::call::validate(&statements));
     let has_early_error = diagnostics.iter().any(|d| {
         matches!(
