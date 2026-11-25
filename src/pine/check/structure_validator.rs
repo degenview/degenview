@@ -433,6 +433,7 @@ mod tests {
         let statements = [Statement::Expression(Expression::Call {
             name: "plot".to_owned(),
             arguments: vec![],
+            map_types: None,
             site: 0,
             route: None,
             target: None,
@@ -452,6 +453,7 @@ mod tests {
         let statements = [Statement::Expression(Expression::Call {
             name: "request.volume_flow".to_owned(),
             arguments: vec![],
+            map_types: None,
             site: 0,
             route: None,
             target: None,

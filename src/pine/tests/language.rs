@@ -1737,6 +1737,129 @@ fn a_for_in_whose_index_and_value_hide_globals_gives_both_back() {
 }
 
 #[test]
+fn a_for_in_over_an_empty_map_does_not_enter_the_body() {
+    let session = run(
+        "var map<float, float> a = map.new<float, float>()\n\
+         visits = 0\n\
+         for [ext1, ext2] in a\n    visits += 1\n    continue\n",
+        2,
+    );
+    assert_eq!(value(&session, "visits"), RuntimeValue::Int(0));
+}
+
+#[test]
+fn a_for_in_reads_float_keys_and_current_values_in_insertion_order() {
+    let session = run(
+        "a = map.new<float, float>()\n\
+         a.put(3, 10)\n\
+         a.put(1.5, 20)\n\
+         a.put(3.0, 11)\n\
+         first_key = 0.0\n\
+         first_value = 0.0\n\
+         last_key = 0.0\n\
+         last_value = 0.0\n\
+         for [k, v] in a\n    if k == 3.0\n        first_key := k\n        first_value := v\n        a.put(1.5, 21)\n        continue\n    last_key := k\n    last_value := v\n\
+         size = a.size()\n\
+         key_from_copy = a.copy().keys().get(0)\n",
+        2,
+    );
+    assert_eq!(value(&session, "first_key"), RuntimeValue::Float(3.0));
+    assert_eq!(value(&session, "first_value"), RuntimeValue::Float(11.0));
+    assert_eq!(value(&session, "last_key"), RuntimeValue::Float(1.5));
+    assert_eq!(value(&session, "last_value"), RuntimeValue::Float(21.0));
+    assert_eq!(value(&session, "size"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "key_from_copy"), RuntimeValue::Float(3.0));
+}
+
+#[test]
+fn a_for_in_rejects_map_key_changes_through_an_alias_even_before_break() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\n\
+         a = map.new<string, int>()\n\
+         a.put(\"first\", 1)\n\
+         alias = a\n\
+         for [k, v] in a\n    alias.remove(k)\n    alias.put(\"second\", v)\n    break\n",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(crate::pine::runtime::session::RunError::Script(error)) = session.evaluate(&bars(1))
+    else {
+        panic!("changing keys in the iterated map must fail");
+    };
+    assert_eq!(error.code, "PINE4039");
+}
+
+/// The code of the runtime error a script ends in.
+fn runtime_error_code(body: &str) -> String {
+    let program = compiler::compile(
+        &format!("//@version=6\nindicator(\"T\")\n{body}"),
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(crate::pine::runtime::session::RunError::Script(error)) = session.evaluate(&bars(1))
+    else {
+        panic!("the script must fail: {body}");
+    };
+    error.code
+}
+
+#[test]
+fn a_typed_map_refuses_what_the_checker_could_not_see_it_was_given() {
+    // `keep` hides the type from the checker, so the map itself has to refuse it.
+    let keep = "keep(x) =>\n    x\n";
+    for write in [
+        "m.put(keep(\"a\"), 1.0)",
+        "m.put(1, keep(\"b\"))",
+        "m.put(keep(1.5), 1.0)",
+    ] {
+        let body = format!("{keep}m = map.new<int, float>()\n{write}\n");
+        assert_eq!(runtime_error_code(&body), "PINE4040", "{write}");
+    }
+    let body = format!(
+        "{keep}m = map.new<int, float>()\nm.put(1, 1.5)\nn = map.new<string, float>()\n\
+         n.put(\"a\", 1.0)\nm.put_all(keep(n))\n"
+    );
+    assert_eq!(runtime_error_code(&body), "PINE4040");
+}
+
+#[test]
+fn put_all_copies_every_pair_of_another_map() {
+    let session = run(
+        "m = map.new<string, float>()\n\
+         n = map.new<string, int>()\n\
+         n.put(\"a\", 1)\n\
+         n.put(\"b\", 2)\n\
+         m.put(\"a\", 0.5)\n\
+         m.put_all(n)\n\
+         size = m.size()\n\
+         a = m.get(\"a\")\n",
+        1,
+    );
+    assert_eq!(value(&session, "size"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "a"), RuntimeValue::Float(1.0));
+}
+
+#[test]
 fn a_for_in_counters_keep_their_last_values_in_their_history() {
     // Nothing is hidden: the previous bar's last index and element are what `[1]` reads.
     let session = run(

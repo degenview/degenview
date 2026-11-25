@@ -520,52 +520,125 @@ impl Session {
                 value: RuntimeValue::Void,
             });
         }
-        let RuntimeValue::Ref(RefKind::Array, id) = target else {
-            return Err(Diagnostic::error(
-                "PINE4011",
-                DiagnosticCategory::Runtime,
-                "for...in requires an array or a map.",
-                range,
-            ));
-        };
-        let items = self.working.arrays.get(&id).cloned().unwrap_or_default();
-        // The collection is done: what the counters' names hold now are the outer variables, as it
-        // left them.
+        let value = match target {
+            RuntimeValue::Ref(RefKind::Array, id) => {
+                let items = self.working.arrays.get(&id).cloned().unwrap_or_default();
+                let mut indexed = items.into_iter().enumerate();
+                self.iterate(
+                    index_name,
+                    value_name,
+                    body,
+                    context,
+                    shadows,
+                    |_, stopped| {
+                        Ok(if stopped {
+                            None
+                        } else {
+                            indexed
+                                .next()
+                                .map(|(index, item)| (RuntimeValue::Int(index as i64), item))
+                        })
+                    },
+                )
+            }
+            RuntimeValue::Ref(RefKind::Map, id) => {
+                let Some(index_name) = index_name else {
+                    return Err(Diagnostic::error(
+                        "PINE4011",
+                        DiagnosticCategory::Runtime,
+                        "Iterating a map requires `for [key, value] in map`.",
+                        range,
+                    ));
+                };
+                let revision = self
+                    .working
+                    .maps
+                    .get(&id)
+                    .ok_or_else(|| {
+                        Diagnostic::error(
+                            "PINE4011",
+                            DiagnosticCategory::Runtime,
+                            "for...in cannot iterate a missing map.",
+                            range,
+                        )
+                    })?
+                    .key_revision();
+                let mut offset = 0;
+                self.iterate(
+                    Some(index_name),
+                    value_name,
+                    body,
+                    context,
+                    shadows,
+                    |session, stopped| {
+                        let map = session
+                            .working
+                            .maps
+                            .get(&id)
+                            .filter(|map| map.key_revision() == revision)
+                            .ok_or_else(|| {
+                                Diagnostic::error(
+                                    "PINE4039",
+                                    DiagnosticCategory::Runtime,
+                                    "Cannot add or remove map entries while iterating it.",
+                                    range,
+                                )
+                            })?;
+                        if stopped {
+                            return Ok(None);
+                        }
+                        let pair = map.pair_at(offset);
+                        offset += 1;
+                        Ok(pair)
+                    },
+                )
+            }
+            _ => {
+                return Err(Diagnostic::error(
+                    "PINE4011",
+                    DiagnosticCategory::Runtime,
+                    "for...in requires an array or a map.",
+                    range,
+                ));
+            }
+        }?;
+        Ok(Step::normal(value))
+    }
+
+    /// After a `break`, the pair source still validates the final iteration but returns no item.
+    fn iterate(
+        &mut self,
+        first_name: Option<&str>,
+        value_name: &str,
+        body: &[Statement],
+        context: &mut RuntimeContext,
+        shadows: [Option<ShadowId>; 2],
+        mut next_pair: impl FnMut(
+            &Self,
+            bool,
+        ) -> Result<Option<(RuntimeValue, RuntimeValue)>, Diagnostic>,
+    ) -> Result<RuntimeValue, Diagnostic> {
         let mark = self.shadow_stack.len();
         for id in shadows.into_iter().flatten() {
             self.shadow(id);
         }
-        let result = self.iterate(index_name, value_name, items, body, context);
+        let result = (|| {
+            let mut last = RuntimeValue::Void;
+            let mut stopped = false;
+            while let Some((first, item)) = next_pair(self, stopped)? {
+                self.budget()?;
+                if let Some(first_name) = first_name {
+                    self.set_variable(first_name, first);
+                }
+                self.set_variable(value_name, item);
+                let (flow, value) = self.run_block(body, context)?;
+                last = value;
+                stopped = flow == Flow::Break;
+            }
+            Ok(last)
+        })();
         self.unshadow(mark);
-        Ok(Step {
-            flow: Flow::Normal,
-            value: result?,
-        })
-    }
-
-    /// The iterations of a `for ... in` loop, up to its last value.
-    fn iterate(
-        &mut self,
-        index_name: Option<&str>,
-        value_name: &str,
-        items: Vec<RuntimeValue>,
-        body: &[Statement],
-        context: &mut RuntimeContext,
-    ) -> Result<RuntimeValue, Diagnostic> {
-        let mut last = RuntimeValue::Void;
-        for (offset, item) in items.into_iter().enumerate() {
-            self.budget()?;
-            if let Some(index_name) = index_name {
-                self.set_variable(index_name, RuntimeValue::Int(offset as i64));
-            }
-            self.set_variable(value_name, item);
-            let (flow, value) = self.run_block(body, context)?;
-            last = value;
-            if flow == Flow::Break {
-                break;
-            }
-        }
-        Ok(last)
+        result
     }
 
     fn run_while(

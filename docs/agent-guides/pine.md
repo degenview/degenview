@@ -107,6 +107,22 @@
   a rolled-back unconfirmed realtime tick keeps the structure active until the block runs on a
   closing tick (as TradingView documents). Condition evaluated every bar (like `if`) so `ta.*` keeps
   history.
+- Map `for [key, value] in m` uses the map's insertion order and reads each value when its
+  iteration starts. Replacing a value does not change the order; adding or removing a key during
+  direct iteration raises `PINE4039`, including changes through aliases. This follows the documented
+  TradingView restriction on changing a map's size; the exact error timing and visibility of
+  replacement values have not been verified on TradingView. A `map<float, V>` exposes numeric keys
+  as floats, including whole-number keys that share the internal lookup key with an integer.
+- A map made with `map.new<K, V>()` keeps its declared types and refuses a write of any other
+  (`PINE4040` at run time; `PINE3073` when the checker knows the types): `put` and `put_all` widen an
+  int to a float and take `na` as a value, nothing else. A slot declared as a script type or enum is
+  only checked to be an object handle or an enum member; which type it is, is the checker's. A refused
+  `put_all` stores nothing. `map.new<K, V>(...)` takes no arguments (`PINE3072`).
+  Checked on TradingView (2026-11-25): `put`/`put_all` with a wrong key or value type, and
+  `map.new<K, V>(1)`, are compile errors; a `map<string, int>` goes into `put_all` of a
+  `map<string, float>` and into a `map<float, float>` parameter, but a `map<float, float>` does not
+  go into a `map<int, float>`, and a `map<int, float>` cannot be assigned to a `map<float, float>`
+  variable (`Ty::assignable`: a call may widen, an assignment may not).
 - `matrix.*`: `matrix_builtins` (names in `MEMBERS`, offered directly by the editor).
   - Element arithmetic (`sum`, `diff`, `mult`) via `operators::apply` (ints stay ints, `na`
     propagates); float numerics (`pow`, `kron`, linear algebra) convert to

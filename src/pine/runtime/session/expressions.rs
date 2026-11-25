@@ -114,11 +114,18 @@ impl Session {
             Expression::Call {
                 name,
                 arguments,
+                map_types,
                 site,
                 range,
                 route,
                 target,
             } => {
+                if let Some(types) = map_types {
+                    return Ok(crate::pine::builtins::map::construct(
+                        &mut self.working,
+                        [types[0].kind, types[1].kind],
+                    ));
+                }
                 #[cfg(any(test, feature = "corpus"))]
                 let target = if self.ignore_routes { &None } else { target };
                 if let Some(id) = target {

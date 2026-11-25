@@ -23,6 +23,30 @@ pub enum ValueType {
     Time,
 }
 
+impl ValueType {
+    /// The source spelling of the type, for diagnostics (`int`, `float`, …).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Bool => "bool",
+            Self::String => "string",
+            Self::Color => "color",
+            Self::Line => "line",
+            Self::Label => "label",
+            Self::Box => "box",
+            Self::Table => "table",
+            Self::Linefill => "linefill",
+            Self::Polyline => "polyline",
+            Self::Array => "array",
+            Self::Object => "object",
+            Self::Map => "map",
+            Self::Matrix => "matrix",
+            Self::Time => "time",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SourcePosition {
     pub line: usize,
