@@ -68,6 +68,19 @@ fn plotted(
     seconds: f64,
     provider: Option<Box<dyn SecurityDataProvider>>,
 ) -> Vec<Option<f64>> {
+    let now = bars.last().expect("bars").close_time + 12 * HOUR;
+    plotted_at(symbol, source, bars, seconds, provider, now)
+}
+
+/// The same, read at `now`: a last bar that closes after it is the live one.
+fn plotted_at(
+    symbol: SymbolInfo,
+    source: &str,
+    bars: &[Kline],
+    seconds: f64,
+    provider: Option<Box<dyn SecurityDataProvider>>,
+    now: i64,
+) -> Vec<Option<f64>> {
     let mut chart = ExecutionController::new(
         source,
         HashMap::new(),
@@ -80,7 +93,6 @@ fn plotted(
     )
     .expect("compiles")
     .with_bar_seconds(seconds);
-    let now = bars.last().expect("bars").close_time + 12 * HOUR;
     let update = chart.update(bars, None, now);
     assert!(update.error.is_none(), "{:?}", update.error);
     update.output.plots[0].values.clone()
@@ -171,4 +183,61 @@ fn another_symbols_series_is_cut_on_its_own_grid_not_the_charts() {
     );
     assert_eq!(indices(&values), [7, 12]);
     assert_eq!(values[7], Some(open(0) as f64));
+}
+
+#[test]
+fn the_live_bar_that_ends_at_the_close_carries_the_developing_four_hour_candle() {
+    // 15:40 New York: the 15:30 bar is live and ends at 16:00 with the second 4h candle, so it has
+    // that candle's value, as the 13:00 bar had the first's when it closed.
+    let bars = sessions(1, 30 * MINUTE);
+    let now = open(0) + 6 * HOUR + 10 * MINUTE;
+    let source = "//@version=6\nindicator(\"T\")\n\
+        plot(request.security(syminfo.tickerid, \"240\", time, gaps = barmerge.gaps_on))";
+    let values = plotted_at(stock(), source, &bars, 1_800.0, None, now);
+    assert_eq!(indices(&values), [7, 12]);
+    assert_eq!(values[12], Some((open(0) + 4 * HOUR) as f64));
+    // A bar that opened at 14:30 and is still forming does not end a candle: nothing yet.
+    let now = open(0) + 5 * HOUR + 10 * MINUTE;
+    let forming = &bars[..11];
+    let mut live = forming.to_vec();
+    live[10].close_time = open(0) + 5 * HOUR + 30 * MINUTE - 1;
+    let values = plotted_at(stock(), source, &live, 1_800.0, None, now);
+    assert_eq!(indices(&values), [7]);
+}
+
+#[test]
+fn a_scripts_four_hour_candle_is_the_charts_own_four_hour_candle() {
+    // Two sessions of 30 minute candles with prices that differ bar to bar: what a request reads at
+    // the bar that closes a 4h candle is the candle `Grid::fold` builds for a 4h chart.
+    let mut bars = sessions(2, 30 * MINUTE);
+    for (index, bar) in bars.iter_mut().enumerate() {
+        let base = 100.0 + index as f64;
+        bar.open = base;
+        bar.high = base + 3.0 + (index % 4) as f64;
+        bar.low = base - 2.0 - (index % 3) as f64;
+        bar.close = base + 1.0;
+        bar.volume = 10.0 + index as f64;
+    }
+    let candles = Grid::UsEquities.fold(
+        &bars,
+        crate::model::Timeframe::new(4, crate::model::TimeUnit::Hour).unwrap(),
+        false,
+    );
+    assert_eq!(candles.len(), 4, "two sessions of two candles");
+    for (field, read) in [
+        ("open", (|k: &Kline| k.open) as fn(&Kline) -> f64),
+        ("high", |k| k.high),
+        ("low", |k| k.low),
+        ("close", |k| k.close),
+        ("volume", |k| k.volume),
+    ] {
+        let source = format!(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(request.security(syminfo.tickerid, \"240\", {field}, gaps = barmerge.gaps_on))"
+        );
+        let values = plotted(stock(), &source, &bars, 1_800.0, None);
+        let read_by_the_script: Vec<f64> = values.iter().flatten().copied().collect();
+        let built_by_the_chart: Vec<f64> = candles.iter().map(read).collect();
+        assert_eq!(read_by_the_script, built_by_the_chart, "{field}");
+    }
 }

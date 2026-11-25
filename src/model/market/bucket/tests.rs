@@ -1007,6 +1007,65 @@ mod session_grid {
         );
     }
 
+    /// Every minute of the weeks around both clock changes of 2026 (8 March and 1 November) and a
+    /// plain one, for lengths that divide the half hour and ones that do not: the buckets tile the
+    /// session exactly, whatever the offset.
+    #[test]
+    fn the_buckets_tile_every_session_through_the_clock_changes() {
+        let lengths = [
+            "1m", "5m", "15m", "22m", "30m", "45m", "1h", "2h", "3h", "4h", "6h",
+        ];
+        let weeks = [
+            at(2026, 3, 2, 0, 0),
+            at(2026, 3, 9, 0, 0),
+            at(2026, 10, 26, 0, 0),
+            at(2026, 11, 2, 0, 0),
+            at(2026, 7, 6, 0, 0),
+        ];
+        let grid = Grid::UsEquities;
+        for text in lengths {
+            let timeframe = tf_text(text);
+            for week in weeks {
+                for minute in 0..7 * 24 * 60 {
+                    let t = week + minute * MINUTE_MS;
+                    let start = grid.bucket_start_ms(timeframe, t);
+                    let next = grid.next_bucket_start_ms(timeframe, t);
+                    assert!(start <= t, "{text} at {t}: starts after the moment");
+                    assert!(next > start, "{text} at {t}: ends before it starts");
+                    if !grid.is_traded(timeframe, t) {
+                        continue;
+                    }
+                    assert!(
+                        grid.bucket_start_ms(timeframe, start) == start,
+                        "{text} at {t}: the start is not on the grid"
+                    );
+                    // Inside the session: the bucket stays inside it and holds the moment.
+                    let day = crate::model::market::session::local_day(t);
+                    let open = crate::model::market::session::open_ms(day);
+                    let close = crate::model::market::session::close_ms(day);
+                    assert!(
+                        open <= start && next <= close,
+                        "{text} at {t}: leaves the session"
+                    );
+                    assert!(t < next, "{text} at {t}: ends before the moment");
+                    assert_eq!((start - open) % timeframe.nominal_ms(), 0, "{text} at {t}");
+                    if next < close {
+                        assert_eq!(
+                            grid.bucket_start_ms(timeframe, next),
+                            next,
+                            "{text} at {t}: the next bucket opens where this one ends"
+                        );
+                    } else {
+                        assert_eq!(
+                            next, close,
+                            "{text} at {t}: the last bucket ends at the close"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_stocks_first_bucket_of_a_cut_short_answer_is_dropped_like_any_other() {
         let thirty = 30 * MINUTE_MS;
