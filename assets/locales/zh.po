@@ -11695,6 +11695,10 @@ msgstr "从此图表中移除 {name}"
 msgid "Remove {title}"
 msgstr "移除 {title}"
 
+#: src/ui/settings/card.rs
+msgid "Removed"
+msgstr "已移除"
+
 #: src/ui/settings/sync.rs
 msgid "Removed from iCloud"
 msgstr "已从 iCloud 移除"
@@ -12495,6 +12499,10 @@ msgstr "先保存布局，自动保存才能让它保持最新。"
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Save this chart's look, or give it another."
 msgstr "保存此图表的外观，或换用另一种外观。"
+
+#: src/ui/settings/card.rs
+msgid "Saved"
+msgstr "已保存"
 
 #: src/host/settings/mod.rs
 msgid "Saved conversations cleared."

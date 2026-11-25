@@ -12514,6 +12514,10 @@ msgstr ""
 msgid "Remove {title}"
 msgstr ""
 
+#: src/ui/settings/card.rs
+msgid "Removed"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Removed from iCloud"
 msgstr ""
@@ -13365,6 +13369,10 @@ msgstr ""
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Save this chart's look, or give it another."
+msgstr ""
+
+#: src/ui/settings/card.rs
+msgid "Saved"
 msgstr ""
 
 #: src/host/settings/mod.rs

@@ -396,7 +396,7 @@ impl SettingsHost {
                         Some(provider),
                         result.map(|()| {
                             Some(if secrets.is_empty() {
-                                StatusMessage::ok("Saved")
+                                StatusMessage::saved()
                             } else {
                                 StatusMessage::saved_securely()
                             })
@@ -407,7 +407,7 @@ impl SettingsHost {
                     Some(provider),
                     self.snapshots
                         .remove_secret(provider, field)
-                        .map(|()| Some(StatusMessage::ok("Removed"))),
+                        .map(|()| Some(StatusMessage::removed())),
                 ),
                 SnapshotsAction::IncludeTrading(include) => (
                     None,

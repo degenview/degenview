@@ -11738,6 +11738,10 @@ msgstr "Quitar {name} de este gráfico"
 msgid "Remove {title}"
 msgstr "Quitar {title}"
 
+#: src/ui/settings/card.rs
+msgid "Removed"
+msgstr "Eliminado"
+
 #: src/ui/settings/sync.rs
 msgid "Removed from iCloud"
 msgstr "Eliminado de iCloud"
@@ -12542,6 +12546,10 @@ msgstr "Guarda primero el diseño y así el autoguardado podrá mantenerlo al d�
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Save this chart's look, or give it another."
 msgstr "Guarda el aspecto de este gráfico o dale otro."
+
+#: src/ui/settings/card.rs
+msgid "Saved"
+msgstr "Guardado"
 
 #: src/host/settings/mod.rs
 msgid "Saved conversations cleared."
