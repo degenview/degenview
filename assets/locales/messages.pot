@@ -9220,6 +9220,7 @@ msgid "New run"
 msgstr ""
 
 #: src/ui/window/tab_bar/mod.rs
+#: src/workspace/mod.rs
 msgid "New tab"
 msgstr ""
 

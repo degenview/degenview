@@ -114,6 +114,11 @@ reviewed and the flag removed, so never leave a guess flagged and never remove t
 - `cargo test --lib i18n`: the catalog and the source agree (no stale message, same placeholders,
   consistent plural use), plural formulas match CLDR, the file is valid to `msgfmt` (which needs
   GNU gettext installed).
+- **Nothing may be left untranslated.** `msgattrib --untranslated --no-obsolete assets/locales/<tag>.po`
+  must print nothing, and `msgfmt --statistics` must count every message. An entry that is missing
+  shows in English and no test fails (a catalog may be incomplete), so a lost edit is found only by
+  this check or by looking at the screen: the Spanish restart question shipped with an English title
+  that way. After a scripted edit of the file, run both again.
 - `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`.
 - **Look at screens in the language**, not only the catalog. `DEGENVIEW_LOCALE=<tag>` names the
   language for one run (over the saved choice and the system's). Use a release build and a scratch
@@ -126,6 +131,9 @@ reviewed and the flag removed, so never leave a guess flagged and never remove t
   render pages through the gallery tests instead: `#[ignore]`d tests that draw real egui frames to
   PNG with `DEGENVIEW_GALLERY_DIR=<dir>`; they run in the language set in `Screen::new`. Say in the PR
   what was and was not looked at.
+- **Text that stays English in a real window is a finding.** It is either a message missing from the
+  catalog or a literal that never went through `tr!` (the blank tab's title was one): fix the first in
+  the catalog, the second in the source (`tr!`, then the template and every catalog).
 - A label that does not fit is shortened in the translation first; widen the layout only when the
   width was tuned to English (widths are measured from the words, see Localization).
 - The pseudo-locale (`DEGENVIEW_LOCALE=en-XA`, debug builds) finds text that never went through

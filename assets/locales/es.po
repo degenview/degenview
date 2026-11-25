@@ -962,7 +962,7 @@ msgstr "Todos los clientes"
 
 #: src/ui/chart/indicator_picker/sections.rs
 msgid "All indicators"
-msgstr "Todos los indicadores"
+msgstr "Todos"
 
 #: src/ui/mcp/activity.rs
 msgid "All outcomes"
@@ -11650,6 +11650,10 @@ msgstr "Reiniciar"
 #: src/ui/settings/about.rs
 msgid "Restart DegenView to finish updating."
 msgstr "Reinicia DegenView para terminar de actualizar."
+
+#: src/ui/settings/window.rs
+msgid "Restart to change the language?"
+msgstr "¿Reiniciar para cambiar el idioma?"
 
 #: src/app/window.rs
 msgid "Restart Now"
