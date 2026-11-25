@@ -4297,6 +4297,10 @@ msgstr "DegenView {version} está disponible. {note}"
 msgid "DegenView {version} is ready"
 msgstr "DegenView {version} está listo"
 
+#: src/ui/settings/window.rs
+msgid "DegenView will close and reopen."
+msgstr "DegenView se cerrará y se volverá a abrir."
+
 #: src/app/window.rs
 msgid "DegenView {version} is ready. DegenView will close and reopen."
 msgstr "DegenView {version} está listo. DegenView se cerrará y se volverá a abrir."
@@ -11639,7 +11643,6 @@ msgstr "Al cambiar el tamaño se mantienen las proporciones de la imagen."
 msgid "Resolution"
 msgstr "Resolución"
 
-#: src/ui/settings/appearance.rs
 #: src/ui/window/update_indicator.rs
 msgid "Restart"
 msgstr "Reiniciar"
@@ -11647,10 +11650,6 @@ msgstr "Reiniciar"
 #: src/ui/settings/about.rs
 msgid "Restart DegenView to finish updating."
 msgstr "Reinicia DegenView para terminar de actualizar."
-
-#: src/ui/settings/appearance.rs
-msgid "Restart DegenView to change the language."
-msgstr "Reinicia DegenView para cambiar el idioma."
 
 #: src/app/window.rs
 msgid "Restart Now"

@@ -126,9 +126,11 @@ either. The choice is the `language` setting (`"system"` or a tag), local to the
 `sync::record::policy`, so another Mac is not moved. `host::language` reads it at startup and saves a
 change from Settings (`host::language::save`); the language in the app does not change while it runs,
 because kept text, the native menus and every open window would each switch at a moment of their own.
-The language card then offers a Restart button (`SettingsAction::Restart`, `AppAction::Restart`): the
-app quits through the same question as ⌘Q and `service::update::install::relaunch_running_app` reopens
-it. A quit that is called off cancels the reopen. `app/tabs.rs` still repaints every window when
+Picking a language raises a modal, "Restart to change the language?" (`ask_to_restart` in
+`ui/settings/window.rs`; nothing is asked when the pick is the language already in use). Restart Now
+sends `SettingsAction::Restart` → `AppAction::Restart`: the app quits through the same question as ⌘Q
+and `service::update::install::relaunch_running_app` reopens it. Later keeps the choice saved. A quit
+that is called off cancels the reopen. `app/tabs.rs` still repaints every window when
 `i18n::revision()` changes, which only the alert agent and tests cause.
 
 The system's languages come from `service::system::language`, which asks `sys-locale`.

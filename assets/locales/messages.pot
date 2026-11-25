@@ -4538,6 +4538,10 @@ msgstr ""
 msgid "DegenView sets this header itself."
 msgstr ""
 
+#: src/ui/settings/window.rs
+msgid "DegenView will close and reopen."
+msgstr ""
+
 #: src/ui/settings/about.rs
 msgid "DegenView {version} is available"
 msgstr ""
@@ -7758,6 +7762,7 @@ msgid "Last {price}"
 msgstr ""
 
 #: src/app/window.rs
+#: src/ui/settings/window.rs
 msgid "Later"
 msgstr ""
 
@@ -12378,13 +12383,8 @@ msgstr ""
 msgid "Resolution"
 msgstr ""
 
-#: src/ui/settings/appearance.rs
 #: src/ui/window/update_indicator.rs
 msgid "Restart"
-msgstr ""
-
-#: src/ui/settings/appearance.rs
-msgid "Restart DegenView to change the language."
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -12392,6 +12392,7 @@ msgid "Restart DegenView to finish updating."
 msgstr ""
 
 #: src/app/window.rs
+#: src/ui/settings/window.rs
 msgid "Restart Now"
 msgstr ""
 
@@ -12405,6 +12406,10 @@ msgstr ""
 
 #: src/ui/settings/about.rs
 msgid "Restart to Update"
+msgstr ""
+
+#: src/ui/settings/window.rs
+msgid "Restart to change the language?"
 msgstr ""
 
 #: src/app/window.rs

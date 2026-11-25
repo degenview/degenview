@@ -143,7 +143,7 @@ pub enum SettingsAction {
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
     /// A language on the Appearance page was picked; it applies at the next start.
     SetLanguage(crate::i18n::Preference),
-    /// The Appearance page's Restart button: quit and open the app again.
+    /// The language prompt's Restart Now: quit and open the app again.
     Restart,
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
@@ -196,6 +196,8 @@ pub struct SettingsState {
     pub mcp: McpSettingsState,
     pub snapshots: crate::ui::settings::snapshots::SnapshotsState,
     pub pine_studio: crate::ui::settings::pine_studio::PineStudioState,
+    /// The question "restart to change the language?" is waiting for an answer.
+    pub restart_prompt: bool,
 }
 
 // MARK: Pure labels
@@ -436,18 +438,12 @@ pub fn show(
                     {
                         actions.push(SettingsAction::SetTabTitleStyle(style));
                     }
-                    match crate::ui::settings::appearance::language(
-                        ui,
-                        crate::i18n::preference(),
-                        input.language,
-                    ) {
-                        Some(crate::ui::settings::appearance::LanguageAction::Pick(language)) => {
-                            actions.push(SettingsAction::SetLanguage(language));
-                        }
-                        Some(crate::ui::settings::appearance::LanguageAction::Restart) => {
-                            actions.push(SettingsAction::Restart);
-                        }
-                        None => {}
+                    if let Some(language) =
+                        crate::ui::settings::appearance::language(ui, input.language)
+                    {
+                        actions.push(SettingsAction::SetLanguage(language));
+                        // Going back to the language in use asks nothing.
+                        state.restart_prompt = language != crate::i18n::preference();
                     }
                 },
             );
@@ -606,7 +602,41 @@ pub fn show(
             actions.extend(webhook_actions.into_iter().map(SettingsAction::Webhook));
         }
     }
+    ask_to_restart(ui.ctx(), state, &mut actions);
     actions
+}
+
+/// After a language is picked: offers to restart now, since the language applies at the next start.
+/// "Later" leaves the choice saved; the language card does not ask again.
+fn ask_to_restart(
+    ctx: &egui::Context,
+    state: &mut SettingsState,
+    actions: &mut Vec<SettingsAction>,
+) {
+    if !state.restart_prompt {
+        return;
+    }
+    let outcome = kit::alert(
+        ctx,
+        egui::Id::new("settings-language-restart"),
+        &kit::Alert {
+            icon: Icon::Cycle,
+            tint: kit::ORANGE,
+            title: tr!("Restart to change the language?"),
+            message: tr!("DegenView will close and reopen."),
+            accept: tr!("Restart Now"),
+            dismiss: tr!("Later"),
+            cautious: false,
+        },
+    );
+    match outcome {
+        Some(kit::ConfirmOutcome::Confirmed) => {
+            state.restart_prompt = false;
+            actions.push(SettingsAction::Restart);
+        }
+        Some(kit::ConfirmOutcome::Cancelled) => state.restart_prompt = false,
+        None => {}
+    }
 }
 
 /// The rows of icon-and-title sections: flat, the selected one lightly filled.
@@ -1068,17 +1098,12 @@ mod tests {
         }
     }
 
-    /// The Appearance page with its language card in `locale`, drawn until it settles: what the
-    /// language card was asked for (nothing, nothing is clicked), and the last frame. `saved` is the
-    /// language the next start uses: another one than `locale` offers the restart.
+    /// The Appearance page with its language card in `locale`, drawn until it settles: the choice
+    /// the language card made (none, nothing is clicked), and the last frame.
     fn draw_appearance_page(
         screen: &mut crate::ui::render_tests::Screen,
         locale: crate::i18n::Locale,
-        saved: crate::i18n::Preference,
-    ) -> (
-        Option<crate::ui::settings::appearance::LanguageAction>,
-        egui::FullOutput,
-    ) {
+    ) -> (Option<crate::i18n::Preference>, egui::FullOutput) {
         use crate::i18n::{Preference, with_locale};
         let mut chosen = None;
         let mut last = None;
@@ -1102,7 +1127,6 @@ mod tests {
                             chosen = crate::ui::settings::appearance::language(
                                 ui,
                                 Preference::Fixed(locale),
-                                saved,
                             );
                         },
                     );
@@ -1123,12 +1147,7 @@ mod tests {
         // Taller than the window, so the language card at the foot of the page is in the picture.
         let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
         theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
-        // The pseudo-locale in use and English saved: the card offers the restart.
-        let (chosen, last) = draw_appearance_page(
-            &mut screen,
-            Locale::PSEUDO,
-            crate::i18n::Preference::Fixed(Locale::ENGLISH),
-        );
+        let (chosen, last) = draw_appearance_page(&mut screen, Locale::PSEUDO);
         with_locale(Locale::PSEUDO, || {
             assert!(SettingsSection::Appearance.title().starts_with('['));
         });
@@ -1149,11 +1168,105 @@ mod tests {
         let _theme = crate::ui::theme::RestoreDefaultTheme;
         let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
         theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
-        let english = crate::i18n::Preference::Fixed(Locale::ENGLISH);
-        for saved in [english, crate::i18n::Preference::System] {
-            let (_, last) = draw_appearance_page(&mut screen, Locale::ENGLISH, saved);
-            assert_eq!(Screen::truncated_text(&last), Vec::<String>::new());
+        let (_, last) = draw_appearance_page(&mut screen, Locale::ENGLISH);
+        assert_eq!(Screen::truncated_text(&last), Vec::<String>::new());
+    }
+
+    /// One frame of the restart question, with `events` arriving in it.
+    fn restart_question_frame(
+        ctx: &egui::Context,
+        state: &mut SettingsState,
+        time: f64,
+        events: Vec<egui::Event>,
+    ) -> Vec<SettingsAction> {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 700.0))),
+            time: Some(time),
+            events,
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(raw, |ui| ask_to_restart(ui.ctx(), state, &mut actions));
+        // Nothing paints the textures this frame asked for.
+        output.textures_delta.clear();
+        actions
+    }
+
+    fn key_press(pressed: bool) -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: Some(egui::Key::Escape),
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
         }
+    }
+
+    #[test]
+    fn nothing_is_asked_until_a_language_is_picked() {
+        let ctx = egui::Context::default();
+        let mut state = SettingsState::default();
+        for step in 0..3 {
+            assert!(
+                restart_question_frame(&ctx, &mut state, f64::from(step) * 0.1, vec![]).is_empty()
+            );
+        }
+        assert!(!state.restart_prompt);
+    }
+
+    #[test]
+    fn later_closes_the_question_and_asks_for_no_restart() {
+        let ctx = egui::Context::default();
+        let mut state = SettingsState {
+            restart_prompt: true,
+            ..SettingsState::default()
+        };
+        for step in 0..3 {
+            let actions = restart_question_frame(&ctx, &mut state, f64::from(step) * 0.1, vec![]);
+            assert!(actions.is_empty());
+        }
+        assert!(state.restart_prompt, "it waits for an answer");
+        // Escape dismisses the dialog.
+        let mut actions = restart_question_frame(&ctx, &mut state, 0.4, vec![key_press(true)]);
+        actions.extend(restart_question_frame(
+            &ctx,
+            &mut state,
+            0.5,
+            vec![key_press(false)],
+        ));
+        assert!(actions.is_empty(), "{actions:?}");
+        assert!(!state.restart_prompt);
+    }
+
+    #[test]
+    fn restart_now_asks_the_host_to_restart() {
+        let ctx = egui::Context::default();
+        let mut state = SettingsState {
+            restart_prompt: true,
+            ..SettingsState::default()
+        };
+        for step in 0..3 {
+            restart_question_frame(&ctx, &mut state, f64::from(step) * 0.1, vec![]);
+        }
+        let enter = |pressed| egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: Some(egui::Key::Enter),
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut actions = restart_question_frame(&ctx, &mut state, 0.4, vec![enter(true)]);
+        actions.extend(restart_question_frame(
+            &ctx,
+            &mut state,
+            0.5,
+            vec![enter(false)],
+        ));
+        assert!(
+            matches!(actions.as_slice(), [SettingsAction::Restart]),
+            "{actions:?}"
+        );
+        assert!(!state.restart_prompt);
     }
 
     #[test]
