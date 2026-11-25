@@ -53,15 +53,13 @@ pub struct BarTimes {
     pub before: Option<i64>,
 }
 
-/// `ta.supertrend` between bars: the final upper/lower bands, the trend direction (1 up, -1 down),
-/// the RMA of true range, and the previous close.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// `ta.supertrend` between bars: the final upper and lower bands and the line of the bar before.
+/// `NaN` stands for `na`, so a comparison with a missing value is false as it is in Pine.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Supertrend {
     pub upper: f64,
     pub lower: f64,
-    pub direction: i8,
-    pub atr: f64,
-    pub close: f64,
+    pub line: f64,
 }
 
 /// `ta.macd`'s lengths when a call leaves them out (TradingView requires all three; the session
@@ -358,59 +356,63 @@ fn advance_sar(
     *state = [sar, extreme, acceleration, if below { 1.0 } else { 0.0 }];
 }
 
-/// `ta.supertrend(factor, atrPeriod)`, following the Pine reference: RMA of true range, upper/lower
-/// bands clamped by the previous band, and a direction that flips on the current close.
+/// `ta.supertrend(factor, atrPeriod)`: `[supertrend, direction]`, direction 1 while the trend is
+/// down and -1 while it is up. A port of the reference code TradingView prints for it, `nz()`
+/// quirks included: the lower band holds 0 and the upper band is `na` until the ATR exists, so the
+/// line is 0 on the first bar, `na` until the bar before the ATR's first, and real from there.
 fn evaluate_supertrend(state: &mut State, bar: &Kline, factor: f64, period: f64) -> RuntimeValue {
     let previous_close = state.closes.last().copied();
-    let true_range = true_range(bar, previous_close);
-    let period = period.max(1.0);
-    let atr = match state.supertrend {
-        Some(supertrend) => (supertrend.atr * (period - 1.0) + true_range) / period,
-        None => true_range,
-    };
+    let atr_was_missing = state
+        .results
+        .last()
+        .and_then(RuntimeValue::number)
+        .is_none();
+    let atr = evaluate_atr(state, bar, period.max(1.0) as i64).number();
+
+    let (previous_upper, previous_lower, previous_line) =
+        state.supertrend.map_or((0.0, 0.0, f64::NAN), |previous| {
+            (nz(previous.upper), nz(previous.lower), previous.line)
+        });
     let source = (bar.high + bar.low) / 2.0;
-    let basic_upper = source + factor * atr;
-    let basic_lower = source - factor * atr;
-
-    let (upper, lower) = match state.supertrend {
-        Some(supertrend) => (
-            if basic_upper < supertrend.upper || supertrend.close > supertrend.upper {
-                basic_upper
-            } else {
-                supertrend.upper
-            },
-            if basic_lower > supertrend.lower || supertrend.close < supertrend.lower {
-                basic_lower
-            } else {
-                supertrend.lower
-            },
-        ),
-        None => (basic_upper, basic_lower),
+    let raw_upper = atr.map_or(f64::NAN, |atr| source + factor * atr);
+    let raw_lower = atr.map_or(f64::NAN, |atr| source - factor * atr);
+    let closed_below = previous_close.is_some_and(|close| close < previous_lower);
+    let closed_above = previous_close.is_some_and(|close| close > previous_upper);
+    let lower = if raw_lower > previous_lower || closed_below {
+        raw_lower
+    } else {
+        previous_lower
+    };
+    let upper = if raw_upper < previous_upper || closed_above {
+        raw_upper
+    } else {
+        previous_upper
     };
 
-    let direction = match state.supertrend {
-        None => 1,
-        Some(supertrend) if supertrend.direction == -1 => {
-            // Was down: close crossing above the upper band flips it up.
-            if bar.close > upper { 1 } else { -1 }
-        }
-        // Was up: close crossing below the lower band flips it down.
-        Some(_) if bar.close < lower => -1,
-        Some(_) => 1,
+    let direction: i64 = if atr_was_missing {
+        1
+    } else if previous_line == previous_upper {
+        if bar.close > upper { -1 } else { 1 }
+    } else if bar.close < lower {
+        1
+    } else {
+        -1
     };
+    let line = if direction == -1 { lower } else { upper };
+    state.supertrend = Some(Supertrend { upper, lower, line });
+    RuntimeValue::Tuple(vec![
+        if line.is_nan() {
+            RuntimeValue::Na
+        } else {
+            float(line)
+        },
+        RuntimeValue::Int(direction),
+    ])
+}
 
-    let value = if direction == -1 { upper } else { lower };
-    state.supertrend = Some(Supertrend {
-        upper,
-        lower,
-        direction,
-        atr,
-        close: bar.close,
-    });
-    state.highs.push(bar.high);
-    state.lows.push(bar.low);
-    state.closes.push(bar.close);
-    RuntimeValue::Float(value)
+/// `nz(x)` for a `NaN`-as-`na` float.
+fn nz(value: f64) -> f64 {
+    if value.is_nan() { 0.0 } else { value }
 }
 
 /// True range: the widest of the bar's range and its gaps from the previous close.
@@ -1671,24 +1673,37 @@ mod tests {
     }
 
     #[test]
-    fn supertrend_produces_a_band_and_direction() {
-        let bars = [
-            kline(0, 10.0, 12.0, 12.0),
-            kline(1, 11.0, 13.0, 13.0),
-            kline(2, 12.0, 14.0, 14.0),
-            kline(3, 13.0, 15.0, 15.0),
-        ];
+    fn supertrend_is_a_line_and_a_direction_that_start_as_the_reference_does() {
+        let bars: Vec<Kline> = (0..14_i64)
+            .map(|index| {
+                let climb = index as f64;
+                kline(index, 10.0 + climb, 12.0 + climb, 12.0 + climb)
+            })
+            .collect();
         let mut state = State::default();
-        for bar in &bars {
-            let value =
-                evaluate_price("ta.supertrend", &[float(3.0), float(10.0)], bar, &mut state);
-            let RuntimeValue::Float(supertrend) = value else {
-                panic!("{value:?}");
-            };
-            assert!(supertrend.is_finite());
+        let results: Vec<(Option<f64>, i64)> = bars
+            .iter()
+            .map(|bar| {
+                let value =
+                    evaluate_price("ta.supertrend", &[float(3.0), float(5.0)], bar, &mut state);
+                let RuntimeValue::Tuple(parts) = value else {
+                    panic!("expected [line, direction], got {value:?}");
+                };
+                let [line, RuntimeValue::Int(direction)] = parts.as_slice() else {
+                    panic!("{parts:?}");
+                };
+                (line.number(), *direction)
+            })
+            .collect();
+        // The upper band is the line while the ATR is missing: 0 on the first bar (the band holds
+        // `nz(na)`), na until the bar before the ATR's first value, real from there.
+        assert_eq!(results[0], (Some(0.0), 1));
+        for (bar, result) in results.iter().enumerate().take(4).skip(1) {
+            assert_eq!(*result, (None, 1), "bar {bar}");
         }
-        // A steady uptrend keeps direction up (1), so the value is the lower band.
-        assert_eq!(state.supertrend.unwrap().direction, 1);
+        assert!(results[4].0.is_some_and(f64::is_finite));
+        // A steady climb flips to the up direction (-1) once the ATR exists.
+        assert_eq!(results[13].1, -1);
     }
 
     fn run_atr(bars: &[Kline], length: i64) -> Vec<Option<f64>> {

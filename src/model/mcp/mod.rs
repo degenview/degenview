@@ -2,6 +2,7 @@
 //! HTTP, no egui, no Keychain. The server, the store and the Settings page all share these.
 
 pub mod activity;
+pub mod operation;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;

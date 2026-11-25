@@ -18,10 +18,21 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | The time axis | Reset chart view. |
 | Empty plot | The background menu (below). |
 
-A right-click never pans, draws, changes the tool or finishes anything else: drags and clicks that
-move the chart or draw are primary-button only. With a drawing tool armed or a gesture in
-progress, an empty-plot right-click opens nothing (a polyline still finishes on right-click, as
-before).
+`ChartCard::context_request` is the one place that decides, so exactly one thing answers a click. A
+right-click never pans or draws: drags and clicks that move the chart or draw are primary-button only.
+
+**A tool in hand takes the first right-click on the plot.** With a drawing tool or Zoom In armed, a
+right-click on the plot or a script pane puts the tool down, back to the resting cursor, and opens
+nothing; the next right-click opens the menu. Keep drawing changes nothing about it. The put-down is
+the same act as Esc (`DrawingTools::put_down`), requested through `DrawingFrame::put_down`. In the same
+click a polyline or path with two or more vertices is finished and a half-placed drawing is
+abandoned, on the plot and on a script pane alike: `ChartCard::context_request` is the one place
+that decides, and calls `DrawingLayer::release` before it asks to put the tool down.
+The axes open their menu at once and leave the tool armed. Under any cursor (Cross, Dot, Arrow,
+Demonstration, Eraser) the first right-click opens the menu. Observed on TradingView (Measure and
+Zoom In armed, Stay in drawing mode on and off, mid-measure): plot puts the tool down, the next click
+opens the menu; both axes open theirs with the tool still armed. Inferred, not seen: script panes
+(treated as the plot), alert and paper tags (they keep their own menu), polylines.
 
 ### The background menu
 
@@ -102,13 +113,28 @@ price format, the compact volume, and the chart's UTC times. Only the rows on sc
 
 The symbol, the markets compared on the chart (in the legend's order), the built-in indicators and
 scripts, and the drawings (topmost first). A compared market has an eye and a trash; double-click or
-Settings… opens the Compare page; it has no lock and no reordering. Click selects a
+Settings… opens the Compare page; it has no lock. Click selects a
 drawing (the workspace's one selection, so it highlights on the chart too); double-click opens its
-settings; the row buttons hide, lock and delete; the row menu reorders and deletes. Everything goes
-through the paths the chart's own controls use, so drawing changes are undoable. There is no
-rename or grouping: drawings have no name and no group model. A drawing this version cannot read (from
-a newer build) is a row too, "From a newer version", with only Delete: it is not drawn or selectable,
-and nothing else changes it.
+settings; the row buttons hide, lock and delete; a drawing's row menu reorders it and deletes.
+Everything goes through the paths the chart's own controls use, so drawing changes are undoable.
+There is no rename or grouping: drawings have no name and no group model. A drawing this version
+cannot read (from a newer build) is a row too, "From a newer version", with only Delete: it is not
+drawn or selectable, and nothing else changes it.
+
+**Dragging.** Press a row and move: the row dims, a line shows where it would land and the list
+scrolls at its top and bottom edges. Letting go puts the row in the place of the one it landed on
+(`TreeAction::Drop`, one undo step). Drawings, compared markets and scripts move among their own
+kind, and a drop past the end of the kind lands at its end. Drawings change their z-order
+(`DrawingCommand::Reorder`, counted in the stored list so rows the tree does not show are crossed),
+compared markets and scripts their draw order (`Move::To`, `move_pine_instance`, later is on top).
+Built-in indicators have a fixed order and the symbol and headings are not rows to move, a drawing
+from a newer version stays where it is, and nothing drags in a filtered list. Letting go outside
+the list's viewport (over the filter field, beside it, or below a short list) cancels. On a touch
+screen a swipe over any row scrolls the list; a finger that rests on a movable row for 0.4 s picks it
+up instead (and the row's menu does not open while it is carried). Every position on screen comes
+from one geometry, `RowsArea`: the list is shown with no item spacing, so row `n` is at
+`n * ROW_HEIGHT` for `show_rows`, the drop and its line alike. The row menu's Bring forward and Send backward remain the way to reorder
+without a pointer, for drawings only.
 
 ## Pine logs
 
@@ -206,7 +232,10 @@ Not verifiable from the documentation, so built from the specification and marke
 ## Manual check list
 
 1. Right-click empty plot: menu opens under the pointer; near the right and bottom edges it flips;
-   Esc closes it and leaves the armed tool alone.
+   Esc closes it and leaves the armed tool alone. With a drawing tool or Zoom In armed (Keep drawing
+   on and off) the first right-click only puts it down and the second opens the menu; a half-placed
+   trend line does the same and a polyline mid-draw is committed (also with the click in a script
+   pane), while a price or time axis opens its menu at once.
 2. Copy price, then paste into a text field: a plain number.
 3. Add alert: the editor opens with the level and direction; closing it creates nothing.
 4. Sell limit / Buy stop above price, Buy limit / Sell stop below: the ticket opens, no order exists.

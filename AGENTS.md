@@ -76,6 +76,28 @@ A pull-down is exactly as wide as its longest row. Never guess a width (`set_min
 `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping.
 Details: [UI style](docs/agent-guides/ui-style.md).
 
+## Root causes, no patchwork
+
+Applies when you fix a bug, act on code-review comments, or change existing code in any way.
+
+Never patch the symptom. Find the root cause (the place where the wrong model, wrong assumption or
+missing rule lives) and change it there. The result must read as if the code had been designed that
+way from the start, with no trace of the bug or of your fix.
+
+- Trace the failure back to where the bad value or state is first produced before editing. A fix
+  downstream of that point is a patch.
+- No special cases, guards, flags, retries, clamps or one-off `if` branches whose only job is to hide
+  a bad result. No "temporary" workarounds, no `// workaround for ...` comments.
+- If the cause is in shared code (a helper, a type, another module), fix it there and update every
+  caller, even when the diff grows.
+- Reshape the surrounding code when the right design needs it: rename, move, delete what became dead,
+  update docs and tests. Do not bolt a patch onto the old shape.
+- Add a test that fails on the root cause, not only on the reported symptom.
+- Review comments are usually symptoms: ask what in the design allowed the problem, fix that, and
+  check for the same flaw elsewhere.
+- If you cannot find or fix the root cause (too large, needs a user decision), say so and ask. Never
+  ship a patch presented as the fix.
+
 ## Changelog
 
 A pull request with a change a person using the app would notice and care about adds

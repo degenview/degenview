@@ -279,6 +279,16 @@ fn propagating_result(name: &str) -> Option<ValueType> {
     }
 }
 
+/// How many values a builtin returns when it returns a tuple (`ta.macd` gives three), None for the
+/// rest. The runtime builds each of these as a `RuntimeValue::Tuple` of that length.
+pub fn tuple_arity(name: &str) -> Option<usize> {
+    match name {
+        "ta.supertrend" => Some(2),
+        "ta.macd" | "ta.dmi" | "ta.bb" | "ta.kc" => Some(3),
+        _ => None,
+    }
+}
+
 /// Result of calling `name`, given the inferred argument types and their combined qualifier.
 pub fn call(
     name: &str,

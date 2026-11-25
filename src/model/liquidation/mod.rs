@@ -1,6 +1,7 @@
 //! Forced liquidations the exchanges announce: what one is, the rolling record of them, and the
 //! totals and rows a panel shows. Pure: the sockets that fill it are in `service::liquidation`.
 
+use crate::i18n::tr;
 use crate::model::exchange::Exchange;
 use std::collections::VecDeque;
 
@@ -76,11 +77,11 @@ impl MinSize {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Any => "Any size",
-            Self::Thousand => "$1K and up",
-            Self::TenThousand => "$10K and up",
-            Self::HundredThousand => "$100K and up",
-            Self::Million => "$1M and up",
+            Self::Any => tr!("Any size"),
+            Self::Thousand => tr!("$1K and up"),
+            Self::TenThousand => tr!("$10K and up"),
+            Self::HundredThousand => tr!("$100K and up"),
+            Self::Million => tr!("$1M and up"),
         }
     }
 }

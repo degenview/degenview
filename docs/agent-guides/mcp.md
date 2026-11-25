@@ -90,6 +90,10 @@ entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
   `host::mcp::<domain>::describe` with a summary from `host::mcp::confirmation`, from what the app
   knows of the target, never agent text (missing target: own error, unasked); add its tool to
   `confirm::GATED_TOOLS`; say so in the tool description.
+- A summary names its action with a `model::mcp::operation::Operation`, never a string:
+  `Operation::wire` is the English line a client is told and the log keeps, `label` and `question`
+  are the user's words in the language in use. The target and note are written with `tr!` by whoever
+  builds the summary; a new command adds a variant with all three.
 - The gate runs on the app thread before dispatch, never waits: it answers `CONFIRMATION_REQUIRED`
   and the agent repeats the call. An approval is consumed by its call; never widen it beyond the
   exact command and client. An "all" command records what it resolved to in `Summary::with_scope`,

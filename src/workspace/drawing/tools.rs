@@ -85,8 +85,7 @@ impl DrawingTools {
             // Nothing stays picked while the pointer erases or marks.
             self.selected = None;
         }
-        self.active = Tool::Cursor;
-        self.zoom_armed = false;
+        self.put_down();
     }
 
     /// Whether holding the button still shows the values of the bar.
@@ -106,24 +105,43 @@ impl DrawingTools {
         }
     }
 
-    /// Back to the crosshair, after a drawing is placed or as asked.
-    pub(in crate::workspace) fn disarm(&mut self) {
-        self.active = Tool::Cursor;
-    }
-
-    /// Puts Zoom In down (a zoom was made with it).
-    pub(in crate::workspace) fn disarm_zoom(&mut self) {
+    /// Puts `tool` in hand, whatever held the pointer before (Zoom In and a drawing tool are one
+    /// choice). Arming the tool that is already armed changes nothing. Says whether what is in
+    /// hand changed, which is when what belonged to the old one (a measurement) goes.
+    pub(in crate::workspace) fn arm(&mut self, tool: Tool) -> bool {
+        let changed = self.zoom_armed || self.active != tool;
         self.zoom_armed = false;
+        self.active = tool;
+        changed
     }
 
-    /// Esc steps back one level: Zoom In first, then the armed tool, then a cursor of the moment
-    /// (Demonstration, the Eraser) back to the resting one, then the selection.
+    /// Puts Zoom In in hand, taking the pointer from any drawing tool. Says whether what is in
+    /// hand changed.
+    pub(in crate::workspace) fn arm_zoom(&mut self) -> bool {
+        let changed = !self.zoom_armed || self.active != Tool::Cursor;
+        self.zoom_armed = true;
+        self.active = Tool::Cursor;
+        changed
+    }
+
+    /// Lets go of whatever holds the pointer: Zoom In or a drawing tool (they are one choice), back
+    /// to the resting cursor. Esc, a right-click on the chart, a placed one-shot drawing and the
+    /// cursor tile all end here. Reports whether something was held.
+    pub(in crate::workspace) fn put_down(&mut self) -> bool {
+        let held = self.zoom_armed || self.active != Tool::Cursor;
+        self.zoom_armed = false;
+        self.active = Tool::Cursor;
+        held
+    }
+
+    /// Esc steps back one level: what holds the pointer first (Zoom In or the armed tool), then a
+    /// cursor of the moment (Demonstration, the Eraser) back to the resting one, then the
+    /// selection.
     pub(in crate::workspace) fn escape(&mut self) {
-        if self.zoom_armed {
-            self.zoom_armed = false;
-        } else if self.active != Tool::Cursor {
-            self.active = Tool::Cursor;
-        } else if !self.cursor.persists() {
+        if self.put_down() {
+            return;
+        }
+        if !self.cursor.persists() {
             self.cursor = self.prefs.cursor;
         } else {
             self.selected = None;

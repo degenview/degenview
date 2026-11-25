@@ -54,7 +54,7 @@ fn a_high_impact_call_is_held_with_a_typed_question_and_changes_nothing() {
             .as_u64()
             .is_some_and(|s| s > 100 && s <= 120)
     );
-    assert!(content["operation"].as_str().unwrap().contains(REMOVE));
+    assert_eq!(content["operation"], json!("Remove a chart"));
     assert!(
         content["next_step"]
             .as_str()
@@ -398,7 +398,7 @@ mod summaries {
         let placed =
             describe::place_order(&host, &request(account, PaperOrderType::Limit, Some(48.5)))
                 .unwrap();
-        assert_eq!(placed.action, "Place a paper order");
+        assert_eq!(placed.client_line(), "Place a paper order");
         assert!(placed.target.starts_with("Buy 0.5 "), "{}", placed.target);
         assert!(placed.target.contains("limit 48.5") && placed.target.contains("“Main”"));
         assert_eq!(placed.note.as_deref(), Some("Simulated money."));
@@ -473,7 +473,7 @@ mod summaries {
         let mut store = crate::store::watchlist::WatchlistStore::new(shared);
         let id = store.create_list("Swing trades", None).unwrap();
         let summary = describe::delete_watchlist(&store, id).unwrap();
-        assert_eq!(summary.action, "Delete a watchlist");
+        assert_eq!(summary.client_line(), "Delete a watchlist");
         assert_eq!(summary.target, "“Swing trades” with 0 markets");
         assert!(matches!(
             describe::delete_watchlist(&store, id + 1),
@@ -513,7 +513,7 @@ fn a_credential_is_told_the_action_it_asked_for_never_what_the_app_found_out() {
     let text = result.to_string();
     assert_eq!(
         result["structuredContent"]["operation"],
-        json!("Run degenview_delete_price_alert")
+        json!("Delete a price alert")
     );
     // The stand-in app describes the target as "the stub's target"; that is the user's to read.
     assert!(!text.contains("stub's target"), "{text}");

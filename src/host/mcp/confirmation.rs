@@ -11,22 +11,22 @@
 //! changed) is refused with the error the command itself would give, without asking anyone.
 
 use crate::clock::now_ms;
-use crate::format::plural;
 use crate::host::alert::AlertHost;
 use crate::host::mcp::alert::{find_alert, require_loaded};
 use crate::host::paper::PaperHost;
+use crate::i18n::{tr, tr_n};
 use crate::mcp::bridge::{McpCommand, McpError};
 use crate::mcp::chart::data;
 use crate::mcp::confirm::{
-    Confirm, ConfirmationBook, OpenError, PendingInfo, PendingView, Settled, Settlement, Summary,
-    Verdict, remote_summary,
+    Confirm, ConfirmationBook, OpenError, Operation, PendingInfo, PendingView, Settled, Settlement,
+    Summary, Verdict, remote_summary,
 };
 use crate::mcp::state::McpShared;
 use crate::mcp::types::AlertConditionKind;
 use crate::model::alert::AlertId;
 use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
-use crate::model::paper::{PaperOrderChanges, PaperOrderRequest, PaperOrderSide, PaperOrderType};
+use crate::model::paper::{PaperOrderChanges, PaperOrderRequest, PaperOrderType};
 use crate::model::watchlist::new_id;
 use crate::store::watchlist::WatchlistStore;
 use crate::workspace::ChartWorkspace;
@@ -237,24 +237,21 @@ fn number(value: f64) -> String {
     }
 }
 
-fn side_word(side: PaperOrderSide) -> &'static str {
-    match side {
-        PaperOrderSide::Buy => "Buy",
-        PaperOrderSide::Sell => "Sell",
-    }
-}
-
 fn kind_text(kind: PaperOrderType, limit: Option<f64>, stop: Option<f64>) -> String {
     match kind {
-        PaperOrderType::Market => "at market".to_owned(),
-        PaperOrderType::Limit => {
-            limit.map_or("limit".to_owned(), |p| format!("limit {}", number(p)))
-        }
-        PaperOrderType::Stop => stop.map_or("stop".to_owned(), |p| format!("stop {}", number(p))),
-        PaperOrderType::StopLimit => format!(
-            "stop-limit {} / {}",
-            stop.map_or("?".to_owned(), number),
-            limit.map_or("?".to_owned(), number)
+        PaperOrderType::Market => tr!("at market").to_owned(),
+        PaperOrderType::Limit => match limit {
+            Some(price) => tr!("limit {price}", price = number(price)),
+            None => tr!("limit").to_owned(),
+        },
+        PaperOrderType::Stop => match stop {
+            Some(price) => tr!("stop {price}", price = number(price)),
+            None => tr!("stop").to_owned(),
+        },
+        PaperOrderType::StopLimit => tr!(
+            "stop-limit {stop} / {limit}",
+            stop = stop.map_or("?".to_owned(), number),
+            limit = limit.map_or("?".to_owned(), number)
         ),
     }
 }
@@ -262,23 +259,38 @@ fn kind_text(kind: PaperOrderType, limit: Option<f64>, stop: Option<f64>) -> Str
 pub fn delete_alert(host: &AlertHost, id: AlertId) -> Result<Summary, McpError> {
     require_loaded(host)?;
     let info = super::alert::alert_info(find_alert(host, id)?, None);
-    let condition = match info.condition {
-        AlertConditionKind::CrossesAbove => "crosses above",
-        AlertConditionKind::CrossesBelow => "crosses below",
-        AlertConditionKind::RisesBy => "rises by",
-        AlertConditionKind::FallsBy => "falls by",
-        AlertConditionKind::Unsupported => "alert",
-    };
     let level = info
         .target_price
         .map(|price| format!("{price} {}", info.currency))
         .or_else(|| info.percent.map(|percent| format!("{percent}%")))
         .unwrap_or_default();
-    Ok(Summary::new(
-        "Delete a price alert",
-        format!("{} {condition} {level}", info.symbol),
-    )
-    .with_note("Its trigger history is kept."))
+    let symbol = &info.symbol;
+    let target = match info.condition {
+        AlertConditionKind::CrossesAbove => {
+            tr!(
+                "{symbol} crosses above {price}",
+                symbol = symbol,
+                price = level
+            )
+        }
+        AlertConditionKind::CrossesBelow => {
+            tr!(
+                "{symbol} crosses below {price}",
+                symbol = symbol,
+                price = level
+            )
+        }
+        AlertConditionKind::RisesBy => {
+            tr!("{symbol} rises by {price}", symbol = symbol, price = level)
+        }
+        AlertConditionKind::FallsBy => {
+            tr!("{symbol} falls by {price}", symbol = symbol, price = level)
+        }
+        AlertConditionKind::Unsupported => {
+            tr!("{symbol} alert {price}", symbol = symbol, price = level)
+        }
+    };
+    Ok(Summary::new(Operation::DeleteAlert, target).with_note(tr!("Its trigger history is kept.")))
 }
 
 pub fn delete_watchlist(store: &WatchlistStore, id: u64) -> Result<Summary, McpError> {
@@ -289,11 +301,12 @@ pub fn delete_watchlist(store: &WatchlistStore, id: u64) -> Result<Summary, McpE
         ));
     }
     Ok(Summary::new(
-        "Delete a watchlist",
-        format!(
-            "“{}” with {}",
-            list.name,
-            plural(list.entries.len(), "market", "markets")
+        Operation::DeleteWatchlist,
+        tr_n!(
+            list.entries.len(),
+            "“{name}” with {count} market",
+            "“{name}” with {count} markets",
+            name = list.name
         ),
     ))
 }
@@ -310,10 +323,14 @@ fn chart_label(workspace: &ChartWorkspace, chart_id: u64) -> Result<String, McpE
 pub fn remove_chart(workspace: &ChartWorkspace, chart_id: u64) -> Result<Summary, McpError> {
     let label = chart_label(workspace, chart_id)?;
     Ok(Summary::new(
-        "Remove a chart",
-        format!("{label} in “{}”", workspace.title()),
+        Operation::RemoveChart,
+        tr!(
+            "{chart} in “{workspace}”",
+            chart = label,
+            workspace = workspace.title()
+        ),
     )
-    .with_note("Its drawings go with it."))
+    .with_note(tr!("Its drawings go with it.")))
 }
 
 pub fn remove_drawings(
@@ -328,10 +345,10 @@ pub fn remove_drawings(
     // The same check the removal makes: unknown or locked drawings are refused here, unasked.
     let commands = data::plan_remove(data.drawings, ids)?;
     Ok(Summary::new(
-        format!("Delete {}", plural(commands.len(), "drawing", "drawings")),
-        format!("on {label}"),
+        Operation::DeleteDrawings(commands.len()),
+        tr!("on {chart}", chart = label),
     )
-    .with_note("The user can undo it in the app."))
+    .with_note(tr!("The user can undo it in the app.")))
 }
 
 pub fn remove_pine_instance(
@@ -357,30 +374,35 @@ pub fn remove_pine_instance(
         })?;
     super::pine::guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
     Ok(Summary::new(
-        "Remove a script from a chart",
-        format!("{name} on {}", summary.display_symbol),
+        Operation::RemoveScriptFromChart,
+        tr!(
+            "{script} on {chart}",
+            script = name,
+            chart = summary.display_symbol
+        ),
     ))
 }
 
 pub fn save_script(name: &str) -> Summary {
-    Summary::new("Save a script over its saved version", format!("“{name}”"))
-        .with_note("The saved source is overwritten and cannot be undone from here.")
+    Summary::new(Operation::SaveScript, format!("“{name}”")).with_note(tr!(
+        "The saved source is overwritten and cannot be undone from here."
+    ))
 }
 
 pub fn place_order(host: &PaperHost, request: &PaperOrderRequest) -> Result<Summary, McpError> {
     let account = super::paper::tradable_paper_account(host, request.account_id)?;
     Ok(Summary::new(
-        "Place a paper order",
-        format!(
-            "{} {} {} {} on “{}”",
-            side_word(request.side),
-            number(request.quantity),
-            request.instrument.display_name,
-            kind_text(request.kind, request.limit_price, request.stop_price),
-            account
+        Operation::PlaceOrder,
+        tr!(
+            "{side} {quantity} {market} {kind} on “{account}”",
+            side = request.side.label(),
+            quantity = number(request.quantity),
+            market = request.instrument.display_name,
+            kind = kind_text(request.kind, request.limit_price, request.stop_price),
+            account = account
         ),
     )
-    .with_note("Simulated money."))
+    .with_note(tr!("Simulated money.")))
 }
 
 pub fn modify_order(
@@ -397,26 +419,26 @@ pub fn modify_order(
     let account = super::paper::tradable_paper_account(host, order.account_id)?;
     let mut changed = Vec::new();
     if let Some(quantity) = changes.quantity {
-        changed.push(format!("quantity {}", number(quantity)));
+        changed.push(tr!("quantity {value}", value = number(quantity)));
     }
     if let Some(limit) = changes.limit_price {
-        changed.push(format!("limit {}", number(limit)));
+        changed.push(tr!("limit {price}", price = number(limit)));
     }
     if let Some(stop) = changes.stop_price {
-        changed.push(format!("stop {}", number(stop)));
+        changed.push(tr!("stop {price}", price = number(stop)));
     }
     Ok(Summary::new(
-        "Change a paper order",
-        format!(
-            "{} {} {} on “{}”: {}",
-            side_word(order.side),
-            number(order.original_quantity),
-            order.instrument.display_name,
-            account,
-            changed.join(", ")
+        Operation::ChangeOrder,
+        tr!(
+            "{side} {quantity} {market} on “{account}”: {changes}",
+            side = order.side.label(),
+            quantity = number(order.original_quantity),
+            market = order.instrument.display_name,
+            account = account,
+            changes = changed.join(", ")
         ),
     )
-    .with_note("Simulated money."))
+    .with_note(tr!("Simulated money.")))
 }
 
 pub fn cancel_orders(
@@ -428,7 +450,12 @@ pub fn cancel_orders(
     // The orders an "all" reaches, by id: the approval holds only for these.
     let mut scope = String::new();
     let target = match order_ids {
-        Some(ids) => plural(ids.len(), "named order", "named orders"),
+        Some(ids) => tr_n!(
+            ids.len(),
+            "{count} named order on “{account}”",
+            "{count} named orders on “{account}”",
+            account = account
+        ),
         None => {
             let working: Vec<u64> = host
                 .snapshot()
@@ -438,17 +465,17 @@ pub fn cancel_orders(
                 .map(|order| order.id)
                 .collect();
             scope = scope_of(working.iter().map(u64::to_string));
-            format!(
-                "all {}",
-                plural(working.len(), "working order", "working orders")
+            tr_n!(
+                working.len(),
+                "all {count} working order on “{account}”",
+                "all {count} working orders on “{account}”",
+                account = account
             )
         }
     };
-    Ok(
-        Summary::new("Cancel paper orders", format!("{target} on “{account}”"))
-            .with_scope(scope)
-            .with_note("Simulated money."),
-    )
+    Ok(Summary::new(Operation::CancelOrders, target)
+        .with_scope(scope)
+        .with_note(tr!("Simulated money.")))
 }
 
 /// The things a command reaches as one comparable string: sorted, so only the set matters.
@@ -473,25 +500,29 @@ pub fn close_positions(
         .collect();
     let target = match instrument_key {
         Some(_) => match open.first() {
-            Some(position) => position.instrument.display_name.clone(),
+            Some(position) => tr!(
+                "{market} on “{account}”",
+                market = position.instrument.display_name,
+                account = account
+            ),
             None => {
                 return Err(McpError::NotFound(
                     "That account has no open position in that market".into(),
                 ));
             }
         },
-        None => format!(
-            "all {}",
-            plural(open.len(), "open position", "open positions")
+        None => tr_n!(
+            open.len(),
+            "all {count} open position on “{account}”",
+            "all {count} open positions on “{account}”",
+            account = account
         ),
     };
     // The positions an "all" reaches: the approval holds only for these.
     let scope = scope_of(open.iter().map(|position| position.instrument.key.clone()));
-    Ok(
-        Summary::new("Close paper positions", format!("{target} on “{account}”"))
-            .with_scope(scope)
-            .with_note("Simulated money."),
-    )
+    Ok(Summary::new(Operation::ClosePositions, target)
+        .with_scope(scope)
+        .with_note(tr!("Simulated money.")))
 }
 
 #[cfg(test)]
@@ -536,7 +567,7 @@ mod tests {
 
     fn say() -> Result<Summary, McpError> {
         Ok(Summary::new(
-            "Delete a price alert",
+            Operation::DeleteAlert,
             "BTC/USDT crosses above 70,000",
         ))
     }
@@ -550,7 +581,7 @@ mod tests {
 
     fn orders(ids: &[u64]) -> Result<Summary, McpError> {
         Ok(Summary::new(
-            "Cancel paper orders",
+            Operation::CancelOrders,
             format!("all {} working orders on “Paper”", ids.len()),
         )
         .with_scope(scope_of(ids.iter().map(u64::to_string))))
@@ -854,7 +885,7 @@ mod tests {
                 timeframe: crate::model::Timeframe::DAY_1,
             })
         };
-        let described = || Ok(Summary::new("Change the timeframe", "Day"));
+        let described = || Ok(Summary::new(Operation::ChangeTimeframe, "Day"));
 
         // A change that is easy to undo: free for the local credential, asked of the remote one.
         assert!(gate_command(&host, now, "local", "Local", false, &change(), described).is_ok());
@@ -893,7 +924,7 @@ mod tests {
             workspace_id: 1,
             timeframe: crate::model::Timeframe::DAY_1,
         });
-        let described = || Ok(Summary::new("Change the timeframe", "Day"));
+        let described = || Ok(Summary::new(Operation::ChangeTimeframe, "Day"));
         assert!(matches!(
             gate_command(&host, now, "c1", "Claude", true, &change, described),
             Err(McpError::ConfirmationRequired(_))
@@ -903,12 +934,27 @@ mod tests {
     }
 
     #[test]
+    fn an_order_kind_is_written_in_the_language_in_use() {
+        use crate::i18n::{Locale, with_locale};
+        assert_eq!(kind_text(PaperOrderType::Market, None, None), "at market");
+        assert_eq!(
+            kind_text(PaperOrderType::StopLimit, Some(1.5), Some(2.0)),
+            "stop-limit 2 / 1.5"
+        );
+        let pseudo = with_locale(Locale::PSEUDO, || {
+            kind_text(PaperOrderType::Limit, Some(48.5), None)
+        });
+        assert!(
+            pseudo.starts_with('[') && pseudo.contains("48.5"),
+            "{pseudo}"
+        );
+    }
+
+    #[test]
     fn numbers_read_like_prices() {
         assert_eq!(number(0.5), "0.5");
         assert_eq!(number(70000.0), "70000");
         assert_eq!(number(0.00000001), "0.00000001");
         assert_eq!(number(0.0), "0");
-        assert_eq!(plural(1, "market", "markets"), "1 market");
-        assert_eq!(plural(0, "market", "markets"), "0 markets");
     }
 }
