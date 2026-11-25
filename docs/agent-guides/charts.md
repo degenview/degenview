@@ -18,9 +18,11 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
   screens). Watchlist uses `PriceFormat::AUTO`.
 - Automatic precision deliberately differs from Swift: no decimals from 1,000, two from 1, four
   significant digits below 1 (`0.5864`, `0.05864`, `0.003142`), leading-zero count below `0.001`
-  (`0.0₅278`). Choose automatic places from the original magnitude, before rounding the label.
-  Axis ticks add places their spacing needs, and below 1 take the same places across
-  the whole axis (`0.1100`, `0.0900`). Grid ticks: `format_tick`; `ui::chart::price_text`
+  (`0.0₅278`). The places come from the price's own decade, never from its rounded label
+  (`0.9999` is in the tenths). Axis ticks add places their spacing needs, and below 1 take the
+  same places across the whole axis (`0.1100`, `0.0900`; a step of 0.1 reads `0.80`, `0.90`,
+  `1.00`). The spacing is `tick_step`, kept to nine digits so float error in a difference of
+  ticks never changes a label. Grid ticks: `format_tick`; `ui::chart::price_text`
   paints the subscript count.
 - `axis_decimals` (0–12) and `axis_small_prices` stay chart-local across template application.
 
