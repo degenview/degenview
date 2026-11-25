@@ -582,4 +582,16 @@ mod tests {
             1
         );
     }
+
+    #[test]
+    fn a_subscriptions_symbol_carries_the_grid_of_its_market() {
+        // A stock (by its exchange or by Alpaca's slug) is cut on the session, a crypto pair on the
+        // UTC day, a key with no market the UTC day too.
+        for key in ["NASDAQ:AAPL", "ALPACA:AAPL", "NYSE:IBM"] {
+            assert_eq!(symbol_info(key).grid, Grid::UsEquities, "{key}");
+        }
+        for key in ["BINANCE:BTCUSDT", "COINBASE:ETH-USD", "BTCUSDT"] {
+            assert_eq!(symbol_info(key).grid, Grid::Utc, "{key}");
+        }
+    }
 }

@@ -538,6 +538,73 @@ mod tests {
         assert_eq!(shown[1].close_time, open + 6 * 3_600_000 + 30 * 60_000 - 1);
     }
 
+    /// 30 minute bars of Friday 20 Nov 2026 from 04:00 to 20:00 New York, as Alpaca's newest ones
+    /// on a weekend: the pre market, the session and the post market.
+    fn half_hours_of_friday_20th() -> Vec<Kline> {
+        let bars: Vec<String> = (0..32)
+            .map(|index| {
+                let minutes = 9 * 60 + index * 30;
+                let (hour, minute) = (minutes / 60, minutes % 60);
+                format!(
+                    r#"{{"t":"2026-11-20T{hour:02}:{minute:02}:00Z","o":1,"h":2,"l":0.5,"c":1.5,"v":10}}"#
+                )
+            })
+            .collect();
+        parse_bars(
+            &format!(r#"{{"bars":[{}]}}"#, bars.join(",")),
+            Timeframe::new(30, TimeUnit::Minute).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_weekends_newest_answer_still_holds_fridays_session() {
+        // A tail refresh asks for the newest 3 * (4 + 1) * 2 = 30 half hours; on a weekend those are
+        // the extended hours and the session of Friday. The session's hours are all there.
+        let raw = half_hours_of_friday_20th();
+        let newest: Vec<Kline> = raw[raw.len() - 30..].to_vec();
+        let hour = plan(DataSource::Alpaca, Timeframe::HOUR_1).unwrap();
+        assert_eq!(hour.base_count(4), 30);
+        let shown = hour.shape_since(newest, 30, day_ms(2026, 11, 13), 4);
+        let friday_open = day_ms(2026, 11, 20) + 14 * 3_600_000 + 30 * 60_000;
+        assert_eq!(shown.len(), 4);
+        assert_eq!(
+            shown[3].open_time,
+            friday_open + 6 * 3_600_000,
+            "15:30, the last hour"
+        );
+        assert_eq!(shown[0].open_time, friday_open + 3 * 3_600_000, "12:30");
+    }
+
+    #[test]
+    fn an_early_close_is_not_modelled_so_its_last_bucket_still_ends_at_the_full_close() {
+        // 28 Nov 2025 closed at 13:00. Candles stop there; a bucket still closes at 16:00.
+        let thirty = 30 * 60_000;
+        let open = day_ms(2025, 11, 28) + 14 * 3_600_000 + 30 * 60_000;
+        let bars: Vec<Kline> = (0..7)
+            .map(|index| Kline {
+                open_time: open + index * thirty,
+                close_time: open + (index + 1) * thirty - 1,
+                open: 1.0,
+                high: 2.0,
+                low: 0.5,
+                close: 1.5,
+                volume: 10.0,
+            })
+            .collect();
+        let four = plan(
+            DataSource::Alpaca,
+            Timeframe::new(4, TimeUnit::Hour).unwrap(),
+        )
+        .unwrap();
+        let shown = four.shape_since(bars, 1_000, day_ms(2025, 11, 28), 10);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].open_time, open);
+        assert_eq!(shown[0].volume, 70.0);
+        // TradingView closes this candle at 13:00; here it is the 09:30 to 13:30 candle's end.
+        assert_eq!(shown[0].close_time, open + 4 * 3_600_000 - 1);
+    }
+
     #[test]
     fn the_newest_few_intraday_bars_look_back_over_a_long_weekend() {
         let now = day_ms(2026, 10, 12) + 12 * 3_600_000;

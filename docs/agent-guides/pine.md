@@ -346,8 +346,9 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   says another symbol's (`SecurityDataProvider::grid`), and every `time::bucket` helper takes it. A
   4h candle of AAPL ends at 13:30 and at 16:00 New York, so a request closes the chart bar that ends
   there, and a day, week or month ends at the close of its last weekday (`Grid::session_end_ms`),
-  not at the next UTC midnight (TradingView probe A8, 2026-11-25). Holidays and early closes are
-  not modelled: a short session's last candle still ends at 16:00.
+  not at the next UTC midnight (TradingView probe A8, 2026-11-25). The differences that remain
+  (extended hours, early closes, holidays, the `time("D")` of a day) are listed in
+  [Market data](market-data.md#timeframes).
   `gaps_on` puts the value on the chart bar that closes the candle (`SecurityRequest::gaps_on`,
   `Session::owns_value`), and on the live bar that closes it the developing candle's value; with
   `lookahead_on` on the bar that opens the candle. Every other bar is `na`, for the chart's own symbol

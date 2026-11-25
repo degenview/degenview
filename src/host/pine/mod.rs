@@ -483,6 +483,21 @@ mod tests {
 }
 
 #[cfg(test)]
+mod grid_tests {
+    use super::*;
+
+    #[test]
+    fn the_provider_says_which_grid_a_symbols_market_cuts() {
+        let provider = KlineSecurityDataProvider;
+        assert_eq!(provider.grid("ALPACA:AAPL"), Grid::UsEquities);
+        assert_eq!(provider.grid("BINANCE:BTCUSDT"), Grid::Utc);
+        assert_eq!(provider.grid("COINBASE:ETH-USD"), Grid::Utc);
+        // A symbol that names no market the host knows is not a stock.
+        assert_eq!(provider.grid("NOWHERE:XYZ"), Grid::Utc);
+    }
+}
+
+#[cfg(test)]
 mod call_site_tests {
     use super::*;
 

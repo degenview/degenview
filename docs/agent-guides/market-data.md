@@ -111,6 +111,27 @@ watchlists.
   (403, with or without `end`, measured on `1Day`), so `bars_window` makes no request: no bar of a
   day or longer opens that recently on any plan. Charts name their feed (`DataSource::chart_feed_label`);
   `display_name()` stays `Alpaca (IEX)` because portfolio and paper keys are built from it.
+- **A US stock differs from TradingView in these ways** (as of 2026-11-25; `Grid::UsEquities`, probe A8 in
+  `report-dont-commit/verify/README.md`, TradingView `NASDAQ:AAPL` on its default regular trading hours,
+  `RTH` in its status bar):
+  - *Extended hours are never drawn.* Regular hours are TradingView's default, so the candles agree.
+    TradingView's own "extended trading hours" setting is not supported, and its candle structure in
+    that mode has not been measured (it probably anchors and cuts differently, so do not build
+    pre and post market buckets on a guess: measure it first).
+  - *Early closes are not modelled* (13:00 on the day after Thanksgiving, 24 December, …): candles
+    stop where the data does, but the last bucket still closes at 16:00 (`time_close` of that
+    candle is later than TradingView's 13:00). Pinned by
+    `service::market::alpaca::tests::an_early_close_is_not_modelled…`.
+  - *Holidays are not modelled.* They hold no bar, so nothing is built for them; a week or month
+    whose last weekday is a holiday closes one bar later than TradingView's (the next bucket's first
+    bar completes it).
+  - *A daily, weekly or monthly bar keeps Alpaca's New York-midnight stamp* (TradingView stamps a
+    daily stock bar `09:30`, closing at `16:00`, measured on a 1D chart). From Pine on an intraday
+    stock chart `time_close("D")` is 16:00 as on TradingView, but `time("D")` is the UTC midnight
+    (the evening before in New York): TradingView's value from an intraday chart was not measured.
+    Scripts that only compare it between bars (`time("D") != time("D")[1]`) are not affected.
+  - *The feed.* Alpaca's intraday bars are IEX (2 to 4% of the volume), TradingView's are
+    consolidated: candle times and structure agree, prices and volumes do not.
 - Alpaca bars close 1 ms before the next opens (days, weeks and months keep the New York midnight
   offset, so an hour off across a clock change). Intraday fetches look back at least 7 days, so a
   tail refresh (4 bars) finds the last session over a weekend; every start is clamped to
