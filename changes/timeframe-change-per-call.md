@@ -1,1 +1,0 @@
-fixed: Pine's timeframe.change now compares with the last bar its own call ran on, so a call inside an if, a condition or a function counts the same changes as TradingView, and the very first call is false.

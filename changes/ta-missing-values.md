@@ -1,1 +1,0 @@
-fixed: ta.ema, ta.rma, ta.rsi, ta.wma, ta.stdev, ta.variance, ta.median, ta.range, math.sum and Bollinger bands now treat a missing (na) bar in the source like TradingView, instead of going blank for a whole window or restarting. Saved scripts that use them plot and trade differently.
