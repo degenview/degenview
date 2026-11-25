@@ -275,3 +275,30 @@ plot(0.0)
     assert_same("security", &plotted[6], &plotted[7]);
     assert_same("operand", &plotted[8], &plotted[9]);
 }
+
+#[test]
+fn the_cumulative_variables_keep_a_state_each() {
+    // Read together, every variable must give what it gives alone: they share one table of
+    // states, so a slot taken by two of them would show up here.
+    let alone = |variable: &str| {
+        plots(
+            &format!("//@version=6\nindicator(\"One\")\nplot({variable})\n"),
+            800,
+        )
+        .remove(0)
+    };
+    let names = crate::pine::builtins::ta::extra::VARIABLES;
+    let together = plots(
+        &format!(
+            "//@version=6\nindicator(\"All\")\n{}",
+            names
+                .iter()
+                .map(|name| format!("plot({name})\n"))
+                .collect::<String>()
+        ),
+        800,
+    );
+    for (name, plotted) in names.iter().zip(&together) {
+        assert_same(name, plotted, &alone(name));
+    }
+}

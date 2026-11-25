@@ -177,20 +177,12 @@ impl Session {
         Ok(Some(value))
     }
 
-    /// `ta.obv`, `ta.accdist`, … and `ta.vwap` read as variables. None when `name` is not one of them.
+    /// `ta.obv`, `ta.accdist`, `ta.vwap`, … read as variables. None when `name` is not one of them.
     pub(crate) fn cumulative_variable(
         &mut self,
         name: &str,
         context: &RuntimeContext,
     ) -> Option<RuntimeValue> {
-        if name == "ta.vwap" {
-            // After the cumulative variables' slots, so the keys never meet.
-            let key = usize::MAX - extra::VARIABLES.len();
-            let mut state = self.working.ta_states.remove(&key).unwrap_or_default();
-            let value = super::evaluate_vwap_variable(&context.bar, &self.working, &mut state);
-            self.working.ta_states.insert(key, state);
-            return Some(value);
-        }
         let slot = extra::VARIABLES
             .iter()
             .position(|candidate| *candidate == name)?;
@@ -206,6 +198,19 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cumulative_variable_is_listed_once_so_its_state_slot_is_its_own() {
+        // The slot is the position in `VARIABLES` (`cumulative_variable`): a name listed twice
+        // would still read, but two reads of it would no longer share one state.
+        for (position, name) in extra::VARIABLES.iter().enumerate() {
+            assert_eq!(
+                extra::VARIABLES.iter().position(|other| other == name),
+                Some(position),
+                "{name} is listed twice"
+            );
+        }
+    }
 
     #[test]
     fn every_function_ta_extra_lists_has_parameters_and_the_reverse() {
