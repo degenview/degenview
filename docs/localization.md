@@ -15,7 +15,8 @@ The pieces are the standard ones, so a translator's tools and a new engineer's e
 
 **State.** The runtime, the language setting and Settings ▸ Appearance ▸ Language exist, and the
 shared date helpers (`ui::kit::time_text`, `i18n::datetime`, Settings ▸ Appearance) are translated.
-**No language but English ships**, so the language card is hidden in release builds. The rest of the
+**Spanish (Spain)** is the first translation (`assets/locales/es.po`, tag `es`), so the language card
+shows in release builds too; it hides itself whenever only one language is offered. The rest of the
 interface is still English literals; moving it over, directory by directory, is the next step.
 
 ## Writing text
@@ -195,8 +196,8 @@ msgstr[1] "{count} alertas"
 
 ### Packaging that names languages
 
-None of it names a language today, on purpose: with English the only one, a list of one tells the
-system nothing and a translated name would be a lie. When the first translation ships, each needs:
+Spanish is listed in each of these (the macOS bundle, the Windows installer, the Flatpak metainfo and
+desktop entry); a language added later is added to each, as follows:
 
 - **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
   (`en`) and `CFBundleLocalizations` (`en` plus each tag) to the app's and to the alert agent's
@@ -220,6 +221,17 @@ system nothing and a translated name would be a lie. When the first translation 
   reads these; run `flatpak run org.freedesktop.appstream-glib validate` on the file and check that
   the sandbox passes the locale (`LANG`) the app's language reader looks at (`docs/flatpak.md`).
 - **Docs and the README** have their own languages; see "Not done yet".
+
+### Spanish
+
+`assets/locales/es.po` is written for Spain: informal *tú*, infinitives on buttons and menu items,
+Spain's vocabulary (*ordenador*, *Ajustes*, *pulsar*), and sentence case like the English. It is
+tagged `es`, not `es-ES`, so every other Spanish region (`es-MX` → `es-419` → `es`) gets it through
+CLDR's fallback chain instead of English. Trading terms Spanish-speaking traders say in English
+(Long, Short, Stop, Take profit, Webhook, Pine, Footprint) stay English; the vocabulary for the rest
+(Gráfico, Lista de seguimiento, Cartera, Tenencias, Posición, Repetición, Diario, …) is kept by reading
+the catalog, so a new message uses the word the neighbouring ones do. Numbers keep the shared format
+(see "Not done yet").
 
 ## Not done yet
 

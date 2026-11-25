@@ -7,7 +7,7 @@
 //! feed, the view draws it.
 
 use crate::format;
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::watchlist::quote::compact_number;
 use crate::model::{Kline, PriceFormat};
 
@@ -102,10 +102,10 @@ impl TableFeed {
     pub fn title(&self, column: Column) -> String {
         match column {
             Column::Time => tr!("Time").to_owned(),
-            Column::Open => tr!("Open").to_owned(),
+            Column::Open => tr_c!("price", "Open").to_owned(),
             Column::High => tr!("High").to_owned(),
             Column::Low => tr!("Low").to_owned(),
-            Column::Close => tr!("Close").to_owned(),
+            Column::Close => tr_c!("price", "Close").to_owned(),
             Column::Volume => tr!("Volume").to_owned(),
             Column::Extra(index) => self
                 .extras

@@ -3157,8 +3157,6 @@ msgstr ""
 msgid "Clock resolution"
 msgstr ""
 
-#: src/model/chart/kind.rs
-#: src/model/chart/table.rs
 #: src/pine_studio/editor/diff_view.rs
 #: src/pine_studio/editor/find.rs
 #: src/ui/chart/indicator_picker/mod.rs
@@ -6303,7 +6301,6 @@ msgid "Fix the source data and import again."
 msgstr ""
 
 #: src/ui/paper/account_sheet.rs
-#: src/ui/window/update_sheet/mod.rs
 msgid "Fixed"
 msgstr ""
 
@@ -9144,10 +9141,6 @@ msgstr ""
 msgid "Never visible"
 msgstr ""
 
-#: src/ui/window/update_sheet/mod.rs
-msgid "New"
-msgstr ""
-
 #: src/ui/paper/header.rs
 msgid "New Account…"
 msgstr ""
@@ -10288,9 +10281,6 @@ msgstr ""
 msgid "Opacity percent"
 msgstr ""
 
-#: src/model/broker/ticket.rs
-#: src/model/chart/kind.rs
-#: src/model/chart/table.rs
 #: src/ui/drawing/layer/menu.rs
 msgid "Open"
 msgstr ""
@@ -14268,7 +14258,6 @@ msgstr ""
 msgid "Stocks need an Alpaca key"
 msgstr ""
 
-#: src/pine_studio/ai/panel.rs
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/drawing/properties/coordinates.rs
 #: src/ui/drawing/properties/forecast_pages.rs
@@ -14351,11 +14340,11 @@ msgid "Stops every time the condition holds."
 msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
-msgid "Stops on every hit after the {ordinal}."
+msgid "Stops on every hit after hit number {n}."
 msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
-msgid "Stops on every {ordinal} hit."
+msgid "Stops on every hit whose number is a multiple of {n}."
 msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
@@ -20440,6 +20429,7 @@ msgctxt "order status"
 msgid "Filled"
 msgstr ""
 
+#: src/model/broker/ticket.rs
 #: src/trading/paper/backend.rs
 msgctxt "order status"
 msgid "Open"
@@ -20499,6 +20489,18 @@ msgstr ""
 #: src/trading/paper/backend.rs
 msgctxt "order type"
 msgid "Stop-limit"
+msgstr ""
+
+#: src/model/chart/kind.rs
+#: src/model/chart/table.rs
+msgctxt "price"
+msgid "Close"
+msgstr ""
+
+#: src/model/chart/kind.rs
+#: src/model/chart/table.rs
+msgctxt "price"
+msgid "Open"
 msgstr ""
 
 #: src/ui/chart/card/crosshair.rs
@@ -20561,6 +20563,16 @@ msgctxt "readout label: open"
 msgid "O"
 msgstr ""
 
+#: src/ui/window/update_sheet/mod.rs
+msgctxt "release notes heading"
+msgid "Fixed"
+msgstr ""
+
+#: src/ui/window/update_sheet/mod.rs
+msgctxt "release notes heading"
+msgid "New"
+msgstr ""
+
 #: src/pine_studio/ai/review_view.rs
 msgctxt "select changes"
 msgid "All"
@@ -20574,6 +20586,11 @@ msgstr ""
 #: src/ui/watchlist/rows.rs
 msgctxt "sparkline column"
 msgid "1M"
+msgstr ""
+
+#: src/pine_studio/ai/panel.rs
+msgctxt "stop button"
+msgid "Stop"
 msgstr ""
 
 #: src/ui/settings/brokers.rs

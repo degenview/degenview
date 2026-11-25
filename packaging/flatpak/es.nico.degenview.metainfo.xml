@@ -3,6 +3,7 @@
   <id>es.nico.degenview</id>
   <name>DegenView</name>
   <summary>Market dashboard with a local Pine Script engine</summary>
+  <summary xml:lang="es">Panel de mercados con un motor local de Pine Script</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <developer id="es.nico">
@@ -13,15 +14,27 @@
       DegenView watches crypto, stocks, prediction markets and CoinMarketCap indices in
       customizable, linked charts.
     </p>
+    <p xml:lang="es">
+      DegenView sigue criptomonedas, acciones, mercados de predicción e índices de CoinMarketCap en
+      gráficos personalizables y enlazados entre sí.
+    </p>
     <p>
       Its headline feature is a Pine Script v6 engine that runs on your own machine: write
       TradingView-style indicators and strategies and keep every line of source on your device.
     </p>
+    <p xml:lang="es">
+      Su función estrella es un motor de Pine Script v6 que se ejecuta en tu propio ordenador: escribe
+      indicadores y estrategias al estilo de TradingView y conserva todo el código fuente en tu dispositivo.
+    </p>
     <ul>
       <li>Crypto from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko and DEX pairs, US stocks through Alpaca</li>
+      <li xml:lang="es">Criptomonedas de Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko y pares DEX, y acciones de EE. UU. a través de Alpaca</li>
       <li>Polymarket and Kalshi events charted as probabilities</li>
+      <li xml:lang="es">Eventos de Polymarket y Kalshi representados como probabilidades</li>
       <li>Drawing tools, price alerts with webhooks, and portfolio tracking</li>
+      <li xml:lang="es">Herramientas de dibujo, alertas de precio con webhooks y seguimiento de carteras</li>
       <li>An optional local MCP server so AI assistants can inspect and drive the app</li>
+      <li xml:lang="es">Un servidor MCP local opcional para que los asistentes de IA puedan inspeccionar y manejar la aplicación</li>
     </ul>
   </description>
   <launchable type="desktop-id">es.nico.degenview.desktop</launchable>
@@ -30,6 +43,7 @@
   <screenshots>
     <screenshot type="default">
       <caption>A candlestick chart with volume, RSI, EMA, a Pine overlay and a MACD pane</caption>
+      <caption xml:lang="es">Un gráfico de velas con volumen, RSI, EMA, una superposición de Pine y un panel de MACD</caption>
       <image>https://raw.githubusercontent.com/degenview/degenview/main/assets/screenshots/hero.png</image>
     </screenshot>
   </screenshots>

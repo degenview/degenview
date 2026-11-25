@@ -804,24 +804,12 @@ fn hit_sentence(kind: HitKind, n: &str) -> String {
     match kind {
         HitKind::Always => tr!("Stops every time the condition holds.").to_owned(),
         HitKind::Equals => tr!("Stops on hit number {n} only.", n = n),
-        HitKind::EveryNth => tr!("Stops on every {ordinal} hit.", ordinal = ordinal(n)),
-        HitKind::GreaterThan => tr!(
-            "Stops on every hit after the {ordinal}.",
-            ordinal = ordinal(n)
+        HitKind::EveryNth => tr!(
+            "Stops on every hit whose number is a multiple of {n}.",
+            n = n
         ),
+        HitKind::GreaterThan => tr!("Stops on every hit after hit number {n}.", n = n),
     }
-}
-
-/// "1st", "2nd", "3rd", "4th", "11th", "22nd" for a number typed as digits.
-fn ordinal(n: &str) -> String {
-    let suffix = match (n.chars().last(), n.chars().rev().nth(1)) {
-        (_, Some('1')) => "th",
-        (Some('1'), _) => "st",
-        (Some('2'), _) => "nd",
-        (Some('3'), _) => "rd",
-        _ => "th",
-    };
-    format!("{n}{suffix}")
 }
 
 fn label(ui: &mut Ui, title: &str) {
