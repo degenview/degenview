@@ -213,7 +213,7 @@ One controller (`ui/drawing/layer/`). A tool's `Placement` decides how anchors a
 - `Single`: one click.
 - `Points(n)`: a drag places the first two anchors, clicks place the rest; click-click works too.
 - `Open`: a click adds a vertex; a double-click, Return, Esc (with at least two vertices),
-  or a right-click finishes; Backspace takes the last vertex back; a click near the first vertex of
+  or a right-click on the plot or a script pane finishes; Backspace takes the last vertex back; a click near the first vertex of
   a polyline closes it. At most 5,000 vertices.
 
 Esc, switching tool, losing window focus, or the card going unseen (another tab) abandons a draft

@@ -323,6 +323,8 @@ struct Rig {
     style_copied: Option<(Tool, DrawingStyle)>,
     background_click: Option<Pos2>,
     keys_blocked: bool,
+    /// The next frame puts the held tool down, as the chart does for a right-click on it.
+    release_next: bool,
     /// The cursor the pointer rests on.
     cursor: CursorMode,
     reveal_all: bool,
@@ -387,6 +389,7 @@ impl Rig {
             style_copied: None,
             background_click: None,
             keys_blocked: false,
+            release_next: false,
             cursor: CursorMode::Cross,
             reveal_all: false,
             pending: None,
@@ -437,6 +440,7 @@ impl Rig {
             .with_keys_blocked(self.keys_blocked)
             .with_cursor(self.cursor);
         let (layer, data, scale, cover) = (&mut self.layer, &self.data, &self.scale, self.cover);
+        let release = std::mem::take(&mut self.release_next);
         let mut output = self.ctx.run_ui(input, |ui| {
             if let Some(cover) = cover {
                 egui::Area::new(egui::Id::new("cover"))
@@ -447,6 +451,10 @@ impl Rig {
             let response = ui.allocate_rect(PLOT, Sense::click_and_drag());
             let proj = projection(data, scale);
             layer.update(ui, &response, &proj, &mut frame);
+            if release {
+                layer.release(&mut frame, &proj);
+                frame.put_down = true;
+            }
             layer.paint(&ui.painter().clone(), &proj, &frame);
             layer.overlay(ui, &proj, &mut frame);
         });
@@ -560,6 +568,12 @@ impl Rig {
         self.frame(vec![down]);
         let up = self.button(at, false, PointerButton::Secondary);
         self.frame(vec![up]);
+    }
+
+    /// What the chart does for a right-click on the plot or a pane while a tool is held.
+    fn put_down(&mut self) {
+        self.release_next = true;
+        self.frame(Vec::new());
     }
 
     /// A press, a path of moves, a release.
@@ -1211,7 +1225,7 @@ fn backspace_takes_back_the_last_vertex() {
 }
 
 #[test]
-fn backspace_takes_back_the_last_pivot_of_a_pattern_and_a_right_click_abandons_it() {
+fn backspace_takes_back_the_last_pivot_of_a_pattern_and_putting_the_tool_down_abandons_it() {
     // Five pivots of an XABCD: two taken back leave the draft waiting for the fourth.
     let mut rig = Rig::with_tool(Tool::XabcdPattern);
     for point in &POINTS[..4] {
@@ -1238,23 +1252,25 @@ fn backspace_takes_back_the_last_pivot_of_a_pattern_and_a_right_click_abandons_i
     lone.key(Key::Backspace);
     assert!(lone.layer.gesture.is_none());
 
-    // A right-click abandons a half-placed pattern: no drawing, no undo step, no menu.
+    // Putting the tool down abandons a half-placed pattern: no drawing, no undo step, no menu.
     let mut abandoned = Rig::with_tool(Tool::ThreeDrivesPattern);
     for point in &POINTS[..3] {
         abandoned.click(*point);
     }
-    abandoned.right_click(POINTS[4]);
+    abandoned.put_down();
+    assert_eq!(abandoned.tool, Tool::Cursor);
     assert!(abandoned.layer.gesture.is_none());
     assert!(abandoned.drawings.is_empty());
     assert_eq!(abandoned.undo_steps, 0);
     assert!(abandoned.layer.menu.is_none());
-    // And it is a fresh start: the next click is a first pivot again.
+    // And it is a fresh start: armed again, the next click is a first pivot.
+    abandoned.tool = Tool::ThreeDrivesPattern;
     abandoned.click(POINTS[0]);
     assert_eq!(placed(&abandoned), 1);
 }
 
 #[test]
-fn a_polyline_closes_on_its_first_vertex_and_a_right_click_leaves_it_open() {
+fn a_polyline_closes_on_its_first_vertex_and_putting_the_tool_down_leaves_it_open() {
     let mut closed = Rig::with_tool(Tool::Polyline);
     for point in &POINTS[..3] {
         closed.click(*point);
@@ -1274,7 +1290,7 @@ fn a_polyline_closes_on_its_first_vertex_and_a_right_click_leaves_it_open() {
     for point in &POINTS[..3] {
         open.click(*point);
     }
-    open.right_click(pos2(700.0, 300.0));
+    open.put_down();
     let Some(Geometry::Polyline {
         closed: is_closed, ..
     }) = open.last().geometry().cloned()

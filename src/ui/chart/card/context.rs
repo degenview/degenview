@@ -83,8 +83,8 @@ impl ChartCard {
     /// one place that decides what a right-click on the chart does, so exactly one thing answers
     /// it. A drawing answers its own clicks; a paper marker or an alert tag is reported by its pill
     /// (drawn last frame); an axis opens its menu whatever is armed. On the plot or a script pane
-    /// with a drawing tool or Zoom In in hand the click puts it down and nothing opens: the menu is
-    /// the next click's.
+    /// with a drawing tool or Zoom In in hand the click puts it down (finishing an open shape,
+    /// letting go of a half-placed one) and nothing opens: the menu is the next click's.
     pub(super) fn context_request(
         &mut self,
         response: &egui::Response,
@@ -125,6 +125,7 @@ impl ChartCard {
         let spot = spot(at, regions, panes)?;
         let on_chart = matches!(spot, Spot::Plot | Spot::Pane(_));
         if on_chart && (drawing.tool != Tool::Cursor || self.is_zoom_armed()) {
+            self.layer.release(drawing, projection);
             drawing.put_down = true;
             return None;
         }

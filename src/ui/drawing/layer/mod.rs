@@ -1237,18 +1237,19 @@ impl DrawingLayer {
     }
 
     fn secondary_click(&mut self, point: Pos2, frame: &mut DrawingFrame, proj: &Projection) {
-        // A right-click finishes an open shape (a polyline's documented alternative to a
-        // double-click) and abandons a drawing of a fixed number of points that is half placed;
-        // otherwise it opens the menu of what is under it.
-        if let Some(Gesture::Draft(draft)) = self.gesture.take() {
-            if is_open(draft.tool) && draft.placed.len() >= 2 {
-                self.finish_open(draft, false, frame, proj);
-            } else if !matches!(draft.tool.spec().placement, Placement::Points(_)) {
-                self.gesture = Some(Gesture::Draft(draft));
-            }
-            return;
-        }
         self.open_menu(point, frame, proj);
+    }
+
+    /// The held tool is being put down (a right-click on the plot or a script pane): an open
+    /// shape (a polyline's documented alternative to a double-click) with two or more vertices
+    /// is finished, and anything else half placed is let go.
+    pub(in crate::ui) fn release(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+        if let Some(Gesture::Draft(draft)) = self.gesture.take()
+            && is_open(draft.tool)
+            && draft.placed.len() >= 2
+        {
+            self.finish_open(draft, false, frame, proj);
+        }
     }
 
     /// Finishes a path or polyline: commits it when it has enough vertices, else drops it.

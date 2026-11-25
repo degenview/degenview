@@ -2521,4 +2521,70 @@ mod right_click {
         assert_eq!(rig.commands, 0, "nothing was drawn");
         assert_eq!(answer(&mut rig, plot), Some(Target::Background));
     }
+
+    const PANE_SCRIPT: &str = "//@version=6\nindicator(\"Pane\")\nplot(close)\n";
+
+    /// A chart with one script pane, and a point inside that pane.
+    fn with_pane() -> (Rig, Pos2) {
+        let mut rig = Rig::new();
+        let id = rig.card.add_pine_instance(None, "Pane", PANE_SCRIPT);
+        wait_for_script(&mut rig, id);
+        rig.frames(&[]);
+        assert_eq!(rig.card.pane_count(), 1, "the script has a pane of its own");
+        // The panes sit below the time axis.
+        let pane = Pos2::new(rig.rect.center().x, rig.rect.bottom() - 20.0);
+        (rig, pane)
+    }
+
+    fn click_plot(rig: &mut Rig, at: Pos2) {
+        rig.frame(vec![egui::Event::PointerMoved(at)]);
+        rig.frame(vec![rig.button(at, true)]);
+        rig.frame(vec![rig.button(at, false)]);
+    }
+
+    #[test]
+    fn an_open_shape_is_finished_by_the_right_click_that_puts_its_tool_down_on_the_plot_or_a_pane()
+    {
+        for tool in [Tool::Polyline, Tool::Path] {
+            for keep_drawing in [true, false] {
+                for in_pane in [false, true] {
+                    let (mut rig, pane) = with_pane();
+                    rig.keep_drawing = keep_drawing;
+                    rig.tool = tool;
+                    let plot = rig.in_plot();
+                    click_plot(&mut rig, plot);
+                    click_plot(&mut rig, plot + Vec2::new(80.0, 30.0));
+                    assert_eq!(rig.commands, 0, "still being drawn");
+                    let at = if in_pane { pane } else { plot };
+                    let case = format!("{tool:?}, keep drawing {keep_drawing}, pane {in_pane}");
+                    assert_eq!(answer(&mut rig, at), None, "{case}");
+                    assert_eq!(rig.put_downs, 1, "{case}");
+                    assert_eq!(rig.tool, Tool::Cursor, "{case}");
+                    assert_eq!(rig.commands, 1, "the shape was committed: {case}");
+                    let next = answer(&mut rig, at);
+                    if in_pane {
+                        assert!(matches!(next, Some(Target::Pane { .. })), "{case}");
+                    } else {
+                        assert_eq!(next, Some(Target::Background), "{case}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_pane_right_click_abandons_a_half_placed_drawing_as_the_plot_does() {
+        let (mut rig, pane) = with_pane();
+        rig.tool = Tool::ThreeDrivesPattern;
+        let plot = rig.in_plot();
+        for step in 0..3 {
+            click_plot(
+                &mut rig,
+                plot + Vec2::new(30.0 * step as f32, 20.0 * step as f32),
+            );
+        }
+        assert_eq!(answer(&mut rig, pane), None);
+        assert_eq!(rig.tool, Tool::Cursor);
+        assert_eq!(rig.commands, 0, "nothing was drawn");
+    }
 }
