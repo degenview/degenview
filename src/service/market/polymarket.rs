@@ -1,5 +1,6 @@
 use crate::model::market::line;
 use crate::model::{Kline, Timeframe};
+use crate::service::net::url::encode_component;
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
     replace_last_price, whole_dollars,
@@ -51,6 +52,14 @@ struct PmWindow {
 /// week), in the shortest window that holds the line's span and allows that fidelity. When none
 /// both holds the span and allows the fidelity, the longest that allows it, and the line is
 /// shorter.
+/// The search address for a trimmed query.
+fn search_url(query: &str) -> String {
+    format!(
+        "{GAMMA_BASE}/public-search?q={}&limit_per_type=10&events_status=active",
+        encode_component(query)
+    )
+}
+
 fn pm_window(timeframe: Timeframe) -> PmWindow {
     let line = line::window(timeframe);
     let step = line.step_minutes();
@@ -132,8 +141,7 @@ impl MarketSource for Polymarket {
         if q.is_empty() {
             return Ok(Vec::new());
         }
-        let url =
-            format!("{GAMMA_BASE}/public-search?q={q}&limit_per_type=10&events_status=active");
+        let url = search_url(&q);
         let body = crate::service::net::http::get_text(
             &url,
             &[],
@@ -280,6 +288,16 @@ fn fetch_current_ask(token_id: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_query_outside_ascii_is_escaped_in_the_search_address() {
+        assert_eq!(
+            search_url("比特币 & co"),
+            format!(
+                "{GAMMA_BASE}/public-search?q=%E6%AF%94%E7%89%B9%E5%B8%81%20%26%20co&limit_per_type=10&events_status=active"
+            )
+        );
+    }
 
     #[test]
     fn artwork_lookup_refuses_ids_that_are_not_tokens() {
