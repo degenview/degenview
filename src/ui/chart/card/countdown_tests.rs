@@ -152,6 +152,66 @@ fn a_bar_of_an_hour_reserves_less_than_a_day() {
     );
 }
 
+#[test]
+fn a_last_price_at_the_bottom_of_the_plot_carries_its_countdown_above_it() {
+    let mut harness = harness_with(Some(countdown(125_000)));
+    harness.card.appearance_mut().canvas.margins.bottom = 0;
+    // The newest bar is the lowest of all: its price sits on the plot's bottom edge.
+    let last = harness.candles.len() - 1;
+    harness.candles[last].close = 0.0;
+    harness.candles[last].low = 0.0;
+    harness.candles[last].open = 1.0;
+    let (drawn, _) = harness.draw();
+    let ((count, _), (price, _)) = tag_rows(&drawn, "02:05").unwrap_or_else(|| {
+        // The row went above the price: look for a price under the countdown instead.
+        let (at, _, size) = drawn
+            .texts
+            .iter()
+            .find(|(_, text, _)| text == "02:05")
+            .expect("the countdown is drawn");
+        let price = drawn
+            .texts
+            .iter()
+            .find(|(p, text, _)| {
+                text != "02:05" && (p.x - at.x).abs() < 0.5 && p.y > at.y && p.y - at.y < 24.0
+            })
+            .expect("a price under it");
+        ((*at, *size), (price.0, price.2))
+    });
+    assert!(
+        count.y < price.y,
+        "the countdown is above the price near the bottom edge"
+    );
+}
+
+#[test]
+fn a_heikin_ashi_chart_counts_down_with_its_candles() {
+    use crate::model::chart::kind::ChartType;
+    let mut harness = harness_with(Some(countdown(125_000)));
+    harness.card.appearance_mut().style.chart_type = ChartType::HeikinAshi;
+    let (drawn, _) = harness.draw();
+    let shown = drawn
+        .texts
+        .iter()
+        .filter(|(_, text, _)| text == "02:05")
+        .count();
+    assert_eq!(shown, 1, "one countdown, on the market's last price");
+    assert!(tag_rows(&drawn, "02:05").is_some());
+}
+
+#[test]
+fn a_card_nobody_resolved_a_countdown_for_draws_none() {
+    // The Pine Studio preview is one: it has no data age to count against.
+    let (drawn, _) = harness_with(None).draw();
+    assert!(
+        drawn
+            .texts
+            .iter()
+            .all(|(_, text, _)| !(text.len() == 5 && text.as_bytes()[2] == b':')),
+        "no MM:SS text on the axis"
+    );
+}
+
 mod placement {
     use super::super::overlays::{TagBand, spread};
     use eframe::egui::{Color32, Pos2, Rect};
