@@ -6385,7 +6385,7 @@ msgstr "Ocultar detalles"
 
 #: src/ui/alert/lines.rs
 msgid "Hide details · drag to change the price"
-msgstr "Ocultar detalles · arrastra para cambiar el precio"
+msgstr "Ocultar detalles · arrastrar para cambiar el precio"
 
 #: src/ui/alert/lines.rs
 msgid "Hide details, {caption}"
@@ -12865,7 +12865,7 @@ msgstr "Mostrar detalles"
 
 #: src/ui/alert/lines.rs
 msgid "Show details · drag to change the price"
-msgstr "Mostrar detalles · arrastra para cambiar el precio"
+msgstr "Mostrar detalles · arrastrar para cambiar el precio"
 
 #: src/ui/alert/lines.rs
 msgid "Show details, {caption}"
@@ -13265,7 +13265,7 @@ msgstr "Iniciar una compra a mercado como importe a gastar"
 
 #: src/ui/workspace/empty_state/mod.rs
 msgid "Start a new chart"
-msgstr "Iniciar un gráfico nuevo"
+msgstr "Inicia un gráfico nuevo"
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Start bar"
@@ -13376,7 +13376,7 @@ msgstr "Entrar en una llamada a función"
 
 #: src/pine_studio/debug/panel/toolbar.rs
 msgid "Step out: run until the function returns"
-msgstr "Salir: ejecuta hasta que la función retorne"
+msgstr "Salir: ejecutar hasta que la función retorne"
 
 #: src/pine_studio/debug/panel/toolbar.rs
 msgid "Step over: run this statement and stop at the next one"
@@ -15585,7 +15585,7 @@ msgstr "Activa el perfilador con el cronómetro."
 
 #: src/pine_studio/profiler/ui.rs
 msgid "Turn the profiler on: see which lines of the script take the time"
-msgstr "Activar el perfilador: ve qué líneas del script consumen el tiempo"
+msgstr "Activar el perfilador para ver qué líneas del script consumen el tiempo"
 
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "Turn {what} off — it keeps its settings"

@@ -24,6 +24,12 @@ column; word for word is wrong in one of them.
 - **One term, one translation, everywhere.** Write a glossary before translating (below) and use it
   for every entry; grep the finished catalog for each English term and fix drift (Test as a button
   and as a noun, Account, Position, Holdings).
+- **One mood per string, chosen by role.** Where the language has a command form for the reader (Spain
+  Spanish: buttons, menu items and tooltips that name an action take the infinitive, "Guardar"; a heading
+  or hint that talks to the person takes the informal imperative, "Inicia un gráfico nuevo", "Añade una
+  transacción"), pick by what the text is, not by the English verb. Never mix the two inside one string
+  ("Mostrar detalles · arrastra…"). After translating, list every message that starts with a command
+  verb and read the headings, hints and empty-state texts among them.
 - **Mirror the English's form.** Sentence case stays sentence case; a trailing `…` or `:` stays; a
   label stays a label and a sentence a sentence. Unicode quotes, `·`, `→`, `×`, `⌘ ⌥ ⇧` stay.
 - **Placeholders are exact.** Keep every `{name}` byte for byte; reorder them if the language needs
