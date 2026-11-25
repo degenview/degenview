@@ -49,7 +49,7 @@ impl Group {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Area => tr!("Area"),
+            Self::Area => tr_c!("what the image shows", "Area"),
             Self::Style => tr!("Style"),
             Self::Size => tr_c!("text or image size", "Size"),
             Self::Background => tr!("Background"),

@@ -1580,7 +1580,6 @@ msgid "Archived"
 msgstr ""
 
 #: src/model/chart/kind.rs
-#: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Area"
 msgstr ""
 
@@ -21498,4 +21497,9 @@ msgstr ""
 #: src/ui/window/tab_link_menu/mod.rs
 msgctxt "what a link syncs, in a list"
 msgid "time"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "what the image shows"
+msgid "Area"
 msgstr ""

@@ -1501,7 +1501,7 @@ msgstr "Arco"
 msgid "Archived"
 msgstr "Archivada"
 
-#: src/model/chart/kind.rs src/ui/snapshot_studio/window/toolbar.rs
+#: src/model/chart/kind.rs
 msgid "Area"
 msgstr "Área"
 
@@ -20241,3 +20241,8 @@ msgstr "símbolo"
 msgctxt "what a link syncs, in a list"
 msgid "time"
 msgstr "hora"
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "what the image shows"
+msgid "Area"
+msgstr "Área"

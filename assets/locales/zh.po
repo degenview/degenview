@@ -1487,7 +1487,7 @@ msgstr "弧线"
 msgid "Archived"
 msgstr "已归档"
 
-#: src/model/chart/kind.rs src/ui/snapshot_studio/window/toolbar.rs
+#: src/model/chart/kind.rs
 msgid "Area"
 msgstr "面积图"
 
@@ -7666,7 +7666,7 @@ msgstr "已限流"
 
 #: src/ui/chart/settings/overlay.rs src/ui/drawing/properties/style.rs
 msgid "Line"
-msgstr "折线图"
+msgstr "线条"
 
 #: src/model/pattern/bars.rs
 msgid "Line - Close"
@@ -12599,7 +12599,7 @@ msgstr "刻度文字"
 
 #: src/model/drawings/style.rs src/ui/chart/settings/canvas.rs
 msgid "Scales"
-msgstr "天平"
+msgstr "刻度"
 
 #: src/model/drawings/mod.rs
 msgid "Schiff"
@@ -20063,3 +20063,8 @@ msgstr "标的"
 msgctxt "what a link syncs, in a list"
 msgid "time"
 msgstr "时间"
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "what the image shows"
+msgid "Area"
+msgstr "范围"
