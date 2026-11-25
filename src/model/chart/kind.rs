@@ -205,6 +205,16 @@ impl ChartType {
         matches!(self.data_class(), DataClass::Synthetic)
     }
 
+    /// Whether a bar of the type closes at a time. Every type does but the ones that close a bar
+    /// when the price has moved far enough: Renko, Kagi, Line Break, Point & Figure and Range.
+    /// Heikin Ashi is built one bar per candle, so it keeps the candle's close.
+    pub const fn is_time_based(self) -> bool {
+        !matches!(
+            self,
+            Self::Renko | Self::Kagi | Self::LineBreak | Self::PointAndFigure | Self::Range
+        )
+    }
+
     /// What Pine's `chart.is_*` reads on this type.
     pub const fn kind(self) -> ChartKind {
         match self {

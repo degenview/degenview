@@ -59,24 +59,27 @@ impl DataSource {
         }
     }
 
+    /// Every source, in the order the pickers list them.
+    pub const ALL: [DataSource; 13] = [
+        DataSource::Binance,
+        DataSource::Coinbase,
+        DataSource::Okx,
+        DataSource::Kraken,
+        DataSource::Bybit,
+        DataSource::Gate,
+        DataSource::Mexc,
+        DataSource::CoinGecko,
+        DataSource::DexScreener,
+        DataSource::Alpaca,
+        DataSource::Polymarket,
+        DataSource::Kalshi,
+        DataSource::CoinMarketCap,
+    ];
+
     /// The source a `watchlist_slug` names, in any case.
     pub fn from_watchlist_slug(slug: &str) -> Option<Self> {
-        const ALL: [DataSource; 13] = [
-            DataSource::Binance,
-            DataSource::Coinbase,
-            DataSource::Okx,
-            DataSource::Kraken,
-            DataSource::Bybit,
-            DataSource::Gate,
-            DataSource::Mexc,
-            DataSource::CoinGecko,
-            DataSource::DexScreener,
-            DataSource::Alpaca,
-            DataSource::Polymarket,
-            DataSource::Kalshi,
-            DataSource::CoinMarketCap,
-        ];
-        ALL.into_iter()
+        Self::ALL
+            .into_iter()
             .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
     }
 

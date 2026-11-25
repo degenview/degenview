@@ -155,6 +155,11 @@ pub struct Facts {
     pub stats_open: bool,
     /// The chart's price-scale mode, which the price-axis menu marks.
     pub scale_mode: PriceScaleMode,
+    /// Whether the chart's last-price tag carries the countdown to the bar's close.
+    pub bar_countdown: bool,
+    /// Whether the chart has bars that close on a clock (see `countdown::eligible`); the menu
+    /// entry is offered greyed out where it has none.
+    pub bar_countdown_eligible: bool,
     pub templates: Vec<TemplateRow>,
     pub pane: Option<PaneFacts>,
     pub alert: Option<AlertState>,
@@ -180,6 +185,8 @@ impl Default for Facts {
             tree_open: false,
             stats_open: false,
             scale_mode: PriceScaleMode::Regular,
+            bar_countdown: true,
+            bar_countdown_eligible: true,
             templates: Vec::new(),
             pane: None,
             alert: None,
@@ -218,6 +225,7 @@ pub enum Command {
     OpenSettings,
     ResetPriceScale,
     SetScaleMode(PriceScaleMode),
+    ToggleBarCountdown,
     ResetChartView,
     PaneSettings(u64),
     PaneToggle(u64),
@@ -344,6 +352,10 @@ impl Entry {
 // in use when the menu is built.
 pub fn in_replay() -> &'static str {
     tr!("Not available during replay")
+}
+
+fn no_bar_countdown() -> &'static str {
+    tr!("This chart has no bars that close on a clock")
 }
 
 fn no_price() -> &'static str {
@@ -838,6 +850,11 @@ fn price_axis(facts: &Facts) -> Vec<Entry> {
                     .checked(facts.scale_mode == mode)
             })
             .collect(),
+        vec![
+            Item::new(Command::ToggleBarCountdown, tr!("Countdown to bar close"))
+                .checked(facts.bar_countdown)
+                .disabled_unless(facts.bar_countdown_eligible, no_bar_countdown()),
+        ],
     ])
 }
 

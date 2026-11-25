@@ -316,6 +316,15 @@ pub struct ChartCanvas {
     /// Whether the box of values (open, high, low, close, volume…) under the crosshair is shown.
     /// The crosshair itself is drawn either way.
     pub ohlc_readout: bool,
+    /// Whether the last price's tag on the axis also tells how long the forming bar has left.
+    /// A row with the setting on is written without the key, so a build that predates it
+    /// reads and writes the same row back.
+    #[serde(skip_serializing_if = "is_default_countdown")]
+    pub bar_countdown: bool,
+}
+
+fn is_default_countdown(on: &bool) -> bool {
+    *on == ChartCanvas::default().bar_countdown
 }
 
 impl Default for ChartCanvas {
@@ -332,6 +341,7 @@ impl Default for ChartCanvas {
             buttons: ChartButtons::default(),
             margins: ChartMargins::default(),
             ohlc_readout: true,
+            bar_countdown: true,
         }
     }
 }

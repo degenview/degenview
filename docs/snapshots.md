@@ -72,7 +72,7 @@ Everything the chart draws: canvas background (solid or gradient), grid, waterma
 built-in indicators, every script's plots, shapes, labels, lines, boxes, tables, fills and strategy
 trades in their layers, script panes with their scales and separators, drawings (visible ones;
 hidden, other-timeframe and unreadable ones stay out; no handles or selection), the last-price
-line and tag, both axes, and the chart's price alert lines.
+line and tag (with the countdown to the bar's close, frozen at the capture: `ChartParts::countdown`), both axes, and the chart's price alert lines.
 
 The text, note and content tools paint as on screen: boxes and tables, link cards, pictures, and the
 note of every pin that is open (`SnapshotInput.open_notes`). A picture is handed to the snapshot already

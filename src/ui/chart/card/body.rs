@@ -461,6 +461,7 @@ impl ChartCard {
             constructed: constructed.as_deref(),
             outputs: &outputs,
             indicators,
+            countdown: self.countdown,
         };
         let layout = self.frame_layout(
             &data,

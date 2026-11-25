@@ -9785,6 +9785,28 @@ msgstr "Columnas O"
 msgid "OBV"
 msgstr "OBV"
 
+#: src/model/chart/context/mod.rs src/ui/chart/settings/canvas.rs
+msgid "Countdown to bar close"
+msgstr "Cuenta atrás al cierre de la barra"
+
+#: src/ui/chart/settings/canvas.rs
+msgid "The last price's tag shows the price alone."
+msgstr "La etiqueta del último precio muestra solo el precio."
+
+#: src/ui/chart/settings/canvas.rs
+msgid ""
+"The time left in the forming bar, under the last price. Not shown on Renko, "
+"Kagi, Line Break, Point & Figure and Range charts, in a replay, or for "
+"markets without clock-cut bars."
+msgstr ""
+"El tiempo que le queda a la barra en formación, bajo el último precio. No se "
+"muestra en gráficos Renko, Kagi, Line Break, Point & Figure y Range, en una "
+"repetición ni en mercados sin barras cortadas por reloj."
+
+#: src/model/chart/context/mod.rs
+msgid "This chart has no bars that close on a clock"
+msgstr "Este gráfico no tiene barras que cierren a una hora fija"
+
 #: src/ui/chart/settings/canvas.rs
 msgid "OHLC values"
 msgstr "Valores OHLC"

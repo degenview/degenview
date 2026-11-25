@@ -269,6 +269,8 @@ impl ChartWorkspace {
             self.tools.hides_all(),
         );
         let replay_ms = self.replay.cut_ms();
+        // One reading of the clock for every chart of the frame, so the countdowns agree.
+        let now_ms = crate::clock::now_ms();
         let replay_selecting = self.replay.is_selecting_start();
         // The logs pane's drag over bars: only its own chart takes it, and a replay's start wins
         // if both were somehow asked for.
@@ -471,6 +473,18 @@ impl ChartWorkspace {
                                         }
                                         chart.chart.set_series_cutoff(replay_ms);
                                         chart.chart.set_timeframe(timeframe);
+                                        let countdown = chart.bar_countdown(
+                                            timeframe,
+                                            replay_ms.is_some(),
+                                            now_ms,
+                                        );
+                                        chart.chart.set_countdown(countdown);
+                                        // The next frame is wanted when the text changes, not
+                                        // sooner: a tab that is not drawn asks for nothing.
+                                        if let Some(countdown) = countdown {
+                                            ui.ctx()
+                                                .request_repaint_after(countdown.next_repaint());
+                                        }
                                         let candles = displayed_candles(&chart.candles, replay_ms);
                                         if linked {
                                             chart.chart.follow_sync(

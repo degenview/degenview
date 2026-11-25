@@ -332,6 +332,9 @@ impl ChartCard {
         }
     }
 
+    /// The last price: a dotted line across the plot and a tag on the axis, which carries the
+    /// time the forming bar has left on a second row when there is a `countdown`. Returns where
+    /// the tag stands, so what else sits on the axis keeps clear of it.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_last_price(
         &self,
@@ -341,8 +344,9 @@ impl ChartCard {
         scale: &PriceScale,
         candles: &[Kline],
         constructed_last: Option<&Kline>,
+        countdown: Option<Countdown>,
         style: &CanvasStyle,
-    ) {
+    ) -> Option<TagBand> {
         let half = style.tag_half_height();
         // A price-based chart's own last close is not what the market last traded at: it gets its
         // own dashed line and an outlined tag, and the solid tag stays the market's.
@@ -371,12 +375,10 @@ impl ChartCard {
                 );
             }
         }
-        let Some(last) = candles.last() else {
-            return;
-        };
+        let last = candles.last()?;
         let y = scale.y(last.close);
         if !plot.y_range().contains(y) {
-            return;
+            return None;
         }
         let previous_close = candles
             .len()
@@ -393,19 +395,44 @@ impl ChartCard {
                 dash: crate::model::chart::kind::LineDash::Dotted,
             },
         );
+        // The price stays on the line it is the price of; the countdown hangs under it, or over
+        // it where the plot ends too soon for a second row.
+        let row = countdown.map_or(0.0, |_| style.countdown_row_height());
+        let below = y + half + row <= plot.bottom();
+        let (top, bottom) = if below {
+            (y - half, y + half + row)
+        } else {
+            (y - half - row, y + half)
+        };
         let tag = Rect::from_min_max(
-            Pos2::new(plot.right() + 3.0, y - half),
-            Pos2::new(rect.right() - 3.0, y + half),
+            Pos2::new(plot.right() + 3.0, top),
+            Pos2::new(rect.right() - 3.0, bottom),
         );
         painter.rect_filled(tag, 3.0, color);
         price_text::paint(
             painter,
-            tag.center(),
+            Pos2::new(tag.center().x, y),
             Align2::CENTER_CENTER,
             &scale.tag_label(self.appearance.price_format(), last.close),
             style.price_font(),
             Color32::WHITE,
         );
+        if let Some(countdown) = countdown {
+            let center_y = if below {
+                y + half + row / 2.0
+            } else {
+                y - half - row / 2.0
+            };
+            price_text::paint(
+                painter,
+                Pos2::new(tag.center().x, center_y),
+                Align2::CENTER_CENTER,
+                &countdown.text(),
+                style.countdown_font(),
+                Color32::WHITE,
+            );
+        }
+        Some(TagBand { top, bottom })
     }
 
     /// A bar's time as the chart writes it: to the second on a candle shorter than a minute.

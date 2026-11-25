@@ -215,6 +215,15 @@ impl DataSource {
         }
     }
 
+    /// Whether the source's bars close on the UTC clock, which a countdown to a bar's close needs.
+    /// Not a source without candles of its own (CoinGecko's are cut from price samples that come
+    /// minutes late, the rest draw lines), and not a stock's: its bars follow a session with
+    /// holidays and early closes that nothing here knows, so a countdown would run through a
+    /// closed market.
+    pub fn counts_down_bars(self) -> bool {
+        !self.natives().is_empty() && self.grid() == Grid::Utc
+    }
+
     /// How `timeframe` is made from the source's own candles; `None` for a source that has none
     /// or whose candles no fold of reaches it.
     pub fn plan(self, timeframe: Timeframe) -> Option<FoldPlan> {

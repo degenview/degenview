@@ -236,6 +236,11 @@ impl ChartWorkspace {
             drawings,
             indicators: chart.indicators,
             replay_active: replay_ms.is_some(),
+            countdown: chart.bar_countdown(
+                self.timeframe,
+                replay_ms.is_some(),
+                crate::clock::now_ms(),
+            ),
             include_trading,
             scale_mode: chart.scale_mode,
             logo: None,

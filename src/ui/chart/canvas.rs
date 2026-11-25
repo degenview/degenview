@@ -51,6 +51,8 @@ pub struct CanvasStyle {
     pub pane_buttons: ButtonVisibility,
     /// Whether the crosshair carries its box of values.
     pub ohlc_readout: bool,
+    /// Whether the last price's tag carries the time the forming bar has left.
+    pub bar_countdown: bool,
 }
 
 /// What a picture of the chart changes in its canvas without touching the chart's settings.
@@ -178,6 +180,7 @@ impl CanvasStyle {
             navigation: canvas.buttons.navigation,
             pane_buttons: canvas.buttons.pane,
             ohlc_readout: canvas.ohlc_readout,
+            bar_countdown: canvas.bar_countdown,
         }
     }
 
@@ -199,6 +202,16 @@ impl CanvasStyle {
 
     pub fn price_font(&self) -> FontId {
         FontId::monospace(self.price_size)
+    }
+
+    /// The countdown under the last price: a step smaller than the price it hangs from.
+    pub fn countdown_font(&self) -> FontId {
+        FontId::monospace((self.price_size * 0.9).round().max(7.0))
+    }
+
+    /// The row the countdown takes under the price's, 13 points at the default size.
+    pub fn countdown_row_height(&self) -> f32 {
+        (self.price_size * 0.9).round().max(7.0) + 4.0
     }
 
     pub fn time_font(&self) -> FontId {

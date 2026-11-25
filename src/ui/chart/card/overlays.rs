@@ -416,7 +416,7 @@ impl ChartCard {
         frame: &OverlayFrame,
         view: &View,
         style: &CanvasStyle,
-        main_tag_y: Option<f32>,
+        last_price_tag: Option<TagBand>,
     ) {
         let half = style.tag_half_height();
         let format = self.appearance.price_format();
@@ -443,7 +443,7 @@ impl ChartCard {
                 _ => inside.push(tag),
             }
         }
-        for (y, fill, text) in spread(axis, half, plot, main_tag_y) {
+        for (y, fill, text) in spread(axis, half, plot, last_price_tag) {
             let tag = Rect::from_min_max(
                 Pos2::new(plot.right() + 3.0, y - half),
                 Pos2::new(rect.right() - 3.0, y + half),
@@ -505,27 +505,52 @@ impl ChartCard {
     }
 }
 
-/// Pushes tags apart so neighbours do not stack, keeping them in the plot; top to bottom.
-fn spread(
+/// Where the last price's tag stands on the axis, top to bottom: one row of the price, or two
+/// with the countdown under it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct TagBand {
+    pub top: f32,
+    pub bottom: f32,
+}
+
+/// Pushes tags apart so neighbours do not stack, keeping them in the plot and clear of `avoid`
+/// (the last price's tag, which the chart itself draws); top to bottom. A tag keeps the side of
+/// `avoid` it was on.
+pub(super) fn spread(
+    tags: Vec<(f32, Color32, String)>,
+    half: f32,
+    plot: Rect,
+    avoid: Option<TagBand>,
+) -> Vec<(f32, Color32, String)> {
+    let Some(band) = avoid else {
+        return stack(tags, half, plot);
+    };
+    let middle = (band.top + band.bottom) / 2.0;
+    let (mut above, mut below): (Vec<_>, Vec<_>) = tags.into_iter().partition(|tag| tag.0 < middle);
+    let pitch = 2.0 * half + 1.0;
+    // Those above stack upward from the band's top, those below downward from its bottom.
+    above.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut ceiling = band.top - 1.0 - half;
+    for tag in &mut above {
+        tag.0 = tag.0.min(ceiling);
+        ceiling = tag.0 - pitch;
+    }
+    below.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut floor = band.bottom + 1.0 + half;
+    for tag in &mut below {
+        tag.0 = tag.0.max(floor);
+        floor = tag.0 + pitch;
+    }
+    above.extend(below);
+    stack(above, half, plot)
+}
+
+/// Spreads tags that sit closer than a tag is tall, top to bottom, inside the plot.
+fn stack(
     mut tags: Vec<(f32, Color32, String)>,
     half: f32,
     plot: Rect,
-    fixed: Option<f32>,
 ) -> Vec<(f32, Color32, String)> {
-    // A tag that sits on one the chart itself draws (its last price) steps off it, to the side it
-    // was already on, instead of hiding it.
-    if let Some(fixed) = fixed {
-        let gap = 2.0 * half + 1.0;
-        for tag in &mut tags {
-            if (tag.0 - fixed).abs() < gap {
-                tag.0 = if tag.0 >= fixed {
-                    fixed + gap
-                } else {
-                    fixed - gap
-                };
-            }
-        }
-    }
     tags.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut floor = f32::MIN;
     for tag in &mut tags {
