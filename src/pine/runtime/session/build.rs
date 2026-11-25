@@ -165,6 +165,8 @@ impl Session {
             security_data,
             security_series: HashMap::new(),
             security_retry_after: super::SECURITY_RETRY_AFTER,
+            security_live_refresh: super::SECURITY_LIVE_REFRESH,
+            refresh_series: false,
             library_constants: FastMap::default(),
             constants_in_progress: HashSet::new(),
             committed: RuntimeState::default(),

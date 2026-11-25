@@ -77,6 +77,11 @@ pub struct Session {
     pub security_series: HashMap<super::support::SecurityKey, SeriesAnswer>,
     /// How long a series the provider did not give is not asked for again (see [`SeriesAnswer`]).
     pub security_retry_after: Duration,
+    /// How old a series the provider gave may be before a realtime tick asks for it again, so a
+    /// finer or foreign series learns of the candles that opened since (see [`SeriesAnswer`]).
+    pub security_live_refresh: Duration,
+    /// Whether the request now running is on a realtime bar: the only time a series is refreshed.
+    pub(in crate::pine) refresh_series: bool,
     pub library_constants: FastMap<String, RuntimeValue>,
     pub constants_in_progress: HashSet<String>,
     pub committed: RuntimeState,
@@ -300,6 +305,11 @@ pub struct SeriesAnswer {
     pub candles: Option<Arc<Vec<Kline>>>,
     pub asked: Instant,
 }
+
+/// How long a series the provider gave is trusted on a realtime tick before it is asked for again:
+/// the host's own cache answers a second ask inside its 30 s lifetime, so a shorter window would
+/// only repeat what it holds.
+pub(super) const SECURITY_LIVE_REFRESH: Duration = Duration::from_secs(30);
 
 /// How long the provider is left alone after it gave no series: one ask a window bounds what a
 /// failing provider costs a live chart (each ask spends the host's retries).

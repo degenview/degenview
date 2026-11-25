@@ -322,8 +322,13 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   requested candle open, none on a mid-candle chart bar). TradingView fires it one tick after the
   chart bar that opened the candle (feed latency, not modelled here), and a finer request's own
   candles open between the chart's ticks: probe R3 (BTCUSDT 5m, 9.6 minutes) read isnew true on 29
-  of 1,373 ticks for `"1"`, about three per candle open, which this runtime cannot show because the
-  provider's finer series is read once per run.
+  of 1,373 ticks for `"1"`, about three per candle open, which this runtime cannot show: a series
+  the provider gave is asked for again on a realtime tick only once it is 30 s old
+  (`Session::security_live_refresh`, the host cache's lifetime), so a candle opens in the list up to
+  that long after TradingView shows it. Before that refresh a bar that opened after the load read an
+  empty list for as long as the chart stayed loaded (real window, BTCUSDT 5m with a `"1"` request,
+  14:20: `n = 0`). A refresh the provider fails keeps the candles the run had; history runs never
+  refresh (a rebuild asks again).
   `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
   developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
   candle is complete in the data whichever chart bar reads it. The candle still open at the

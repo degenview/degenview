@@ -262,6 +262,7 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         self.check_nesting("request.security", range)?;
+        self.refresh_series = context.flags.is_realtime;
         let Some(request) = self.security_request(arguments, context, range)? else {
             // An invalid symbol/timeframe the script asked to ignore: na, shaped like the expression.
             return Ok(RuntimeValue::Na);
@@ -369,6 +370,7 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         self.check_nesting("request.security_lower_tf", range)?;
+        self.refresh_series = context.flags.is_realtime;
         const PARAMETERS: [&str; 7] = [
             "symbol",
             "timeframe",
@@ -590,12 +592,23 @@ impl Session {
 
     /// The provider's candles for `key`: asked once while it answers, and again once
     /// [`Session::security_retry_after`] has passed if it did not (a series it could not give is a
-    /// moment, not a fact; see [`SeriesAnswer`]).
+    /// moment, not a fact; see [`SeriesAnswer`]). On a realtime bar a series is asked for again once
+    /// [`Session::security_live_refresh`] has passed, since candles open after it was fetched: the
+    /// live bar's intrabars (or another symbol's newest candle) would otherwise stay as they were at
+    /// the load, and a new live bar would find none. A refresh the provider fails keeps what the run
+    /// had.
     pub(in crate::pine) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
-        if let Some(known) = self.security_series.get(&key)
-            && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
-        {
-            return known.candles.clone();
+        let mut previous = None;
+        if let Some(known) = self.security_series.get(&key) {
+            let refresh = self.refresh_series
+                && known.candles.is_some()
+                && known.asked.elapsed() >= self.security_live_refresh;
+            if !refresh
+                && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
+            {
+                return known.candles.clone();
+            }
+            previous = known.candles.clone();
         }
         // The chart covers up to where its last bar closes, exclusive as a provider's range is. That
         // is the later of the bar's calendar end (a 31-day month closes a day after "open + 30
@@ -626,6 +639,7 @@ impl Session {
         if let Some(deadline) = self.deadline_at.as_mut() {
             *deadline += asked.elapsed();
         }
+        let answer = answer.or(previous);
         self.security_series.insert(
             key,
             SeriesAnswer {

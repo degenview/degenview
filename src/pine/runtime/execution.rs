@@ -788,6 +788,79 @@ mod tests {
         }
     }
 
+    /// 15-minute candles up to 4:30 for the first ask, up to 4:45 for every later one: the provider
+    /// of a live chart, whose newest candle opens between two asks.
+    struct Growing(std::sync::atomic::AtomicUsize);
+    impl crate::pine::runtime::support::SecurityDataProvider for Growing {
+        fn candles(&self, key: &crate::pine::runtime::support::SecurityKey) -> Option<Vec<Kline>> {
+            if key.interval != 900.0 {
+                return None;
+            }
+            let asked = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let count = if asked == 0 { 19 } else { 20 };
+            Some(
+                (0..count)
+                    .map(|i| Kline {
+                        open_time: i * 900_000,
+                        close_time: i * 900_000 + 899_999,
+                        open: 1.0,
+                        high: 1.0,
+                        low: 1.0,
+                        close: 1.0,
+                        volume: 1.0,
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    #[test]
+    fn a_live_bars_intrabars_grow_as_candles_open_after_the_series_was_fetched() {
+        // Real window, BTCUSDT 5m with a "1" request at 14:20: a bar that opened after the run began
+        // read an empty list, and the live bar's list never grew. TradingView counts the candles as
+        // they open.
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(array.size(request.security_lower_tf(syminfo.tickerid, \"15\", close)))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Growing(std::sync::atomic::AtomicUsize::new(0)))),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let mut bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        assert_eq!(
+            update.output.plots[0].values.last(),
+            Some(&Some(3.0)),
+            "4:00, 4:15 and 4:30 at the load"
+        );
+        // 4:50: the 4:45 candle has opened, the bar's price has moved, and the series is old enough.
+        controller.session.security_live_refresh = std::time::Duration::ZERO;
+        bars[4].close = 2.0;
+        let update = controller.update(&bars, None, 4 * hour + 50 * 60_000);
+        assert_eq!(
+            update.output.plots[0].values.last(),
+            Some(&Some(4.0)),
+            "the candle that opened since is counted"
+        );
+    }
+
     #[test]
     fn gaps_on_gives_a_bar_its_value_where_the_candle_closes_or_with_lookahead_where_it_opens() {
         // TradingView probe S6b (BTCUSDT 1h live at 13:31, a 120 request, own symbol and ETHUSDT
