@@ -55,14 +55,9 @@ impl ChartWorkspace {
         let mut actions = Vec::new();
         for action in tool_sidebar::show(ui, &input) {
             match action {
-                ToolSidebarAction::Select(tool) => self.toggle_tool(tool),
-                ToolSidebarAction::ToggleZoomIn => self.toggle_zoom_in(),
+                ToolSidebarAction::Arm(tool) => self.arm_tool(tool),
+                ToolSidebarAction::ArmZoomIn => self.arm_zoom_in(),
                 ToolSidebarAction::ZoomOut => self.zoom_out_focused(),
-                ToolSidebarAction::Arm(tool) => {
-                    self.tools.active = tool;
-                    self.remember_group_tool(tool);
-                    self.drop_rulers();
-                }
                 ToolSidebarAction::SetCursor(mode) => {
                     self.tools.choose_cursor(mode);
                     self.drop_rulers();
@@ -89,22 +84,37 @@ impl ChartWorkspace {
         actions
     }
 
-    /// Back to the crosshair after the drawing layer put its tool down (a drawing was placed, or the
-    /// ruler's measurement was read). A measurement goes away with its tool, as on every other way
-    /// of putting it down.
-    pub(in crate::workspace) fn disarm_tool(&mut self) {
-        self.tools.disarm();
+    /// Back to the crosshair after the drawing layer put the held tool down (a one-shot drawing was
+    /// placed, the ruler's measurement was read, or the chart was right-clicked). A measurement goes
+    /// away with its tool, as on every other way of putting it down.
+    pub(in crate::workspace) fn put_down_tool(&mut self) {
+        self.tools.put_down();
         self.drop_rulers();
     }
 
-    /// Arms the Zoom In mode, or puts it down when it is armed. It takes the pointer from any
-    /// drawing tool, as a drawing tool takes it from Zoom In.
-    pub(in crate::workspace) fn toggle_zoom_in(&mut self) {
-        self.tools.zoom_armed = !self.tools.zoom_armed;
-        if self.tools.zoom_armed {
-            self.tools.active = Tool::Cursor;
+    /// An open menu of the tool strip takes Escape before the charts do: the key must close it and
+    /// nothing behind it (a draft, the armed tool, the selection). egui closes a popup on Escape
+    /// while it draws and leaves the key to the rest of the frame, so call this before the strip is
+    /// drawn (`ChartWorkspace::ui` does, first).
+    pub(in crate::workspace) fn reserve_escape_for_tool_menus(&self, ctx: &egui::Context) {
+        tool_sidebar::close_menu_on_escape(ctx);
+    }
+
+    /// Arms the Zoom In mode. It takes the pointer from any drawing tool, as a drawing tool takes
+    /// it from Zoom In; arming it again changes nothing.
+    pub(in crate::workspace) fn arm_zoom_in(&mut self) {
+        if self.tools.arm_zoom() {
             self.drop_rulers();
         }
+    }
+
+    /// Puts `tool` in hand, remembering it as the one its group's tile shows. Arming the tool that
+    /// is already armed changes nothing: the tiles and the menu rows never put a tool down.
+    pub(in crate::workspace) fn arm_tool(&mut self, tool: Tool) {
+        if self.tools.arm(tool) {
+            self.drop_rulers();
+        }
+        self.remember_group_tool(tool);
     }
 
     /// Zoom out on the focused chart: back to the view its last zoom came from. It is an undo
@@ -121,16 +131,14 @@ impl ChartWorkspace {
         }
     }
 
-    /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair).
+    /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair):
+    /// what a shortcut and the favorites bar do. The tool strip's tiles use `arm_tool`.
     pub(in crate::workspace) fn toggle_tool(&mut self, tool: Tool) {
-        if tool == Tool::Cursor {
-            self.tools.zoom_armed = false;
-        }
-        self.tools.active = if self.tools.active == tool || tool == Tool::Cursor {
-            Tool::Cursor
+        if tool == Tool::Cursor || self.tools.active == tool {
+            self.tools.put_down();
         } else {
-            tool
-        };
+            self.tools.arm(tool);
+        }
         self.remember_group_tool(tool);
         self.drop_rulers();
     }
@@ -166,18 +174,100 @@ mod tests {
         workspace.toggle_tool(Tool::TrendLine);
         assert_eq!(workspace.tools.active, Tool::TrendLine);
         // Arming Zoom In takes the pointer from the drawing tool.
-        workspace.toggle_zoom_in();
+        workspace.arm_zoom_in();
         assert!(workspace.tools.zoom_armed);
         assert_eq!(workspace.tools.active, Tool::Cursor);
         // Arming a drawing tool puts Zoom In down, and so does the crosshair tile.
         workspace.toggle_tool(Tool::Rectangle);
-        workspace.toggle_zoom_in();
+        workspace.arm_zoom_in();
         workspace.toggle_tool(Tool::Cursor);
         assert!(!workspace.tools.zoom_armed);
-        // A second click on the tile puts it down.
-        workspace.toggle_zoom_in();
-        workspace.toggle_zoom_in();
+        // A second click on the tile keeps it armed, as on every tile.
+        workspace.arm_zoom_in();
+        workspace.arm_zoom_in();
+        assert!(workspace.tools.zoom_armed);
+    }
+
+    #[test]
+    fn arming_the_armed_ruler_keeps_its_measurement_and_arming_another_tool_takes_it() {
+        use crate::model::{Anchor, Drawing, DrawingCommand};
+        use crate::workspace::test_support::{chart_with_drawings, drawing_ids};
+        let mut workspace = empty_workspace(1);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.arm_tool(Tool::Ruler);
+        let ruler = Drawing::Ruler {
+            id: 50,
+            a: Anchor {
+                time_ms: 0,
+                price: 1.0,
+            },
+            b: Anchor {
+                time_ms: 9,
+                price: 2.0,
+            },
+        };
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(ruler)]);
+        // A click on the lit tile changes nothing: the measurement is still on the chart.
+        workspace.arm_tool(Tool::Ruler);
+        assert_eq!(drawing_ids(&workspace, chart), vec![1, 50]);
+        // Another tool in hand takes the measurement with the Ruler, as every way of leaving it does.
+        workspace.arm_tool(Tool::Brush);
+        assert_eq!(drawing_ids(&workspace, chart), vec![1]);
+    }
+
+    #[test]
+    fn arming_says_whether_what_is_in_hand_changed() {
+        let mut workspace = empty_workspace(1);
+        assert!(workspace.tools.arm(Tool::Ray));
+        assert!(!workspace.tools.arm(Tool::Ray), "already in hand");
+        assert!(workspace.tools.arm_zoom(), "Zoom In takes the pointer");
+        assert!(!workspace.tools.arm_zoom());
+        assert!(workspace.tools.arm(Tool::Ray), "and a tool takes it back");
+    }
+
+    #[test]
+    fn a_tile_arms_the_tool_and_arming_it_again_changes_nothing() {
+        let mut workspace = empty_workspace(1);
+        workspace.arm_tool(Tool::Ray);
+        workspace.arm_tool(Tool::Ray);
+        assert_eq!(workspace.tools.active, Tool::Ray, "no toggle");
+        // It is what the Lines tile shows from now on, and arming another one replaces it.
+        workspace.arm_tool(Tool::Brush);
+        assert_eq!(workspace.tools.active, Tool::Brush);
+        workspace.arm_zoom_in();
+        workspace.arm_tool(Tool::Rectangle);
+        assert!(
+            !workspace.tools.zoom_armed,
+            "a tool takes the pointer from Zoom In"
+        );
+    }
+
+    #[test]
+    fn putting_down_lets_go_of_whatever_holds_the_pointer_and_says_whether_it_did() {
+        let mut workspace = empty_workspace(1);
+        assert!(!workspace.tools.put_down(), "nothing was held");
+        workspace.toggle_tool(Tool::TrendLine);
+        assert!(workspace.tools.put_down());
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        workspace.arm_zoom_in();
+        assert!(workspace.tools.put_down());
         assert!(!workspace.tools.zoom_armed);
+        assert!(
+            !workspace.tools.put_down(),
+            "and a second time holds nothing"
+        );
+    }
+
+    #[test]
+    fn escape_puts_down_what_is_held_before_it_clears_the_selection() {
+        let mut workspace = empty_workspace(1);
+        workspace.tools.select(7, vec![1]);
+        workspace.toggle_tool(Tool::Rectangle);
+        workspace.tools.escape();
+        assert_eq!(workspace.tools.active, Tool::Cursor);
+        assert!(workspace.tools.selection().is_some(), "one step per Esc");
+        workspace.tools.escape();
+        assert!(workspace.tools.selection().is_none());
     }
 
     #[test]
@@ -196,7 +286,7 @@ mod tests {
         workspace.tools.choose_cursor(CursorMode::Dot);
         assert_eq!(workspace.tools.active, Tool::Cursor);
         assert_eq!(workspace.tools.cursor(), CursorMode::Dot);
-        workspace.toggle_zoom_in();
+        workspace.arm_zoom_in();
         workspace.tools.choose_cursor(CursorMode::Arrow);
         assert!(!workspace.tools.zoom_armed);
         // Saved with the strip's options, so the next tab starts on it.
@@ -221,7 +311,7 @@ mod tests {
             CursorMode::Arrow,
             "Esc or the strip gives it back"
         );
-        workspace.toggle_zoom_in();
+        workspace.arm_zoom_in();
         assert_eq!(workspace.tools.cursor(), CursorMode::Cross);
     }
 
@@ -237,7 +327,7 @@ mod tests {
             .choose_cursor(workspace.tools.chosen_cursor());
         assert_eq!(workspace.tools.active, Tool::Cursor);
         assert_eq!(workspace.tools.cursor(), CursorMode::Arrow);
-        workspace.toggle_zoom_in();
+        workspace.arm_zoom_in();
         workspace
             .tools
             .choose_cursor(workspace.tools.chosen_cursor());

@@ -25,10 +25,36 @@ state is marked **doc** or **lib**; what they do not state, and was chosen here,
 **inferred**. Nothing was compared pixel for pixel against TradingView (no access), so the visual
 parity checklist at the end is a manual test matrix, not a result.
 
+## Tool strip tiles
+
+Every tile of the rail that opens a menu (Cursors, Lines, Fibonacci and Gann, Patterns, Forecasting,
+Shapes, Text and notes) follows one rule, `tool_sidebar::flyout_tile`, so a click never means two
+things. Observed on TradingView, signed in, on its Cursor, Trendline, Fib and Measure tiles:
+
+- **The tile arms what it shows**, the last tool used from its menu, and opens nothing. Arming
+  closes any menu that was open and takes the pointer from whatever was in hand.
+- **A tile whose tool is already in hand opens its menu on the click**, and the next click shuts
+  it; the tool stays armed. The Cursors tile is lit while nothing else is in hand, so the cursor is
+  a tool in this rule: with a tool or Zoom In in hand its click picks the cursor, with the cursor
+  in hand its click opens the cursor menu.
+- **The arrow opens the menu and never arms**: the small triangle in the tile's bottom-right corner,
+  a `FLYOUT_CORNER` square. TradingView's arrow is a strip down the tile's right edge; the corner is
+  the app's choice, the behaviour is the same. It toggles the menu whatever is in hand. The Right
+  arrow key does the same on a focused tile.
+- **Picking a row arms it at once**, closes the menu and becomes what the tile shows.
+- **Escape shuts an open menu and nothing else** (`close_menu_on_escape`, called first in
+  `ChartWorkspace::ui`: egui closes a popup on Escape as the rail draws, so a call after the rail,
+  in the grid, finds it already shut and the chart disarms the tool too; a frame test guards the order); the next Escape puts the tool down. Another tile's click closes the menu and arms.
+- Single-tool tiles (Ruler, Zoom in) arm and stay armed: a second click does not put them down.
+  The shortcuts and the favorites bar still toggle (`toggle_tool`); only the tiles never do.
+- **Inferred, not seen:** TradingView arms a tool on a synthetic right-click of a tile; the app does
+  nothing on a right-click (it used to open the menu), which keeps one gesture per meaning. Menu
+  rows highlight no armed tool here.
+
 ## Lines, channels and pitchforks
 
 The Lines tile (second on the strip) shows the last tool used from its menu and opens
-LINES / CHANNELS / PITCHFORKS from its corner, a right-click or the Right arrow. The Fibonacci and
+LINES / CHANNELS / PITCHFORKS from its arrow (see [Tool strip tiles](#tool-strip-tiles)). The Fibonacci and
 Gann tools have the tile below it and are in neither menu. Alt (Option on a Mac) with **T**, **H**, **V** and **C** arms
 the trend line, horizontal line, vertical line and crossline (**doc**, community posts); **J** arms
 the horizontal ray (TradingView's default, which no help page states: **inferred**). Hotkeys leave
@@ -213,7 +239,7 @@ One controller (`ui/drawing/layer/`). A tool's `Placement` decides how anchors a
 - `Single`: one click.
 - `Points(n)`: a drag places the first two anchors, clicks place the rest; click-click works too.
 - `Open`: a click adds a vertex; a double-click, Return, Esc (with at least two vertices),
-  or a right-click finishes; Backspace takes the last vertex back; a click near the first vertex of
+  or a right-click on the plot or a script pane finishes; Backspace takes the last vertex back; a click near the first vertex of
   a polyline closes it. At most 5,000 vertices.
 
 Esc, switching tool, losing window focus, or the card going unseen (another tab) abandons a draft
@@ -262,8 +288,8 @@ bar over the window: a grip of dots, then one button per favorite.
   the next move saves a window place. It is saved when the grip is let go, not while it moves. The bar is
   not shown while a portion of the chart is being selected or a replay start is being picked. Over the
   toolbar it covers what is under it, as any floating bar does; drag it away to reach that.
-- **Escape.** An open menu of the bar takes Escape first (`favorites_bar::close_menu_on_escape`, called before the
-  charts are drawn, as the scale menu does): it closes the menu and spends the key, so a draft, the armed tool and the
+- **Escape.** An open menu of the bar takes Escape first (`favorites_bar::close_menu_on_escape`, called first in
+  `ChartWorkspace::ui`, before any panel draws): it closes the menu and spends the key, so a draft, the armed tool and the
   selection behind it stay as they were.
 - **Layer.** The bar is a `Middle`-order area: above the charts, below every popup and menu (so a flyout
   open while its first star makes the bar appear keeps the pointer), the selected drawing's toolbar and the
@@ -284,7 +310,7 @@ a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped ti
 
 The ruler is read after it is placed, so with Keep drawing off it stays armed and on screen until
 the next click or drag, which puts the tool down and takes the measurement with it (`ends_measurement`
-in the layer, `ChartWorkspace::disarm_tool`). On, that click starts another measurement. The report
+in the layer, `ChartWorkspace::put_down_tool`). On, that click starts another measurement. The report
 asked for this; it was not observed on TradingView.
 
 The cursor menu on the strip's first tile has an Eraser that removes drawings by clicking or
@@ -418,11 +444,11 @@ placement, selected (handles, halo, toolbar), hovered, locked, with text, and un
 | Fill alpha over dark and light chart backgrounds | Rectangle, Ellipse, Arc |
 | Arrow-mark size staying fixed while zooming the price axis | up and down |
 | Handle size and hit area on a trackpad | rectangle corners |
-| Grouped menu: clipping at the window edge, scrolling in a short window, keyboard | tile corner |
+| Grouped menu: clipping at the window edge, scrolling in a short window, keyboard | tile arrow |
 | Floating toolbar placement above, below and for a shape larger than the plot | big circle |
 | Properties dialog pages and the template menu | every tool |
 | Properties dialog: equal gaps after every heading, inputs aligned on the right edge, one hairline above the footer, no resize when switching tabs | trend line, Fib, Arrow, Rectangle, arrow mark, Brush |
-| Lines menu: width, row alignment, shortcut column, scrolling in a short window, keyboard | Lines tile corner |
+| Lines menu: width, row alignment, shortcut column, scrolling in a short window, keyboard | Lines tile arrow |
 | Text along a line: sharpness at 1x and 2x, readable at every slope, above/on/below, a very short line | trend line, extended line, channel |
 | "Add text" place and the editor: IME, clipboard, Return/Shift+Return/Escape, no shortcut firing | selected trend line |
 | Option+T/H/J/V/C while typing in the editor and in a text field | macOS |

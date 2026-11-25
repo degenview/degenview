@@ -1,0 +1,2 @@
+fixed: `[line, direction] = ta.supertrend(3, 10)` in Pine scripts no longer reads na on every bar; it matches TradingView from the first bar. Scripts that saved the old result may plot and trade differently.
+fixed: Pine scripts that use `ta.supertrend`, `ta.macd`, `ta.bb`, `ta.dmi` or `ta.kc` as a single value, or name the wrong number of values, now show a compile error as on TradingView instead of silently plotting nothing.

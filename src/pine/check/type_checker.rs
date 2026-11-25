@@ -27,6 +27,10 @@ pub enum Inferred {
         qualifier: Option<Qualifier>,
     },
     Na,
+    /// What a builtin that returns a tuple evaluates to, by its number of values. Only
+    /// [`TypeChecker::infer_result`] hands it out: [`TypeChecker::infer`], which every place that
+    /// wants one value goes through, reports it.
+    Tuple(usize),
     Unknown,
 }
 
@@ -43,6 +47,7 @@ impl Inferred {
         match self {
             Self::Known(_, qualifier) | Self::Typed { qualifier, .. } => qualifier,
             Self::Na => Some(Qualifier::Constant),
+            Self::Tuple(_) => Some(Qualifier::Series),
             Self::Unknown => None,
         }
     }
@@ -191,7 +196,7 @@ impl TypeChecker {
                     self.assign(name, *op, value, scope);
                 }
                 Statement::Expression(expression) => {
-                    let value = self.infer(expression, scope);
+                    let value = self.infer_result(expression, scope);
                     self.last = value;
                 }
                 Statement::Conditional {
@@ -284,8 +289,30 @@ impl TypeChecker {
                         self.block(&arm.body, scope);
                     }
                 }
-                Statement::TupleDeclaration { names, value, .. } => {
-                    self.infer(value, scope);
+                Statement::TupleDeclaration {
+                    names,
+                    value,
+                    range,
+                    ..
+                } => {
+                    if let Inferred::Tuple(arity) = self.infer_result(value, scope)
+                        && arity != names.len()
+                    {
+                        self.error(
+                            "PINE3070",
+                            format!(
+                                "{} returns {arity} values, but {} {} declared.",
+                                callee(value),
+                                names.len(),
+                                if names.len() == 1 {
+                                    "name is"
+                                } else {
+                                    "names are"
+                                },
+                            ),
+                            *range,
+                        );
+                    }
                     for name in names {
                         scope.insert(name.clone(), Inferred::Unknown);
                     }
@@ -458,7 +485,7 @@ impl TypeChecker {
                 declared,
                 Ty::Udt(_) | Ty::Enum(_) | Ty::Map(..) | Ty::Matrix(_)
             ),
-            Inferred::Na | Inferred::Unknown => false,
+            Inferred::Na | Inferred::Tuple(_) | Inferred::Unknown => false,
         };
         if !judged {
             return false;
@@ -528,7 +555,29 @@ impl TypeChecker {
 
     // MARK: Expressions
 
+    /// The value of `expression`, for a place that holds one value: an operand, an argument, a
+    /// declaration. A builtin that returns a tuple is an error there, as it is on TradingView.
     fn infer(&mut self, expression: &Expression, scope: &Scope) -> Inferred {
+        let value = self.infer_result(expression, scope);
+        let Inferred::Tuple(arity) = value else {
+            return value;
+        };
+        let names = ["a", "b", "c", "d"][..arity.min(4)].join(", ");
+        let callee = callee(expression);
+        self.error(
+            "PINE3069",
+            format!(
+                "{callee} returns {arity} values, which one variable or operand cannot hold: bind them together, as in `[{names}] = {callee}(…)`."
+            ),
+            expression.range(),
+        );
+        Inferred::Unknown
+    }
+
+    /// What `expression` evaluates to, a tuple included: for the places that take one, which are a
+    /// tuple declaration, a statement of its own (a function's last one returns it) and the
+    /// expression `request.security` evaluates.
+    fn infer_result(&mut self, expression: &Expression, scope: &Scope) -> Inferred {
         match expression {
             Expression::Literal(value, _) => match value {
                 Literal::Int(_) => Inferred::Known(ValueType::Int, Some(Qualifier::Constant)),
@@ -770,7 +819,14 @@ impl TypeChecker {
     ) -> Inferred {
         let values: Vec<Inferred> = arguments
             .iter()
-            .map(|argument| self.infer(&argument.value, scope))
+            .enumerate()
+            .map(|(position, argument)| {
+                if evaluates_expression(name, position, argument) {
+                    self.infer_result(&argument.value, scope)
+                } else {
+                    self.infer(&argument.value, scope)
+                }
+            })
             .collect();
         // `levels.push(x)` reads as one dotted name: a variable (or a builtin series) and a method.
         if let Some((path, member)) = name.rsplit_once('.') {
@@ -814,6 +870,9 @@ impl TypeChecker {
         for value in &values {
             qualifier = max_qualifier(qualifier, value.qualifier());
         }
+        if let Some(arity) = builtin_types::tuple_arity(name) {
+            return Inferred::Tuple(arity);
+        }
         let result = builtin_types::call(name, arguments, &values, qualifier);
         self.refine_collection(name, &values, result)
     }
@@ -829,7 +888,7 @@ impl TypeChecker {
             Inferred::Known(ValueType::Object, _) => Ty::Any,
             Inferred::Known(kind, _) => Ty::Scalar(kind),
             Inferred::Typed { ty, .. } => self.types.get(ty).clone(),
-            Inferred::Na | Inferred::Unknown => Ty::Any,
+            Inferred::Na | Inferred::Tuple(_) | Inferred::Unknown => Ty::Any,
         }
     }
 
@@ -1350,6 +1409,24 @@ fn max_qualifier(a: Option<Qualifier>, b: Option<Qualifier>) -> Option<Qualifier
     }
 }
 
+/// The name a call is written with, for a diagnostic about its result.
+fn callee(expression: &Expression) -> &str {
+    match expression {
+        Expression::Call { name, .. } => name,
+        _ => "the call",
+    }
+}
+
+/// Whether `argument` of a call to `name` is the expression `request.security` evaluates on the
+/// other market, which may be a tuple.
+fn evaluates_expression(name: &str, position: usize, argument: &Argument) -> bool {
+    matches!(name, "request.security" | "request.security_lower_tf")
+        && match argument.name.as_deref() {
+            Some(label) => label == "expression",
+            None => position == 2,
+        }
+}
+
 fn unify(a: Inferred, b: Inferred, test: Option<Qualifier>) -> Inferred {
     match (a, b) {
         (Inferred::Known(x, qx), Inferred::Known(y, qy)) => {
@@ -1384,6 +1461,7 @@ fn describe(value: Inferred) -> String {
             value_type_name(kind).to_owned()
         }),
         Inferred::Na => "na".to_owned(),
+        Inferred::Tuple(arity) => format!("a tuple of {arity} values"),
         Inferred::Unknown => "an unknown type".to_owned(),
     }
 }

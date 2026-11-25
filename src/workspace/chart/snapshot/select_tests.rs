@@ -490,7 +490,7 @@ fn picking_select_portion_takes_the_pointer_from_the_tools_and_zoom() {
     assert_eq!(rig.workspace.tools.active_tool(), Tool::Cursor);
 
     let mut rig = Rig::new(&["BTCUSDT"]);
-    rig.workspace.toggle_zoom_in();
+    rig.workspace.arm_zoom_in();
     rig.workspace.begin_portion_selection();
     assert!(rig.selecting());
     assert!(!rig.workspace.tools.is_zoom_armed());
@@ -509,7 +509,7 @@ fn arming_a_tool_or_zoom_in_puts_the_selection_down() {
 
     let mut rig = Rig::new(&["BTCUSDT"]);
     rig.begin();
-    rig.workspace.toggle_zoom_in();
+    rig.workspace.arm_zoom_in();
     rig.frame(Vec::new());
     assert!(!rig.selecting(), "Zoom In");
     assert!(

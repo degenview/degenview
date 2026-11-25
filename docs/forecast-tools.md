@@ -27,8 +27,8 @@ found says. Nothing was compared pixel for pixel against TradingView (no access)
 
 ## Tools
 
-The Forecast tile shows the last tool used from its menu; its corner, a right-click or the Right arrow
-open the menu. Tools of fixed points are placed like every other: click-click or press-drag for the
+The Forecast tile shows the last tool used from its menu and behaves as every tile with a menu (see
+[Tool strip tiles](drawing-tools.md#tool-strip-tiles)). Tools of fixed points are placed like every other: click-click or press-drag for the
 first two, a click for each more; Backspace takes the last back, Esc or a right-click abandons it.
 
 | Tool | Placement | What is drawn | Default (lib unless noted) |
@@ -257,7 +257,7 @@ renderer; it is not a comparison with TradingView.
 | Bands on and off, the fill, a source change; a chart with no volume | Anchored VWAP |
 | Rows, up/down/delta, left and right, the point of control extended; a range before the loaded bars; scrolling back | profiles |
 | Labels' readability over dense candles in both themes | measurers |
-| The Forecast menu: width, section headings, scrolling in a short window, keyboard | the tile's corner |
+| The Forecast menu: width, section headings, scrolling in a short window, keyboard | the tile's arrow |
 
 ## Sources
 

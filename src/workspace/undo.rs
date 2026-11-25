@@ -561,7 +561,7 @@ mod tests {
         };
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(ruler)]);
         workspace.toggle_tool(Tool::Ruler);
-        workspace.disarm_tool();
+        workspace.put_down_tool();
         assert_eq!(workspace.tools.active_tool(), Tool::Cursor);
         assert_eq!(drawing_ids(&workspace, chart), vec![1], "the ruler is gone");
     }

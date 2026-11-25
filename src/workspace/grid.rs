@@ -305,7 +305,7 @@ impl ChartWorkspace {
 
         let mut drawing_commands: Vec<(u64, Vec<DrawingCommand>)> = Vec::new();
         let mut drawing_select: Option<(u64, Vec<u64>)> = None;
-        let mut drawing_disarm = false;
+        let mut drawing_put_down = false;
         let picture_work = self.content.work_snapshot(self.focused);
         let mut picture_used = false;
         let mut picture_replace: Option<(u64, u64)> = None;
@@ -322,7 +322,6 @@ impl ChartWorkspace {
         let drawing_defaults = self.drawing_templates().defaults().clone();
         let drawing_preview: Option<(u64, Drawing)> = self.tools.previewed_draft();
         let mut drawing_escape = false;
-        self.reserve_escape_for_favorites_menu(ui.ctx());
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
         let mut live_actions = Vec::new();
@@ -636,7 +635,7 @@ impl ChartWorkspace {
                                                 drawing_select = Some((chart_id, select));
                                             }
                                             drawing_escape |= frame.escape_consumed;
-                                            drawing_disarm |= frame.disarm;
+                                            drawing_put_down |= frame.put_down;
                                             picture_used |= frame.content_used;
                                             if let Some(drawing_id) = frame.replace_request {
                                                 picture_replace = Some((chart_id, drawing_id));
@@ -914,8 +913,8 @@ impl ChartWorkspace {
                 self.tools.select(chart_id, select);
             }
         }
-        if drawing_disarm {
-            self.disarm_tool();
+        if drawing_put_down {
+            self.put_down_tool();
         }
         // A zoom puts the tool down, is an undo step, and the chart it was made on becomes the
         // focused one, which is the one Zoom out goes back on. Every chart is asked, so none keeps
@@ -929,7 +928,7 @@ impl ChartWorkspace {
             self.remember_view(chart_id, before, ViewMove::Back);
         }
         if let Some(&(chart_id, _)) = zoomed.last() {
-            self.tools.disarm_zoom();
+            self.tools.put_down();
             self.focus_chart(chart_id);
         }
         self.picture_work_done();

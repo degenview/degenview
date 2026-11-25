@@ -1744,6 +1744,9 @@ impl Rows {
 }
 
 const NOTICE_HEIGHT: f32 = 60.0;
+const NOTICE_BUTTON_HEIGHT: f32 = 28.0;
+/// The button's gap to the card's right edge: the one it has above and below.
+const NOTICE_BUTTON_INSET: f32 = (NOTICE_HEIGHT - NOTICE_BUTTON_HEIGHT) / 2.0;
 
 /// A card under the list: a title, one line of detail and, when Settings can fix it, a button.
 struct Notice {
@@ -1763,6 +1766,19 @@ impl Notice {
     }
 }
 
+/// Where the notice's button of `width` sits: at the card's right, as far from its edge as from its
+/// top and bottom.
+fn notice_button_rect(card: Rect, width: f32) -> Rect {
+    let size = vec2(width, NOTICE_BUTTON_HEIGHT);
+    Rect::from_min_size(
+        pos2(
+            card.right() - NOTICE_BUTTON_INSET - size.x,
+            card.center().y - size.y / 2.0,
+        ),
+        size,
+    )
+}
+
 /// Draws `notice` in `card`; returns whether its button was pressed.
 fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
     ui.painter()
@@ -1780,11 +1796,12 @@ fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
     kit::paint_card_badge(ui, badge, Icon::Key);
 
     let mut pressed = false;
-    let mut right = card.right() - 14.0;
+    let mut right = card.right() - NOTICE_BUTTON_INSET;
     if notice.settings {
-        let button = Rect::from_center_size(pos2(right - 52.0, card.center().y), vec2(104.0, 30.0));
+        let label = tr!("Open Settings");
+        let button = notice_button_rect(card, kit::sheet_button_width(ui, label, false));
         let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(button));
-        pressed = widgets::sheet_button(&mut cell, tr!("Open Settings"), false, true).clicked();
+        pressed = widgets::sheet_button(&mut cell, label, false, true).clicked();
         right = button.left() - 12.0;
     }
     let text_left = badge.right() + 12.0;
@@ -1797,13 +1814,14 @@ fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
         theme::text_primary(),
         width,
     );
-    let detail = kit::galley(
+    let detail = kit::galley_rows(
         ui,
         &notice.detail,
         12.5,
         REGULAR,
         theme::text_secondary(),
         width,
+        2,
     );
     let block = title.size().y + 2.0 + detail.size().y;
     let top = card.center().y - block / 2.0;

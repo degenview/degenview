@@ -1129,12 +1129,15 @@ fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
 
 /// A chart with ETHUSDT compared on it: the overlay's id.
 fn compared(rig: &mut Rig, chart: u64) -> crate::model::overlay::OverlayId {
+    compared_market(rig, chart, "ETHUSDT")
+}
+
+fn compared_market(rig: &mut Rig, chart: u64, symbol: &str) -> crate::model::overlay::OverlayId {
     use crate::model::{DataSource, InstrumentId};
-    match rig.workspace.add_overlay(
-        chart,
-        InstrumentId::new(DataSource::Binance, "ETHUSDT"),
-        None,
-    ) {
+    match rig
+        .workspace
+        .add_overlay(chart, InstrumentId::new(DataSource::Binance, symbol), None)
+    {
         Some(crate::model::overlay::AddOutcome::Added(id)) => id,
         other => panic!("the overlay was not added: {other:?}"),
     }
@@ -1209,6 +1212,136 @@ fn the_tree_reorders_drawings_in_the_stack() {
     assert_eq!(rig.drawing_ids(chart), [2, 1]);
     rig.workspace.undo(&rig.ctx);
     assert_eq!(rig.drawing_ids(chart), [1, 2]);
+}
+
+#[test]
+fn a_drop_in_the_tree_moves_a_drawing_into_the_place_of_the_one_it_lands_on() {
+    use crate::model::chart::object_tree::Key as TreeKey;
+    use crate::ui::chart::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    // A drawing from a newer version sits between the rows: it is listed, and an `Unreadable`
+    // counts as id 0 here, but it holds its place in the stored list like any other.
+    rig.chart_mut(chart).drawings = vec![
+        rectangle(1, 100),
+        Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 9}})),
+        rectangle(2, 200),
+        rectangle(3, 300),
+    ];
+    let drop = |rig: &mut Rig, key, over| {
+        rig.workspace.apply_tree_action(
+            chart,
+            TreeAction::Drop {
+                key: TreeKey::Drawing(key),
+                over: TreeKey::Drawing(over),
+            },
+        );
+    };
+    drop(&mut rig, 3, 1);
+    assert_eq!(rig.drawing_ids(chart), [3, 1, 0, 2]);
+    drop(&mut rig, 3, 2);
+    assert_eq!(rig.drawing_ids(chart), [1, 0, 2, 3]);
+    assert_eq!(rig.workspace.history.steps(), 2, "one undo step each");
+    rig.workspace.undo(&rig.ctx);
+    assert_eq!(rig.drawing_ids(chart), [3, 1, 0, 2]);
+    // It can be the place a drawing is dropped into.
+    drop(&mut rig, 1, 9);
+    assert_eq!(rig.drawing_ids(chart), [3, 0, 1, 2]);
+    rig.workspace.undo(&rig.ctx);
+    // Onto itself, or onto a drawing that is not there, is nothing.
+    let steps = rig.workspace.history.steps();
+    drop(&mut rig, 1, 1);
+    drop(&mut rig, 1, 77);
+    assert_eq!(rig.drawing_ids(chart), [3, 1, 0, 2]);
+    assert_eq!(rig.workspace.history.steps(), steps);
+}
+
+#[test]
+fn a_drop_in_the_tree_reorders_compared_markets_and_undo_restores_the_order() {
+    use crate::model::chart::object_tree::Key as TreeKey;
+    use crate::ui::chart::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    let eth = compared_market(&mut rig, chart, "ETHUSDT");
+    let sol = compared_market(&mut rig, chart, "SOLUSDT");
+    let doge = compared_market(&mut rig, chart, "DOGEUSDT");
+    let order = |rig: &mut Rig| {
+        rig.chart_mut(chart)
+            .overlays
+            .iter()
+            .map(|overlay| overlay.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(&mut rig), [eth, sol, doge]);
+    let before = rig.workspace.history.steps();
+    rig.workspace.apply_tree_action(
+        chart,
+        TreeAction::Drop {
+            key: TreeKey::Overlay(doge),
+            over: TreeKey::Overlay(eth),
+        },
+    );
+    assert_eq!(order(&mut rig), [doge, eth, sol]);
+    assert_eq!(rig.workspace.history.steps(), before + 1);
+    rig.workspace.undo(&rig.ctx);
+    assert_eq!(order(&mut rig), [eth, sol, doge]);
+    // A drop onto a row of another kind changes nothing.
+    rig.workspace.apply_tree_action(
+        chart,
+        TreeAction::Drop {
+            key: TreeKey::Overlay(doge),
+            over: TreeKey::Drawing(1),
+        },
+    );
+    assert_eq!(order(&mut rig), [eth, sol, doge]);
+}
+
+#[test]
+fn a_drop_in_the_tree_reorders_scripts_and_undo_restores_the_order() {
+    use crate::model::chart::object_tree::{IndicatorKey, Key as TreeKey};
+    use crate::ui::chart::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    {
+        let card = rig.chart_mut(chart);
+        BuiltIn::Ema.set_applied(&mut card.indicators, true);
+        for name in ["One", "Two", "Three"] {
+            card.chart.add_pine_instance(None, name, "//@version=6");
+        }
+    }
+    let order = |rig: &mut Rig| {
+        rig.chart_mut(chart)
+            .chart
+            .pine_instances()
+            .iter()
+            .map(|script| script.id)
+            .collect::<Vec<_>>()
+    };
+    let script = |id| TreeKey::Indicator(IndicatorKey::Script(id));
+    assert_eq!(order(&mut rig), [1, 2, 3]);
+    rig.workspace.apply_tree_action(
+        chart,
+        TreeAction::Drop {
+            key: script(1),
+            over: script(3),
+        },
+    );
+    assert_eq!(order(&mut rig), [2, 3, 1]);
+    rig.workspace.undo(&rig.ctx);
+    assert_eq!(order(&mut rig), [1, 2, 3]);
+    // Onto a built-in indicator, onto itself: no move and no undo step.
+    let steps = rig.workspace.history.steps();
+    for over in [
+        TreeKey::Indicator(IndicatorKey::BuiltIn(BuiltIn::Ema)),
+        script(1),
+    ] {
+        rig.workspace.apply_tree_action(
+            chart,
+            TreeAction::Drop {
+                key: script(1),
+                over,
+            },
+        );
+    }
+    assert_eq!(order(&mut rig), [1, 2, 3]);
+    assert_eq!(rig.workspace.history.steps(), steps);
 }
 
 #[test]
@@ -1478,7 +1611,7 @@ fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
     assert!(rig.workspace.content.place_now);
     assert_eq!(rig.workspace.tools.active_tool(), Tool::Post);
     rig.workspace.content.pending = None;
-    rig.workspace.tools.disarm();
+    rig.workspace.tools.put_down();
     rig.workspace.paste_text(&rig.ctx, TRADINGVIEW_LINK);
     assert!(
         rig.workspace.content.pending.is_none()
@@ -1521,7 +1654,7 @@ fn the_replace_sheet_survives_the_frame_that_follows_while_the_tool_is_the_curso
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
-    rig.workspace.tools.disarm();
+    rig.workspace.tools.put_down();
     rig.workspace
         .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Replace);
     assert!(rig.workspace.content.links.sheet.is_some());

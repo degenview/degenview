@@ -442,6 +442,103 @@ fn a_parameter_may_reuse_a_builtin_function_name_with_a_warning() {
 }
 
 #[test]
+fn ta_supertrend_must_be_declared_as_a_tuple() {
+    let scalar = diagnostic_codes("st = ta.supertrend(3, 10)\nplot(st)");
+    assert!(scalar.contains(&"PINE3069".to_owned()), "{scalar:?}");
+    let tuple = diagnostic_codes("[line, direction] = ta.supertrend(3, 10)\nplot(line)");
+    assert!(tuple.is_empty(), "{tuple:?}");
+    // A script's own method of that name, called on an object called `ta`, is not the builtin.
+    let method = diagnostic_codes(
+        "type Probe\n    float value = 1.0\n\
+         method supertrend(Probe this, float factor, int length) => this.value * factor + length\n\
+         ta = Probe.new()\n\
+         st = ta.supertrend(3.0, 10)\n\
+         plot(st)",
+    );
+    assert!(!method.contains(&"PINE3069".to_owned()), "{method:?}");
+}
+
+/// Every form below is a compile error on TradingView (CE10123, CE10092, CE10163, CE10066 or
+/// CE10038, probed on a 5-minute BTCUSDT chart): a builtin that returns a tuple has no value of its
+/// own.
+#[test]
+fn a_tuple_builtin_cannot_stand_for_one_value() {
+    let one_value = [
+        "plot(ta.supertrend(3, 10))",
+        "x = ta.supertrend(3, 10)[0]\nplot(x)",
+        "float st = 0.0\nst := ta.supertrend(3, 10)\nplot(st)",
+        "x = ta.supertrend(3, 10) + 1\nplot(x)",
+        "plot(math.abs(ta.supertrend(3, 10)))",
+        "x = close > open ? ta.supertrend(3, 10) : 0.0\nplot(x)",
+        "var st = ta.supertrend(3, 10)\nplot(1)",
+        "float st = ta.supertrend(3, 10)\nplot(st)",
+        "m = ta.macd(close, 12, 26, 9)\nplot(close)",
+        "plot(ta.bb(close, 20, 2))",
+        "plot(ta.dmi(14, 14))",
+        "plot(ta.kc(close, 20, 1.5))",
+        // A function that returns the tuple is no different from the builtin.
+        "f() =>\n    ta.supertrend(3, 10)\nx = f()\nplot(1)",
+        "f() =>\n    ta.supertrend(3, 10)\nplot(f())",
+        // A user function's parameter and `array.from` take one value each.
+        "g(x) => x\nplot(g(ta.supertrend(3, 10)))",
+        "a = array.from(ta.supertrend(3, 10))\nplot(close)",
+        "t = [ta.supertrend(3, 10), 1]\nplot(close)",
+    ];
+    for body in one_value {
+        let codes = diagnostic_codes(body);
+        assert!(codes.contains(&"PINE3069".to_owned()), "{body}: {codes:?}");
+    }
+}
+
+#[test]
+fn a_tuple_declaration_names_every_value_of_a_tuple_builtin() {
+    let wrong = [
+        "[a, b, c] = ta.supertrend(3, 10)\nplot(a)",
+        "[a] = ta.supertrend(3, 10)\nplot(a)",
+        "[a, b] = ta.macd(close, 12, 26, 9)\nplot(a)",
+        "[a, b, c, d] = ta.bb(close, 20, 2)\nplot(a)",
+    ];
+    for body in wrong {
+        let codes = diagnostic_codes(body);
+        assert!(codes.contains(&"PINE3070".to_owned()), "{body}: {codes:?}");
+    }
+    let right = [
+        "[a, b] = ta.supertrend(3, 10)\nplot(a)\nplot(b)",
+        "[a, b, c] = ta.macd(close, 12, 26, 9)\nplot(a + b + c)",
+        "[_, upper, lower] = ta.bb(close, 20, 2)\nplot(upper - lower)",
+        "[a, b, c] = ta.dmi(14, 14)\nplot(a + b + c)",
+        "[a, b, c] = ta.kc(close, 20, 1.5)\nplot(a + b + c)",
+    ];
+    for body in right {
+        let codes = diagnostic_codes(body);
+        assert!(codes.is_empty(), "{body}: {codes:?}");
+    }
+}
+
+#[test]
+fn a_tuple_builtin_may_be_returned_and_requested() {
+    let allowed = [
+        // The expression `request.security` evaluates elsewhere, positional or named.
+        "[a, b] = request.security(syminfo.tickerid, \"5\", ta.supertrend(3, 10))\nplot(a + b)",
+        "[a, b] = request.security(syminfo.tickerid, \"5\", expression = ta.supertrend(3, 10))\nplot(a + b)",
+        // A function whose last statement is the tuple returns it.
+        "f() =>\n    ta.supertrend(3, 10)\n[a, b] = f()\nplot(a + b)",
+        "[a, b] = request.security_lower_tf(syminfo.tickerid, \"1\", ta.supertrend(3, 10))\nplot(close)",
+        // A statement on its own discards the tuple.
+        "ta.supertrend(3, 10)\nplot(close)",
+        // A block that ends in the tuple hands it to the declaration.
+        "[x, y] = if close > open\n    ta.supertrend(3, 10)\nelse\n    [1.0, 1]\nplot(x)",
+        "[x, y] = switch\n    close > open => ta.supertrend(3, 10)\n    => [1.0, 1]\nplot(x)",
+        "for i = 0 to 1\n    [a, b] = ta.supertrend(3, 10)\nplot(close)",
+        "f() =>\n    [a, b] = ta.supertrend(3, 10)\n    [a, b]\n[x, y] = f()\nplot(x)",
+    ];
+    for body in allowed {
+        let codes = diagnostic_codes(body);
+        assert!(codes.is_empty(), "{body}: {codes:?}");
+    }
+}
+
+#[test]
 fn int_truncates_toward_zero() {
     let session = run(
         "up = int(2.9)\n\

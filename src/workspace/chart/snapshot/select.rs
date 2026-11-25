@@ -151,8 +151,7 @@ impl ChartWorkspace {
             self.say(tr!("There is no chart to take a picture of yet."), true);
             return;
         }
-        self.tools.disarm();
-        self.tools.disarm_zoom();
+        self.tools.put_down();
         self.snapshot.selecting = Some(Selecting::default());
     }
 

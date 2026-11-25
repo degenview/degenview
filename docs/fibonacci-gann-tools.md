@@ -68,8 +68,8 @@ Levels are 2 px, background fill 20 % (transparency 80), labels 12 pt.
 ## Placement and the tile
 
 The **Fibonacci and Gann** tile is third on the strip, where the Fib tile was. It shows the last tool
-used from its menu and opens FIBONACCI / GANN from its corner, a right-click or the Right arrow
-(`Menu::Fib`, remembered in `DrawingPrefs.fib_tool`). Alt+F arms the retracement (**inferred**: the
+used from its menu and opens FIBONACCI / GANN from its arrow, like every tile with a menu (see
+[Tool strip tiles](drawing-tools.md#tool-strip-tiles); `Menu::Fib`, remembered in `DrawingPrefs.fib_tool`). Alt+F arms the retracement (**inferred**: the
 TradingView default). Click-click or press-drag places the first two anchors, a click each the rest
 (`Placement::Points(n)`); Esc, a tool switch or a right-click abandons a drawing and nothing is saved
 or synced until the last anchor is placed. The preview is the same projection as the finished drawing.

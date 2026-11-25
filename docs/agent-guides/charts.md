@@ -171,6 +171,9 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 
 ## Context menus
 
+- A right-click on the plot with a drawing tool or Zoom In armed only puts it down (axes open their menu) (`ChartCard::context_request`
+  is the one arbiter; `DrawingTools::put_down` is the one way to let go, shared with Esc). Never add
+  a second place that decides what a right-click does.
 - One menu per right-click: drawing's (`ui::drawing::layer::menu`), else chart's
   (`model::chart::context` builds, `ui::chart::context_menu` draws, `workspace/chart/context/mod.rs` runs).
   New entry: a `Command`, a row in the model's `menu`, an arm in `run_context_command`. Menus never
