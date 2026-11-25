@@ -219,10 +219,8 @@ verification are in [Translation](agent-guides/translation.md). The steps for th
 
 ### Packaging that names languages
 
-Spanish is listed in each of these (the macOS bundle, the Windows installer, the Flatpak metainfo and
-desktop entry) and Simplified Chinese in all but the Windows installer (Inno Setup ships no Chinese
-`.isl`, and one written for the wizard is not part of the translation; the wizard follows English);
-a language added later is added to each, as follows:
+Spanish and Simplified Chinese are listed in each of these (the macOS bundle, the Windows installer,
+the Flatpak metainfo and desktop entry); a language added later is added to each, as follows:
 
 - **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
   (`en`) and `CFBundleLocalizations` (`en` plus each tag) to the app's and to the alert agent's
@@ -236,7 +234,10 @@ a language added later is added to each, as follows:
 - **Windows installer** (`packaging/windows/degenview.iss`). It has no `[Languages]` section, so
   Inno Setup's wizard is English. Add `Name: "en"; MessagesFile: "compiler:Default.isl"` first, then
   `Name: "<tag>"; MessagesFile: "compiler:Languages\<Name>.isl"` for each, and the wizard follows the
-  system language. A language Inno Setup ships no `.isl` for needs one added under `packaging/windows/`.
+  system language. A language Inno Setup ships no `.isl` for needs one added under `packaging/windows/`:
+`ChineseSimplified.isl` is a translation of Inno's own `Default.isl` (every key, the `%1` and
+`[name]` values unchanged; UTF-8, `LanguageID=$0804`, code page 936), referenced from the script by its
+bare file name. Compile it with the pinned Inno Setup and run the setup with `/LANG=zh` to see it.
   The installer's own `[CustomMessages]` and the shortcut names (`[Icons]`) are English text to
   translate there. The app inside does not read the installer's choice; it follows the setting.
 - **Flatpak metainfo** (`packaging/flatpak/es.nico.degenview.metainfo.xml`). Add the translated
