@@ -522,7 +522,7 @@ pub fn describe(toggles: LinkToggles) -> String {
     if parts.is_empty() {
         tr!("nothing synced").to_owned()
     } else {
-        parts.join(", ")
+        crate::i18n::join_list(&parts)
     }
 }
 

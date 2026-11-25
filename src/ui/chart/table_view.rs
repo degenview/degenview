@@ -416,7 +416,11 @@ fn paint_row(
         }
     }
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Label, true, summary.join(", "))
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Label,
+            true,
+            crate::i18n::join_list(&summary),
+        )
     });
 }
 

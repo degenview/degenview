@@ -17574,10 +17574,6 @@ msgstr[0] "{amount} 天"
 msgid "{amount} vs invested"
 msgstr "较投入 {amount}"
 
-#: src/ui/settings/mcp/mod.rs
-msgid "{areas} +{more} more"
-msgstr "{areas} 等另外 {more} 项"
-
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "{arrow} {amount}"
 msgstr "{arrow} {amount}"
@@ -17958,6 +17954,10 @@ msgstr[0] "{count} 个月"
 msgid "{count} month ago"
 msgid_plural "{count} months ago"
 msgstr[0] "{count} 个月前"
+
+#: src/ui/settings/mcp/mod.rs
+msgid "{count} more"
+msgstr "另外 {count} 项"
 
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} more favorite"

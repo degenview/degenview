@@ -46,6 +46,11 @@ Rules that need a person:
 - **Never build a sentence from pieces.** `format!("{} {}", tr!("Delete"), name)` cannot be
   translated: another language puts the words in another order. Write one message with the value in it.
 - Never `if count == 1 { "item" } else { "items" }`; that is `tr_n!`.
+- **A run of items is `i18n::join_list`, not `join(", ")`.** CLDR's "and" list pattern (`icu_list`)
+  writes `a, b, and c` in English, `a, b y c` in Spanish and `a、b和c` in Chinese. Pass the result to
+  `tr!` as a value when the list sits in a sentence; end a truncated list with its own item
+  (`tr!("{count} more")`) so the "and" lands before it. Two measurements side by side (a count of bars
+  and a duration) are not a list: separate them with ` · `.
 - **One message, one meaning.** Reuse a text only for the same meaning; use `tr_c!` when two places
   need different translations of the same English (a test fails on a text written both counted and
   plain).
@@ -282,10 +287,6 @@ Chinese market) are drawn only when the interface is Chinese.
 
 ## Not done yet
 
-- **Lists joined in code.** Some messages are short phrases that code joins with `", "`
-  (`model/watchlist/text.rs`, the Tab Linking menu's tooltip, session-stat conditions): another
-  language's separator (Chinese `，` or `、`) is not applied. A locale-aware list formatter
-  (`icu_list`) would fix every site at once and is not a dependency yet.
 - **Right-to-left languages.** egui's text layout does not apply the bidirectional algorithm
   (`epaint` `TODO(emilk): heed bidi characters`) and the layouts are not mirrored. Arabic, Hebrew and
   Persian wait on that.

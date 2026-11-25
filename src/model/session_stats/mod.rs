@@ -315,7 +315,7 @@ impl Filter {
     fn describe_in(&self, words: &Words) -> String {
         let mut parts = Vec::new();
         if !self.weekdays.is_all() {
-            parts.push(words.weekdays.join(", "));
+            parts.push(crate::i18n::join_list(&words.weekdays));
         }
         if self.gap != Side::Any || self.gap_min_pct.is_some() || self.gap_max_pct.is_some() {
             let side = match self.gap {

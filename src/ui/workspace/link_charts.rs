@@ -68,7 +68,7 @@ pub fn show(
             ui,
             &tr!(
                 "Not linked: {charts}. Price-based chart types have no shared time.",
-                charts = excluded.join(", ")
+                charts = crate::i18n::join_list(excluded)
             ),
         );
     }

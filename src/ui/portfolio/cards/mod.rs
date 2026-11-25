@@ -336,7 +336,7 @@ fn describe(card: &PortfolioCard, data: &CardData) -> String {
                 "{title}, {scope}: {parts}",
                 title = title,
                 scope = scope,
-                parts = parts.join(", ")
+                parts = crate::i18n::join_list(&parts)
             )
         }
         CardKind::TopPerformers => {
@@ -358,7 +358,7 @@ fn describe(card: &PortfolioCard, data: &CardData) -> String {
                 title = title,
                 scope = scope,
                 range = card.range.title(),
-                parts = parts.join(", ")
+                parts = crate::i18n::join_list(&parts)
             )
         }
     }

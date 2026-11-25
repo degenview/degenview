@@ -32,6 +32,7 @@ pub mod check;
 pub mod datetime;
 #[cfg(test)]
 mod extract;
+mod list;
 mod locale;
 mod plural_forms;
 mod preference;
@@ -43,6 +44,7 @@ mod tests;
 #[cfg(test)]
 pub use active::with_locale;
 pub use active::{current, preference, revision, set};
+pub use list::join_list;
 pub use locale::{Locale, resolve};
 pub use preference::Preference;
 pub use template::fill;

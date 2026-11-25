@@ -18757,10 +18757,6 @@ msgstr[1] ""
 msgid "{amount} vs invested"
 msgstr ""
 
-#: src/ui/settings/mcp/mod.rs
-msgid "{areas} +{more} more"
-msgstr ""
-
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "{arrow} {amount}"
 msgstr ""
@@ -19233,6 +19229,10 @@ msgid "{count} month ago"
 msgid_plural "{count} months ago"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/settings/mcp/mod.rs
+msgid "{count} more"
+msgstr ""
 
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} more favorite"
