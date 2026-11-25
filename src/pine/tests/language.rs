@@ -475,6 +475,9 @@ fn a_tuple_builtin_cannot_stand_for_one_value() {
         "plot(ta.bb(close, 20, 2))",
         "plot(ta.dmi(14, 14))",
         "plot(ta.kc(close, 20, 1.5))",
+        // A function that returns the tuple is no different from the builtin.
+        "f() =>\n    ta.supertrend(3, 10)\nx = f()\nplot(1)",
+        "f() =>\n    ta.supertrend(3, 10)\nplot(f())",
     ];
     for body in one_value {
         let codes = diagnostic_codes(body);
