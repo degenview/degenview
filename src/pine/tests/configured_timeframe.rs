@@ -19,6 +19,12 @@ const SOURCE: &str = "//@version=6\nindicator(\"T\")\n\
     plot(timeframe.in_seconds())\n\
     plot(array.size(request.security_lower_tf(syminfo.tickerid, \"30S\", close)))";
 
+/// `SOURCE` with the finer timeframe the provider's candles really have, so a candle ends where the
+/// timeframe says and a bar takes the ones that end inside it.
+const COUNT_SOURCE: &str = "//@version=6\nindicator(\"T\")\n\
+    plot(timeframe.in_seconds())\n\
+    plot(array.size(request.security_lower_tf(syminfo.tickerid, \"8S\", close)))";
+
 fn bar(open_time: i64, close_time: i64) -> Kline {
     Kline {
         open_time,
@@ -45,7 +51,7 @@ fn bars() -> Vec<Kline> {
 }
 
 /// A candle every eight seconds, whatever length was asked for: enough to count which ones a chart
-/// bar takes.
+/// bar takes (`COUNT_SOURCE` asks for eight).
 struct EightSeconds;
 
 impl SecurityDataProvider for EightSeconds {
@@ -59,8 +65,12 @@ impl SecurityDataProvider for EightSeconds {
 }
 
 fn controller() -> ExecutionController {
+    controller_for(SOURCE)
+}
+
+fn controller_for(source: &str) -> ExecutionController {
     ExecutionController::new(
-        SOURCE,
+        source,
         HashMap::new(),
         SymbolInfo {
             ticker: "BTCUSDT".to_owned(),
@@ -94,13 +104,14 @@ fn a_cut_short_bucket_does_not_shorten_the_charts_length_or_halt_the_script() {
 
 #[test]
 fn a_cut_short_bucket_takes_only_its_own_intrabars() {
-    let mut chart = controller().with_timeframe_seconds(59.0);
+    let mut chart = controller_for(COUNT_SOURCE).with_timeframe_seconds(59.0);
     let update = chart.update(&bars(), None, DAY + 200_000);
     let sizes = plot(&update, 1);
     // The 24 s bucket holds the candles opening at 86,376, 86,384 and 86,392 s; the ones at
-    // 86,400 s and after belong to the next bar, which is 59 s long.
+    // 86,400 s and after belong to the next bar, which is 59 s long. A candle belongs to the bar its
+    // last instant falls in: the one opening at 86,456 s ends at 86,464 s, inside the bar after.
     assert_eq!(sizes[2], 3.0);
-    assert_eq!(sizes[3], 8.0, "86,400 .. 86,456 s, every eight seconds");
+    assert_eq!(sizes[3], 7.0, "86,400 .. 86,448 s, every eight seconds");
 }
 
 #[test]

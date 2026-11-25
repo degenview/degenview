@@ -170,6 +170,7 @@ impl ExecutionController {
         now_ms: i64,
     ) -> ExecutionUpdate {
         self.session.logs.set_clock(now_ms);
+        self.session.now_ms = Some(now_ms);
         let live_bar_has_closed =
             self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
@@ -260,11 +261,16 @@ impl ExecutionController {
         let mut error = None;
         let last_is_live = bars.last().is_some_and(|bar| !is_closed(bar, now_ms));
         let history_len = bars.len().saturating_sub(usize::from(last_is_live));
+        // The live bar's own open, not an estimate from the history: a calendar bar has no fixed length.
+        let live_open = bars
+            .last()
+            .filter(|_| last_is_live)
+            .map(|bar| bar.open_time);
         let history = &bars[..history_len];
         let seed = bars
             .last()
             .map(|bar| (bar.close_time - bar.open_time).max(0) as f64 / 1000.0);
-        if let Err(run_error) = self.session.load_history(history, last_is_live, seed) {
+        if let Err(run_error) = self.session.load_history(history, live_open, seed) {
             error = script_error(run_error);
         } else if last_is_live {
             let live = bars.last().cloned().expect("live bar");
@@ -597,5 +603,315 @@ mod tests {
         let report = failed.output.strategy.expect("a strategy report");
         assert!(report.open_trades.is_empty(), "{:?}", report.open_trades);
         assert_eq!(report.equity.len(), 3);
+    }
+    /// 15-minute candles of the symbol, from midnight to 4:30.
+    struct Quarter;
+    impl crate::pine::runtime::support::SecurityDataProvider for Quarter {
+        fn candles(&self, key: &crate::pine::runtime::support::SecurityKey) -> Option<Vec<Kline>> {
+            (key.interval == 900.0).then(|| {
+                (0..19)
+                    .map(|i| Kline {
+                        open_time: i * 900_000,
+                        close_time: i * 900_000 + 899_999,
+                        open: 1.0,
+                        high: 1.0,
+                        low: 1.0,
+                        close: 1.0,
+                        volume: 1.0,
+                    })
+                    .collect()
+            })
+        }
+    }
+
+    #[test]
+    fn a_live_bar_splits_a_finer_request_at_the_clock_the_app_passes() {
+        // The app's update path (`now_ms`), not a hand-built session: 4:40 lies inside the live bar
+        // 4:00-5:00, so of the 15m candles the 4:15 one is the last confirmed history one, and the
+        // 4:30 one forming now the last and the realtime one (TradingView probe S2).
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.islastconfirmedhistory ? 1.0 : 0.0), 1.0))\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.islast ? 1.0 : 0.0), 1.0))\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isrealtime ? 1.0 : 0.0), 1.0))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Quarter)),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        let at = |plot: usize, bar: usize| update.output.plots[plot].values[bar];
+        for plot in 0..3 {
+            assert_eq!(at(plot, 3), Some(-1.0), "the last history bar, plot {plot}");
+        }
+        assert_eq!(at(0, 4), Some(1.0), "last confirmed history");
+        assert_eq!(at(1, 4), Some(2.0), "last");
+        assert_eq!(at(2, 4), Some(2.0), "realtime");
+    }
+
+    #[test]
+    fn a_candle_still_forming_on_a_live_bar_is_not_confirmed() {
+        // TradingView probe S4 (BTCUSDT 1h, 5m request, 13:07 in the bar opened at 13:00): the 13:00
+        // candle read `54` (confirmed, last confirmed history), the forming 13:05 one `9` (last,
+        // realtime, not confirmed). Here the 15m candles of the bar opened at 4:00, read at 4:40.
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isconfirmed ? 0.0 : 1.0), 1.0))\n\
+             plot(array.size(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isconfirmed ? 0.0 : 1.0)))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Quarter)),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        let at = |plot: usize, bar: usize| update.output.plots[plot].values[bar];
+        assert_eq!(
+            at(0, 3),
+            Some(-1.0),
+            "every candle of a closed bar is confirmed"
+        );
+        assert_eq!(at(1, 4), Some(3.0), "4:00, 4:15 and the 4:30 one forming");
+        assert_eq!(at(0, 4), Some(2.0), "only the forming one is unconfirmed");
+    }
+
+    #[test]
+    fn a_finer_request_to_another_symbol_reads_the_intrabars_like_the_charts_own() {
+        // TradingView probe S5 (a live BTCUSDT 1h bar at 13:18): ETHUSDT `"5"` reads the 13:15 candle
+        // (`9`, forming) and, with `lookahead_on`, the 13:00 one, as the chart's own symbol does.
+        // Here the 15m candles of "OTHER" under a 1h chart read at 4:40.
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(request.security(\"OTHER\", \"15\", time))\n\
+             plot(request.security(\"OTHER\", \"15\", time, lookahead = barmerge.lookahead_on))\n\
+             plot(request.security(\"OTHER\", \"15\", barstate.isconfirmed ? 1.0 : 0.0))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Quarter)),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        assert!(update.error.is_none(), "{:?}", update.error);
+        let at = |plot: usize, bar: usize| update.output.plots[plot].values[bar];
+        let quarter = 900_000.0;
+        assert_eq!(
+            at(0, 3),
+            Some(3.0 * 3_600_000.0 + 3.0 * quarter),
+            "history: the last"
+        );
+        assert_eq!(
+            at(1, 3),
+            Some(3.0 * 3_600_000.0),
+            "history, lookahead_on: the first"
+        );
+        assert_eq!(
+            at(0, 4),
+            Some(4.0 * 3_600_000.0 + 2.0 * quarter),
+            "live: the forming one"
+        );
+        assert_eq!(
+            at(1, 4),
+            Some(4.0 * 3_600_000.0),
+            "live, lookahead_on: the first"
+        );
+        assert_eq!(at(2, 4), Some(0.0), "the forming candle is not confirmed");
+    }
+
+    /// Candles of the requested length from midnight to 12:00, for any symbol.
+    struct Uniform;
+    impl crate::pine::runtime::support::SecurityDataProvider for Uniform {
+        fn candles(&self, key: &crate::pine::runtime::support::SecurityKey) -> Option<Vec<Kline>> {
+            let step = (key.interval * 1000.0) as i64;
+            Some(
+                (0..43_200_000 / step)
+                    .map(|i| Kline {
+                        open_time: i * step,
+                        close_time: i * step + step - 1,
+                        open: 1.0,
+                        high: 1.0,
+                        low: 1.0,
+                        close: 1.0,
+                        volume: 1.0,
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    /// 15-minute candles up to 4:30 for the first ask, up to 4:45 for every later one: the provider
+    /// of a live chart, whose newest candle opens between two asks.
+    struct Growing(std::sync::atomic::AtomicUsize);
+    impl crate::pine::runtime::support::SecurityDataProvider for Growing {
+        fn candles(&self, key: &crate::pine::runtime::support::SecurityKey) -> Option<Vec<Kline>> {
+            if key.interval != 900.0 {
+                return None;
+            }
+            let asked = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let count = if asked == 0 { 19 } else { 20 };
+            Some(
+                (0..count)
+                    .map(|i| Kline {
+                        open_time: i * 900_000,
+                        close_time: i * 900_000 + 899_999,
+                        open: 1.0,
+                        high: 1.0,
+                        low: 1.0,
+                        close: 1.0,
+                        volume: 1.0,
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    #[test]
+    fn a_live_bars_intrabars_grow_as_candles_open_after_the_series_was_fetched() {
+        // Real window, BTCUSDT 5m with a "1" request at 14:20: a bar that opened after the run began
+        // read an empty list, and the live bar's list never grew. TradingView counts the candles as
+        // they open.
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(array.size(request.security_lower_tf(syminfo.tickerid, \"15\", close)))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Growing(std::sync::atomic::AtomicUsize::new(0)))),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let mut bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        assert_eq!(
+            update.output.plots[0].values.last(),
+            Some(&Some(3.0)),
+            "4:00, 4:15 and 4:30 at the load"
+        );
+        // 4:50: the 4:45 candle has opened, the bar's price has moved, and the series is old enough.
+        controller.session.security_live_refresh = std::time::Duration::ZERO;
+        bars[4].close = 2.0;
+        let update = controller.update(&bars, None, 4 * hour + 50 * 60_000);
+        assert_eq!(
+            update.output.plots[0].values.last(),
+            Some(&Some(4.0)),
+            "the candle that opened since is counted"
+        );
+    }
+
+    #[test]
+    fn gaps_on_gives_a_bar_its_value_where_the_candle_closes_or_with_lookahead_where_it_opens() {
+        // TradingView probe S6b (BTCUSDT 1h live at 13:31, a 120 request, own symbol and ETHUSDT
+        // alike): with `gaps_on` the value sits on the last chart bar of the candle, the live bar's
+        // being the developing candle's; with `gaps_on` and `lookahead_on` on the first chart bar.
+        let hour = 3_600_000;
+        let bars: Vec<Kline> = (0..6)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        for symbol in ["syminfo.tickerid", "\"OTHER\""] {
+            let source = format!(
+                "//@version=6\nindicator(\"T\")\n\
+                 plot(request.security({symbol}, \"120\", time, gaps = barmerge.gaps_on))\n\
+                 plot(request.security({symbol}, \"120\", time, gaps = barmerge.gaps_on, lookahead = barmerge.lookahead_on))"
+            );
+            let mut controller = ExecutionController::new(
+                &source,
+                HashMap::new(),
+                SymbolInfo::default(),
+                None,
+                Limits::default(),
+                &NoLibraries,
+                Some(Box::new(Uniform)),
+                None,
+            )
+            .expect("valid controller")
+            .with_bar_seconds(3600.0);
+            // 5:40: the bar opened at 5:00 is live and the last of the candle 4:00-6:00.
+            let update = controller.update(&bars, None, 5 * hour + 40 * 60_000);
+            assert!(update.error.is_none(), "{symbol}: {:?}", update.error);
+            let plotted =
+                |plot: usize| -> Vec<Option<f64>> { update.output.plots[plot].values.clone() };
+            let two = 2.0 * hour as f64;
+            assert_eq!(
+                plotted(0),
+                [None, Some(0.0), None, Some(two), None, Some(2.0 * two)],
+                "{symbol}: the closing bar, the live one included"
+            );
+            assert_eq!(
+                plotted(1),
+                [Some(0.0), None, Some(two), None, Some(2.0 * two), None],
+                "{symbol}, lookahead_on: the opening bar"
+            );
+        }
     }
 }

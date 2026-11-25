@@ -117,7 +117,7 @@ fn intrabar_counts(session: &mut Session, rebuilds: usize) -> Vec<Vec<f64>> {
     (0..rebuilds)
         .map(|_| {
             session
-                .load_history(&bars, false, None)
+                .load_history(&bars, None, None)
                 .expect("history runs");
             session.output().plots[0]
                 .values
@@ -177,10 +177,14 @@ fn inside_the_window_it_is_left_alone_and_a_rebuild_asks_at_once() {
 }
 
 #[test]
-fn a_series_the_provider_answered_empty_is_an_answer_and_is_asked_once() {
+fn a_series_the_provider_answered_empty_is_an_answer_and_is_asked_once_a_run() {
     let asked = Arc::new(AtomicUsize::new(0));
     let mut run = session(&asked, 0, Some(Vec::new()));
     run.security_retry_after = Duration::ZERO;
-    assert_eq!(intrabar_counts(&mut run, 2), [[0.0; 3], [0.0; 3]]);
-    assert_eq!(asked.load(Ordering::SeqCst), 1);
+    assert_eq!(intrabar_counts(&mut run, 1), [[0.0; 3]]);
+    assert_eq!(asked.load(Ordering::SeqCst), 1, "three bars, one question");
+    // A rebuild is a new run: the provider is asked again, since the chart it answered for may
+    // have grown or a live candle moved on (what it gave is not kept across a reload).
+    assert_eq!(intrabar_counts(&mut run, 1), [[0.0; 3]]);
+    assert_eq!(asked.load(Ordering::SeqCst), 2);
 }

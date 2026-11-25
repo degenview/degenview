@@ -99,7 +99,7 @@ fn run(
     );
     session.fixed_bar_seconds = Some(3_600.0);
     session
-        .load_history(bars, false, None)
+        .load_history(bars, None, None)
         .expect("history runs");
     session.output()
 }

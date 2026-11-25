@@ -52,6 +52,28 @@ fn epoch_grid_ms(seconds: f64) -> i64 {
     ((seconds * 1_000.0).round() as i64).max(1)
 }
 
+/// Pine's length of a calendar bar (`timeframe.in_seconds()`: a month is 30 days) for a bar of
+/// `seconds` that opens at `open_time`, as measured between bars: a 31-day month is 2,678,400
+/// seconds, but a monthly chart (or a quarterly or yearly one) is `2,592,000`, so a `"M"` request
+/// is the chart's own timeframe and not a finer one. Any other length is returned as it is.
+pub fn nominal_length(open_time: i64, seconds: f64) -> f64 {
+    let months = (seconds / (30 * DAY) as f64).round();
+    if months < 1.0 || seconds < (28 * DAY) as f64 {
+        return seconds;
+    }
+    let nominal = months * (30 * DAY) as f64;
+    if timeframe_of(nominal).is_none() {
+        return seconds;
+    }
+    let bucket_start = start(open_time, nominal);
+    let measured = (end(bucket_start, nominal) - bucket_start) as f64 / 1_000.0;
+    if bucket_start == open_time && (measured - seconds).abs() < 1.0 {
+        nominal
+    } else {
+        seconds
+    }
+}
+
 /// The start of the bucket that contains `open_time`, for a bar length in seconds.
 pub fn start(open_time: i64, seconds: f64) -> i64 {
     match timeframe_of(seconds) {
@@ -68,6 +90,26 @@ pub fn end(start: i64, seconds: f64) -> i64 {
     match timeframe_of(seconds) {
         Some(timeframe) => bucket::next_bucket_start_ms(timeframe, start),
         None => start + epoch_grid_ms(seconds),
+    }
+}
+
+/// Where the bar that opens at `open_time` closes (exclusive), for a bar length in seconds: the end of
+/// its bucket. A month, quarter or year is the calendar's, not `seconds` (Pine's nominal 30 days)
+/// long, and a length that does not divide the day is cut at midnight.
+pub fn bar_end(open_time: i64, seconds: f64) -> i64 {
+    end(start(open_time, seconds), seconds)
+}
+
+/// `time_close` of the bar that opens at `open_time`, for a bar length in seconds. A month, quarter
+/// or year closes where the calendar's does (TradingView, BTCUSDT 1M: October's bar is 31 days and
+/// February's 28, and the next bar opens at the close); any other bar closes `seconds` after it
+/// opens, as a stock's :30 hourly bar does off the UTC grid its bucket is cut on.
+pub fn close_time(open_time: i64, seconds: f64) -> i64 {
+    let month = (30 * DAY) as f64;
+    if seconds >= month && (seconds / month).fract() == 0.0 {
+        bar_end(open_time, seconds)
+    } else {
+        open_time + (seconds * 1_000.0) as i64
     }
 }
 
@@ -138,6 +180,49 @@ mod tests {
         let last = ms(2024, 1, 11, 20);
         assert_eq!(start(ms(2024, 1, 11, 23), 18_000.0), last);
         assert_eq!(end(last, 18_000.0), ms(2024, 1, 12, 0));
+    }
+
+    #[test]
+    fn a_calendar_bar_closes_where_the_calendar_does() {
+        let day = 86_400_000;
+        let month = 2_592_000.0;
+        // TradingView (BTCUSDT 1M): October 31 days, February 28 (2026), the next bar opens at the close.
+        assert_eq!(close_time(ms(2026, 10, 1, 0), month), ms(2026, 11, 1, 0));
+        assert_eq!(
+            close_time(ms(2026, 2, 1, 0), month),
+            ms(2026, 2, 1, 0) + 28 * day
+        );
+        assert_eq!(
+            close_time(ms(2026, 1, 1, 0), 3.0 * month),
+            ms(2026, 4, 1, 0)
+        );
+        // Any other bar: its length after it opens, also off the UTC grid.
+        assert_eq!(
+            close_time(ms(2026, 10, 1, 20), 5.0 * 3600.0),
+            ms(2026, 10, 2, 1)
+        );
+        assert_eq!(
+            close_time(ms(2026, 10, 1, 0) + 1_800_000, 3600.0),
+            ms(2026, 10, 1, 1) + 1_800_000
+        );
+        assert_eq!(
+            close_time(ms(2026, 10, 5, 0), 604_800.0),
+            ms(2026, 10, 12, 0)
+        );
+    }
+
+    #[test]
+    fn a_calendar_bars_length_is_pines_nominal_one() {
+        let day = 86_400.0;
+        // January (31 days), February (28) and a quarter and a year of 2024 (leap).
+        assert_eq!(nominal_length(ms(2024, 1, 1, 0), 31.0 * day), 30.0 * day);
+        assert_eq!(nominal_length(ms(2024, 2, 1, 0), 29.0 * day), 30.0 * day);
+        assert_eq!(nominal_length(ms(2024, 1, 1, 0), 91.0 * day), 90.0 * day);
+        assert_eq!(nominal_length(ms(2024, 1, 1, 0), 366.0 * day), 360.0 * day);
+        // A length that is not a calendar bucket stays: four weeks, a month that opens mid-month.
+        assert_eq!(nominal_length(ms(2024, 1, 1, 0), 28.0 * day), 28.0 * day);
+        assert_eq!(nominal_length(ms(2024, 1, 10, 0), 31.0 * day), 31.0 * day);
+        assert_eq!(nominal_length(ms(2024, 1, 8, 0), 7.0 * day), 7.0 * day);
     }
 
     #[test]

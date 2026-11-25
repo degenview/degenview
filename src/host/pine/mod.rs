@@ -258,7 +258,7 @@ pub fn run_script_checked_in_range(
     );
     // History loads the way the Swift controller does: the bar length and last bar index are
     // known from the first bar on, so `timeframe.*` and `barstate.islast` read correctly.
-    let failure = match session.load_history(bars, false, None) {
+    let failure = match session.load_history(bars, None, None) {
         Err(RunError::Script(diagnostic)) => Some(diagnostic),
         Ok(_) | Err(RunError::Rejection) => None,
     };

@@ -185,10 +185,12 @@
   time-based bar ends is its own close (`Session::bar_end`: `close_time + 1`), which `time_close`, a bar's
   intrabar window and the completion of a higher-timeframe bar all use. Pine's month is 30 days and a real one
   has up to 31, and a `59s` day ends in a 24 s bucket. A price-based chart's bars have no close of their own, so
-  they use the length.
+  they use the length, a month, quarter or year the calendar's (`bucket::close_time`).
   What the provider could not give for a series (`Session::security_series`, `SeriesAnswer`) is only how things
-  stood: it is asked for again after `security_retry_after` (15 s) and at once after a rebuild, while what it did
-  give (even an empty list) is kept for the session.
+  stood: it is asked for again after `security_retry_after` (15 s) and at once after a rebuild. What it did give
+  (even an empty list) is kept for the run, the bars of one history load, and not beyond: a rebuild
+  (`Session::reset`) asks again, since the chart it answered for may have grown or a live candle moved on (the
+  host's own cache answers a repeat of the same span cheaply).
 - `strategy.*` statistics: `strategy_builtins::statistic`, computed from the broker per read (trade
   lists) except equity extremes, kept by `Broker` as bars arrive (`EquityExtremes`, rolled back with
   state) and merged with the running bar. Losses negative in averages (`avg_losing_trade`), positive
@@ -297,29 +299,89 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   stays its own.
 - **Request context.** The site's state starts at `bar_index` −1 (`RuntimeState::before_first_bar`),
   so a request's first candle is bar 0 and `barstate.isfirst` is true on it. `barstate.*` in a request
-  follow the chart bar the call runs for (`ChartBar`): realtime when the chart bar is and the
-  candle does not end before it opens (an older candle caught up on a live bar is history; a
-  developing candle on a historical bar is history), and `islast` / `islastconfirmedhistory` on the
-  candle that holds the chart bar's final instant, the end of its bucket (a 5h bar opened at 20:00
-  ends at midnight), when the chart bar has them. `islastconfirmedhistory` belongs to the requested
-  series: the last candle that closed by the history's end (`Session::history_end`) whose successor
-  ends after it, so a `"1D"` request on a 4h chart has it on yesterday's day (TradingView probe P12,
-  2026-11-21). A `"60"` request reads 1 there where TradingView read 0, which splits history from
-  realtime by wall-clock time. `barstate.isnew` in a request is true on history and, in real time,
+  follow the chart bar the call runs for (`ChartBar`). A candle is realtime when the chart bar is and
+  the candle ends after the history did (`Session::history_end`: the end of the chart's last history
+  bar, and with a live bar after it the moment of the load, `Session::now_ms`, which lies inside that
+  bar). A candle that closed before the load is history even inside the live chart bar: of the 15m
+  candles of a live 4h bar only the one forming at the load is realtime (TradingView probe S2,
+  2026-11-24), and a developing candle on a historical bar is history.
+  `islast` belongs to the requested series, not to the chart bar: it is true on the series' final
+  candle on every chart bar that reads it, a `"1D"` request with `lookahead_on` on each chart bar of
+  the day still forming (probes A, R3, R4). A series folded from the chart's bars has it on the
+  candle that holds the chart's last bar's final instant (`ChartBar::last_end`, the end of its bucket:
+  a 5h bar opened at 20:00 ends at midnight); a series the provider holds (finer, foreign) by its last
+  candle (`SeriesEdges`). `islastconfirmedhistory` is the series' last candle that closed by the
+  history's end, whose successor ends after it (folded) or the last in the list that closed by it
+  (provider): `"1D"` on a 4h chart has it on yesterday's day (probe P12), a `"15"` request on the
+  live 4h bar on the candle closed last before the load, and a closed stock's last hourly candle has
+  both (probe S2). So a lower-timeframe request reads no `islastconfirmedhistory` on the chart's last
+  confirmed history bar (probe R4: 15, 60 and 120 read 38, 240 54) and the forming candle is the one
+  with `islast` and `isrealtime`. `barstate.isnew` in a request is true on history and, in real time,
   on the first tick of the chart bar that opens the candle; a chart bar that starts inside a candle,
   or a later tick, reads false (`ChartBar::new`; TradingView probe C, 2026-11-21: one true tick per
   requested candle open, none on a mid-candle chart bar). TradingView fires it one tick after the
-  chart bar that opened the candle (feed latency, not modelled here).
+  chart bar that opened the candle (feed latency, not modelled here), and a finer request's own
+  candles open between the chart's ticks: probe R3 (BTCUSDT 5m, 9.6 minutes) read isnew true on 29
+  of 1,373 ticks for `"1"`, about three per candle open, which this runtime cannot show: a series
+  the provider gave is asked for again on a realtime tick only once it is 30 s old
+  (`Session::security_live_refresh`, the host cache's lifetime), so a candle opens in the list up to
+  that long after TradingView shows it. Before that refresh a bar that opened after the load read an
+  empty list for as long as the chart stayed loaded (real window, BTCUSDT 5m with a `"1"` request,
+  14:20: `n = 0`). A refresh the provider fails keeps the candles the run had; history runs never
+  refresh (a rebuild asks again).
   `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
   developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
   candle is complete in the data whichever chart bar reads it. The candle still open at the
-  history's end, and one developing in real time, read false (TradingView probes A, B and R1).
+  history's end, and one developing in real time, read false (TradingView probes A, B and R1). The
+  same holds for the elements of a finer request: the newest intrabar of a live chart bar is still
+  forming, so it runs as a tick (`ChartBar::has_closed`, no commit) and reads islast + isrealtime and
+  not isconfirmed (probe S4, BTCUSDT 1h, a `"5"` request at 13:11: `38 54 9`, the second tick on; a
+  script that ran through the candle's close keeps the flags it had then, which a fresh load cannot
+  reproduce). A finer request to another symbol takes the same path (`serve_finer_series`), not the
+  higher-timeframe one: the last intrabar stands for the chart bar and the first with `lookahead_on`,
+  on history and on the live bar alike (probe S5: ETHUSDT `"5"` on a BTCUSDT 1h chart reads offset
+  55 / 0 on a history bar and 20 / 0 on the live one at 13:22, like BTCUSDT's own).
+  `gaps_on` puts the value on the chart bar that closes the candle (`SecurityRequest::gaps_on`,
+  `Session::owns_value`), and on the live bar that closes it the developing candle's value; with
+  `lookahead_on` on the bar that opens the candle. Every other bar is `na`, for the chart's own symbol
+  and another alike (probe S6b, BTCUSDT 1h live, a `"120"` request over the last three bars:
+  `-60 / na / -60` and, with `lookahead_on`, `na / 0 / na`; `"60"` reads `0` on the live bar, which
+  is its candle's only chart bar). A finer request ignores `gaps` (probe S6: `"5"` reads the same
+  candles with it as without).
   `timeframe.change` in a request is per call site of the request's own state, so it is false on
   the first candle of the series (see the per-site rule above), TradingView-measured.
   A chart bar completes a higher-timeframe candle when its own end (`ChartBar::end`, the end of its
   bucket) reaches the candle's, never `open_time` plus the chart's length: a monthly chart is a
   nominal 30 days, so a 31-day month would never close its quarter or year and the `"3M"` / `"12M"`
   request would arrive one bar late (TradingView probe R5, BTCUSDT 1M).
+  The chart's bar length is Pine's nominal one for a calendar bar (`bucket::nominal_length`):
+  `Session` reads it off the bars when the app does not state it, and a 31-day month measures
+  2,678,400 s, which made a `"M"` request on a monthly chart look finer than the chart and be served
+  from other candles (real window, BTCUSDT 1M: `"W"` span 102, `"M"` span 33; now 100 and 23, as
+  TradingView).
+  A request finer than the chart reads the last of the chart bar's intrabars, the first with
+  `lookahead_on` (an AAPL 1D chart reads a `"60"` request's 15:30 candle, and 9:30 with it, probe S1);
+  its `timeframe.change("D")` sums to 0 over a window for the last intrabar and to the number of
+  days for the first. A candle belongs to the chart bar its last instant falls in, the bar running
+  from where it opens to where it closes (`Session::bar_end`, `serve_intrabars`): a stock's daily bar opens at 14:30 UTC and
+  its 4h candles are cut at 12, 16 and 20 UTC, so the 12:00 candle that ends at 16:00 belongs to the
+  day it ends in, not to the day before, and a 31-day month holds its last day (probes R2 and R5).
+  On a realtime chart bar the same `lookahead_on` still returns the chart bar's FIRST intrabar, for a
+  bar the script loaded inside and for one that opened while it ran, and `lookahead_off` the latest
+  (probe S3, BTCUSDT 5m, `"1"` request, 2026-11-24); the Pine docs say a realtime bar returns the
+  latest intrabar whatever the setting, TradingView does not.
+  The chart's last bar is read from the data, never estimated with a length: `Session::load_history`
+  takes the live bar's own open (`live_open`, from `ExecutionController::rebuild`), because
+  `last open + 30 days` put `last_bar_time` on March 31 on a monthly chart with a live April bar and
+  made the January-March candle the last one. The provider's range is `[start, end)` and covers up to
+  where the last bar closes, the later of its calendar end (`bucket::bar_end`) and its open plus the
+  chart's length (a stock's :30 hourly bar is off the UTC grid): cut at "October 1 + 30 days" the
+  provider never sent October 31. `time_close` of a month, quarter or year is the calendar's
+  (`bucket::close_time`; TradingView, BTCUSDT 1M: 31 days for October, 28 for February, the next bar
+  opens at the close); other bars keep open + length. `Session::security_series` lives for one run:
+  `reset` clears it, so a reloaded history asks the provider again. Not done: TradingView's
+  `timeframe.in_seconds("M")` is 2,628,003 (3M 7,884,009, 12M 31,536,036, probe T2), the engine's
+  month is 30 days (2,592,000); both sides of every comparison use the same nominal month.
 - **Adding a read-only member.** Add a new array/map/matrix query to `READ_ONLY_MEMBERS`, or a
   slice will treat it as a write and replay more than needed.
 

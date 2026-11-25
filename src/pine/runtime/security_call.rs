@@ -47,10 +47,13 @@ struct ChartBar {
     /// When the chart bar closes (exclusive), where its bucket ends: a bar that does not divide the
     /// day is cut at midnight. `i64::MIN` for history before the chart's first bar.
     end: i64,
-    /// Whether the chart bar is the last one (`barstate.islast`).
-    last: bool,
-    /// Where the chart's history ends, when it is known: the candle that closed last with it is the
-    /// request's last confirmed history bar (`barstate.islastconfirmedhistory`).
+    /// Where the chart's last bar closes (`i64::MIN` when it is not known): the candle that holds
+    /// that instant is the last of the series (`barstate.islast`), whichever chart bar reads it.
+    last_end: i64,
+    /// Where the history the chart was loaded with ends, when it is known: with a live bar it is the
+    /// moment the script was loaded (`Session::history_end`). The candle that closed last by then is
+    /// the request's last confirmed history bar (`barstate.islastconfirmedhistory`), and a candle
+    /// that ends after it is realtime on a realtime chart bar.
     history_end: Option<i64>,
     /// Where the history the session was loaded with ends (`Session::history_end`), None when it
     /// was never loaded as one: a candle that closed by then is confirmed (`barstate.isconfirmed`).
@@ -58,6 +61,18 @@ struct ChartBar {
     realtime: bool,
     /// Whether this is the chart bar's first tick (`barstate.isnew`); true on history.
     new: bool,
+    /// The candles of the series, when the provider holds them (a finer or a foreign request): its
+    /// last candle, and the last that closed by the history's end, are not where the chart's own
+    /// buckets would put them (a stock has no candle between the close and the next open).
+    candles: Option<SeriesEdges>,
+}
+
+/// The candles of a requested series that `barstate.islast` and `barstate.islastconfirmedhistory`
+/// name, by open time.
+#[derive(Clone, Copy)]
+struct SeriesEdges {
+    last: i64,
+    last_confirmed: Option<i64>,
 }
 
 impl ChartBar {
@@ -65,26 +80,64 @@ impl ChartBar {
     const BEFORE_CHART: Self = Self {
         start: i64::MAX,
         end: i64::MIN,
-        last: false,
+        last_end: i64::MIN,
         history_end: None,
         loaded_end: None,
         realtime: false,
         new: true,
+        candles: None,
     };
 
     /// The bar `bar` runs as. `history_end` is `Session::history_end`; without it the chart bar
-    /// that is the last confirmed history one ends the history.
-    fn of(bar: &Kline, seconds: f64, flags: &BarFlags, history_end: Option<i64>) -> Self {
+    /// that is the last confirmed history one ends the history. `last_bar_time` is where the chart's
+    /// last bar opens, when known; without it only the bar that is the last one has the last candle.
+    fn of(
+        bar: &Kline,
+        seconds: f64,
+        flags: &BarFlags,
+        history_end: Option<i64>,
+        last_bar_time: Option<i64>,
+    ) -> Self {
         let end = Self::end_of(bar, seconds);
+        let last_end = flags
+            .is_last
+            .then_some(end)
+            .or_else(|| last_bar_time.map(|open| time::bucket::bar_end(open, seconds)))
+            .unwrap_or(i64::MIN);
         Self {
             start: bar.open_time,
             end,
-            last: flags.is_last,
+            last_end,
             history_end: history_end.or(flags.is_last_confirmed_history.then_some(end)),
             loaded_end: history_end,
             realtime: flags.is_realtime,
             new: flags.is_new,
+            candles: None,
         }
+    }
+
+    /// This chart bar reading the series `candles` of `interval` seconds.
+    fn reading(self, candles: &[Kline], interval: f64) -> Self {
+        let edges = candles.last().map(|last| SeriesEdges {
+            last: last.open_time,
+            last_confirmed: self.history_end.and_then(|end| {
+                let closed = candles
+                    .partition_point(|candle| time::bucket::end(candle.open_time, interval) <= end);
+                closed.checked_sub(1).map(|index| candles[index].open_time)
+            }),
+        });
+        Self {
+            candles: edges,
+            ..self
+        }
+    }
+
+    /// Whether `candle` of `interval` seconds is complete in the data this run was loaded with: it
+    /// ended by the history's end (always, when that is not known). The one still forming on a live
+    /// chart bar is not, so it is read as a tick and is not confirmed.
+    fn has_closed(&self, candle: &Kline, interval: f64) -> bool {
+        self.loaded_end
+            .is_none_or(|end| time::bucket::end(candle.open_time, interval) <= end)
     }
 
     /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
@@ -101,14 +154,21 @@ impl ChartBar {
     /// Where the bar closes: the end of its bucket, which is not `open_time + seconds` for a length
     /// that does not divide the day (a 5h bar opened at 20:00 closes at midnight) or a calendar month.
     fn end_of(bar: &Kline, seconds: f64) -> i64 {
-        time::bucket::end(time::bucket::start(bar.open_time, seconds), seconds)
+        time::bucket::bar_end(bar.open_time, seconds)
     }
 
     /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
     ///
-    /// The last confirmed history bar belongs to the requested series, not to the chart bar: it is
-    /// the last candle that closed with the history, so the one whose successor is not history,
-    /// TradingView-measured (a `"1D"` request on a 4h chart, probe P12).
+    /// The last confirmed history bar and the last bar belong to the requested series, not to the
+    /// chart bar. The last confirmed history bar is the last candle that closed with the history,
+    /// so the one whose successor is not history (a `"1D"` request on a 4h chart, probe P12), and
+    /// the last bar is the series' final candle: the one that holds the chart's last instant (a
+    /// `"1D"` request with `lookahead_on` reads it on every chart bar of the day, probes A and R4).
+    /// A series the provider holds names them by its candles (`SeriesEdges`).
+    ///
+    /// A candle is realtime on a realtime chart bar when it ends after the history did: one that
+    /// closed before the script was loaded is history even inside the live chart bar (probe S2: of
+    /// the 15m candles of a live 4h bar only the one forming at load was realtime).
     ///
     /// A candle is new on history and on the first tick of the chart bar that opens it: a chart bar
     /// that starts inside a candle sees that candle as already running.
@@ -120,14 +180,23 @@ impl ChartBar {
     /// incomplete month 0, probes A and B; a developing day on a 4h history reads 1, probe R1).
     fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
         let candle_end = time::bucket::end(candle.open_time, interval);
-        let holds_last_instant = candle.open_time < self.end && self.end <= candle_end;
-        let is_realtime = self.realtime && candle_end > self.start;
-        let is_last_confirmed_history = self
-            .history_end
-            .is_some_and(|end| candle_end <= end && time::bucket::end(candle_end, interval) > end);
+        let (is_last, is_last_confirmed_history) = match self.candles {
+            Some(edges) => (
+                candle.open_time == edges.last,
+                edges.last_confirmed == Some(candle.open_time),
+            ),
+            None => (
+                candle.open_time < self.last_end && self.last_end <= candle_end,
+                self.history_end.is_some_and(|end| {
+                    candle_end <= end && time::bucket::end(candle_end, interval) > end
+                }),
+            ),
+        };
+        let is_realtime =
+            self.realtime && candle_end > self.start.max(self.history_end.unwrap_or(i64::MIN));
         BarFlags {
             is_first,
-            is_last: self.last && holds_last_instant,
+            is_last,
             is_history: !is_realtime,
             is_realtime,
             is_new: !is_realtime || (self.new && candle.open_time >= self.start),
@@ -198,6 +267,13 @@ impl Session {
             return Ok(RuntimeValue::Na);
         };
         if let Some(candles) = request.foreign.clone() {
+            // A finer series is read through the chart bar's intrabars, whichever symbol it is of:
+            // the last one stands for the bar, the first with `lookahead_on` (TradingView probe S5:
+            // ETHUSDT `"5"` on a live BTCUSDT 1h bar reads its 13:15 candle, and 13:00 with
+            // `lookahead_on`, as the chart's own symbol does).
+            if request.interval < self.bar_seconds {
+                return self.serve_finer_series(&request, &candles, site, context);
+            }
             return self.serve_foreign(&request, &candles, site, context);
         }
         if request.interval < self.bar_seconds {
@@ -207,7 +283,9 @@ impl Session {
     }
 
     /// `request.security` to a timeframe finer than the chart's: the expression runs on the chart
-    /// bar's intrabars and the value of the last one stands for the bar, as in Pine.
+    /// bar's intrabars and the value of the last one stands for the bar, or of the first with
+    /// `lookahead_on`, as in Pine (TradingView probe S1: an AAPL 1D chart reads a `"60"` request's
+    /// 15:30 candle, and its 9:30 one with `lookahead_on`).
     fn serve_finer_security(
         &mut self,
         request: &SecurityRequest,
@@ -215,7 +293,9 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        let Some(candles) = self.lower_timeframe_candles(None, request.interval, 0) else {
+        let Some(candles) =
+            self.lower_timeframe_candles(None, request.interval, 0, context.flags.is_realtime)
+        else {
             return Err(Diagnostic::error(
                 "PINE4021",
                 DiagnosticCategory::Runtime,
@@ -223,14 +303,26 @@ impl Session {
                 range,
             ));
         };
+        self.serve_finer_series(request, &candles, site, context)
+    }
+
+    /// The expression on the intrabars `candles` (of any symbol) hold for the chart bar: the value of
+    /// the last stands for the bar, or of the first with `lookahead_on`.
+    fn serve_finer_series(
+        &mut self,
+        request: &SecurityRequest,
+        candles: &[Kline],
+        site: usize,
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
         let intrabars = self.serve_intrabars(
-            &candles,
+            candles,
             request.interval,
             &request.expression,
             site,
             context,
         )?;
-        Ok(self.last_intrabar(intrabars))
+        Ok(self.pick_intrabar(intrabars, request.lookahead_on))
     }
 
     /// How many values `expression` yields when it is a tuple: a literal `[a, b]`, or a call of a
@@ -249,20 +341,21 @@ impl Session {
         }
     }
 
-    /// The last element of the array (or of each array of a tuple) `serve_intrabars` returned.
-    fn last_intrabar(&self, intrabars: RuntimeValue) -> RuntimeValue {
+    /// The first or the last element of the array (or of each array of a tuple) `serve_intrabars`
+    /// returned.
+    fn pick_intrabar(&self, intrabars: RuntimeValue, first: bool) -> RuntimeValue {
         match intrabars {
             RuntimeValue::Tuple(items) => RuntimeValue::Tuple(
                 items
                     .into_iter()
-                    .map(|item| self.last_intrabar(item))
+                    .map(|item| self.pick_intrabar(item, first))
                     .collect(),
             ),
             RuntimeValue::Ref(RefKind::Array, id) => self
                 .working
                 .arrays
                 .get(&id)
-                .and_then(|values| values.last())
+                .and_then(|values| if first { values.first() } else { values.last() })
                 .cloned()
                 .unwrap_or(RuntimeValue::Na),
             other => other,
@@ -335,8 +428,12 @@ impl Session {
         }
         if let Some(seconds) = seconds
             && seconds < self.bar_seconds
-            && let Some(candles) =
-                self.lower_timeframe_candles(values.get("symbol"), seconds, recent_bars)
+            && let Some(candles) = self.lower_timeframe_candles(
+                values.get("symbol"),
+                seconds,
+                recent_bars,
+                context.flags.is_realtime,
+            )
         {
             return self.serve_intrabars(&candles, seconds, &expression, site, context);
         }
@@ -380,6 +477,23 @@ impl Session {
 }
 
 impl Session {
+    /// The chart bar `bar` that a request now runs for.
+    fn chart_bar(&self, bar: &Kline, flags: &BarFlags) -> ChartBar {
+        // Inside a request the chart's last bar is not the running series' own: only the flags say.
+        // Nor is it known when it is this bar (a run that is not a loaded history takes each bar as
+        // the last so far): the flags say too.
+        let last_bar_time = self
+            .last_bar_time
+            .filter(|last| self.security_depth == 0 && *last > bar.open_time);
+        ChartBar::of(
+            bar,
+            self.bar_seconds,
+            flags,
+            self.history_end,
+            last_bar_time,
+        )
+    }
+
     /// Reads the call's arguments; `expression` stays unevaluated. None when the symbol or timeframe
     /// cannot be served and the script passed `ignore_invalid_*`.
     /// Whether `symbol` names the series the chart itself runs on. On a price-based chart the
@@ -452,7 +566,7 @@ impl Session {
                 interval,
                 recent_bars: 0,
             };
-            match self.series(key) {
+            match self.series(key, context.flags.is_realtime) {
                 Some(candles) => Some(candles),
                 None => {
                     if ignore_symbol {
@@ -482,22 +596,42 @@ impl Session {
 
     /// The provider's candles for `key`: asked once while it answers, and again once
     /// [`Session::security_retry_after`] has passed if it did not (a series it could not give is a
-    /// moment, not a fact; see [`SeriesAnswer`]).
-    pub(in crate::pine) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
-        if let Some(known) = self.security_series.get(&key)
-            && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
-        {
-            return known.candles.clone();
+    /// moment, not a fact; see [`SeriesAnswer`]). On a realtime bar a series is asked for again once
+    /// [`Session::security_live_refresh`] has passed, since candles open after it was fetched: the
+    /// live bar's intrabars (or another symbol's newest candle) would otherwise stay as they were at
+    /// the load, and a new live bar would find none (`realtime`: the request is on a realtime bar).
+    /// A refresh the provider fails keeps what the run had.
+    pub(in crate::pine) fn series(
+        &mut self,
+        key: SecurityKey,
+        realtime: bool,
+    ) -> Option<Arc<Vec<Kline>>> {
+        let mut previous = None;
+        if let Some(known) = self.security_series.get(&key) {
+            let refresh = realtime
+                && known.candles.is_some()
+                && known.asked.elapsed() >= self.security_live_refresh;
+            if !refresh
+                && (known.candles.is_some() || known.asked.elapsed() < self.security_retry_after)
+            {
+                return known.candles.clone();
+            }
+            previous = known.candles.clone();
         }
+        // The chart covers up to where its last bar closes, exclusive as a provider's range is. That
+        // is the later of the bar's calendar end (a 31-day month closes a day after "open + 30
+        // days": cut there the provider never sends that day's candle) and its open plus the chart's
+        // length (a stock's hourly bar opens at :30, off the UTC grid its bucket is cut on). The
+        // spacing is the nominal length a request's timeframe is compared with.
         let span = match (self.first_bar_time, self.last_bar_time) {
-            (Some(start_ms), Some(last)) if self.bar_seconds > 0.0 => Some(ChartSpan {
-                start_ms,
-                // Only bounds the fetch, so it errs long: the nominal length of a month is 30 days
-                // and a month is up to 31.
-                end_ms: (last + (self.bar_seconds * 1000.0).round() as i64)
-                    .max(time::bucket::end(last, self.bar_seconds)),
-                spacing_ms: (self.bar_seconds * 1000.0).round() as i64,
-            }),
+            (Some(start_ms), Some(last)) if self.bar_seconds > 0.0 => {
+                let spacing_ms = (self.bar_seconds * 1000.0).round() as i64;
+                Some(ChartSpan {
+                    start_ms,
+                    end_ms: time::bucket::bar_end(last, self.bar_seconds).max(last + spacing_ms),
+                    spacing_ms,
+                })
+            }
             _ => None,
         };
         // Waiting for the provider is not the script's running time.
@@ -513,6 +647,7 @@ impl Session {
         if let Some(deadline) = self.deadline_at.as_mut() {
             *deadline += asked.elapsed();
         }
+        let answer = answer.or(previous);
         self.security_series.insert(
             key,
             SeriesAnswer {
@@ -606,7 +741,8 @@ impl Session {
             interval: request.interval,
             recent_bars: 0,
         };
-        let Some(candles) = self.series(key) else {
+        // The candles before the chart's first bar are history: never refreshed.
+        let Some(candles) = self.series(key, false) else {
             return Ok(());
         };
         for candle in candles.iter() {
@@ -650,18 +786,17 @@ impl Session {
             self.warm_up(&mut state, request, before)?;
         }
         self.replay_skipped_bars(&mut state, request, bar.open_time)?;
-        let seconds = self.bar_seconds;
-        let (result, fresh) = self.advance_site(
+        let (result, owns_value) = self.advance_site(
             &mut state,
             request,
             &Step {
                 bar: &bar,
                 confirmed: context.flags.is_confirmed,
-                chart: ChartBar::of(&bar, seconds, &context.flags, self.history_end),
+                chart: self.chart_bar(&bar, &context.flags),
                 skipped_after: None,
             },
         )?;
-        let result = if request.gaps_on && !fresh {
+        let result = if request.gaps_on && !owns_value {
             RuntimeValue::Na
         } else {
             result
@@ -735,7 +870,7 @@ impl Session {
     }
 
     /// Takes `step`'s bar into the site's candle. Returns the expression's value for the bar and
-    /// whether a higher-timeframe bar was completed on it. A replayed bar (`skipped_after` is set)
+    /// whether the bar carries the value under `gaps_on` (`owns_value`). A replayed bar (`skipped_after` is set)
     /// only keeps the site's state current: nothing is evaluated for the bar itself, and a candle it
     /// completes is evaluated with the chart variables of that bar.
     fn advance_site(
@@ -752,6 +887,11 @@ impl Session {
         } = *step;
         let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
+        // This chart bar is the first of its bucket (the chart's first bar counts when it opens one).
+        let opens = match state.bucket {
+            Some(previous) => previous != start,
+            None => bar.open_time <= start,
+        };
         let mut fresh = false;
         if state.bucket != Some(start) {
             // The chart skipped the bucket's last bar, so complete it now.
@@ -798,7 +938,29 @@ impl Session {
                 result = state.last_result.clone();
             }
         }
-        Ok((result, fresh))
+        Ok((
+            result,
+            self.owns_value(request, fresh, opens, closes_bucket),
+        ))
+    }
+
+    /// Whether the chart bar carries the higher-timeframe value under `gaps_on` (every other bar is
+    /// `na`): the one that closes the candle, which on the live bar is the developing candle's value;
+    /// with `lookahead_on` the one that opens it (TradingView probe S6b, BTCUSDT 1h and a 120 request:
+    /// `-60 / na / -60` and `na / 0 / na` over the last three bars, own symbol and another alike).
+    /// `fresh` is a candle completed on the bar, including one the chart skipped the last bar of.
+    fn owns_value(
+        &self,
+        request: &SecurityRequest,
+        fresh: bool,
+        opens: bool,
+        closes_bucket: bool,
+    ) -> bool {
+        if request.lookahead_on {
+            opens
+        } else {
+            fresh || closes_bucket
+        }
     }
 
     /// `request.security` for a symbol the chart does not carry, from the provider's snapshot.
@@ -817,7 +979,9 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
+        let chart = self
+            .chart_bar(&bar, &context.flags)
+            .reading(candles, request.interval);
         let mut fresh = false;
         if context.flags.is_confirmed {
             let chart_close = self.bar_end(&bar);
@@ -840,8 +1004,18 @@ impl Session {
             result =
                 self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
         }
-        if request.gaps_on && !fresh {
+        let held = last_index(bar.open_time, candles);
+        let opens = held.is_some_and(|index| state.bucket != Some(candles[index].open_time));
+        let closes = held.is_some_and(|index| {
+            index >= state.completed_candles
+                && time::bucket::end(candles[index].open_time, request.interval)
+                    <= self.bar_end(&bar)
+        });
+        if request.gaps_on && !self.owns_value(request, fresh, opens, closes) {
             result = RuntimeValue::Na;
+        }
+        if let Some(index) = held {
+            state.bucket = Some(candles[index].open_time);
         }
         state.processed_bar = Some(bar.open_time);
         state.bar_result = result.clone();
@@ -849,12 +1023,14 @@ impl Session {
         Ok(result)
     }
 
-    /// The provider's intrabar candles of the chart's own symbol at `seconds`.
+    /// The provider's intrabar candles of the chart's own symbol at `seconds` (`realtime`: the
+    /// request is on a realtime bar, see [`Session::series`]).
     fn lower_timeframe_candles(
         &mut self,
         symbol_value: Option<&RuntimeValue>,
         seconds: f64,
         recent_bars: usize,
+        realtime: bool,
     ) -> Option<Arc<Vec<Kline>>> {
         let symbol = match symbol_value {
             Some(RuntimeValue::String(text)) if !text.is_empty() => text.clone(),
@@ -866,7 +1042,8 @@ impl Session {
             recent_bars,
         };
         // Asked of the provider once per run, not once per chart bar.
-        self.series(key).filter(|candles| !candles.is_empty())
+        self.series(key, realtime)
+            .filter(|candles| !candles.is_empty())
     }
 
     /// The expression on every intrabar that opens inside the chart bar.
@@ -886,17 +1063,14 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let end = self.bar_end(&bar);
-        let mut low = 0usize;
-        let mut high = candles.len();
-        while low < high {
-            let middle = (low + high) / 2;
-            if candles[middle].open_time < bar.open_time {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
+        // A candle belongs to the chart bar its last instant falls in, the bar running from where it
+        // opens to where it closes (`bar_end`): a stock's daily bar opens with its session, inside
+        // the UTC day its 4h candles are cut on, so the candles that merely open inside it are not
+        // all its own (TradingView probes R2 and R5).
+        let chart = self.chart_bar(&bar, &context.flags);
+        let window_end = self.bar_end(&bar);
+        let ends = |candle: &Kline| time::bucket::end(candle.open_time, interval);
+        let low = candles.partition_point(|candle| ends(candle) <= bar.open_time);
         let request = SecurityRequest {
             symbol: String::new(),
             interval,
@@ -905,16 +1079,19 @@ impl Session {
             gaps_on: false,
             foreign: None,
         };
-        let chart = ChartBar::of(&bar, self.bar_seconds, &context.flags, self.history_end);
+        let chart = chart.reading(candles, interval);
         let mut results = Vec::new();
         let mut index = low;
-        while index < candles.len() && candles[index].open_time < end {
+        while index < candles.len() && ends(&candles[index]) <= window_end {
+            // A candle still forming (the live chart bar's newest intrabar) is a tick: it does not
+            // move the site's state on and it is not confirmed (TradingView probe S4: `9`, not `43`).
+            let closed = chart.has_closed(&candles[index], interval);
             results.push(self.evaluate_higher_timeframe(
                 &mut state,
                 &candles[index],
                 &request,
                 chart,
-                true,
+                closed,
             )?);
             index += 1;
         }
@@ -1824,8 +2001,23 @@ mod tests {
             None,
         );
         session.fixed_bar_seconds = Some(2_592_000.0);
-        session.load_history(chart, false, None).expect("runs");
+        session.load_history(chart, None, None).expect("runs");
         session.output().plots[0].values.clone()
+    }
+
+    #[test]
+    fn a_monthly_request_on_a_monthly_chart_is_its_own_timeframe_whatever_the_last_months_length() {
+        // The chart's length is read off its bars when the app does not state it: October to
+        // November is 31 days, but a month is Pine's 30 and "M" is no finer than the chart
+        // (real window, BTCUSDT 1M: the request was served from finer candles).
+        let chart = monthly_chart(2026, 9, 3);
+        let closes = plotted_as_history(
+            "plot(request.security(syminfo.tickerid, \"M\", close))",
+            &chart,
+        );
+        assert_eq!(closes, [Some(1.0), Some(2.0), Some(3.0)]);
+        let length = plotted_as_history("plot(timeframe.in_seconds())", &chart);
+        assert_eq!(length.last(), Some(&Some(2_592_000.0)));
     }
 
     #[test]
@@ -1850,6 +2042,56 @@ mod tests {
         assert_eq!(year[11], Some(0.0), "Dec 2022 closes 2022");
         assert_eq!(year[22], Some(0.0), "Nov 2023 still reads 2022");
         assert_eq!(year[23], Some(1.0), "Dec 2023 closes 2023");
+    }
+
+    /// The open of the month `year`-`month`.
+    fn month_start(year: i64, month: i64) -> i64 {
+        crate::pine::time::calendar::make(year, month, 1, 0, 0, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn a_live_months_real_open_says_which_quarter_is_the_last() {
+        // October 2023 to March 2024 as history, April's live bar after it. The chart's length is
+        // Pine's 30 days, so "March 1 + 30 days" (how the live bar's open was once estimated) lies
+        // inside March and made January-March the last quarter. April-June is.
+        let live = Kline {
+            open_time: month_start(2024, 4),
+            close_time: month_start(2024, 5),
+            ..bar(0, 10.0)
+        };
+        let plots = loaded(
+            "plot(request.security(syminfo.tickerid, \"3M\", barstate.islast ? 1.0 : 0.0))\n\
+             plot(request.security(syminfo.tickerid, \"3M\", barstate.islast ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))\n\
+             plot(last_bar_time)",
+            TestProvider::default(),
+            &monthly_chart(2023, 10, 6),
+            2_592_000.0,
+            Some((live, month_start(2024, 4) + 10 * 86_400_000)),
+        );
+        assert_eq!(
+            plots[0][5],
+            Some(0.0),
+            "March closes Q1, which is not the last"
+        );
+        assert_eq!(
+            plots[1][6],
+            Some(1.0),
+            "on the live bar April-June is the last"
+        );
+        let april = month_start(2024, 4) as f64;
+        assert_eq!(
+            plots[2][3],
+            Some(april),
+            "the live bar's open, from the first bar on"
+        );
+    }
+
+    #[test]
+    fn a_monthly_bar_closes_when_the_next_one_opens() {
+        // TradingView (BTCUSDT 1M): `time_close` of October's bar is November 1, not October 31.
+        let closes = plotted_on_a_monthly_chart("plot(time_close)", &monthly_chart(2026, 9, 3));
+        let at = |month: i64| Some(month_start(2026, month) as f64);
+        assert_eq!(closes, [at(10), at(11), at(12)]);
     }
 
     #[test]
@@ -1897,7 +2139,7 @@ mod tests {
             None,
         );
         session
-            .load_history(&hourly_chart(0, 5), true, Some(3600.0))
+            .load_history(&hourly_chart(0, 5), Some(5 * 3_600_000), Some(3600.0))
             .expect("runs");
         let _ = session.execute(
             BarEvent {
@@ -2574,7 +2816,7 @@ mod tests {
             ..bar(open_time, close)
         };
         let chart = [minute(0, 10.0), minute(60_000, 11.0)];
-        assert!(session.load_history(&chart, false, None).is_ok());
+        assert!(session.load_history(&chart, None, None).is_ok());
         let output = session.output();
         assert_eq!(output.plots[0].values, [Some(0.0), Some(3.0)]);
         // From the first bar's open to the end of the last (60 s spacing), asked once per run.
@@ -2586,6 +2828,132 @@ mod tests {
                 spacing_ms: 60_000
             }]
         );
+    }
+
+    /// Serves the candles that open in `[start, end)` of the chart's span, as a provider with a time
+    /// range endpoint does (`MarketSource::fetch_klines_range`).
+    struct RangeProvider {
+        candles: Vec<Kline>,
+    }
+
+    impl SecurityDataProvider for RangeProvider {
+        fn candles(&self, _key: &SecurityKey) -> Option<Vec<Kline>> {
+            None
+        }
+
+        fn candles_over(&self, _key: &SecurityKey, chart: ChartSpan) -> Option<Vec<Kline>> {
+            Some(
+                self.candles
+                    .iter()
+                    .filter(|candle| {
+                        candle.open_time >= chart.start_ms && candle.open_time < chart.end_ms
+                    })
+                    .cloned()
+                    .collect(),
+            )
+        }
+    }
+
+    /// One daily candle per day from `first_day` for `days` days.
+    fn daily_range(first_day: i64, days: i64) -> RangeProvider {
+        RangeProvider {
+            candles: (0..days)
+                .map(|day| bar(first_day + day * 86_400_000, day as f64))
+                .collect(),
+        }
+    }
+
+    /// Counts how often it is asked, and serves whatever candles it holds now.
+    struct CountingProvider {
+        asked: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        candles: std::sync::Arc<std::sync::Mutex<Vec<Kline>>>,
+    }
+
+    impl SecurityDataProvider for CountingProvider {
+        fn candles(&self, _key: &SecurityKey) -> Option<Vec<Kline>> {
+            None
+        }
+
+        fn candles_over(&self, _key: &SecurityKey, _chart: ChartSpan) -> Option<Vec<Kline>> {
+            self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(self.candles.lock().unwrap().clone())
+        }
+    }
+
+    #[test]
+    fn a_reloaded_history_asks_the_provider_again() {
+        // One session lives as long as the script sits on the chart: a live bar's finer candles are
+        // not the ones the first load saw.
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let candles = std::sync::Arc::new(std::sync::Mutex::new(vec![
+            bar(60_000, 1.0),
+            bar(75_000, 2.0),
+        ]));
+        let provider = CountingProvider {
+            asked: asked.clone(),
+            candles: candles.clone(),
+        };
+        let program = compiler::compile(
+            "//@version=6\nindicator(\"T\")\nplot(array.sum(request.security_lower_tf(syminfo.tickerid, \"15S\", close)))",
+            Limits::default(),
+            &NoLibraries,
+        );
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(provider)),
+            None,
+        );
+        let chart = [bar(0, 10.0), bar(60_000, 11.0)];
+        session.load_history(&chart, None, None).expect("runs");
+        assert_eq!(session.output().plots[0].values.last(), Some(&Some(3.0)));
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        candles.lock().unwrap().push(bar(90_000, 4.0));
+        session.load_history(&chart, None, None).expect("runs");
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(session.output().plots[0].values.last(), Some(&Some(7.0)));
+    }
+
+    #[test]
+    fn a_monthly_chart_asks_the_provider_for_its_last_months_last_day() {
+        // September and October 2026 on a monthly chart whose length is Pine's 30 days: "October 1 +
+        // 30 days" ends the range on October 31 at 00:00, exclusive, and the provider never sends the
+        // 31st. The bar closes on November 1 (TradingView probe R5).
+        let days_per_bar =
+            "plot(array.size(request.security_lower_tf(syminfo.tickerid, \"D\", close)))";
+        let sep = month_start(2026, 9);
+        let plots = loaded(
+            days_per_bar,
+            daily_range(sep, 92),
+            &monthly_chart(2026, 9, 2),
+            2_592_000.0,
+            None,
+        );
+        assert_eq!(plots[0], [Some(30.0), Some(31.0)]);
+    }
+
+    #[test]
+    fn a_live_monthly_bar_asks_the_provider_for_the_whole_month() {
+        // The live bar's range ends where its month does (November 1 + 30 days is November 30, a day
+        // short): a provider that already holds the month's days sends all of them.
+        let days_per_bar =
+            "plot(array.size(request.security_lower_tf(syminfo.tickerid, \"D\", close)))";
+        let live = Kline {
+            open_time: month_start(2026, 11),
+            close_time: month_start(2026, 12),
+            ..bar(0, 10.0)
+        };
+        let plots = loaded(
+            days_per_bar,
+            daily_range(month_start(2026, 9), 92 + 30),
+            &monthly_chart(2026, 9, 2),
+            2_592_000.0,
+            Some((live, month_start(2026, 11) + 10 * 86_400_000)),
+        );
+        assert_eq!(plots[0], [Some(30.0), Some(31.0), Some(30.0)]);
     }
 
     #[test]
@@ -2661,6 +3029,244 @@ mod tests {
         );
         // On the second bar the four 15s intrabars sum to 1 + 2 + 3 + 4.
         assert_eq!(output.plots[0].values.last(), Some(&Some(10.0)));
+    }
+    /// Every plot of `source` over `chart` loaded as the app loads a history: with the chart's bar
+    /// length fixed at `seconds`, and when `live` is given (a bar and the wall-clock time) with that
+    /// bar ticking after it.
+    fn loaded(
+        source: &str,
+        provider: impl SecurityDataProvider + 'static,
+        chart: &[Kline],
+        seconds: f64,
+        live: Option<(Kline, i64)>,
+    ) -> Vec<Vec<Option<f64>>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            Some(Box::new(provider)),
+            None,
+        );
+        session.fixed_bar_seconds = Some(seconds);
+        session.now_ms = live.as_ref().map(|(_, now)| *now);
+        session
+            .load_history(
+                chart,
+                live.as_ref().map(|(candle, _)| candle.open_time),
+                Some(seconds),
+            )
+            .expect("runs");
+        if let Some((candle, _)) = live {
+            let _ = session.execute(
+                BarEvent {
+                    candle,
+                    phase: BarPhase::RealtimeTick { is_new: true },
+                },
+                true,
+                None,
+            );
+        }
+        session
+            .output()
+            .plots
+            .iter()
+            .map(|plot| plot.values.clone())
+            .collect()
+    }
+
+    fn finer_candles(interval: f64, from: i64, until: i64) -> TestProvider {
+        let step = (interval * 1000.0) as i64;
+        let mut provider = TestProvider::default();
+        provider.candles.insert(
+            SecurityKey {
+                symbol: String::new(),
+                interval,
+                recent_bars: 0,
+            },
+            (0..)
+                .map(|index| from + index * step)
+                .take_while(|open| *open <= until)
+                .map(|open| Kline {
+                    close_time: open + step - 1,
+                    ..bar(open, open as f64)
+                })
+                .collect(),
+        );
+        provider
+    }
+
+    #[test]
+    fn security_to_a_finer_timeframe_with_lookahead_reads_the_first_intrabar() {
+        // TradingView, probe S1: an AAPL 1D chart reads a "60" request's last candle of the day
+        // (15:30), and its first one (9:30) with lookahead_on.
+        let provider = || finer_candles(15.0, 60_000, 105_000);
+        let chart = [bar(0, 10.0), bar(60_000, 11.0)];
+        let source = |lookahead: &str| {
+            format!(
+                "//@version=6\nindicator(\"T\")\nplot(request.security(syminfo.tickerid, \"15S\", close{lookahead}))"
+            )
+        };
+        let off = run(&source(""), provider(), &chart);
+        assert_eq!(off.plots[0].values.last(), Some(&Some(105_000.0)));
+        let on = run(
+            &source(", lookahead = barmerge.lookahead_on"),
+            provider(),
+            &chart,
+        );
+        assert_eq!(on.plots[0].values.last(), Some(&Some(60_000.0)));
+    }
+
+    #[test]
+    fn a_stock_bar_reads_the_candles_that_end_inside_it_not_the_next_sessions() {
+        // TradingView, probes R2 and S1: a "240" request on an AAPL 1D chart reads the last candle
+        // of the day, whose predecessor is on the same day. The daily bar opens at 14:30 UTC and
+        // the 4h candles are cut at 12, 16 and 20 UTC, so the next day's 12:00 candle opens before
+        // the bar's nominal end but ends after the session.
+        let hour = 3_600_000;
+        let day = 24 * hour;
+        let chart: Vec<Kline> = (0..3)
+            .map(|d| bar(d * day + 14 * hour + hour / 2, 1.0))
+            .collect();
+        let mut provider = TestProvider::default();
+        provider.candles.insert(
+            SecurityKey {
+                symbol: String::new(),
+                interval: 14_400.0,
+                recent_bars: 0,
+            },
+            (0..4)
+                .flat_map(|d| {
+                    [12, 16, 20].map(|h| Kline {
+                        close_time: d * day + (h + 4) * hour - 1,
+                        ..bar(d * day + h * hour, 1.0)
+                    })
+                })
+                .collect(),
+        );
+        let plots = loaded(
+            "plot(request.security(syminfo.tickerid, \"240\", time))\n\
+             plot(request.security(syminfo.tickerid, \"240\", timeframe.change(\"D\") ? 1.0 : 0.0))",
+            provider,
+            &chart,
+            86_400.0,
+            None,
+        );
+        let last_candle: Vec<_> = (0..3).map(|d| Some((d * day + 20 * hour) as f64)).collect();
+        assert_eq!(plots[0], last_candle);
+        assert_eq!(
+            plots[1],
+            [Some(0.0); 3],
+            "the last candle of a day opens no day"
+        );
+    }
+
+    #[test]
+    fn a_monthly_bar_reads_the_candles_of_its_own_month() {
+        // TradingView, probe R5: a monthly bar is a nominal 30 days, and October's last day still
+        // belongs to it.
+        let chart = monthly_chart(2026, 9, 3);
+        let day = 86_400_000;
+        let first = chart[0].open_time;
+        let provider = finer_candles(86_400.0, first, chart[2].open_time + 29 * day);
+        let plots = loaded(
+            "plot(request.security(syminfo.tickerid, \"1D\", time))",
+            provider,
+            &chart,
+            2_592_000.0,
+            None,
+        );
+        let last_day = |month: usize| Some((chart[month + 1].open_time - day) as f64);
+        assert_eq!(plots[0][0], last_day(0));
+        assert_eq!(plots[0][1], last_day(1), "31 days in October");
+    }
+
+    #[test]
+    fn a_finer_requests_last_confirmed_history_candle_is_the_last_to_close_before_the_load() {
+        // TradingView, probe S2 (BTCUSDT 4h, loaded at 13:57 inside the live bar 12:00-16:00): of
+        // the 15m candles of the live bar the 13:30 one is the last confirmed history candle, the
+        // 13:45 one forming at the load is the last and the only realtime one; the chart's last
+        // history bar has none of them.
+        let hour = 3_600_000;
+        let minute = 60_000;
+        let chart = hourly_chart(0, 4);
+        let provider = finer_candles(900.0, 0, 4 * hour + 30 * minute);
+        let plots = loaded(
+            "plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.islastconfirmedhistory ? 1.0 : 0.0), 1.0))\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.islast ? 1.0 : 0.0), 1.0))\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isrealtime ? 1.0 : 0.0), 1.0))",
+            provider,
+            &chart,
+            3_600.0,
+            Some((bar(4 * hour, 1.0), 4 * hour + 40 * minute)),
+        );
+        let flagged = |plot: usize, at: usize| plots[plot][at];
+        for plot in 0..3 {
+            assert_eq!(
+                flagged(plot, 3),
+                Some(-1.0),
+                "the last history bar, plot {plot}"
+            );
+        }
+        assert_eq!(
+            flagged(0, 4),
+            Some(1.0),
+            "last confirmed history: the 4:15 candle"
+        );
+        assert_eq!(flagged(1, 4), Some(2.0), "last: the 4:30 candle");
+        assert_eq!(
+            flagged(2, 4),
+            Some(2.0),
+            "realtime: the 4:30 candle forming at the load"
+        );
+    }
+
+    #[test]
+    fn a_finer_request_on_a_live_bar_reads_the_first_intrabar_with_lookahead_on_and_the_latest_without()
+     {
+        // TradingView, probe S3 (BTCUSDT 5m, a "1" request, 2026-11-24): on the live bar the request
+        // with lookahead_on returns the chart bar's FIRST 1m candle at every tick, both for a bar
+        // the script was loaded inside and for one that opened while it ran; without lookahead it
+        // follows the latest candle. (The Pine docs say a realtime bar returns the latest intrabar
+        // whatever the setting; the measurement does not.)
+        let hour = 3_600_000;
+        let minute = 60_000;
+        let source = |lookahead: &str| {
+            format!("plot(request.security(syminfo.tickerid, \"15\", close{lookahead}))")
+        };
+        let read = |lookahead: &str| {
+            loaded(
+                &source(lookahead),
+                finer_candles(900.0, 0, 4 * hour + 30 * minute),
+                &hourly_chart(0, 4),
+                3_600.0,
+                Some((bar(4 * hour, 1.0), 4 * hour + 40 * minute)),
+            )
+        };
+        // The candles' close is their open time: the live bar holds the 4:00, 4:15 and 4:30 ones.
+        let latest = read("");
+        assert_eq!(latest[0][4], Some((4 * hour + 30 * minute) as f64));
+        let first = read(", lookahead = barmerge.lookahead_on");
+        assert_eq!(first[0][4], Some((4 * hour) as f64));
+    }
+
+    #[test]
+    fn the_last_candle_of_a_request_is_the_last_on_every_chart_bar_that_reads_it() {
+        // TradingView, probes A, R3 and R4: a "D" request with lookahead_on reads the day still
+        // forming with islast true on every chart bar of that day, not on the chart's last bar only.
+        let chart = hourly_chart(0, 6);
+        let plots = loaded(
+            "plot(request.security(syminfo.tickerid, \"240\", barstate.islast ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))",
+            TestProvider::default(),
+            &chart,
+            3_600.0,
+            None,
+        );
+        let flags: Vec<f64> = plots[0].iter().map(|value| value.unwrap()).collect();
+        assert_eq!(flags, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0]);
     }
 
     #[test]

@@ -16,47 +16,56 @@ impl Session {
     /// app loads history and reads the output separately.
     #[cfg(test)]
     pub fn evaluate(&mut self, bars: &[Kline]) -> Result<RuntimeResult, RunError> {
-        let states = self.load_history(bars, false, None)?;
+        let states = self.load_history(bars, None, None)?;
         Ok(RuntimeResult {
             output: self.output(),
             bar_states: states,
         })
     }
 
+    /// Loads `bars` as the chart's history. `live_open` is the open of the live bar that follows the
+    /// history, when there is one: its real time, never `last open + the chart's length` (a calendar
+    /// bar is not a fixed number of seconds long). `seed` is the chart's bar length, as the app
+    /// measures it on its newest bar.
     pub fn load_history(
         &mut self,
         bars: &[Kline],
-        precedes_live_bar: bool,
+        live_open: Option<i64>,
         seed: Option<f64>,
     ) -> Result<Vec<BarFlags>, RunError> {
+        let precedes_live_bar = live_open.is_some();
         self.reset(None);
         self.start_deadline();
         self.infer_mintick(bars);
         if let Some(seed) = seed.filter(|s| *s > 0.0) {
-            self.bar_seconds = seed;
+            // The seed is the newest bar's length: the live bar's when one follows.
+            let newest = live_open.or_else(|| bars.last().map(|last| last.open_time));
+            self.bar_seconds = newest.map_or(seed, |open| {
+                crate::pine::time::bucket::nominal_length(open, seed)
+            });
         }
         if let Some(known) = self.known_bar_seconds() {
             self.bar_seconds = known;
         } else if bars.len() > 1 {
-            self.bar_seconds =
-                (bars[bars.len() - 1].open_time - bars[bars.len() - 2].open_time) as f64 / 1000.0;
+            let previous = bars[bars.len() - 2].open_time;
+            self.bar_seconds = crate::pine::time::bucket::nominal_length(
+                previous,
+                (bars[bars.len() - 1].open_time - previous) as f64 / 1000.0,
+            );
         }
         self.last_bar_index = bars.len() as i64 - 1 + (precedes_live_bar as i64);
-        self.last_bar_time = bars.last().map(|bar| {
-            bar.open_time
-                + (if precedes_live_bar {
-                    (self.bar_seconds * 1000.0) as i64
-                } else {
-                    0
-                })
-        });
-        self.first_bar_time = bars.first().map(|bar| bar.open_time);
+        self.last_bar_time = live_open.or_else(|| bars.last().map(|bar| bar.open_time));
+        self.first_bar_time = bars.first().map(|bar| bar.open_time).or(live_open);
         let seconds = self.bar_seconds;
         self.history_end = bars.last().map(|bar| {
-            crate::pine::time::bucket::end(
+            let end = crate::pine::time::bucket::end(
                 crate::pine::time::bucket::start(bar.open_time, seconds),
                 seconds,
-            )
+            );
+            match self.now_ms {
+                Some(now) if precedes_live_bar => end.max(now),
+                _ => end,
+            }
         });
         self.bulk_replay = true;
         let mut failed_bar = 0;
@@ -223,7 +232,10 @@ impl Session {
             && self.known_bar_seconds().is_none()
             && let Some(previous) = self.last_open_time
         {
-            self.bar_seconds = (open_time - previous) as f64 / 1000.0;
+            self.bar_seconds = crate::pine::time::bucket::nominal_length(
+                previous,
+                (open_time - previous) as f64 / 1000.0,
+            );
         }
         let confirmed = event.phase.is_confirmed();
         let realtime = event.phase.is_realtime();

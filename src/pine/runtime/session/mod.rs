@@ -77,6 +77,9 @@ pub struct Session {
     pub security_series: HashMap<super::support::SecurityKey, SeriesAnswer>,
     /// How long a series the provider did not give is not asked for again (see [`SeriesAnswer`]).
     pub security_retry_after: Duration,
+    /// How old a series the provider gave may be before a realtime tick asks for it again, so a
+    /// finer or foreign series learns of the candles that opened since (see [`SeriesAnswer`]).
+    pub security_live_refresh: Duration,
     pub library_constants: FastMap<String, RuntimeValue>,
     pub constants_in_progress: HashSet<String>,
     pub committed: RuntimeState,
@@ -134,7 +137,13 @@ pub struct Session {
     pub first_bar_time: Option<i64>,
     /// Where the history the chart was loaded with ends (`load_history`): the close of its last bar,
     /// the open of the live bar that may follow. None until a history is loaded.
+    ///
+    /// With a live bar after the history it is the moment of the load when `now_ms` is known, which
+    /// lies inside that bar: the series a request reads split into history and realtime there, not
+    /// where the chart's bars do.
     pub history_end: Option<i64>,
+    /// The wall-clock time of the run (the app's update), when known. Not reset with the history.
+    pub now_ms: Option<i64>,
     pub visible_range: Option<(i64, i64)>,
     pub last_committed_open_time: Option<i64>,
     pub once_per_bar_ledger: HashSet<usize>,
@@ -227,12 +236,12 @@ impl Session {
     /// days, the bucket a day cuts short (the last of a `59s` day lasts 24 s) and a bar a provider
     /// stamps at its own offset all differ from `bar_seconds`. A price-based chart's bars have no
     /// close of their own (their times say nothing of the timeframe), and a bar with no usable close
-    /// is as long as `bar_seconds`.
+    /// is as long as `bar_seconds`, a month, quarter or year the calendar's (`bucket::close_time`).
     pub(crate) fn bar_end(&self, bar: &Kline) -> i64 {
         if self.fixed_bar_seconds.is_none() && bar.close_time > bar.open_time {
             bar.close_time + 1
         } else {
-            bar.open_time + (self.bar_seconds * 1000.0).round() as i64
+            crate::pine::time::bucket::close_time(bar.open_time, self.bar_seconds)
         }
     }
 
@@ -247,6 +256,7 @@ impl Session {
             self.inputs = inputs;
         }
         self.restart_state();
+        self.security_series.clear();
         self.logs.restart();
         self.bar_seconds = self.known_bar_seconds().unwrap_or(0.0);
         self.last_bar_index = -1;
@@ -293,6 +303,11 @@ pub struct SeriesAnswer {
     pub candles: Option<Arc<Vec<Kline>>>,
     pub asked: Instant,
 }
+
+/// How long a series the provider gave is trusted on a realtime tick before it is asked for again:
+/// the host's own cache answers a second ask inside its 30 s lifetime, so a shorter window would
+/// only repeat what it holds.
+pub(super) const SECURITY_LIVE_REFRESH: Duration = Duration::from_secs(30);
 
 /// How long the provider is left alone after it gave no series: one ask a window bounds what a
 /// failing provider costs a live chart (each ask spends the host's retries).
