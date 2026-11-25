@@ -102,6 +102,10 @@ msgstr "还有 {count} 个"
 msgid "+{hidden} more"
 msgstr "还有 {hidden} 个"
 
+#: src/ui/settings/broker_words.rs
+msgid "-----BEGIN EC PRIVATE KEY----- … (or a base64 Ed25519 key)"
+msgstr "-----BEGIN EC PRIVATE KEY----- …（或 base64 编码的 Ed25519 密钥）"
+
 #: src/model/editor_theme/roles.rs
 msgid "//@version=6 and the other //@ directives."
 msgstr "//@version=6 及其他 //@ 指令。"
@@ -422,6 +426,10 @@ msgstr "API 凭据"
 #: src/ui/settings/api_keys.rs
 msgid "API key configured"
 msgstr "API 密钥已配置"
+
+#: src/ui/settings/broker_words.rs
+msgid "API key name"
+msgstr "API key 名称"
 
 #: src/ui/settings/ai.rs
 msgid "API key saved"
@@ -2779,6 +2787,10 @@ msgstr "选择 Pine Script 编辑器的外观。"
 msgid "Choose portfolio"
 msgstr "选择投资组合"
 
+#: src/ui/settings/broker_words.rs
+msgid "Choose the ECDSA signature algorithm if you are offered one."
+msgstr "如果可以选择签名算法，选择 ECDSA。"
+
 #: src/ui/portfolio/tab/mod.rs
 msgid "Choose the asset this transaction is for."
 msgstr "选择此交易记录所属的资产。"
@@ -3579,6 +3591,10 @@ msgstr "复制样式"
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr "复制结果"
+
+#: src/ui/settings/broker_words.rs
+msgid "Copy the key name and the private key (shown once) into the fields below."
+msgstr "把密钥名称和私钥（只显示一次）复制到下面的字段中。"
 
 #: src/ui/settings/about.rs
 msgid "Copy the version and build date for a bug report"
@@ -4649,6 +4665,10 @@ msgstr "全部忽略"
 #: src/ui/drawing/properties/style.rs
 msgid "Distance"
 msgstr "距离"
+
+#: src/ui/settings/broker_words.rs
+msgid "Do not tick Transfer. DegenView never moves funds and does not need it."
+msgstr "不要勾选 Transfer。DegenView 从不转移资金，也不需要它。"
 
 #: src/ui/settings/about.rs
 msgid "Documentation"
@@ -6218,6 +6238,10 @@ msgstr "将此图表的颜色和画布应用到此工作区的每个图表。每
 msgid "Gives every chart in this workspace this chart's type, colors and canvas. Symbols, timeframes, indicators, scripts, alerts and drawings stay as they are."
 msgstr "将此图表的类型、颜色和画布应用到此工作区的每个图表。标的、周期、指标、脚本、提醒和绘图保持不变。"
 
+#: src/ui/settings/broker_words.rs
+msgid "Go to API keys and create a Secret API key for the portfolio you want to trade."
+msgstr "进入 API keys，为你要交易的投资组合创建一个 Secret API key。"
+
 #: src/native_bridge.rs src/pine_studio/editor/navigation.rs
 #: src/pine_studio/menu_bar/edit.rs
 msgid "Go to Definition"
@@ -7081,6 +7105,10 @@ msgstr "找不到项目"
 #: src/pine_studio/profiler/marks.rs
 msgid "Iterations"
 msgstr "迭代次数"
+
+#: src/ui/settings/broker_words.rs
+msgid "Its answers are fixed examples. The balances, orders and fills do not change when you place, edit or cancel an order, and it has no live prices."
+msgstr "它的返回是固定的示例。下单、修改或撤单时，余额、订单和成交都不会变化，也没有实时价格。"
 
 #: src/host/mcp/confirmation.rs
 msgid "Its drawings go with it."
@@ -9016,6 +9044,10 @@ msgstr "没有匹配的已安装等宽字体。"
 msgid "No journal entries"
 msgstr "无日志条目"
 
+#: src/ui/settings/broker_words.rs
+msgid "No key is used, so there is nothing to grant. Press Connect."
+msgstr "不使用密钥，因此无需授权。点击“连接”。"
+
 #: src/ui/settings/ai.rs
 msgid "No key needed for a local server"
 msgstr "本地服务器无需密钥"
@@ -9855,6 +9887,10 @@ msgstr "打开 API 页面并复制你的 API 密钥。"
 #: src/ui/settings/api_keys.rs
 msgid "Open the Alpaca dashboard"
 msgstr "打开 Alpaca 控制台"
+
+#: src/ui/settings/broker_words.rs
+msgid "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
+msgstr "打开 Coinbase Developer Platform（portal.cdp.coinbase.com）并登录。"
 
 #: src/ui/settings/about.rs
 msgid "Open the release page on GitHub"
@@ -10868,6 +10904,10 @@ msgstr "前一日"
 #: src/ui/settings/snapshots.rs
 msgid "Privacy"
 msgstr "隐私"
+
+#: src/ui/settings/broker_words.rs
+msgid "Private key"
+msgstr "私钥"
 
 #: src/pine_studio/drawer/mod.rs
 msgid "Problems"
@@ -12867,7 +12907,7 @@ msgstr "由脚本设定"
 
 #: src/ui/settings/brokers.rs src/ui/settings/provider_card.rs
 msgid "Set up"
-msgstr "设置"
+msgstr "设置步骤"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Set up Alpaca to open a stock"
@@ -15084,6 +15124,10 @@ msgstr "没有可安装的更新。"
 msgid "There is nothing on this chart to take a picture of yet."
 msgstr "这个图表上还没有内容可以截图。"
 
+#: src/ui/settings/broker_words.rs
+msgid "There is nothing to create: Coinbase's sandbox needs no API key."
+msgstr "无需创建任何内容：Coinbase 沙盒不需要 API key。"
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "There is nothing to spend."
 msgstr "没有可用资金。"
@@ -15395,6 +15439,10 @@ msgstr "三驱动形态"
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Three quarters by"
 msgstr "四分之三在"
+
+#: src/ui/settings/broker_words.rs
+msgid "Tick View, and Trade only if you want to place orders from DegenView."
+msgstr "勾选 View；只有想从 DegenView 下单时，才勾选 Trade。"
 
 #: src/ui/portfolio/asset_picker.rs
 msgid "Ticker symbol (e.g. BTC or PEPE)"
@@ -16124,6 +16172,10 @@ msgstr "允许从其他设备使用"
 msgid "Use iCloud's Data"
 msgstr "使用 iCloud 的数据"
 
+#: src/ui/settings/broker_words.rs
+msgid "Use it to try the order ticket and its previews without a real account. Nothing here reaches your Coinbase account."
+msgstr "用它来试用下单面板及其预览，无需真实账户。这里的任何操作都不会影响你的 Coinbase 账户。"
+
 #: src/model/webhook/policy.rs
 msgid "Use letters, numbers and - _ . only."
 msgstr "只能使用字母、数字和 - _ . 这几个符号。"
@@ -16371,6 +16423,10 @@ msgstr "查看交易记录"
 #: src/ui/settings/brokers.rs
 msgid "View balances and orders"
 msgstr "查看余额和订单"
+
+#: src/ui/settings/broker_words.rs
+msgid "View lets DegenView read balances and orders. Trade lets it place and cancel orders. Transfer is never needed."
+msgstr "View 允许 DegenView 读取余额和订单。Trade 允许它下单和撤单。Transfer 永远不需要。"
 
 #: src/ui/settings/brokers.rs
 msgid "View only"

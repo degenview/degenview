@@ -105,6 +105,10 @@ msgstr "+{count} más"
 msgid "+{hidden} more"
 msgstr "+{hidden} más"
 
+#: src/ui/settings/broker_words.rs
+msgid "-----BEGIN EC PRIVATE KEY----- … (or a base64 Ed25519 key)"
+msgstr "-----BEGIN EC PRIVATE KEY----- … (o una clave Ed25519 en base64)"
+
 #: src/model/editor_theme/roles.rs
 msgid "//@version=6 and the other //@ directives."
 msgstr "//@version=6 y el resto de directivas //@."
@@ -425,6 +429,10 @@ msgstr "Credenciales de la API"
 #: src/ui/settings/api_keys.rs
 msgid "API key configured"
 msgstr "Clave de API configurada"
+
+#: src/ui/settings/broker_words.rs
+msgid "API key name"
+msgstr "Nombre de la API key"
 
 #: src/ui/settings/ai.rs
 msgid "API key saved"
@@ -2804,6 +2812,10 @@ msgstr "Elige el aspecto de tu editor de Pine Script."
 msgid "Choose portfolio"
 msgstr "Elegir cartera"
 
+#: src/ui/settings/broker_words.rs
+msgid "Choose the ECDSA signature algorithm if you are offered one."
+msgstr "Elige el algoritmo de firma ECDSA si te lo ofrecen."
+
 #: src/ui/portfolio/tab/mod.rs
 msgid "Choose the asset this transaction is for."
 msgstr "Elige el activo al que corresponde esta transacción."
@@ -3610,6 +3622,10 @@ msgstr "Copiar estilo"
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr "Copiar la respuesta"
+
+#: src/ui/settings/broker_words.rs
+msgid "Copy the key name and the private key (shown once) into the fields below."
+msgstr "Copia el nombre de la clave y la clave privada (solo se muestra una vez) en los campos de abajo."
 
 #: src/ui/settings/about.rs
 msgid "Copy the version and build date for a bug report"
@@ -4682,6 +4698,10 @@ msgstr "Descartar todo"
 #: src/ui/drawing/properties/style.rs
 msgid "Distance"
 msgstr "Distancia"
+
+#: src/ui/settings/broker_words.rs
+msgid "Do not tick Transfer. DegenView never moves funds and does not need it."
+msgstr "No marques Transfer. DegenView nunca mueve fondos y no lo necesita."
 
 #: src/ui/settings/about.rs
 msgid "Documentation"
@@ -6252,6 +6272,10 @@ msgstr "Aplica los colores y el lienzo de este gráfico a todos los gráficos de
 msgid "Gives every chart in this workspace this chart's type, colors and canvas. Symbols, timeframes, indicators, scripts, alerts and drawings stay as they are."
 msgstr "Aplica el tipo, los colores y el lienzo de este gráfico a todos los gráficos de este espacio de trabajo. Los símbolos, marcos temporales, indicadores, scripts, alertas y dibujos no cambian."
 
+#: src/ui/settings/broker_words.rs
+msgid "Go to API keys and create a Secret API key for the portfolio you want to trade."
+msgstr "Ve a API keys y crea una Secret API key para la cartera con la que quieras operar."
+
 #: src/native_bridge.rs src/pine_studio/editor/navigation.rs
 #: src/pine_studio/menu_bar/edit.rs
 msgid "Go to Definition"
@@ -7117,6 +7141,10 @@ msgstr "Elemento no encontrado"
 #: src/pine_studio/profiler/marks.rs
 msgid "Iterations"
 msgstr "Iteraciones"
+
+#: src/ui/settings/broker_words.rs
+msgid "Its answers are fixed examples. The balances, orders and fills do not change when you place, edit or cancel an order, and it has no live prices."
+msgstr "Sus respuestas son ejemplos fijos. Los saldos, las órdenes y las ejecuciones no cambian al enviar, modificar o cancelar una orden, y no tiene precios en directo."
 
 #: src/host/mcp/confirmation.rs
 msgid "Its drawings go with it."
@@ -9052,6 +9080,10 @@ msgstr "Ninguna fuente monoespaciada instalada coincide."
 msgid "No journal entries"
 msgstr "Sin entradas en el diario"
 
+#: src/ui/settings/broker_words.rs
+msgid "No key is used, so there is nothing to grant. Press Connect."
+msgstr "No se usa ninguna clave, así que no hay nada que conceder. Pulsa Conectar."
+
 #: src/ui/settings/ai.rs
 msgid "No key needed for a local server"
 msgstr "No hace falta clave para un servidor local"
@@ -9891,6 +9923,10 @@ msgstr "Abre la página de la API y copia tu clave de API."
 #: src/ui/settings/api_keys.rs
 msgid "Open the Alpaca dashboard"
 msgstr "Abrir el panel de Alpaca"
+
+#: src/ui/settings/broker_words.rs
+msgid "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
+msgstr "Abre Coinbase Developer Platform (portal.cdp.coinbase.com) e inicia sesión."
 
 #: src/ui/settings/about.rs
 msgid "Open the release page on GitHub"
@@ -10906,6 +10942,10 @@ msgstr "Día anterior"
 #: src/ui/settings/snapshots.rs
 msgid "Privacy"
 msgstr "Privacidad"
+
+#: src/ui/settings/broker_words.rs
+msgid "Private key"
+msgstr "Clave privada"
 
 #: src/pine_studio/drawer/mod.rs
 msgid "Problems"
@@ -15135,6 +15175,10 @@ msgstr "No hay ninguna actualización lista para instalar."
 msgid "There is nothing on this chart to take a picture of yet."
 msgstr "Aún no hay nada en este gráfico que capturar."
 
+#: src/ui/settings/broker_words.rs
+msgid "There is nothing to create: Coinbase's sandbox needs no API key."
+msgstr "No hay nada que crear: el sandbox de Coinbase no necesita ninguna API key."
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "There is nothing to spend."
 msgstr "No hay nada que gastar."
@@ -15448,6 +15492,10 @@ msgstr "Patrón de tres impulsos"
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Three quarters by"
 msgstr "Tres cuartos en"
+
+#: src/ui/settings/broker_words.rs
+msgid "Tick View, and Trade only if you want to place orders from DegenView."
+msgstr "Marca View y, solo si quieres enviar órdenes desde DegenView, también Trade."
 
 #: src/ui/portfolio/asset_picker.rs
 msgid "Ticker symbol (e.g. BTC or PEPE)"
@@ -16177,6 +16225,10 @@ msgstr "Usar desde otros equipos"
 msgid "Use iCloud's Data"
 msgstr "Usar los datos de iCloud"
 
+#: src/ui/settings/broker_words.rs
+msgid "Use it to try the order ticket and its previews without a real account. Nothing here reaches your Coinbase account."
+msgstr "Úsalo para probar el ticket de la orden y sus vistas previas sin una cuenta real. Nada de esto llega a tu cuenta de Coinbase."
+
 #: src/model/webhook/policy.rs
 msgid "Use letters, numbers and - _ . only."
 msgstr "Usa solo letras, números y - _ ."
@@ -16427,6 +16479,10 @@ msgstr "Ver transacciones"
 #: src/ui/settings/brokers.rs
 msgid "View balances and orders"
 msgstr "Ver saldos y órdenes"
+
+#: src/ui/settings/broker_words.rs
+msgid "View lets DegenView read balances and orders. Trade lets it place and cancel orders. Transfer is never needed."
+msgstr "View permite a DegenView leer saldos y órdenes. Trade le permite enviar y cancelar órdenes. Transfer nunca hace falta."
 
 #: src/ui/settings/brokers.rs
 msgid "View only"

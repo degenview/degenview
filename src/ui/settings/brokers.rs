@@ -29,6 +29,7 @@ use crate::model::paper::prefs::PaperPrefs;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
 use crate::ui::kit::{destructive_button, field};
+use crate::ui::settings::broker_words;
 use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
@@ -632,11 +633,11 @@ fn setup_body(
 ) {
     let descriptor = broker.descriptor();
     titled_group(ui, tr!("Set up"), |ui| {
-        for (index, step) in descriptor.setup_steps.iter().enumerate() {
+        for (index, step) in broker_words::setup_steps(descriptor).iter().enumerate() {
             step_row(ui, index + 1, step);
         }
     });
-    muted(ui, descriptor.permission_note);
+    muted(ui, broker_words::permission_note(descriptor));
     gray_link(
         ui,
         &tr!("Read {name}'s instructions", name = descriptor.display_name),
@@ -652,17 +653,17 @@ fn setup_body(
             FieldKind::Pem => secret_block(
                 ui,
                 secret_block_id(descriptor.id, credential.key),
-                credential.label,
-                credential.hint,
+                broker_words::field_label(descriptor, credential),
+                broker_words::field_hint(descriptor, credential),
                 value,
             ),
             _ => {
                 field(
                     ui,
                     ("broker-credential", descriptor.id, credential.key),
-                    credential.label,
+                    broker_words::field_label(descriptor, credential),
                     None,
-                    credential.hint,
+                    broker_words::field_hint(descriptor, credential),
                     value,
                     credential.secret,
                 );

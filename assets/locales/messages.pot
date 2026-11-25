@@ -100,6 +100,10 @@ msgstr ""
 msgid "+{hidden} more"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "-----BEGIN EC PRIVATE KEY----- … (or a base64 Ed25519 key)"
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "//@version=6 and the other //@ directives."
 msgstr ""
@@ -445,6 +449,10 @@ msgstr ""
 
 #: src/ui/settings/api_keys.rs
 msgid "API key configured"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid "API key name"
 msgstr ""
 
 #: src/ui/settings/ai.rs
@@ -2973,6 +2981,10 @@ msgstr ""
 msgid "Choose portfolio"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "Choose the ECDSA signature algorithm if you are offered one."
+msgstr ""
+
 #: src/ui/portfolio/tab/mod.rs
 msgid "Choose the asset this transaction is for."
 msgstr ""
@@ -3834,6 +3846,11 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Copy the key name and the private key (shown once) into the fields below."
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -4966,6 +4983,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Distance"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid "Do not tick Transfer. DegenView never moves funds and does not need it."
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -6642,6 +6663,12 @@ msgid ""
 "are."
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Go to API keys and create a Secret API key for the portfolio you want to "
+"trade."
+msgstr ""
+
 #: src/native_bridge.rs
 #: src/pine_studio/editor/navigation.rs
 #: src/pine_studio/menu_bar/edit.rs
@@ -7567,6 +7594,12 @@ msgstr ""
 
 #: src/pine_studio/profiler/marks.rs
 msgid "Iterations"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Its answers are fixed examples. The balances, orders and fills do not change "
+"when you place, edit or cancel an order, and it has no live prices."
 msgstr ""
 
 #: src/host/mcp/confirmation.rs
@@ -9623,6 +9656,10 @@ msgstr ""
 msgid "No journal entries"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "No key is used, so there is nothing to grant. Press Connect."
+msgstr ""
+
 #: src/ui/settings/ai.rs
 msgid "No key needed for a local server"
 msgstr ""
@@ -10528,6 +10565,11 @@ msgstr ""
 
 #: src/ui/settings/api_keys.rs
 msgid "Open the Alpaca dashboard"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -11597,6 +11639,10 @@ msgstr ""
 
 #: src/ui/settings/snapshots.rs
 msgid "Privacy"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid "Private key"
 msgstr ""
 
 #: src/pine_studio/drawer/mod.rs
@@ -16096,6 +16142,10 @@ msgstr ""
 msgid "There is nothing on this chart to take a picture of yet."
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "There is nothing to create: Coinbase's sandbox needs no API key."
+msgstr ""
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "There is nothing to spend."
 msgstr ""
@@ -16458,6 +16508,10 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Three quarters by"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid "Tick View, and Trade only if you want to place orders from DegenView."
 msgstr ""
 
 #: src/ui/portfolio/asset_picker.rs
@@ -17231,6 +17285,12 @@ msgstr ""
 msgid "Use iCloud's Data"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Use it to try the order ticket and its previews without a real account. "
+"Nothing here reaches your Coinbase account."
+msgstr ""
+
 #: src/model/webhook/policy.rs
 msgid "Use letters, numbers and - _ . only."
 msgstr ""
@@ -17486,6 +17546,12 @@ msgstr ""
 
 #: src/ui/settings/brokers.rs
 msgid "View balances and orders"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"View lets DegenView read balances and orders. Trade lets it place and cancel "
+"orders. Transfer is never needed."
 msgstr ""
 
 #: src/ui/settings/brokers.rs
