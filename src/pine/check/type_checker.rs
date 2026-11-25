@@ -503,7 +503,7 @@ impl TypeChecker {
             return false;
         }
         let given = self.ty_of(value);
-        if declared.accepts(&given).is_some() {
+        if declared.assignable(&given) {
             return false;
         }
         self.error(
@@ -531,7 +531,7 @@ impl TypeChecker {
         };
         if let declared @ Ty::Map(..) = self.ty_of(*target) {
             let given = self.ty_of(value);
-            if declared.accepts(&given).is_none() {
+            if !declared.assignable(&given) {
                 self.error(
                     "PINE3032",
                     format!(
@@ -664,6 +664,13 @@ impl TypeChecker {
                 if let Some(types) = map_types {
                     for argument in arguments {
                         self.infer(&argument.value, scope);
+                    }
+                    if !arguments.is_empty() {
+                        self.error(
+                            "PINE3072",
+                            "`map.new<K, V>()` takes no arguments.".into(),
+                            *range,
+                        );
                     }
                     let [key, value] = types.as_ref();
                     let ty = Ty::Map(
@@ -916,6 +923,12 @@ impl TypeChecker {
             return Inferred::Tuple(arity);
         }
         let result = builtin_types::call(name, arguments, &values, qualifier);
+        if let Some(member) = name.strip_prefix("map.")
+            && let Some((map, written)) = values.split_first()
+        {
+            let receiver = self.ty_of(*map);
+            self.check_map_write(&receiver, member, written, range);
+        }
         self.refine_collection(name, &values, result)
     }
 
@@ -999,8 +1012,18 @@ impl TypeChecker {
         }
     }
 
-    /// Gives `array.new_float`, `array.from` and `array.copy` the element type they carry.
+    /// Gives `array.new_float` and `array.from` the element type they carry, and routes a builtin
+    /// collection function (`array.copy(a)`, `map.copy(m)`) through the same result rule as its
+    /// method form (`a.copy()`, `m.copy()`).
     fn refine_collection(&mut self, name: &str, values: &[Inferred], result: Inferred) -> Inferred {
+        if let Some((namespace, member)) = name.split_once('.')
+            && let Some(first) = values.first()
+        {
+            let receiver = self.ty_of(*first);
+            if let Some(typed) = self.collection_result(namespace, member, &receiver) {
+                return typed;
+            }
+        }
         let element = if let Some(element) = name.strip_prefix("array.new_") {
             Some(match element {
                 "int" => Ty::Scalar(ValueType::Int),
@@ -1019,11 +1042,8 @@ impl TypeChecker {
             })
         } else if name == "array.from" {
             values.first().map(|first| self.ty_of(*first))
-        } else if name == "array.copy" || name == "array.slice" {
-            match values.first().map(|first| self.ty_of(*first)) {
-                Some(Ty::Array(element)) => Some(*element),
-                _ => None,
-            }
+        } else if name == "str.split" {
+            Some(Ty::Scalar(ValueType::String))
         } else {
             None
         };
@@ -1034,6 +1054,29 @@ impl TypeChecker {
             }
             None => result,
         }
+    }
+
+    /// What a builtin member of a collection returns, from the type of the collection it is called
+    /// on: the one rule behind both `array.get(a, 0)` and `a.get(0)`. None when the checker does not
+    /// type the result.
+    fn collection_result(
+        &mut self,
+        namespace: &str,
+        member: &str,
+        receiver: &Ty,
+    ) -> Option<Inferred> {
+        let ty = match (namespace, receiver, member) {
+            (
+                "array",
+                Ty::Array(element),
+                "get" | "first" | "last" | "pop" | "shift" | "remove",
+            ) => (**element).clone(),
+            ("array", Ty::Array(_), "copy" | "slice")
+            | ("map", Ty::Map(..), "copy")
+            | ("matrix", Ty::Matrix(_), "copy") => receiver.clone(),
+            _ => return None,
+        };
+        Some(self.inferred_of(&ty, Some(Qualifier::Series)))
     }
 
     // MARK: User callables
@@ -1136,7 +1179,10 @@ impl TypeChecker {
             Resolution::NoFit(reasons) => {
                 // A builtin method of the same name takes the call when no declaration does.
                 match self.builtin_method(&receiver_ty, receiver, member, values, site) {
-                    Some(result) => result,
+                    Some(result) => {
+                        self.check_map_write(&receiver_ty, member, values, range);
+                        result
+                    }
                     None => {
                         if reasons.is_empty() {
                             self.unknown_method(member, &receiver_ty, range);
@@ -1195,14 +1241,43 @@ impl TypeChecker {
         self.builtin_methods
             .insert(site, format!("{namespace}.{member}"));
         let _ = values;
-        Some(match (receiver, member) {
-            (Ty::Array(element), "get" | "first" | "last" | "pop" | "shift" | "remove") => {
-                let element = (**element).clone();
-                self.inferred_of(&element, Some(Qualifier::Series))
+        Some(
+            self.collection_result(namespace, member, receiver)
+                .unwrap_or(Inferred::Unknown),
+        )
+    }
+
+    /// A write to a map of known types (`put`, `put_all`) must bring what the map holds, as a script
+    /// the checker cannot type is held to at run time.
+    fn check_map_write(
+        &mut self,
+        receiver: &Ty,
+        member: &str,
+        written: &[Inferred],
+        range: SourceRange,
+    ) {
+        let Ty::Map(key, value) = receiver else {
+            return;
+        };
+        let expected: Vec<(&str, &Ty)> = match member {
+            "put" => vec![("key", key), ("value", value)],
+            "put_all" => vec![("map", receiver)],
+            _ => return,
+        };
+        for ((role, declared), given) in expected.into_iter().zip(written) {
+            let given = self.ty_of(*given);
+            if declared.accepts(&given).is_none() {
+                self.error(
+                    "PINE3073",
+                    format!(
+                        "The {role} given to map.{member} must be {}, got {}.",
+                        declared.describe(),
+                        given.describe()
+                    ),
+                    range,
+                );
             }
-            (Ty::Array(_) | Ty::Map(..) | Ty::Matrix(_), "copy") => value,
-            _ => Inferred::Unknown,
-        })
+        }
     }
 
     fn unknown_method(&mut self, member: &str, receiver: &Ty, range: SourceRange) {
@@ -1671,6 +1746,57 @@ mod tests {
         }
         let reassignment = "map<float, float> m = na\nm := map.new<int, float>()\n";
         assert!(check(reassignment).iter().any(|d| d.code == "PINE3032"));
+    }
+
+    #[test]
+    fn a_split_string_is_an_array_of_strings() {
+        let loop_over =
+            "for [i, s] in str.split(\"a,b\", \",\")\n    int n = i\n    string t = s\n";
+        assert!(check(loop_over).is_empty(), "{:?}", check(loop_over));
+        let wrong = "for [i, s] in str.split(\"a,b\", \",\")\n    string n = i\n    int t = s\n";
+        assert_eq!(assign_errors(wrong), 2, "{wrong}");
+    }
+
+    #[test]
+    fn a_write_to_a_typed_map_must_bring_its_types() {
+        let wrong = [
+            "m = map.new<int, float>()\nm.put(\"a\", 1.0)\n",
+            "m = map.new<int, float>()\nm.put(1, \"b\")\n",
+            "m = map.new<int, float>()\nmap.put(m, 1.5, 1.0)\n",
+            "m = map.new<int, float>()\nmap.put(m, 1, true)\n",
+            "m = map.new<int, float>()\nn = map.new<string, float>()\nm.put_all(n)\n",
+            "m = map.new<int, float>()\nn = map.new<float, float>()\nmap.put_all(m, n)\n",
+        ];
+        for source in wrong {
+            assert!(
+                check(source).iter().any(|d| d.code == "PINE3073"),
+                "{source}"
+            );
+        }
+        for source in [
+            "m = map.new<int, float>()\nm.put(1, 2)\nm.put(2, na)\nmap.put(m, 3, 4.5)\n",
+            "m = map.new<int, float>()\nm.put_all(map.new<int, float>())\n",
+            // TradingView takes a map of ints where a map of floats is passed, but not assigned.
+            "m = map.new<string, float>()\nm.put_all(map.new<string, int>())\n",
+            "f(map<float, float> x) =>\n    x.size()\nm = map.new<int, float>()\nplot(f(m))\n",
+        ] {
+            assert!(check(source).is_empty(), "{source}: {:?}", check(source));
+        }
+    }
+
+    #[test]
+    fn a_map_of_other_scalar_types_is_passed_but_not_assigned() {
+        let assigned = "a = map.new<int, float>()\nmap<float, float> m = a\n";
+        assert_eq!(assign_errors(assigned), 1);
+        let reassigned = "a = map.new<int, float>()\nmap<float, float> m = na\nm := a\n";
+        assert!(check(reassigned).iter().any(|d| d.code == "PINE3032"));
+    }
+
+    #[test]
+    fn a_map_constructor_takes_no_arguments() {
+        let given = "a = array.new_int(0)\nm = map.new<int, int>(a.push(1))\n";
+        assert!(check(given).iter().any(|d| d.code == "PINE3072"));
+        assert!(check("m = map.new<int, int>()\n").is_empty());
     }
 
     #[test]

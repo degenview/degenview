@@ -3,7 +3,7 @@
 //! the arguments named by `parameters(name)` and calls `call`.
 
 use super::array::{Bound, new_array};
-use crate::pine::runtime::containers::{Map, MapKey};
+use crate::pine::runtime::containers::{Map, MapKey, Rejected};
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange, ValueType};
@@ -86,6 +86,27 @@ fn key_of(
         })
 }
 
+/// The error for a write a map's declared types refuse.
+fn refused(name: &str, rejected: Rejected, range: SourceRange) -> Diagnostic {
+    match rejected {
+        Rejected::Key(None) => runtime_error(
+            "PINE4027",
+            format!("{name} needs a number, bool, string or color as its key."),
+            range,
+        ),
+        Rejected::Key(Some(kind)) => runtime_error(
+            "PINE4040",
+            format!("{name}: the key must be {}.", kind.name()),
+            range,
+        ),
+        Rejected::Value(kind) => runtime_error(
+            "PINE4040",
+            format!("{name}: the value must be {}.", kind.name()),
+            range,
+        ),
+    }
+}
+
 pub fn call(
     name: &str,
     bound: &Bound,
@@ -112,12 +133,19 @@ pub fn call_positional(
     state: &mut RuntimeState,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
+    // Each operand sits where `parameters(name)` puts it, as `call` binds it by name: `put_all` has no
+    // key, so its second map is the second argument.
+    let parameters = parameters(name);
+    let operand = |names: &[&str]| {
+        let position = parameters.iter().position(|p| names.contains(p))?;
+        arguments.get(position)
+    };
     run(
         name,
         Operands {
-            id: arguments.first(),
-            key: arguments.get(1),
-            third: arguments.get(2),
+            id: operand(&["id"]),
+            key: operand(&["key"]),
+            third: operand(&["value", "id2"]),
         },
         state,
         range,
@@ -173,8 +201,10 @@ fn apply(
 ) -> Result<RuntimeValue, Diagnostic> {
     Ok(match member {
         "put" => {
-            let key = key_of(map, operands.key, name, range)?;
-            map.put(operands.third.cloned().unwrap_or(RuntimeValue::Na), key);
+            let key = operands.key.unwrap_or(&RuntimeValue::Na);
+            let value = operands.third.cloned().unwrap_or(RuntimeValue::Na);
+            map.insert(key, value)
+                .map_err(|rejected| refused(name, rejected, range))?;
             RuntimeValue::Void
         }
         "get" => map
@@ -214,11 +244,8 @@ fn apply(
                     range,
                 )
             })?;
-            for (key, value) in other.pairs() {
-                if let Some(key) = map.lookup_key(&key) {
-                    map.put(value, key);
-                }
-            }
+            map.put_all(&other)
+                .map_err(|rejected| refused(name, rejected, range))?;
             RuntimeValue::Void
         }
         _ => {

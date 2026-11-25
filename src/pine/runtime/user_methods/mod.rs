@@ -92,7 +92,7 @@ impl Session {
                 function
                     .parameters
                     .first()
-                    .is_some_and(|parameter| self.accepts(parameter, &receiver))
+                    .is_some_and(|parameter| self.accepts(parameter, &receiver).is_some())
                     && takes(function, arguments)
             })
             .cloned()
@@ -112,10 +112,7 @@ impl Session {
                 for argument in arguments {
                     values.push((argument.name.clone(), self.eval(&argument.value, context)?));
                 }
-                let Some(function) = candidates
-                    .into_iter()
-                    .find(|function| self.fits(function, &values))
-                else {
+                let Some(function) = self.best_fit(candidates, &values) else {
                     return Err(no_overload(name, range));
                 };
                 self.invoke_with(
@@ -145,11 +142,7 @@ impl Session {
         for argument in arguments {
             values.push((argument.name.clone(), self.eval(&argument.value, context)?));
         }
-        let Some(function) = candidates
-            .iter()
-            .find(|function| self.fits(function, &values))
-            .cloned()
-        else {
+        let Some(function) = self.best_fit(candidates.iter().cloned(), &values) else {
             return Err(no_overload(name, range));
         };
         self.invoke_with(
@@ -162,11 +155,31 @@ impl Session {
         )
     }
 
-    /// Whether `function` can be called with these evaluated arguments: every one lands on a
-    /// parameter that accepts it, and every parameter without a default gets one.
-    fn fits(&self, function: &RuntimeFunction, values: &[(Option<String>, RuntimeValue)]) -> bool {
+    /// The overload that fits these evaluated arguments best, as the checker ranks them when it
+    /// resolves a call statically: an exact type beats a widened one beats an untyped parameter. The
+    /// first declared wins a tie.
+    fn best_fit(
+        &self,
+        candidates: impl IntoIterator<Item = RuntimeFunction>,
+        values: &[(Option<String>, RuntimeValue)],
+    ) -> Option<RuntimeFunction> {
+        candidates
+            .into_iter()
+            .filter_map(|function| Some((self.fit_rank(&function, values)?, function)))
+            .min_by_key(|(rank, _)| *rank)
+            .map(|(_, function)| function)
+    }
+
+    /// How well `function` takes these evaluated arguments (lower is better), or None when an
+    /// argument lands on no parameter that accepts it or a parameter without a default gets none.
+    fn fit_rank(
+        &self,
+        function: &RuntimeFunction,
+        values: &[(Option<String>, RuntimeValue)],
+    ) -> Option<u32> {
         let mut supplied = vec![false; function.parameters.len()];
         let mut position = 0;
+        let mut rank = 0;
         for (label, value) in values {
             let index = match label {
                 Some(label) => function.parameters.iter().position(|p| &p.name == label),
@@ -175,12 +188,8 @@ impl Session {
                     Some(position - 1)
                 }
             };
-            let Some(parameter) = index.and_then(|i| function.parameters.get(i)) else {
-                return false;
-            };
-            if !self.accepts(parameter, value) {
-                return false;
-            }
+            let parameter = index.and_then(|i| function.parameters.get(i))?;
+            rank += self.accepts(parameter, value)?;
             supplied[index.unwrap_or_default()] = true;
         }
         function
@@ -188,16 +197,18 @@ impl Session {
             .iter()
             .zip(supplied)
             .all(|(parameter, given)| given || parameter.default_value.is_some())
+            .then_some(rank)
     }
 
-    /// Whether a `this` parameter of this declared type takes `value`. An untyped parameter takes
-    /// anything, and `na` fits every type.
-    fn accepts(&self, parameter: &Parameter, value: &RuntimeValue) -> bool {
+    /// How a parameter of this declared type takes `value` (lower is better), or None when it does
+    /// not. A parameter without a type takes anything, and `na` fits every type, both only loosely.
+    /// An `int` and a `time` are the same value at run time, so they fit alike.
+    fn accepts(&self, parameter: &Parameter, value: &RuntimeValue) -> Option<u32> {
         if matches!(value, RuntimeValue::Na) {
-            return true;
+            return Some(LOOSE);
         }
         if let Some(declared) = parameter.type_name() {
-            return match value {
+            let fits = match value {
                 RuntimeValue::Ref(RefKind::Object, id) => self
                     .working
                     .instances
@@ -211,33 +222,24 @@ impl Session {
                     .is_some_and(|(enum_name, _)| same_type(declared, enum_name)),
                 _ => false,
             };
+            return fits.then_some(EXACT);
         }
         let Some(kind) = parameter.kind() else {
-            return true;
+            return Some(LOOSE);
         };
-        match (kind, value) {
-            (ValueType::Int | ValueType::Time, RuntimeValue::Int(_))
-            | (ValueType::Float, RuntimeValue::Int(_) | RuntimeValue::Float(_))
-            | (ValueType::Bool, RuntimeValue::Bool(_))
-            | (ValueType::String, RuntimeValue::String(_))
-            | (ValueType::Color, RuntimeValue::Color(_)) => true,
-            (kind, RuntimeValue::Ref(handle, _)) => matches!(
-                (kind, handle),
-                (ValueType::Line, RefKind::Line)
-                    | (ValueType::Label, RefKind::Label)
-                    | (ValueType::Box, RefKind::Box)
-                    | (ValueType::Table, RefKind::Table)
-                    | (ValueType::Linefill, RefKind::Linefill)
-                    | (ValueType::Polyline, RefKind::Polyline)
-                    | (ValueType::Array, RefKind::Array)
-                    | (ValueType::Map, RefKind::Map)
-                    | (ValueType::Matrix, RefKind::Matrix)
-                    | (ValueType::Object, RefKind::Object)
-            ),
-            _ => false,
+        if kind == ValueType::Float && matches!(value, RuntimeValue::Int(_)) {
+            Some(WIDENED)
+        } else {
+            value.is_kind(kind).then_some(EXACT)
         }
     }
 }
+
+/// The ranks a parameter gives an argument, in the checker's order (`check::callables`): the exact
+/// type, a widened one (an int for a float), then an unknown or untyped one.
+const EXACT: u32 = 0;
+const WIDENED: u32 = 10;
+const LOOSE: u32 = 20;
 
 /// A library type is registered as `path::Name`; an annotation may name it with or without the path.
 fn same_type(declared: &str, actual: &str) -> bool {

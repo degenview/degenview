@@ -141,6 +141,57 @@ fn overloads_by_primitive_receiver_type_report_na() {
 }
 
 #[test]
+fn an_unresolved_call_takes_the_overload_that_fits_best_not_the_first_that_fits() {
+    let session = run(
+        "method describe(float this) =>\n    \"float\"\n\
+         method describe(int this) =>\n    \"int\"\n\
+         tag(x) =>\n    x.describe()\n\
+         a = tag(1)\n\
+         b = tag(1.5)\n\
+         c = tag(float(na))\n",
+        1,
+    );
+    assert_eq!(text(&session, "a"), "int");
+    assert_eq!(text(&session, "b"), "float");
+    // `na` fits every overload alike, so the first declared takes it.
+    assert_eq!(text(&session, "c"), "float");
+}
+
+#[test]
+fn a_collection_member_keeps_its_types_in_both_spellings() {
+    let session = run(
+        "method describe(map<string, int> this) =>\n    \"int map\"\n\
+         method describe(map<string, float> this) =>\n    \"float map\"\n\
+         method describe(array<int> this) =>\n    \"int array\"\n\
+         method describe(array<float> this) =>\n    \"float array\"\n\
+         m = map.new<string, float>()\n\
+         a = array.from(1.5, 2.5)\n\
+         map_method = m.copy().describe()\n\
+         map_function = map.copy(m).describe()\n\
+         slice_method = a.slice(0, 1).describe()\n\
+         slice_function = array.slice(a, 0, 1).describe()\n",
+        1,
+    );
+    assert_eq!(text(&session, "map_method"), "float map");
+    assert_eq!(text(&session, "map_function"), "float map");
+    assert_eq!(text(&session, "slice_method"), "float array");
+    assert_eq!(text(&session, "slice_function"), "float array");
+}
+
+#[test]
+fn a_loop_index_of_an_unknown_collection_picks_the_int_overload() {
+    let session = run(
+        "method describe(float this) =>\n    \"float\"\n\
+         method describe(int this) =>\n    \"int\"\n\
+         keep(x) =>\n    x\n\
+         var string kind = \"\"\n\
+         for [i, s] in keep(str.split(\"a,b\", \",\"))\n    kind := i.describe()\n",
+        1,
+    );
+    assert_eq!(text(&session, "kind"), "int");
+}
+
+#[test]
 fn a_five_argument_fill_overload_wins_only_when_all_arguments_are_given() {
     let session = run(
         "method fill(array<float> srcArray, float innerValue, float outerValue, float lowerBound, float upperBound) =>\n\

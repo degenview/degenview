@@ -79,8 +79,7 @@ impl Ty {
             (Self::Map(key, value), Self::Map(given_key, given_value)) => {
                 let key = key.accepts(given_key)?;
                 let value = value.accepts(given_value)?;
-                // Widening a scalar does not change the types of a shared map.
-                (key != Fit::Widened && value != Fit::Widened).then_some(key.max(value))
+                Some(key.max(value))
             }
             (Self::Udt(declared), Self::Udt(given)) | (Self::Enum(declared), Self::Enum(given))
                 if declared == given =>
@@ -88,6 +87,18 @@ impl Ty {
                 Some(Fit::Exact)
             }
             _ => None,
+        }
+    }
+
+    /// Whether a variable declared as `self` may hold a value of type `given`. A call may widen what
+    /// it passes (a `map<int, float>` for a `map<float, float>` parameter, as TradingView takes it),
+    /// but a variable holding the value would share a map whose types differ from its own, which
+    /// TradingView refuses.
+    pub fn assignable(&self, given: &Self) -> bool {
+        match self.accepts(given) {
+            None => false,
+            Some(Fit::Widened) => !matches!(self, Self::Map(..)),
+            Some(_) => true,
         }
     }
 

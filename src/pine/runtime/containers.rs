@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use super::fast_hash::FastMap;
-use super::value::RuntimeValue;
+use super::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::token::ValueType;
 
 /// One instance of a script-defined `type`. Fields are dynamic: the declaration only supplies
@@ -58,13 +58,23 @@ impl MapKey {
     }
 }
 
-/// A `map<K, V>`: insertion-ordered, like Pine's.
+/// A `map<K, V>`: insertion-ordered, like Pine's. A map built with `map.new<K, V>()` holds only
+/// what it was declared to: a write of anything else is refused, so the types a reader of the map
+/// relies on (a `for [key, value]` loop's bindings) always hold.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Map {
     order: Vec<MapKey>,
     storage: FastMap<MapKey, RuntimeValue>,
     types: Option<[ValueType; 2]>,
     key_revision: u64,
+}
+
+/// What a typed map refused of a write: the key or the value, with the type declared for it. An
+/// untyped map only refuses a key that cannot be one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Rejected {
+    Key(Option<ValueType>),
+    Value(ValueType),
 }
 
 impl Map {
@@ -83,20 +93,66 @@ impl Map {
         self.key_revision
     }
 
+    /// The key a read (`get`, `contains`, `remove`) looks `value` up by. A typed float map widens an
+    /// integer to the float it means; a read never refuses a key of another type, it finds nothing.
     pub fn lookup_key(&self, value: &RuntimeValue) -> Option<MapKey> {
         if self.types.is_some_and(|[key, _]| key == ValueType::Float) {
-            let number = match value {
-                RuntimeValue::Int(n) => *n as f64,
-                RuntimeValue::Float(n) => *n,
-                _ => return MapKey::from_value(value),
-            };
-            return Some(MapKey::Float(if number == 0.0 {
-                0
-            } else {
-                number.to_bits()
-            }));
+            return float_key(value).or_else(|| MapKey::from_value(value));
         }
         MapKey::from_value(value)
+    }
+
+    /// The key and value as this map stores them, or what its declared types refuse. A `float` slot
+    /// takes an `int` as the float it means, a `na` value fits every type, and a slot declared as a
+    /// script type or an enum (`object`) takes any handle or enum member: which type it is, is for
+    /// the checker.
+    pub fn admit(
+        &self,
+        key: &RuntimeValue,
+        value: RuntimeValue,
+    ) -> Result<(MapKey, RuntimeValue), Rejected> {
+        let Some([key_type, value_type]) = self.types else {
+            return MapKey::from_value(key)
+                .map(|key| (key, value))
+                .ok_or(Rejected::Key(None));
+        };
+        let key = match key_type {
+            ValueType::Float => float_key(key),
+            _ if slot_takes(key_type, key) => MapKey::from_value(key),
+            _ => None,
+        }
+        .ok_or(Rejected::Key(Some(key_type)))?;
+        let value = match value {
+            RuntimeValue::Na => value,
+            RuntimeValue::Int(n) if value_type == ValueType::Float => RuntimeValue::Float(n as f64),
+            value if slot_takes(value_type, &value) => value,
+            _ => return Err(Rejected::Value(value_type)),
+        };
+        Ok((key, value))
+    }
+
+    /// Stores `value` under `key` if the map's types allow both, returning what the key held before.
+    pub fn insert(
+        &mut self,
+        key: &RuntimeValue,
+        value: RuntimeValue,
+    ) -> Result<Option<RuntimeValue>, Rejected> {
+        let (key, value) = self.admit(key, value)?;
+        Ok(self.store(value, key))
+    }
+
+    /// Stores every pair of `other`. Each is checked before one is stored, so a refused pair leaves
+    /// the map as it was.
+    pub fn put_all(&mut self, other: &Map) -> Result<(), Rejected> {
+        let admitted = other
+            .pairs()
+            .into_iter()
+            .map(|(key, value)| self.admit(&key, value))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (key, value) in admitted {
+            self.store(value, key);
+        }
+        Ok(())
     }
 
     pub fn pair_at(&self, index: usize) -> Option<(RuntimeValue, RuntimeValue)> {
@@ -130,12 +186,7 @@ impl Map {
         self.storage.get(key)
     }
 
-    /// Stores `value`, returning what the key held before.
-    pub fn put(&mut self, value: RuntimeValue, key: MapKey) -> Option<RuntimeValue> {
-        let value = match (self.types, value) {
-            (Some([_, ValueType::Float]), RuntimeValue::Int(n)) => RuntimeValue::Float(n as f64),
-            (_, value) => value,
-        };
+    fn store(&mut self, value: RuntimeValue, key: MapKey) -> Option<RuntimeValue> {
         match self.storage.entry(key) {
             Entry::Occupied(mut slot) => Some(slot.insert(value)),
             Entry::Vacant(slot) => {
@@ -160,6 +211,29 @@ impl Map {
             self.order.clear();
             self.storage.clear();
         }
+    }
+}
+
+/// The key of a number in a `float` map: an integer is the float it means, and the two zeros are
+/// one key.
+fn float_key(value: &RuntimeValue) -> Option<MapKey> {
+    let number = value.number()?;
+    Some(MapKey::Float(if number == 0.0 {
+        0
+    } else {
+        number.to_bits()
+    }))
+}
+
+/// Whether a slot declared as `kind` takes `value`, widening aside.
+fn slot_takes(kind: ValueType, value: &RuntimeValue) -> bool {
+    match kind {
+        ValueType::Object => matches!(
+            value,
+            RuntimeValue::String(_)
+                | RuntimeValue::Ref(RefKind::Object | RefKind::Footprint | RefKind::VolumeRow, _)
+        ),
+        kind => value.is_kind(kind),
     }
 }
 
@@ -401,17 +475,87 @@ mod tests {
     #[test]
     fn map_is_insertion_ordered() {
         let mut map = Map::default();
-        map.put(RuntimeValue::Int(1), MapKey::Int(10));
-        map.put(RuntimeValue::Int(2), MapKey::Int(20));
-        map.put(RuntimeValue::Int(3), MapKey::Int(10)); // overwrite, order unchanged
+        let int = RuntimeValue::Int;
+        map.insert(&int(10), int(1)).unwrap();
+        map.insert(&int(20), int(2)).unwrap();
+        map.insert(&int(10), int(3)).unwrap(); // overwrite, order unchanged
         assert_eq!(map.count(), 2);
+        assert_eq!(map.keys(), vec![int(10), int(20)]);
+        assert_eq!(map.values(), vec![int(3), int(2)]);
+    }
+
+    #[test]
+    fn a_typed_map_widens_ints_and_refuses_what_it_was_not_declared_to_hold() {
+        use ValueType::{Float, Int, String};
+        let text = |text: &str| RuntimeValue::String(text.to_owned());
+        let mut map = Map::typed([Int, Float]);
+        // A value widens, a key of the wrong type or a value of the wrong type is refused.
+        map.insert(&RuntimeValue::Int(1), RuntimeValue::Int(2))
+            .unwrap();
+        assert_eq!(map.values(), vec![RuntimeValue::Float(2.0)]);
         assert_eq!(
-            map.keys(),
-            vec![RuntimeValue::Int(10), RuntimeValue::Int(20)]
+            map.insert(&text("a"), RuntimeValue::Float(1.0)),
+            Err(Rejected::Key(Some(Int)))
         );
         assert_eq!(
-            map.values(),
-            vec![RuntimeValue::Int(3), RuntimeValue::Int(2)]
+            map.insert(&RuntimeValue::Float(1.5), RuntimeValue::Float(1.0)),
+            Err(Rejected::Key(Some(Int)))
+        );
+        assert_eq!(
+            map.insert(&RuntimeValue::Int(2), text("b")),
+            Err(Rejected::Value(Float))
+        );
+        // `na` is a value of every type, and a refused write leaves the map as it was.
+        map.insert(&RuntimeValue::Int(2), RuntimeValue::Na).unwrap();
+        assert_eq!(map.count(), 2);
+        let revision = map.key_revision();
+        assert!(map.insert(&text("a"), RuntimeValue::Na).is_err());
+        assert_eq!(map.key_revision(), revision);
+        // A float map takes an int key as the float it means.
+        let mut floats = Map::typed([Float, String]);
+        floats.insert(&RuntimeValue::Int(3), text("x")).unwrap();
+        floats.insert(&RuntimeValue::Float(3.0), text("y")).unwrap();
+        assert_eq!(floats.keys(), vec![RuntimeValue::Float(3.0)]);
+        // An untyped map only refuses a key that cannot be one.
+        assert_eq!(
+            Map::default().insert(&RuntimeValue::Na, RuntimeValue::Int(1)),
+            Err(Rejected::Key(None))
+        );
+    }
+
+    #[test]
+    fn a_refused_put_all_stores_nothing() {
+        use ValueType::{Float, Int};
+        let mut source = Map::default();
+        source
+            .insert(&RuntimeValue::Int(1), RuntimeValue::Float(1.5))
+            .unwrap();
+        source
+            .insert(&RuntimeValue::Int(2), RuntimeValue::String("x".to_owned()))
+            .unwrap();
+        let mut target = Map::typed([Int, Float]);
+        assert_eq!(target.put_all(&source), Err(Rejected::Value(Float)));
+        assert_eq!(target.count(), 0);
+        assert_eq!(target.key_revision(), 0);
+    }
+
+    #[test]
+    fn an_object_slot_takes_enum_members_and_handles_but_not_numbers() {
+        use ValueType::Object;
+        let mut map = Map::typed([Object, Object]);
+        let handle = RuntimeValue::Ref(RefKind::Object, 1);
+        map.insert(&RuntimeValue::String("Side.buy".to_owned()), handle)
+            .unwrap();
+        assert_eq!(
+            map.insert(&RuntimeValue::Int(1), RuntimeValue::Na),
+            Err(Rejected::Key(Some(Object)))
+        );
+        assert_eq!(
+            map.insert(
+                &RuntimeValue::String("Side.sell".to_owned()),
+                RuntimeValue::Int(1)
+            ),
+            Err(Rejected::Value(Object))
         );
     }
 

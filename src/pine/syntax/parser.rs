@@ -1586,24 +1586,7 @@ fn exportable_name(statement: &Statement) -> Option<&str> {
 }
 
 fn value_type_name(kind: ValueType) -> &'static str {
-    match kind {
-        ValueType::Int => "int",
-        ValueType::Float => "float",
-        ValueType::Bool => "bool",
-        ValueType::String => "string",
-        ValueType::Color => "color",
-        ValueType::Line => "line",
-        ValueType::Label => "label",
-        ValueType::Box => "box",
-        ValueType::Table => "table",
-        ValueType::Linefill => "linefill",
-        ValueType::Polyline => "polyline",
-        ValueType::Array => "array",
-        ValueType::Object => "object",
-        ValueType::Map => "map",
-        ValueType::Matrix => "matrix",
-        ValueType::Time => "time",
-    }
+    kind.name()
 }
 
 fn object_type(name: &str) -> Option<ValueType> {
