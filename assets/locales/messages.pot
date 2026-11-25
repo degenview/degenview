@@ -12378,8 +12378,13 @@ msgstr ""
 msgid "Resolution"
 msgstr ""
 
+#: src/ui/settings/appearance.rs
 #: src/ui/window/update_indicator.rs
 msgid "Restart"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Restart DegenView to change the language."
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -15269,12 +15274,6 @@ msgstr ""
 
 #: src/platform.rs
 msgid "The key stays in this computer's secure storage."
-msgstr ""
-
-#: src/ui/settings/appearance.rs
-msgid ""
-"The language of menus, labels and messages. Market names, prices and Pine "
-"scripts stay as they are."
 msgstr ""
 
 #: src/ui/workspace/toolbar.rs

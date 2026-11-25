@@ -47,8 +47,9 @@ Rules that need a person:
 - **One message, one meaning.** Reuse a text only for the same meaning; use `tr_c!` when two places
   need different translations of the same English (a test fails on a text written both counted and
   plain).
-- **Do not keep the text.** A language chosen in Settings changes what the macros return, so a
-  `&'static str` or `String` from one belongs to the frame being drawn. A cache that must survive a
+- **Do not keep the text.** The language can change under a running process (the alert agent follows
+  Settings, a test sets one with `with_locale`), so a `&'static str` or `String` from a macro
+  belongs to the frame being drawn. A cache that must survive a
   frame is made again when `i18n::revision()` changes. (A `const` or `static` cannot hold one: the
   macros are not `const`.)
 - Do not translate what is not interface text: symbols, tickers, Pine source and its errors, log
@@ -122,9 +123,13 @@ languages, plus the pseudo-locale in debug builds. Resolution takes that list as
 the picker cannot show (a pseudo-locale saved by a debug build and read by a release build, whose
 picker is hidden) is kept in the store and not applied, and the system's languages cannot select it
 either. The choice is the `language` setting (`"system"` or a tag), local to the Mac: it is not in
-`sync::record::policy`, so another Mac is not moved. `host::language` reads it at startup and applies a
-change from Settings; `app/tabs.rs` repaints every window when `i18n::revision()` changes, because a
-window with nothing animating would keep the old words.
+`sync::record::policy`, so another Mac is not moved. `host::language` reads it at startup and saves a
+change from Settings (`host::language::save`); the language in the app does not change while it runs,
+because kept text, the native menus and every open window would each switch at a moment of their own.
+The language card then offers a Restart button (`SettingsAction::Restart`, `AppAction::Restart`): the
+app quits through the same question as ⌘Q and `service::update::install::relaunch_running_app` reopens
+it. A quit that is called off cancels the reopen. `app/tabs.rs` still repaints every window when
+`i18n::revision()` changes, which only the alert agent and tests cause.
 
 The system's languages come from `service::system::language`, which asks `sys-locale`.
 
@@ -179,6 +184,9 @@ msgstr[1] "{count} alertas"
   once the language's formula is in it.
 
 ### Adding a language
+
+Agents: the procedure, the quality bar (context-specific wording, glossary, consistency pass) and the
+verification are in [Translation](agent-guides/translation.md). The steps for the code:
 
 1. Add a row to `LANGUAGES` (`tag`, `native_name`, `Kind::Natural`, and its `include_str!` of the
    catalog). Plural rules and date patterns come from the catalog's header and CLDR; no code per
@@ -252,7 +260,7 @@ the catalog, so a new message uses the word the neighbouring ones do. Numbers ke
     entries) are in the system's language, not the app's, until the bundle declares its languages
     (see "Packaging that names languages").
   - The language on a machine whose system language changes while the app or the agent runs is read
-    again only at the next start; a choice made in Settings is followed at once.
+    again only at the next start; the alert agent follows a choice made in Settings within a couple of seconds.
   - A delivery failure is stored as English text in the alert history (`delivery.error`): it is
     written once, by whichever process tried, and not translated.
 - **The language of the AI assistant** and of the docs site (its own repository).

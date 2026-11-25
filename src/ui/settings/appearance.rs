@@ -106,9 +106,23 @@ pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> 
 /// Width of the language pull-down: the longest language name and its chevrons.
 const LANGUAGE_PICKER_WIDTH: f32 = 220.0;
 
+/// What the language card was asked for this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LanguageAction {
+    /// A language was picked; it applies at the next start.
+    Pick(Preference),
+    /// The Restart button, offered once the saved language is not the one in use.
+    Restart,
+}
+
 /// The language card: "Same as the system" and each language by its own name. Draws nothing
-/// while there is only one language to pick. Returns the choice made this frame.
-pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
+/// while there is only one language to pick. `saved` is the choice the next start uses and
+/// `in_use` the one this run started with; while they differ the card offers a restart.
+pub fn language(
+    ui: &mut egui::Ui,
+    in_use: Preference,
+    saved: Preference,
+) -> Option<LanguageAction> {
     let languages = Locale::selectable();
     if languages.len() < 2 {
         return None;
@@ -124,21 +138,26 @@ pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
     let labels: Vec<String> = choices.iter().map(name).collect();
     let selected = choices
         .iter()
-        .position(|choice| *choice == current)
+        .position(|choice| *choice == saved)
         .unwrap_or(usize::MAX);
-    let mut picked = None;
+    let needs_restart = saved != in_use;
+    let restart_label = tr!("Restart");
+    let mut action = None;
     super::window::section(ui, tr!("Language"), None, |ui| {
+        let restart_room = if needs_restart {
+            kit::push_button_width(ui, None, restart_label) + RESTART_GAP
+        } else {
+            0.0
+        };
         super::card::card_reserving(
             ui,
             Icon::Globe,
             tr!("Interface language"),
-            Some(tr!(
-                "The language of menus, labels and messages. Market names, prices and Pine scripts stay as they are."
-            )),
-            LANGUAGE_PICKER_WIDTH,
+            needs_restart.then(|| tr!("Restart DegenView to change the language.")),
+            LANGUAGE_PICKER_WIDTH + restart_room,
             |ui| {
                 // A saved language this build does not offer (a copied database) is still named.
-                let hint = name(&current);
+                let hint = name(&saved);
                 if let Some(index) = kit::menu_picker_hinted(
                     ui,
                     LANGUAGE_PICKER_WIDTH,
@@ -147,13 +166,22 @@ pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
                     true,
                     &hint,
                 ) {
-                    picked = Some(choices[index]);
+                    action = Some(LanguageAction::Pick(choices[index]));
+                }
+                if needs_restart {
+                    ui.add_space(RESTART_GAP);
+                    if kit::push_button(ui, None, restart_label, true).clicked() {
+                        action = Some(LanguageAction::Restart);
+                    }
                 }
             },
         );
     });
-    picked.filter(|choice| *choice != current)
+    action.filter(|action| *action != LanguageAction::Pick(saved))
 }
+
+/// Space between the language pull-down and the Restart button beside it.
+const RESTART_GAP: f32 = 8.0;
 
 /// The name of the example layout in the miniature tabs. A layout's name is the person's own, not
 /// interface text, so it is not translated.

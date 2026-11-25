@@ -40,6 +40,8 @@ pub enum SettingsHostAction {
     Mcp(crate::model::mcp::McpAction),
     /// The About page installed an update; quit so the helper can reopen the app.
     QuitForUpdate,
+    /// Quit and open the app again, for a choice that only applies at startup (the language).
+    Restart,
 }
 
 /// What the Storage page's background work reports back, on the UI thread's next frame.
@@ -68,6 +70,9 @@ pub struct SettingsHost {
     editor_themes: crate::host::editor_theme::EditorThemeHost,
     /// How chart tabs name themselves, which the Appearance page edits.
     tab_titles: crate::host::tab::title::TabTitleHost,
+    /// The language chosen in this run, which the next start puts in use. `None` until one is
+    /// chosen: the saved choice is then the one in use.
+    language: Option<crate::i18n::Preference>,
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
@@ -221,6 +226,7 @@ impl SettingsHost {
             trading_hub,
             editor_themes: &self.editor_themes,
             tab_title_style: self.tab_titles.style(),
+            language: self.language.unwrap_or_else(crate::i18n::preference),
             now_ms,
         };
         for action in view(&mut self.state, &input) {
@@ -262,9 +268,12 @@ impl SettingsHost {
                     let _ = self.tab_titles.set(Some(store), style);
                 }
                 SettingsAction::SetLanguage(preference) => {
-                    // Applied in memory even when the save fails, like the theme.
-                    let _ = crate::host::language::choose(store, preference);
+                    // Taken as the choice even when the save fails, so the card offers the restart
+                    // for what was picked.
+                    self.language = Some(preference);
+                    let _ = crate::host::language::save(store, preference);
                 }
+                SettingsAction::Restart => out.push(SettingsHostAction::Restart),
                 SettingsAction::UpdateNotifications(settings) => {
                     out.push(SettingsHostAction::UpdateNotifications(settings));
                 }

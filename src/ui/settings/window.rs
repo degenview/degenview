@@ -141,8 +141,10 @@ pub enum SettingsAction {
     SetTheme(crate::ui::theme::AppTheme),
     /// A tab title style on the Appearance page was picked (or restored to the default).
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
-    /// A language on the Appearance page was picked.
+    /// A language on the Appearance page was picked; it applies at the next start.
     SetLanguage(crate::i18n::Preference),
+    /// The Appearance page's Restart button: quit and open the app again.
+    Restart,
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
     /// The paper-trading card on the Notifications page changed.
@@ -177,6 +179,8 @@ pub struct SettingsInput<'a> {
     pub trading_hub: &'a std::sync::Arc<crate::host::trading::TradingHub>,
     pub editor_themes: &'a crate::host::editor_theme::EditorThemeHost,
     pub tab_title_style: crate::model::tab::title::TabTitleStyle,
+    /// The language the next start uses: the saved choice.
+    pub language: crate::i18n::Preference,
     pub now_ms: i64,
 }
 
@@ -432,10 +436,18 @@ pub fn show(
                     {
                         actions.push(SettingsAction::SetTabTitleStyle(style));
                     }
-                    if let Some(language) =
-                        crate::ui::settings::appearance::language(ui, crate::i18n::preference())
-                    {
-                        actions.push(SettingsAction::SetLanguage(language));
+                    match crate::ui::settings::appearance::language(
+                        ui,
+                        crate::i18n::preference(),
+                        input.language,
+                    ) {
+                        Some(crate::ui::settings::appearance::LanguageAction::Pick(language)) => {
+                            actions.push(SettingsAction::SetLanguage(language));
+                        }
+                        Some(crate::ui::settings::appearance::LanguageAction::Restart) => {
+                            actions.push(SettingsAction::Restart);
+                        }
+                        None => {}
                     }
                 },
             );
@@ -1056,12 +1068,17 @@ mod tests {
         }
     }
 
-    /// The Appearance page with its language card in `locale`, drawn until it settles: the choice
-    /// the language card made (none, nothing is clicked), and the last frame.
+    /// The Appearance page with its language card in `locale`, drawn until it settles: what the
+    /// language card was asked for (nothing, nothing is clicked), and the last frame. `saved` is the
+    /// language the next start uses: another one than `locale` offers the restart.
     fn draw_appearance_page(
         screen: &mut crate::ui::render_tests::Screen,
         locale: crate::i18n::Locale,
-    ) -> (Option<crate::i18n::Preference>, egui::FullOutput) {
+        saved: crate::i18n::Preference,
+    ) -> (
+        Option<crate::ui::settings::appearance::LanguageAction>,
+        egui::FullOutput,
+    ) {
         use crate::i18n::{Preference, with_locale};
         let mut chosen = None;
         let mut last = None;
@@ -1085,6 +1102,7 @@ mod tests {
                             chosen = crate::ui::settings::appearance::language(
                                 ui,
                                 Preference::Fixed(locale),
+                                saved,
                             );
                         },
                     );
@@ -1105,7 +1123,12 @@ mod tests {
         // Taller than the window, so the language card at the foot of the page is in the picture.
         let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
         theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
-        let (chosen, last) = draw_appearance_page(&mut screen, Locale::PSEUDO);
+        // The pseudo-locale in use and English saved: the card offers the restart.
+        let (chosen, last) = draw_appearance_page(
+            &mut screen,
+            Locale::PSEUDO,
+            crate::i18n::Preference::Fixed(Locale::ENGLISH),
+        );
         with_locale(Locale::PSEUDO, || {
             assert!(SettingsSection::Appearance.title().starts_with('['));
         });
@@ -1126,8 +1149,11 @@ mod tests {
         let _theme = crate::ui::theme::RestoreDefaultTheme;
         let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, -320.0));
         theme::apply(&screen.ctx, crate::ui::theme::AppTheme::Dark);
-        let (_, last) = draw_appearance_page(&mut screen, Locale::ENGLISH);
-        assert_eq!(Screen::truncated_text(&last), Vec::<String>::new());
+        let english = crate::i18n::Preference::Fixed(Locale::ENGLISH);
+        for saved in [english, crate::i18n::Preference::System] {
+            let (_, last) = draw_appearance_page(&mut screen, Locale::ENGLISH, saved);
+            assert_eq!(Screen::truncated_text(&last), Vec::<String>::new());
+        }
     }
 
     #[test]

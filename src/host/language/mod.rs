@@ -1,5 +1,5 @@
-//! The interface language: reads the saved choice at startup, and applies and saves a new one from
-//! Settings. `i18n` holds the language in use; this is what chooses it.
+//! The interface language: reads the saved choice at startup, and saves a new one from Settings,
+//! which the next start puts in use. `i18n` holds the language in use; this is what chooses it.
 
 use std::time::{Duration, Instant};
 
@@ -62,10 +62,10 @@ impl Follower {
     }
 }
 
-/// Puts `preference` in use and saves it. The language is applied even when the save fails, so
-/// the window shows what was asked for; the error says it will not last.
-pub fn choose(store: &Store, preference: Preference) -> Result<(), String> {
-    apply(preference);
+/// Saves `preference` for the next start. The language in use does not change under the person's
+/// hands: words kept from the frame before, native menus and every open window would each switch at
+/// a moment of their own, so Settings offers a restart instead.
+pub fn save(store: &Store, preference: Preference) -> Result<(), String> {
     store
         .set_language_preference(preference)
         .map_err(|error| tr!("Could not save the language: {error}", error = error))
@@ -91,25 +91,28 @@ mod tests {
     /// Only English is chosen here: another language would change what every test on every thread
     /// reads, and the pseudo-locale is looked at through `i18n::with_locale`.
     #[test]
-    fn a_choice_is_applied_and_saved_and_read_back_at_startup() {
+    fn a_choice_is_saved_and_only_a_start_puts_it_in_use() {
         if std::env::var_os(FORCE_ENV).is_some() {
             // A run that names its own language is not what is under test.
             return;
         }
         let store = Store::open_in_memory().expect("store");
         let english = Preference::Fixed(Locale::ENGLISH);
-        choose(&store, english).expect("saves");
-        assert_eq!(i18n::preference(), english);
-        assert_eq!(i18n::current(), Locale::ENGLISH);
-        assert_eq!(store.language_preference(), english);
+        init(&store);
+        assert_eq!(i18n::preference(), Preference::System);
 
-        // A later start reads it from the store.
-        choose(&store, Preference::System).expect("saves");
-        store.set_language_preference(english).expect("saves");
+        // Saving does not change the language in use.
+        save(&store, english).expect("saves");
+        assert_eq!(store.language_preference(), english);
+        assert_eq!(i18n::preference(), Preference::System);
+
+        // The next start reads it from the store.
         init(&store);
         assert_eq!(i18n::preference(), english);
+        assert_eq!(i18n::current(), Locale::ENGLISH);
 
-        choose(&store, Preference::System).expect("saves");
+        save(&store, Preference::System).expect("saves");
+        init(&store);
         assert_eq!(i18n::preference(), Preference::System);
         assert_eq!(i18n::current(), Locale::ENGLISH);
     }

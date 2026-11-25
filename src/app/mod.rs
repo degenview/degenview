@@ -59,6 +59,8 @@ fn open_system_settings(pane: &str) {
 enum AppAction {
     /// Quit, after asking about unsaved scripts.
     Quit,
+    /// Quit, after asking about unsaved scripts, and open the app again.
+    Restart,
     /// A Pine Studio answered the "save changes?" question a quit raised.
     QuitDecided {
         proceed: bool,
@@ -153,6 +155,9 @@ pub struct DegenViewApp {
     pine_host: Arc<Mutex<PineSubscriptionHost>>,
     /// Looks for a newer release on a schedule; the tab bar and Settings ▸ About draw it.
     updates: UpdateHost,
+    /// Set by Settings' Restart: open the app again when it exits, so a choice that applies at
+    /// startup takes effect. Cleared when the quit is called off.
+    reopen_on_exit: bool,
     /// iCloud Sync: applies other Macs' changes and carries out the Settings page's requests.
     sync: crate::host::sync::SyncHost,
     /// The Pine Studio's library as last seen by sync, to notice a save.
@@ -396,6 +401,7 @@ impl DegenViewApp {
             alerts,
             pine_host,
             updates,
+            reopen_on_exit: false,
             sync,
             script_signature: 0,
             notifier,
@@ -472,6 +478,11 @@ impl eframe::App for DegenViewApp {
         // written about once a second, so a quit would lose the final moments).
         self.mcp.shutdown();
         if let Err(error) = self.updates.relaunch_if_armed() {
+            eprintln!("{error}");
+        }
+        if self.reopen_on_exit
+            && let Err(error) = crate::service::update::install::relaunch_running_app()
+        {
             eprintln!("{error}");
         }
     }

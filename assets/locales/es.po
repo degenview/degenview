@@ -11639,6 +11639,7 @@ msgstr "Al cambiar el tamaño se mantienen las proporciones de la imagen."
 msgid "Resolution"
 msgstr "Resolución"
 
+#: src/ui/settings/appearance.rs
 #: src/ui/window/update_indicator.rs
 msgid "Restart"
 msgstr "Reiniciar"
@@ -11646,6 +11647,10 @@ msgstr "Reiniciar"
 #: src/ui/settings/about.rs
 msgid "Restart DegenView to finish updating."
 msgstr "Reinicia DegenView para terminar de actualizar."
+
+#: src/ui/settings/appearance.rs
+msgid "Restart DegenView to change the language."
+msgstr "Reinicia DegenView para cambiar el idioma."
 
 #: src/app/window.rs
 msgid "Restart Now"
@@ -14364,10 +14369,6 @@ msgstr "La clave permanece en el Llavero de este Mac."
 #: src/platform.rs
 msgid "The key stays in this computer's secure storage."
 msgstr "La clave permanece en el almacenamiento seguro de este ordenador."
-
-#: src/ui/settings/appearance.rs
-msgid "The language of menus, labels and messages. Market names, prices and Pine scripts stay as they are."
-msgstr "El idioma de los menús, etiquetas y mensajes. Los nombres de mercados, los precios y los scripts de Pine no cambian."
 
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
