@@ -105,7 +105,7 @@
   `check/request_rules.rs`: every `strategy.*` variable, the `strategy.closedtrades.*()`,
   `strategy.opentrades.*()`, `strategy.convert_to_*()` and `strategy.default_entry_qty()` functions,
   in the `expression` argument, through the functions it calls (all the way) and through the value
-  of a variable that is the whole expression (one level). Measured on TradingView (2026-11-25): it
+  of a variable that is the whole expression or one value of its tuple (one level). Measured on TradingView (2026-11-25): it
   stops there (`b = a * 2`, `a + 1`, `a[1]` after `a = strategy.equity` compile), the constants
   `strategy.long`/`strategy.short` are fine, and `request.security_lower_tf` and the symbol argument
   are not checked. A request's own broker is empty, so nothing it could read there is meaningful.

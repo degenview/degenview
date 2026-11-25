@@ -11,8 +11,9 @@
 //! - Where: anywhere in the `expression` argument (`strategy.equity * 2`, `strategy.equity[1]`,
 //!   either arm of a ternary, named or positional); in a function the expression calls, however
 //!   deep (`f()` whose body, or the body of a function it calls, reads one); and in the value of a
-//!   variable the expression is by itself (`a` after `a = strategy.equity * 2`, a `var`, a local, a
-//!   tuple element of `[a, b] = f()`), through the functions that value calls.
+//!   variable that is a whole result of the expression, the expression itself or one value of its
+//!   tuple (`a` or `[a, close]` after `a = strategy.equity * 2`; a `var`, a local, a tuple element
+//!   of `[a, b] = f()`), through the functions that value calls.
 //! - Where not: further than that. `b = a * 2`, `b = a`, `a + 1` and `a[1]` after
 //!   `a = strategy.equity` compile, as does a function that only reads a global holding it, a
 //!   variable reassigned from it after the request, and a parameter (even one named like such a
@@ -152,11 +153,25 @@ impl<'a> Script<'a> {
         if let Some(read) = self.read_in(expression, functions) {
             return Some(read);
         }
-        // A variable that is the whole expression stands for the value it was declared with.
-        let Expression::Identifier(..) = expression else {
+        let results = match expression {
+            Expression::Tuple(values, _) => values.as_slice(),
+            _ => std::slice::from_ref(expression),
+        };
+        results
+            .iter()
+            .find_map(|result| self.read_by_variable(result, functions))
+    }
+
+    /// A variable that is a whole result of the request stands for the value it was declared with.
+    fn read_by_variable(
+        &self,
+        result: &'a Expression,
+        functions: &mut Followed<'a>,
+    ) -> Option<String> {
+        let Expression::Identifier(..) = result else {
             return None;
         };
-        let value = self.values.get(&self.bindings.occurrence(expression)?)?;
+        let value = self.values.get(&self.bindings.occurrence(result)?)?;
         self.read_in(value, functions)
     }
 
@@ -280,6 +295,7 @@ mod tests {
         for body in [
             format!("x = {REQUEST}strategy.equity * 2)"),
             format!("x = {REQUEST}strategy.equity[1])"),
+            format!("[x, y] = {REQUEST}[strategy.equity, close])"),
             format!("x = {REQUEST}close > 0 ? strategy.equity : 0.0)"),
             "x = request.security(syminfo.tickerid, \"5\", expression = strategy.equity)".into(),
         ] {
@@ -307,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn a_variable_that_is_the_whole_expression_stands_for_its_value() {
+    fn a_variable_that_is_a_whole_result_stands_for_its_value() {
         for body in [
             format!("a = strategy.equity\nx = {REQUEST}a)"),
             format!("a = strategy.equity * 2\nx = {REQUEST}a)"),
@@ -315,6 +331,9 @@ mod tests {
             format!("if barstate.isconfirmed\n    a = strategy.equity\n    x = {REQUEST}a)"),
             format!("f() => strategy.equity\na = f()\nx = {REQUEST}a)"),
             format!("f() => [strategy.equity, close]\n[a, b] = f()\nx = {REQUEST}a)"),
+            format!("a = strategy.equity\nx = {REQUEST}(a))"),
+            format!("a = strategy.equity\n[x, y] = {REQUEST}[a, close])"),
+            format!("a = strategy.equity\n[x, y] = {REQUEST}[close, a])"),
         ] {
             assert_eq!(refused(&body), message("strategy.equity"), "{body}");
         }
@@ -341,6 +360,7 @@ mod tests {
             format!("a = strategy.equity\nb = a * 2\nx = {REQUEST}b)"),
             format!("a = strategy.equity\nb = a\nx = {REQUEST}b)"),
             format!("a = strategy.equity\nx = {REQUEST}a + 1)"),
+            format!("a = strategy.equity\n[x, y] = {REQUEST}[a + 1, close])"),
             format!("a = strategy.equity\nx = {REQUEST}a[1])"),
             format!("a = strategy.equity\nx = {REQUEST}close)\nplot(a)"),
             // A function that only reads a global, and a variable reassigned afterwards.
