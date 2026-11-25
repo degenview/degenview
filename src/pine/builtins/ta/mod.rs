@@ -21,8 +21,8 @@ pub struct State {
     pub results: Vec<RuntimeValue>,
     /// The source series, one entry per evaluation, `na` included.
     pub inputs: Vec<RuntimeValue>,
-    /// The bar's high, low and close, one entry per evaluation — the history `ta.sar` and
-    /// `ta.supertrend` read.
+    /// The bar's high, low and close, one entry per evaluation — the history `ta.sar` reads
+    /// (`ta.dmi` keeps the previous high and low here).
     pub highs: Vec<f64>,
     pub lows: Vec<f64>,
     pub closes: Vec<f64>,
@@ -39,6 +39,8 @@ pub struct State {
     /// `ta.macd`'s fast, slow and signal averages. Boxed: `State` is cloned on every realtime tick
     /// and only a `ta.macd` site has legs.
     pub macd: Option<Box<[MacdLeg; 3]>>,
+    /// `ta.dmi`'s four smoothed series, each the state of its own `ta.rma`. Boxed like `macd`.
+    pub dmi: Option<Box<[State; 4]>>,
     /// `timeframe.change`: the open time of the bar the site last ran on, and of the bar it ran on
     /// before that. Boxed like `macd`: `State` is cloned on every realtime tick, and only a
     /// `timeframe.change` site has bars.
@@ -199,11 +201,13 @@ pub fn evaluate(
 }
 
 /// Evaluates a `ta.*` that reads the bar's own high/low/close rather than a source series
-/// (`ta.sar`, `ta.supertrend`). The session calls this once per bar per call site.
+/// (`ta.sar`, `ta.supertrend`). The session calls this once per bar per call site;
+/// `previous_close` is the chart's `close[1]`, which `ta.supertrend` measures against.
 pub fn evaluate_price(
     name: &str,
     arguments: &[RuntimeValue],
     bar: &Kline,
+    previous_close: Option<f64>,
     state: &mut State,
 ) -> RuntimeValue {
     match name {
@@ -231,7 +235,7 @@ pub fn evaluate_price(
                 .get(1)
                 .and_then(RuntimeValue::number)
                 .unwrap_or(10.0);
-            evaluate_supertrend(state, bar, factor, period)
+            evaluate_supertrend(state, bar, previous_close, factor, period)
         }
         _ => RuntimeValue::Na,
     }
@@ -356,14 +360,19 @@ fn advance_sar(
 /// down and -1 while it is up. A port of the reference code TradingView prints for it, `nz()`
 /// quirks included: the lower band holds 0 and the upper band is `na` until the ATR exists, so the
 /// line is 0 on the first bar, `na` until the bar before the ATR's first, and real from there.
-fn evaluate_supertrend(state: &mut State, bar: &Kline, factor: f64, period: f64) -> RuntimeValue {
-    let previous_close = state.closes.last().copied();
+fn evaluate_supertrend(
+    state: &mut State,
+    bar: &Kline,
+    previous_close: Option<f64>,
+    factor: f64,
+    period: f64,
+) -> RuntimeValue {
     let atr_was_missing = state
         .results
         .last()
         .and_then(RuntimeValue::number)
         .is_none();
-    let atr = evaluate_atr(state, bar, period.max(1.0) as i64).number();
+    let atr = evaluate_atr(state, bar, previous_close, period.max(1.0) as i64).number();
 
     let (previous_upper, previous_lower, previous_line) =
         state.supertrend.map_or((0.0, 0.0, f64::NAN), |previous| {
@@ -409,6 +418,19 @@ fn evaluate_supertrend(state: &mut State, bar: &Kline, factor: f64, period: f64)
 /// `nz(x)` for a `NaN`-as-`na` float.
 fn nz(value: f64) -> f64 {
     if value.is_nan() { 0.0 } else { value }
+}
+
+/// `ta.tr(handle_na)`: the true range against the chart's previous close, `na` on a bar with none
+/// (the first) unless `handle_na`, which gives the bar's high minus low.
+pub fn true_range_checked(
+    bar: &Kline,
+    previous_close: Option<f64>,
+    handle_na: bool,
+) -> Option<f64> {
+    match previous_close {
+        Some(_) => Some(true_range(bar, previous_close)),
+        None => handle_na.then_some(bar.high - bar.low),
+    }
 }
 
 /// True range: the widest of the bar's range and its gaps from the previous close.
@@ -567,28 +589,22 @@ pub fn evaluate_vwap_variable(
     value
 }
 
-/// `ta.dmi(diLength, adxSmoothing)`: `[+DI, −DI, ADX]` from the RMA-smoothed directional movement
-/// and true range. The call site's own state remembers the previous bar; each smoothed series
-/// keeps its history under `key * 16 + n`.
+/// `ta.dmi(diLength, adxSmoothing)`: `[+DI, -DI, ADX]` from the RMA-smoothed directional movement
+/// and true range. The call site's own state remembers the previous bar's high and low and holds
+/// the four smoothed series (the true range, both movements and the directional index).
+/// `previous_close` is the chart's `close[1]`: the true range is `na` on the first bar, as
+/// `ta.tr` is, so every average starts on the bar after it.
 pub fn evaluate_dmi(
-    states: &mut crate::pine::runtime::fast_hash::FastMap<usize, State>,
-    key: usize,
+    state: &mut State,
     bar: &Kline,
+    previous_close: Option<f64>,
     di_length: i64,
     adx_smoothing: i64,
 ) -> RuntimeValue {
-    let (previous_high, previous_low, previous_close) = {
-        let own = states.entry(key).or_default();
-        let previous = (
-            own.highs.last().copied(),
-            own.lows.last().copied(),
-            own.closes.last().copied(),
-        );
-        own.highs.push(bar.high);
-        own.lows.push(bar.low);
-        own.closes.push(bar.close);
-        previous
-    };
+    let previous_high = state.highs.last().copied();
+    let previous_low = state.lows.last().copied();
+    state.highs.push(bar.high);
+    state.lows.push(bar.low);
     let (mut plus_move, mut minus_move) = (RuntimeValue::Na, RuntimeValue::Na);
     if let (Some(high), Some(low)) = (previous_high, previous_low) {
         let up = bar.high - high;
@@ -596,15 +612,23 @@ pub fn evaluate_dmi(
         plus_move = float(if up > down && up > 0.0 { up } else { 0.0 });
         minus_move = float(if down > up && down > 0.0 { down } else { 0.0 });
     }
+    let smoothers = state.dmi.get_or_insert_with(Default::default);
     let mut smooth = |index: usize, value: RuntimeValue, length: i64| {
-        let state = states
-            .entry(key.wrapping_mul(16).wrapping_add(index))
-            .or_default();
-        evaluate("ta.rma", &value, &RuntimeValue::Na, length, state)
+        evaluate(
+            "ta.rma",
+            &value,
+            &RuntimeValue::Na,
+            length,
+            &mut smoothers[index],
+        )
     };
-    let range = smooth(1, float(true_range(bar, previous_close)), di_length);
-    let plus_smoothed = smooth(2, plus_move, di_length);
-    let minus_smoothed = smooth(3, minus_move, di_length);
+    let range = smooth(
+        0,
+        true_range_checked(bar, previous_close, false).map_or(RuntimeValue::Na, float),
+        di_length,
+    );
+    let plus_smoothed = smooth(1, plus_move, di_length);
+    let minus_smoothed = smooth(2, minus_move, di_length);
     let (mut plus, mut minus, mut strength) =
         (RuntimeValue::Na, RuntimeValue::Na, RuntimeValue::Na);
     if let (Some(r), Some(p), Some(m)) = (
@@ -618,7 +642,7 @@ pub fn evaluate_dmi(
         minus = float(minus_di);
         strength = float((plus_di - minus_di).abs() / if total == 0.0 { 1.0 } else { total });
     }
-    let adx = smooth(4, strength, adx_smoothing)
+    let adx = smooth(3, strength, adx_smoothing)
         .number()
         .map_or(RuntimeValue::Na, |value| float(100.0 * value));
     RuntimeValue::Tuple(vec![plus, minus, adx])
@@ -656,11 +680,13 @@ pub fn evaluate_correlation(
 
 /// `ta.atr(length)`: Wilder's RMA of the true range, seeded from the simple average of the first
 /// `length` true ranges. The state's `inputs` hold the true-range series.
-pub fn evaluate_atr(state: &mut State, bar: &Kline, length: i64) -> RuntimeValue {
-    let range = true_range(bar, state.closes.last().copied());
-    state.highs.push(bar.high);
-    state.lows.push(bar.low);
-    state.closes.push(bar.close);
+pub fn evaluate_atr(
+    state: &mut State,
+    bar: &Kline,
+    previous_close: Option<f64>,
+    length: i64,
+) -> RuntimeValue {
+    let range = true_range(bar, previous_close);
     state.inputs.push(float(range));
     let count = state.inputs.len();
     let length = usize::try_from(length).unwrap_or(0);
@@ -1735,6 +1761,7 @@ mod tests {
                 "ta.sar",
                 &[float(0.02), float(0.02), float(0.2)],
                 bar,
+                None,
                 &mut state,
             ));
         }
@@ -1759,9 +1786,15 @@ mod tests {
         let mut state = State::default();
         let results: Vec<(Option<f64>, i64)> = bars
             .iter()
-            .map(|bar| {
-                let value =
-                    evaluate_price("ta.supertrend", &[float(3.0), float(5.0)], bar, &mut state);
+            .enumerate()
+            .map(|(index, bar)| {
+                let value = evaluate_price(
+                    "ta.supertrend",
+                    &[float(3.0), float(5.0)],
+                    bar,
+                    index.checked_sub(1).map(|before| bars[before].close),
+                    &mut state,
+                );
                 let RuntimeValue::Tuple(parts) = value else {
                     panic!("expected [line, direction], got {value:?}");
                 };
@@ -1785,7 +1818,11 @@ mod tests {
     fn run_atr(bars: &[Kline], length: i64) -> Vec<Option<f64>> {
         let mut state = State::default();
         bars.iter()
-            .map(|bar| evaluate_atr(&mut state, bar, length).number())
+            .enumerate()
+            .map(|(index, bar)| {
+                let previous_close = index.checked_sub(1).map(|before| bars[before].close);
+                evaluate_atr(&mut state, bar, previous_close, length).number()
+            })
             .collect()
     }
 
@@ -1934,14 +1971,15 @@ mod tests {
 
     #[test]
     fn dmi_reads_an_uptrend_as_plus_over_minus() {
-        let mut states = crate::pine::runtime::fast_hash::FastMap::default();
+        let mut state = State::default();
         let mut last = RuntimeValue::Na;
         for i in 0..60 {
             let base = 100.0 + i as f64 * 2.0;
+            let before = (i > 0).then_some(base - 2.0);
             last = evaluate_dmi(
-                &mut states,
-                7,
+                &mut state,
                 &candle(base + 1.0, base - 1.0, base),
+                before,
                 14,
                 14,
             );
@@ -1955,7 +1993,7 @@ mod tests {
             minus < 1.0e-9 && (0.0..=100.0).contains(&adx),
             "{minus} {adx}"
         );
-        let early = evaluate_dmi(&mut Default::default(), 1, &candle(2.0, 1.0, 1.5), 14, 14);
+        let early = evaluate_dmi(&mut State::default(), &candle(2.0, 1.0, 1.5), None, 14, 14);
         assert!(matches!(early, RuntimeValue::Tuple(ref p) if p[0] == RuntimeValue::Na));
     }
 

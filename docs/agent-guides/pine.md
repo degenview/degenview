@@ -10,6 +10,9 @@
 - `log.*()` goes to `Session.logs`, never `RuntimeState` (rollback would discard it). Opt-in
   (`ExecutionController::with_logs`); readers apply `LogBatch`es in order via `LogHistory`. Limits in
   `pine::logs`; read [Pine Logs](../pine-logs.md) before changing them.
+- `ta.tr`, `ta.atr`, `ta.kc`, `ta.kcw`, `ta.dmi` and `ta.supertrend` are checked against TradingView's
+  own logs; what still differs and how to measure more is in
+  [`ta.*` against TradingView](../pine-ta-parity.md). Read it before changing them.
 - Debugger (`pine/debug/`, [Pine debugger](../pine-debugger.md)) is opt-in: `Session::debug` is
   `None` unless `attach_debugger` ran; hooks (statement loop, `invoke`, `execute_bar`,
   `request.security` evaluator) test it and call `#[cold] #[inline(never)]` helpers. Never hook

@@ -200,6 +200,7 @@ old output). Finished worktrees are where the disk goes.
 - [Drawing tools](docs/drawing-tools.md) — tools, geometry, verified vs inferred behavior, limits.
 - [Pine execution-model audit](docs/reviews/pine-execution-model-audit.md) — engine vs TradingView's execution model: findings, stacked fixes, what is deferred.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: sink, limits, batches, TradingView verification.
+- [`ta.*` against TradingView](docs/pine-ta-parity.md) — the true-range family: what is compared, what still differs (conditional `ta.supertrend`, `ta.sar`), how to probe.
 - [Portfolio cards](docs/portfolio-cards.md) — card design, known gaps.
 - [New-tab page](docs/new-tab-page.md) — the blank tab: search launcher, tabs, sparklines, animated backdrop.
 - [README hero GIF](tools/readme-gif/README.md): how the animated picture is recorded from the real app, and when to retake it.

@@ -663,25 +663,28 @@ pub fn keltner(
     multiplier: f64,
     use_true_range: bool,
     bar: &Kline,
+    previous_close: Option<f64>,
     state: &mut State,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
     let length = count(length);
-    let previous_close = state.closes.last().copied();
-    state.closes.push(bar.close);
+    // `ta.tr`'s own form: no range on the first bar, so the average starts on the bar after it.
     let span = if use_true_range {
-        ta::true_range(bar, previous_close)
+        ta::true_range_checked(bar, previous_close, false)
     } else {
-        bar.high - bar.low
+        Some(bar.high - bar.low)
     };
     let basis = derived(state, 0).ema(source.number(), length);
-    let average_range = derived(state, 1).ema(Some(span), length);
+    let average_range = derived(state, 1).ema(span, length);
+    // The basis is the moving average on its own: it exists from its first value, the bands from
+    // the first value of the range as well.
     match (basis, average_range) {
         (Some(basis), Some(average)) => (
             Some(basis),
             Some(basis + average * multiplier),
             Some(basis - average * multiplier),
         ),
-        _ => (None, None, None),
+        (basis, None) => (basis, None, None),
+        (None, Some(_)) => (None, None, None),
     }
 }
 
@@ -692,9 +695,18 @@ pub fn keltner_width(
     multiplier: f64,
     use_true_range: bool,
     bar: &Kline,
+    previous_close: Option<f64>,
     state: &mut State,
 ) -> RuntimeValue {
-    let (basis, upper, lower) = keltner(source, length, multiplier, use_true_range, bar, state);
+    let (basis, upper, lower) = keltner(
+        source,
+        length,
+        multiplier,
+        use_true_range,
+        bar,
+        previous_close,
+        state,
+    );
     match (basis, upper, lower) {
         (Some(basis), Some(upper), Some(lower)) if basis != 0.0 => {
             out(Some((upper - lower) / basis))
