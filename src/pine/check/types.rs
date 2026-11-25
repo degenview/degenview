@@ -79,7 +79,8 @@ impl Ty {
             (Self::Map(key, value), Self::Map(given_key, given_value)) => {
                 let key = key.accepts(given_key)?;
                 let value = value.accepts(given_value)?;
-                Some(key.max(value))
+                // Widening a scalar does not change the types of a shared map.
+                (key != Fit::Widened && value != Fit::Widened).then_some(key.max(value))
             }
             (Self::Udt(declared), Self::Udt(given)) | (Self::Enum(declared), Self::Enum(given))
                 if declared == given =>

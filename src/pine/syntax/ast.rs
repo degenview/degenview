@@ -66,6 +66,7 @@ pub enum Expression {
     Call {
         name: String,
         arguments: Vec<Argument>,
+        map_types: Option<Box<[TypeRef; 2]>>,
         site: usize,
         range: SourceRange,
         route: Option<Route>,
@@ -169,7 +170,7 @@ pub enum Statement {
         /// when it ends (`Session::run_for_range`).
         shadows: Option<ShadowId>,
     },
-    /// `for value in array` / `for [index, value] in array`
+    /// `for value in array`, `for [index, value] in array` or `for [key, value] in map`.
     ForIn {
         index: Option<String>,
         value: String,

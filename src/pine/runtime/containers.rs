@@ -6,6 +6,7 @@ use std::collections::hash_map::Entry;
 
 use super::fast_hash::FastMap;
 use super::value::RuntimeValue;
+use crate::pine::syntax::token::ValueType;
 
 /// One instance of a script-defined `type`. Fields are dynamic: the declaration only supplies
 /// the names and defaults.
@@ -15,12 +16,12 @@ pub struct Object {
     pub fields: HashMap<String, RuntimeValue>,
 }
 
-/// A `map<K, V>` key. A whole float and the int with the same value are one key, because a script
-/// that passes `2` where a float key is expected means `2.0`.
+/// A `map<K, V>` lookup key. Untyped maps share a key for an integer and the same whole float.
+/// Typed float maps instead widen integer inputs before constructing the key.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum MapKey {
     Int(i64),
-    /// The float's bit pattern, so only whole floats fold into the int key.
+    /// The float's bit pattern, with the two zeros represented by the same key.
     Float(u64),
     Bool(bool),
     String(String),
@@ -62,22 +63,51 @@ impl MapKey {
 pub struct Map {
     order: Vec<MapKey>,
     storage: FastMap<MapKey, RuntimeValue>,
+    types: Option<[ValueType; 2]>,
+    key_revision: u64,
 }
 
 impl Map {
+    pub fn typed(types: [ValueType; 2]) -> Self {
+        Self {
+            types: Some(types),
+            ..Self::default()
+        }
+    }
+
     pub fn count(&self) -> usize {
         self.order.len()
+    }
+
+    pub fn key_revision(&self) -> u64 {
+        self.key_revision
+    }
+
+    pub fn lookup_key(&self, value: &RuntimeValue) -> Option<MapKey> {
+        if self.types.is_some_and(|[key, _]| key == ValueType::Float) {
+            let number = match value {
+                RuntimeValue::Int(n) => *n as f64,
+                RuntimeValue::Float(n) => *n,
+                _ => return MapKey::from_value(value),
+            };
+            return Some(MapKey::Float(if number == 0.0 {
+                0
+            } else {
+                number.to_bits()
+            }));
+        }
+        MapKey::from_value(value)
+    }
+
+    pub fn pair_at(&self, index: usize) -> Option<(RuntimeValue, RuntimeValue)> {
+        let key = self.order.get(index)?;
+        Some((key.value(), self.storage[key].clone()))
     }
 
     pub fn pairs(&self) -> Vec<(RuntimeValue, RuntimeValue)> {
         self.order
             .iter()
-            .map(|key| {
-                (
-                    key.value(),
-                    self.storage.get(key).cloned().unwrap_or(RuntimeValue::Na),
-                )
-            })
+            .map(|key| (key.value(), self.storage[key].clone()))
             .collect()
     }
 
@@ -102,10 +132,15 @@ impl Map {
 
     /// Stores `value`, returning what the key held before.
     pub fn put(&mut self, value: RuntimeValue, key: MapKey) -> Option<RuntimeValue> {
+        let value = match (self.types, value) {
+            (Some([_, ValueType::Float]), RuntimeValue::Int(n)) => RuntimeValue::Float(n as f64),
+            (_, value) => value,
+        };
         match self.storage.entry(key) {
             Entry::Occupied(mut slot) => Some(slot.insert(value)),
             Entry::Vacant(slot) => {
                 self.order.push(slot.key().clone());
+                self.key_revision += 1;
                 slot.insert(value);
                 None
             }
@@ -115,12 +150,16 @@ impl Map {
     pub fn remove(&mut self, key: &MapKey) -> Option<RuntimeValue> {
         let removed = self.storage.remove(key)?;
         self.order.retain(|candidate| candidate != key);
+        self.key_revision += 1;
         Some(removed)
     }
 
     pub fn clear(&mut self) {
-        self.order.clear();
-        self.storage.clear();
+        if !self.order.is_empty() {
+            self.key_revision += 1;
+            self.order.clear();
+            self.storage.clear();
+        }
     }
 }
 

@@ -242,21 +242,30 @@ impl TypeChecker {
                     value,
                     collection,
                     body,
+                    range,
                     ..
                 } => {
                     let collection = self.infer(collection, scope);
-                    let mut inner = scope.clone();
-                    if let Some(index) = index {
-                        inner.insert(
-                            index.clone(),
-                            Inferred::Known(ValueType::Int, Some(Qualifier::Series)),
-                        );
-                    }
-                    let element = match self.ty_of(collection) {
-                        Ty::Array(element) => self.inferred_of(&element, Some(Qualifier::Series)),
-                        _ => Inferred::Unknown,
+                    let (first, element) = match self.ty_of(collection) {
+                        Ty::Array(element) => (Ty::Scalar(ValueType::Int), *element),
+                        Ty::Map(key, element) => {
+                            if index.is_none() {
+                                self.error(
+                                    "PINE3071",
+                                    "Iterating a map requires `for [key, value] in map`.".into(),
+                                    *range,
+                                );
+                            }
+                            (*key, *element)
+                        }
+                        _ => (Ty::Any, Ty::Any),
                     };
-                    inner.insert(value.clone(), element);
+                    let mut inner = scope.clone();
+                    let series = Some(Qualifier::Series);
+                    if let Some(index) = index {
+                        inner.insert(index.clone(), self.inferred_of(&first, series));
+                    }
+                    inner.insert(value.clone(), self.inferred_of(&element, series));
                     self.check_statements(body, &mut inner);
                 }
                 Statement::WhileLoop {
@@ -400,8 +409,11 @@ impl TypeChecker {
             );
         }
         let mismatched = self.annotation_mismatch(name, type_ref, value, expression.range());
-        if annotation.kind == Some(ValueType::Object)
-            || annotation.kind == Some(ValueType::Map)
+        if let Some(reference) = type_ref.filter(|reference| reference.kind == ValueType::Map) {
+            let declared = Ty::from_ref(reference, &self.enums);
+            let typed = self.inferred_of(&declared, Some(Qualifier::Series));
+            scope.insert(name.to_owned(), typed);
+        } else if annotation.kind == Some(ValueType::Object)
             || annotation.kind == Some(ValueType::Matrix)
         {
             // Whether a value fits the annotated type is not judged, but a value whose type is
@@ -517,6 +529,21 @@ impl TypeChecker {
         let Some(target) = scope.get(name) else {
             return;
         };
+        if let declared @ Ty::Map(..) = self.ty_of(*target) {
+            let given = self.ty_of(value);
+            if declared.accepts(&given).is_none() {
+                self.error(
+                    "PINE3032",
+                    format!(
+                        "Cannot assign {} to {} variable '{name}'.",
+                        given.describe(),
+                        declared.describe()
+                    ),
+                    expression.range(),
+                );
+            }
+            return;
+        }
         let Inferred::Known(kind, _) = *target else {
             return;
         };
@@ -629,10 +656,25 @@ impl TypeChecker {
             Expression::Call {
                 name,
                 arguments,
+                map_types,
                 site,
                 range,
                 ..
-            } => self.call(name, arguments, *site, scope, *range),
+            } => {
+                if let Some(types) = map_types {
+                    for argument in arguments {
+                        self.infer(&argument.value, scope);
+                    }
+                    let [key, value] = types.as_ref();
+                    let ty = Ty::Map(
+                        Box::new(Ty::from_ref(key, &self.enums)),
+                        Box::new(Ty::from_ref(value, &self.enums)),
+                    );
+                    self.inferred_of(&ty, Some(Qualifier::Series))
+                } else {
+                    self.call(name, arguments, *site, scope, *range)
+                }
+            }
             Expression::History { base, offset, .. } => {
                 let value = self.infer(base, scope);
                 self.infer(offset, scope);
@@ -1617,6 +1659,32 @@ mod tests {
         ] {
             assert_eq!(assign_errors(source), 1, "{source}");
         }
+    }
+
+    #[test]
+    fn map_constructor_types_must_match_the_annotation() {
+        for source in [
+            "map<float, float> m = map.new<string, int>()\n",
+            "map<float, float> m = map.new<int, float>()\n",
+        ] {
+            assert_eq!(assign_errors(source), 1, "{source}");
+        }
+        let reassignment = "map<float, float> m = na\nm := map.new<int, float>()\n";
+        assert!(check(reassignment).iter().any(|d| d.code == "PINE3032"));
+    }
+
+    #[test]
+    fn map_iteration_checks_both_binding_types_and_requires_a_pair() {
+        for initializer in ["m = map.new<string, bool>()", "map<string, bool> m = na"] {
+            let correct =
+                format!("{initializer}\nfor [k, v] in m\n    string key = k\n    bool val = v\n");
+            assert!(check(&correct).is_empty(), "{:?}", check(&correct));
+            let wrong =
+                format!("{initializer}\nfor [k, v] in m\n    bool key = k\n    int val = v\n");
+            assert_eq!(assign_errors(&wrong), 2, "{wrong}");
+        }
+        let single = "m = map.new<string, bool>()\nfor item in m\n    continue\n";
+        assert!(check(single).iter().any(|d| d.code == "PINE3071"));
     }
 
     #[test]

@@ -94,9 +94,10 @@ the Methods page's `maintainQueue`/`calcBB`, `getType`, `fill`/`featureScale` an
 - calling a method as a function (`area(rect)`) is accepted because the engine always did; the
   documentation only shows the dot form;
 - a method called on `na`;
-- `Ty::Any` inside collections: `array.new<T>` for a library type, `map.new<K, V>` and
-  `matrix.new<T>` do not carry their element types, so overloads over those collections are not told
-  apart at compile time.
+- `Ty::Any` inside collections: `array.new<T>` for a library type and `matrix.new<T>` do not
+  carry their element types, so overloads over those collections are not told apart at compile time.
+  `map.new<K, V>` carries both types for static resolution; a dynamic map receiver is matched by
+  collection kind only at runtime.
 
 ## Known limits
 

@@ -81,6 +81,12 @@
   a rolled-back unconfirmed realtime tick keeps the structure active until the block runs on a
   closing tick (as TradingView documents). Condition evaluated every bar (like `if`) so `ta.*` keeps
   history.
+- Map `for [key, value] in m` uses the map's insertion order and reads each value when its
+  iteration starts. Replacing a value does not change the order; adding or removing a key during
+  direct iteration raises `PINE4039`, including changes through aliases. This follows the documented
+  TradingView restriction on changing a map's size; the exact error timing and visibility of
+  replacement values have not been verified on TradingView. A `map<float, V>` exposes numeric keys
+  as floats, including whole-number keys that share the internal lookup key with an integer.
 - `matrix.*`: `matrix_builtins` (names in `MEMBERS`, offered directly by the editor).
   - Element arithmetic (`sum`, `diff`, `mult`) via `operators::apply` (ints stay ints, `na`
     propagates); float numerics (`pow`, `kron`, linear algebra) convert to
