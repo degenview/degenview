@@ -352,6 +352,7 @@ fn grow_journal(mac: &Mac, account: u64, entries: u64, width: usize, varied: boo
                 account_id: account,
                 timestamp: entry as i64,
                 message,
+                note: None,
             });
     }
     store.save_paper_trading(&snapshot).unwrap();

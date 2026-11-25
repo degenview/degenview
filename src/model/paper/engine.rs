@@ -8,10 +8,10 @@ use crate::clock::now_ms;
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade,
     PaperCommissionConfiguration, PaperCurrency, PaperFill, PaperFillPriceSource, PaperInstrument,
-    PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent, PaperOrderEventKind,
-    PaperOrderRequest, PaperOrderRole, PaperOrderSide, PaperOrderStatus, PaperOrderType,
-    PaperPosition, PaperPositionSide, PaperQuote, PaperTimeInForce, PaperTradingError,
-    PaperTradingSnapshot,
+    PaperJournalEntry, PaperNote, PaperOrder, PaperOrderChanges, PaperOrderEvent,
+    PaperOrderEventKind, PaperOrderRequest, PaperOrderRole, PaperOrderSide, PaperOrderStatus,
+    PaperOrderType, PaperPosition, PaperPositionSide, PaperQuote, PaperTimeInForce,
+    PaperTradingError, PaperTradingSnapshot,
 };
 
 pub struct PaperTradingEngine {
@@ -85,6 +85,10 @@ impl PaperTradingEngine {
         self.journal(
             id,
             format!("PAPER account created with {initial_balance} {currency:?}"),
+            PaperNote::AccountCreated {
+                balance: initial_balance,
+                currency,
+            },
         );
         Ok(id)
     }
@@ -143,6 +147,10 @@ impl PaperTradingEngine {
         self.journal(
             id,
             format!("PAPER account reset to {initial_balance} {currency:?}"),
+            PaperNote::AccountReset {
+                balance: initial_balance,
+                currency,
+            },
         );
         Ok(())
     }
@@ -216,6 +224,12 @@ impl PaperTradingEngine {
                 request.instrument.symbol,
                 request.kind
             ),
+            PaperNote::OrderSubmitted {
+                side: request.side,
+                quantity: request.quantity,
+                symbol: request.instrument.symbol.clone(),
+                kind: request.kind,
+            },
         );
 
         match self.try_accept(
@@ -231,7 +245,14 @@ impl PaperTradingEngine {
                 order.rejection_reason = Some(error.message());
                 order.updated_at = timestamp;
                 self.replace(order.clone());
-                self.event(order, PaperOrderEventKind::Rejected, error.message());
+                self.event(
+                    order,
+                    PaperOrderEventKind::Rejected,
+                    error.message(),
+                    PaperNote::Rejected {
+                        error: error.clone(),
+                    },
+                );
                 Err(error)
             }
         }
@@ -261,6 +282,7 @@ impl PaperTradingEngine {
             order.clone(),
             PaperOrderEventKind::Accepted,
             "PAPER order accepted".to_owned(),
+            PaperNote::OrderAccepted,
         );
         self.evaluate(order.id, Some((take_profit, stop_loss)))
     }
@@ -288,6 +310,7 @@ impl PaperTradingEngine {
             order,
             PaperOrderEventKind::Canceled,
             "PAPER order canceled".to_owned(),
+            PaperNote::OrderCanceled,
         );
         Ok(())
     }
@@ -344,6 +367,7 @@ impl PaperTradingEngine {
             order.clone(),
             PaperOrderEventKind::Modified,
             "PAPER order modified".to_owned(),
+            PaperNote::OrderModified,
         );
         match self.evaluate(order.id, None) {
             Err(error @ PaperTradingError::InsufficientFunds { .. }) => {
@@ -423,7 +447,14 @@ impl PaperTradingEngine {
         order.reserved_margin = 0.0;
         order.updated_at = now_ms();
         self.replace(order.clone());
-        self.event(order, PaperOrderEventKind::Rejected, error.message());
+        self.event(
+            order,
+            PaperOrderEventKind::Rejected,
+            error.message(),
+            PaperNote::Rejected {
+                error: error.clone(),
+            },
+        );
     }
 
     // MARK: Metrics
@@ -558,6 +589,7 @@ impl PaperTradingEngine {
                         order.clone(),
                         PaperOrderEventKind::Modified,
                         "Stop triggered; PAPER stop-limit activated".to_owned(),
+                        PaperNote::StopTriggered,
                     );
                 }
                 if order.stop_triggered && limit_eligible(&order, executable) {
@@ -650,11 +682,19 @@ impl PaperTradingEngine {
                 "Filled {} {} @ {} [{:?}]; commission {}",
                 quantity, order.instrument.symbol, price, source, commission
             ),
+            PaperNote::Filled {
+                quantity,
+                symbol: order.instrument.symbol.clone(),
+                price,
+                source,
+                commission,
+            },
         );
         if realized != 0.0 {
             self.journal(
                 order.account_id,
                 format!("Realized gross P&L {} before commission", realized),
+                PaperNote::RealizedPnl { amount: realized },
             );
         }
         if order.status == PaperOrderStatus::Filled {
@@ -857,6 +897,7 @@ impl PaperTradingEngine {
             child,
             PaperOrderEventKind::Accepted,
             format!("PAPER {role:?} protection activated"),
+            PaperNote::ProtectionActivated { role },
         );
     }
 
@@ -885,6 +926,7 @@ impl PaperTradingEngine {
                 order,
                 PaperOrderEventKind::Canceled,
                 "PAPER OCO counterpart canceled".to_owned(),
+                PaperNote::OcoCounterpartCanceled,
             );
         }
     }
@@ -921,16 +963,27 @@ impl PaperTradingEngine {
             let reduces = (signed > 0.0 && order.side == PaperOrderSide::Sell)
                 || (signed < 0.0 && order.side == PaperOrderSide::Buy);
             if !reduces {
-                let message = if size == 0.0 {
-                    "PAPER protection canceled; the position is closed"
+                let (message, note) = if size == 0.0 {
+                    (
+                        "PAPER protection canceled; the position is closed",
+                        PaperNote::ProtectionClosed,
+                    )
                 } else {
-                    "PAPER protection canceled; the position reversed"
+                    (
+                        "PAPER protection canceled; the position reversed",
+                        PaperNote::ProtectionReversed,
+                    )
                 };
                 self.snapshot.orders[index].status = PaperOrderStatus::Canceled;
                 self.snapshot.orders[index].reserved_margin = 0.0;
                 self.snapshot.orders[index].updated_at = now_ms();
                 let order = self.snapshot.orders[index].clone();
-                self.event(order, PaperOrderEventKind::Canceled, message.to_owned());
+                self.event(
+                    order,
+                    PaperOrderEventKind::Canceled,
+                    message.to_owned(),
+                    note,
+                );
             } else if order.original_quantity > order.filled_quantity + size {
                 self.snapshot.orders[index].original_quantity =
                     self.snapshot.orders[index].filled_quantity + size;
@@ -940,6 +993,7 @@ impl PaperTradingEngine {
                     order,
                     PaperOrderEventKind::Modified,
                     format!("PAPER protection resized to the remaining {size}"),
+                    PaperNote::ProtectionResized { size },
                 );
             }
         }
@@ -1201,7 +1255,13 @@ impl PaperTradingEngine {
         }
     }
 
-    fn event(&mut self, order: PaperOrder, kind: PaperOrderEventKind, message: String) {
+    fn event(
+        &mut self,
+        order: PaperOrder,
+        kind: PaperOrderEventKind,
+        message: String,
+        note: PaperNote,
+    ) {
         let account_id = order.account_id;
         let event_id = self.mint();
         self.snapshot.order_events.push(PaperOrderEvent {
@@ -1211,18 +1271,20 @@ impl PaperTradingEngine {
             kind,
             timestamp: now_ms(),
             message: message.clone(),
+            note: Some(note.clone()),
             order,
         });
-        self.journal(account_id, message);
+        self.journal(account_id, message, note);
     }
 
-    fn journal(&mut self, account_id: u64, message: String) {
+    fn journal(&mut self, account_id: u64, message: String, note: PaperNote) {
         let entry_id = self.mint();
         self.snapshot.journal.push(PaperJournalEntry {
             id: entry_id,
             account_id,
             timestamp: now_ms(),
             message,
+            note: Some(note),
         });
     }
 
@@ -1797,5 +1859,58 @@ mod tests {
             .unwrap();
         assert!(engine.snapshot().positions.is_empty());
         assert!(working_protection(&engine).is_empty());
+    }
+    /// The table writes each line from its note, so the note must say what the stored English
+    /// sentence says: a sentence and its note that drift apart would show two different stories.
+    #[test]
+    fn every_line_of_the_history_has_a_note_that_says_what_the_sentence_says() {
+        let (mut engine, account) = small_engine(1_000.0, PaperAccountSettings::default());
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine
+            .submit(PaperOrderRequest {
+                take_profit: Some(120.0),
+                stop_loss: Some(90.0),
+                ..request(account, PaperOrderType::Market, 1.0)
+            })
+            .unwrap();
+        let resting = engine.submit(sell_limit(account, 1.0)).unwrap();
+        engine.cancel(resting).unwrap();
+        // Too big for the account: refused, and the refusal is a line too.
+        assert!(
+            engine
+                .submit(request(account, PaperOrderType::Market, 500.0))
+                .is_err()
+        );
+        // The market takes the position out through its take-profit.
+        engine.process(quote("Binance:BTCUSDT", 130.0)).unwrap();
+
+        let snapshot = engine.snapshot();
+        assert!(
+            snapshot.order_events.len() >= 6,
+            "the scenario writes lines"
+        );
+        for event in &snapshot.order_events {
+            let note = event.note.as_ref().expect("every event has a note");
+            assert_eq!(note.text(), event.message, "{:?}", event.kind);
+        }
+        for entry in &snapshot.journal {
+            let note = entry.note.as_ref().expect("every journal line has a note");
+            assert_eq!(note.text(), entry.message);
+        }
+    }
+
+    #[test]
+    fn a_line_written_before_notes_existed_shows_its_sentence() {
+        let old = r#"{"id":1,"account_id":1,"timestamp":5,"message":"PAPER account created with 1000 Usd"}"#;
+        let entry: PaperJournalEntry = serde_json::from_str(old).expect("old rows still read");
+        assert_eq!(entry.note, None);
+        assert_eq!(entry.text(), "PAPER account created with 1000 Usd");
+        // A new line stores its note, and an old build skips what it does not know.
+        let written = serde_json::to_value(PaperJournalEntry {
+            note: Some(PaperNote::OrderAccepted),
+            ..entry
+        })
+        .unwrap();
+        assert_eq!(written["note"]["note"], "order_accepted");
     }
 }

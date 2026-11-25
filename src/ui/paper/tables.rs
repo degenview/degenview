@@ -531,9 +531,10 @@ pub fn history_table(ui: &mut egui::Ui, events: &[PaperOrderEvent], ctx: Context
                     kit::status_badge(ui, event.kind.label(), tone_of(event.kind.tone()));
                 }
                 _ => {
+                    let text = event.text();
                     ui.add(
                         egui::Label::new(kit::text(
-                            &event.message,
+                            &text,
                             12.0,
                             kit::REGULAR,
                             theme::text_primary(),
@@ -542,7 +543,7 @@ pub fn history_table(ui: &mut egui::Ui, events: &[PaperOrderEvent], ctx: Context
                     )
                     .on_hover_text(tr!(
                         "{message}\nOrder {id}",
-                        message = event.message,
+                        message = text,
                         id = event.order_id
                     ));
                 }
@@ -689,16 +690,12 @@ pub fn journal_table(ui: &mut egui::Ui, entries: &[PaperJournalEntry], ctx: Cont
                     theme::text_secondary(),
                 );
             } else {
+                let text = entry.text();
                 ui.add(
-                    egui::Label::new(kit::text(
-                        &entry.message,
-                        12.0,
-                        kit::REGULAR,
-                        theme::text_primary(),
-                    ))
-                    .truncate(),
+                    egui::Label::new(kit::text(&text, 12.0, kit::REGULAR, theme::text_primary()))
+                        .truncate(),
                 )
-                .on_hover_text(&entry.message);
+                .on_hover_text(&text);
             }
         },
     );
@@ -872,6 +869,7 @@ mod tests {
                 kind: PaperOrderEventKind::Placed,
                 timestamp,
                 message: String::new(),
+                note: None,
                 order: order(0.0, 1.0),
             })
             .collect();
@@ -899,6 +897,7 @@ mod tests {
                 account_id: 1,
                 timestamp,
                 message: String::new(),
+                note: None,
             })
             .collect();
         let at: Vec<i64> = newest_first_journal(&journal)

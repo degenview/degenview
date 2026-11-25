@@ -117,13 +117,25 @@ msgstr "0  Temporada de Bitcoin"
 msgid "1 bar"
 msgstr "1 barra"
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "1 day"
+msgstr "1 día"
+
 #: src/ui/mcp/confirmation.rs
 msgid "1 of {waiting} waiting. Expires in {time}."
 msgstr "1 de {waiting} en espera. Caduca en {time}."
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "1 week"
+msgstr "1 semana"
+
 #: src/model/portfolio/statistics.rs
 msgid "1 year"
 msgstr "1 año"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "180 days"
+msgstr "180 días"
 
 #: src/ui/portfolio/overview/hero.rs src/ui/portfolio/statistics/hero.rs
 msgid "24h"
@@ -137,7 +149,7 @@ msgstr "24 h %"
 msgid "24h volume"
 msgstr "Volumen 24h"
 
-#: src/model/portfolio/statistics.rs
+#: src/model/portfolio/statistics.rs src/service/snapshot/providers/imgbb.rs
 msgid "30 days"
 msgstr "30 días"
 
@@ -156,6 +168,10 @@ msgstr "Percentil 5"
 #: src/model/portfolio/statistics.rs
 msgid "7 days"
 msgstr "7 días"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "90 days"
+msgstr "90 días"
 
 #: src/pine_studio/drawer/simulation.rs
 msgid "90% within {low} to {high}"
@@ -449,6 +465,10 @@ msgstr "Aceptada"
 #: src/ui/settings/brokers.rs
 msgid "Access"
 msgstr "Acceso"
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Access token (optional)"
+msgstr "Token de acceso (opcional)"
 
 #: src/trading/confirm.rs src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/tests.rs src/ui/settings/brokers.rs
@@ -776,6 +796,10 @@ msgstr "Añade tu clave de API de Alpaca en Ajustes para ver cotizaciones de acc
 #: src/pine_studio/preview/market_picker.rs
 msgid "Add your Alpaca API keys in Settings."
 msgstr "Añade tus claves de API de Alpaca en Ajustes."
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
+msgstr "Añade tu clave de API de ImgBB en Ajustes ▸ Capturas para compartir."
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
@@ -1117,6 +1141,10 @@ msgstr "¿Permitir que “{client}” escriba un borrador de script?"
 msgid "Allowed"
 msgstr "Permitido"
 
+#: src/service/market/error.rs
+msgid "Alpaca error: {error}"
+msgstr "Error de Alpaca: {error}"
+
 #: src/pine_studio/preview/chart.rs
 msgid "Alpaca isn't set up"
 msgstr "Alpaca no está configurado"
@@ -1196,6 +1224,10 @@ msgstr "Una alerta que se dispara una vez espera aquí hasta que la reactives."
 #: src/trading/broker/backend.rs
 msgid "An estimate: {assets} could not be priced and is left out."
 msgstr "Estimación: no se ha podido valorar {assets} y se deja fuera."
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "An https:// address that takes the image and answers with a link."
+msgstr "Una dirección https:// que recibe la imagen y responde con un enlace."
 
 #: src/ui/alert/editor.rs
 msgid "An identical alert already exists"
@@ -2433,21 +2465,6 @@ msgid "Chance of a loss"
 msgstr "Probabilidad de pérdida"
 
 #: src/model/watchlist/mod.rs
-msgctxt "price change, column header"
-msgid "Change"
-msgstr "Var."
-
-#: src/model/watchlist/mod.rs
-msgctxt "price change, spoken in full"
-msgid "Change"
-msgstr "Variación"
-
-#: src/pine_studio/menu_bar/edit.rs
-msgctxt "changed lines of the script"
-msgid "Change"
-msgstr "Cambio"
-
-#: src/model/watchlist/mod.rs
 msgid "Change %"
 msgstr "Var. %"
 
@@ -3133,6 +3150,10 @@ msgstr "Bloque de código: líneas {first}–{last}"
 #: src/trading/paper/backend.rs
 msgid "CoinMarketCap charts have no tradable price, so paper trading skips them."
 msgstr "Los gráficos de CoinMarketCap no tienen un precio operable, así que el trading simulado los omite."
+
+#: src/service/market/error.rs
+msgid "CoinMarketCap error: {error}"
+msgstr "Error de CoinMarketCap: {error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "CoinMarketCap works without an API key. Adding one gives DegenView higher API rate limits."
@@ -4164,7 +4185,7 @@ msgstr "Paneles"
 msgid "Dashed"
 msgstr "Discontinua"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/market/error.rs src/service/watchlist_quotes/provider.rs
 msgid "Data error: {error}"
 msgstr "Error de datos: {error}"
 
@@ -4252,6 +4273,10 @@ msgstr "Texto predeterminado"
 #: src/native_bridge.rs
 msgid "DegenView Documentation"
 msgstr "Documentación de DegenView"
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "DegenView Snapshots on GitHub"
+msgstr "DegenView Snapshots en GitHub"
 
 #: src/ui/settings/snapshots.rs
 msgid "DegenView asks before the first upload to a host, and never uploads on its own."
@@ -5287,6 +5312,10 @@ msgstr "Introduce una cantidad."
 msgid "Enter an order type."
 msgstr "Introduce un tipo de orden."
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Enter its upload address below. Add the access token if the host asks for one."
+msgstr "Escribe abajo su dirección de subida. Añade el token de acceso si el servidor lo pide."
+
 #: src/ui/settings/mcp/security.rs
 msgid "Enter the address of this Mac to listen on"
 msgstr "Introduce la dirección de este Mac en la que escuchar"
@@ -5589,6 +5618,10 @@ msgstr "Miedo extremo"
 msgid "Extreme Greed"
 msgstr "Codicia extrema"
 
+#: src/model/paper/mod.rs
+msgid "FX conversion from {from} to {to} is unavailable."
+msgstr "La conversión de divisas de {from} a {to} no está disponible."
+
 #: src/mcp/state.rs src/model/mcp/activity.rs src/ui/webhook/settings.rs
 msgid "Failed"
 msgstr "Fallido"
@@ -5800,6 +5833,10 @@ msgstr "Ejecutada"
 #: src/ui/broker/panel.rs src/ui/trade/tables.rs
 msgid "Filled / Size"
 msgstr "Ejecutado / Tamaño"
+
+#: src/model/paper/note.rs
+msgid "Filled {quantity} {symbol} @ {price} [{source}]; commission {commission}"
+msgstr "Ejecutadas {quantity} {symbol} a {price} [{source}]; comisión {commission}"
 
 #: src/ui/broker/panel.rs
 msgid "Filled, cancelled, expired and rejected orders are listed here."
@@ -6177,6 +6214,10 @@ msgstr "Generar credencial"
 #: src/ui/settings/ai.rs src/ui/settings/api_keys.rs
 msgid "Get API Key"
 msgstr "Obtener clave de API"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Get an ImgBB API key"
+msgstr "Obtener una clave de API de ImgBB"
 
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Getting ready"
@@ -6601,6 +6642,10 @@ msgstr "Rayo horizontal"
 msgid "Host"
 msgstr "Host"
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Host your own"
+msgstr "Tu propio servidor"
+
 #: src/ui/settings/snapshots.rs
 msgid "Hosting"
 msgstr "Alojamiento"
@@ -6761,6 +6806,10 @@ msgstr "Si el elemento en segundo plano está desactivado o no disponible, las a
 msgid "Image"
 msgstr "Imagen"
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Image hosting with your own API key"
+msgstr "Alojamiento de imágenes con tu propia clave de API"
+
 #: src/ui/drawing/layer/draw.rs
 msgid "Image unavailable (waiting to sync)"
 msgstr "Imagen no disponible (esperando sincronización)"
@@ -6772,6 +6821,34 @@ msgstr "Imágenes"
 #: src/ui/settings/snapshots.rs
 msgid "Images are drawn again at the scale, not enlarged, so text stays sharp."
 msgstr "Las imágenes se vuelven a dibujar a la escala, sin ampliarlas, para que el texto se vea nítido."
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Images are uploaded to ImgBB with your API key. Anyone who has the link can open the image, and ImgBB's terms apply. ImgBB is asked to delete the image after the time you choose; with Never it keeps it."
+msgstr "Las imágenes se suben a ImgBB con tu clave de API. Cualquiera que tenga el enlace puede abrir la imagen y se aplican los términos de ImgBB. Se pide a ImgBB que elimine la imagen pasado el tiempo que elijas; con «Nunca» la conserva."
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Images go to the host you enter, which you run or trust. Whoever has a link can open the image, and the host decides how long it keeps it."
+msgstr "Las imágenes van al servidor que indiques, que gestionas tú o en el que confías. Quien tenga un enlace puede abrir la imagen, y el servidor decide cuánto tiempo la conserva."
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB"
+msgstr "ImgBB"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB API key"
+msgstr "Clave de API de ImgBB"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB is asked to delete the image after this time, and the link stops working then."
+msgstr "Se pide a ImgBB que elimine la imagen pasado este tiempo, y el enlace deja de funcionar."
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB privacy policy"
+msgstr "Política de privacidad de ImgBB"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB terms of service"
+msgstr "Condiciones del servicio de ImgBB"
 
 #: src/pine_studio/ai/panel.rs
 msgid "Implement this plan"
@@ -7109,6 +7186,10 @@ msgstr "Mantener dibujo: desactivado (vuelve a la cruz)"
 msgid "Keep drawing: on (stay on the tool)"
 msgstr "Mantener dibujo: activado (sigue en la herramienta)"
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Keep images for"
+msgstr "Conservar las imágenes durante"
+
 #: src/ui/window/tab_link_menu/mod.rs
 msgid "Keep linked charts aligned to the same point in time."
 msgstr "Mantiene los gráficos vinculados alineados en el mismo instante."
@@ -7180,6 +7261,10 @@ msgstr "Se guarda en el almacenamiento seguro y se inserta donde lo coloques, en
 #: src/platform.rs
 msgid "Kept in your Keychain and inserted wherever you place it, in the URL or a header."
 msgstr "Se guarda en tu Llavero y se inserta donde lo coloques, en la URL o en una cabecera."
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Kept in your system's secure storage, never in the settings or synced."
+msgstr "Se guarda en el almacenamiento seguro del sistema, nunca en los ajustes ni se sincroniza."
 
 #: src/ui/settings/sync.rs
 msgid "Kept on this Mac"
@@ -8618,13 +8703,17 @@ msgstr "Flujo neto de taker, todas las plataformas"
 msgid "Network"
 msgstr "Red"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/market/error.rs src/service/watchlist_quotes/provider.rs
 msgid "Network error: {error}"
 msgstr "Error de red: {error}"
 
 #: src/ui/chart/cmc_gauge.rs
 msgid "Neutral"
 msgstr "Neutral"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Never"
+msgstr "Nunca"
 
 #: src/ui/settings/sync.rs
 msgid "Never synced: market data caches, portfolio value history (rebuilt on each Mac), webhook endpoints and their secrets, API keys, MCP access, and which windows and tabs are open. Alerts you sync arrive switched off on your other Macs, so each one notifies from one Mac only."
@@ -8920,6 +9009,10 @@ msgstr "Ningún día cumple."
 #: src/ui/mcp/activity.rs
 msgid "No entries match these filters."
 msgstr "Ninguna entrada coincide con estos filtros."
+
+#: src/model/paper/mod.rs
+msgid "No executable market price is available."
+msgstr "No hay ningún precio de mercado ejecutable."
 
 #: src/ui/chart/indicator_picker/sections.rs
 msgid "No favorites yet. Star an indicator to keep it here."
@@ -9797,6 +9890,10 @@ msgstr "Órdenes abiertas"
 msgid "Open the API Keys section of the dashboard and generate a key."
 msgstr "Abre la sección de claves de API del panel y genera una clave."
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Open the API page and copy your API key."
+msgstr "Abre la página de la API y copia tu clave de API."
+
 #: src/ui/settings/api_keys.rs
 msgid "Open the Alpaca dashboard"
 msgstr "Abrir el panel de Alpaca"
@@ -9846,6 +9943,10 @@ msgstr "Orden"
 msgid "Order cancelled"
 msgstr "Orden cancelada"
 
+#: src/model/paper/mod.rs
+msgid "Order cannot be simulated reliably because market data is stale."
+msgstr "No se puede simular la orden con fiabilidad porque los datos de mercado están desactualizados."
+
 #: src/model/broker/ticket.rs
 msgid "Order expired"
 msgstr "Orden caducada"
@@ -9873,6 +9974,10 @@ msgstr "Orden enviada."
 #: src/model/broker/ticket.rs
 msgid "Order rejected"
 msgstr "Orden rechazada"
+
+#: src/model/paper/mod.rs
+msgid "Order rejected: insufficient available funds. Required margin: {required}; available funds: {available}."
+msgstr "Orden rechazada: fondos disponibles insuficientes. Margen necesario: {required}; fondos disponibles: {available}."
 
 #: src/ui/trade/order_sheet/form.rs
 msgid "Order value"
@@ -9974,6 +10079,46 @@ msgstr "P&G · {period}"
 msgid "P&L: —"
 msgstr "P&G: —"
 
+#: src/model/paper/note.rs
+msgid "PAPER OCO counterpart canceled"
+msgstr "Orden OCO contraria simulada cancelada"
+
+#: src/model/paper/note.rs
+msgid "PAPER account created with {balance} {currency}"
+msgstr "Cuenta de trading simulado creada con {balance} {currency}"
+
+#: src/model/paper/note.rs
+msgid "PAPER account reset to {balance} {currency}"
+msgstr "Cuenta de trading simulado restablecida a {balance} {currency}"
+
+#: src/model/paper/note.rs
+msgid "PAPER order accepted"
+msgstr "Orden simulada aceptada"
+
+#: src/model/paper/note.rs
+msgid "PAPER order canceled"
+msgstr "Orden simulada cancelada"
+
+#: src/model/paper/note.rs
+msgid "PAPER order modified"
+msgstr "Orden simulada modificada"
+
+#: src/model/paper/note.rs
+msgid "PAPER protection canceled; the position is closed"
+msgstr "Protección simulada cancelada; la posición está cerrada"
+
+#: src/model/paper/note.rs
+msgid "PAPER protection canceled; the position reversed"
+msgstr "Protección simulada cancelada; la posición se ha invertido"
+
+#: src/model/paper/note.rs
+msgid "PAPER protection resized to the remaining {size}"
+msgstr "Protección simulada reducida al tamaño restante: {size}"
+
+#: src/model/paper/note.rs
+msgid "PAPER {role} protection activated"
+msgstr "Protección simulada {role} activada"
+
 #: src/ui/mcp/activity.rs
 msgid "Page {page} of {pages}"
 msgstr "Página {page} de {pages}"
@@ -9993,6 +10138,14 @@ msgstr "Al desplazar un gráfico, los demás se mueven al mismo instante."
 #: src/ui/workspace/tool_sidebar.rs
 msgid "Paper Trading"
 msgstr "Trading simulado"
+
+#: src/model/paper/mod.rs
+msgid "Paper account not found."
+msgstr "Cuenta de trading simulado no encontrada."
+
+#: src/model/paper/mod.rs
+msgid "Paper order not found."
+msgstr "Orden simulada no encontrada."
 
 #: src/workspace/chart/context/mod.rs
 msgid "Paper orders are not available during replay."
@@ -10071,6 +10224,10 @@ msgstr "Pega un enlace."
 #: src/ui/drawing/content/sheet.rs
 msgid "Paste from clipboard"
 msgstr "Pegar del portapapeles"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Paste it below and turn ImgBB on."
+msgstr "Pégala abajo y activa ImgBB."
 
 #: src/ui/drawing/layer/menu.rs
 msgid "Paste style"
@@ -11054,6 +11211,10 @@ msgstr "Realizado"
 msgid "Realized P&L"
 msgstr "P&G realizado"
 
+#: src/model/paper/note.rs
+msgid "Realized gross P&L {amount} before commission"
+msgstr "P&G bruto realizado {amount} antes de comisiones"
+
 #: src/pine_studio/debug/panel/mod.rs
 msgid "Realtime"
 msgstr "Tiempo real"
@@ -11293,6 +11454,10 @@ msgstr "Quitar cabecera"
 msgid "Remove indicators"
 msgstr "Quitar indicadores"
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Remove key"
+msgstr "Quitar clave"
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Remove level"
 msgstr "Quitar nivel"
@@ -11324,6 +11489,10 @@ msgstr "Quitar este límite"
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Remove this range"
 msgstr "Quitar este rango"
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Remove token"
+msgstr "Quitar token"
 
 #: src/ui/drawing/layer/menu.rs
 msgid "Remove vertex"
@@ -11979,6 +12148,10 @@ msgstr "Regla"
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Run"
 msgstr "Tramo"
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Run DegenView Snapshots on a server you control, or any host that implements the same protocol."
+msgstr "Ejecuta DegenView Snapshots en un servidor que controles, o en cualquier servidor que implemente el mismo protocolo."
 
 #: src/service/system/sandbox.rs
 msgid "Run flatpak update if you installed from the DegenView repository, or download the new .flatpak from the release page."
@@ -12669,6 +12842,10 @@ msgstr "Enviar a webhooks"
 msgid "Sends a one-pixel test image to check the settings."
 msgstr "Envía una imagen de prueba de un píxel para comprobar los ajustes."
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Sent as a bearer token, if the host asks for one."
+msgstr "Se envía como token bearer, si el servidor lo pide."
+
 #: src/ui/webhook/picker.rs
 msgid "Sent as application/json"
 msgstr "Se envía como application/json"
@@ -12748,6 +12925,10 @@ msgstr "Configurar"
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Set up Alpaca to open a stock"
 msgstr "Configurar Alpaca para abrir una acción"
+
+#: src/service/market/error.rs
+msgid "Set up your Alpaca API key before using stock charts."
+msgstr "Configura tu clave de API de Alpaca antes de usar gráficos de acciones."
 
 #: src/app/window.rs src/ui/chart/card/overlay_card.rs
 #: src/ui/drawing/layer/menu.rs src/ui/window/tab_bar/mod.rs
@@ -13058,6 +13239,10 @@ msgstr "Lado"
 #: src/ui/settings/network/mod.rs
 msgid "Sign in"
 msgstr "Inicio de sesión"
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Sign in to ImgBB, or create a free account."
+msgstr "Inicia sesión en ImgBB o crea una cuenta gratuita."
 
 #: src/ui/settings/sync.rs
 msgid "Sign in to iCloud to delete."
@@ -13505,6 +13690,10 @@ msgstr "Detén el script en un punto de interrupción para evaluar expresiones."
 #: src/pine_studio/debug/panel/lists.rs
 msgid "Stop the script, then type one: close[1], bar_index % 5 == 0, myArray.size()."
 msgstr "Detén el script y escribe una expresión: close[1], bar_index % 5 == 0, myArray.size()."
+
+#: src/model/paper/note.rs
+msgid "Stop triggered; PAPER stop-limit activated"
+msgstr "Stop activado; orden stop-limit simulada activada"
 
 #: src/model/broker/ticket.rs
 msgid "Stop-limit"
@@ -14521,6 +14710,10 @@ msgstr "El número de la línea donde está el cursor de texto."
 msgid "The order book follows the focused chart when it is on Binance or Bybit."
 msgstr "El libro de órdenes sigue al gráfico activo cuando está en Binance o Bybit."
 
+#: src/model/paper/mod.rs
+msgid "The order can no longer be changed."
+msgstr "La orden ya no se puede modificar."
+
 #: src/trading/edit/mod.rs
 msgid "The order changed while you were reviewing it. Nothing was sent. Review it again."
 msgstr "La orden ha cambiado mientras la revisabas. No se ha enviado nada. Revísala de nuevo."
@@ -15229,6 +15422,10 @@ msgstr "Este servidor de capturas no está en esta versión de DegenView. Elige 
 msgid "This source reports no volume"
 msgstr "Esta fuente no informa de volumen"
 
+#: src/model/paper/mod.rs
+msgid "This symbol is not supported by Paper Trading."
+msgstr "Este símbolo no es compatible con el trading simulado."
+
 #: src/model/broker/ticket.rs
 msgid "This type of order cannot be edited."
 msgstr "Este tipo de orden no se puede editar."
@@ -15922,6 +16119,14 @@ msgstr "Actualizando {percent}%"
 #: src/ui/settings/sync.rs
 msgid "Upload This Mac's Data Again"
 msgstr "Volver a subir los datos de este Mac"
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Upload address"
+msgstr "Dirección de subida"
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Upload to a server you run"
+msgstr "Subir a un servidor que gestionas"
 
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Uploads to {host}"
@@ -17242,6 +17447,10 @@ msgstr "día anterior al alza"
 #: src/host/mcp/confirmation.rs
 msgid "quantity {value}"
 msgstr "cantidad {value}"
+
+#: src/service/net/http.rs
+msgid "response exceeds {limit} bytes"
+msgstr "la respuesta supera los {limit} bytes"
 
 #: src/host/mcp/confirmation.rs
 msgid "stop"
@@ -18617,6 +18826,10 @@ msgstr "{prefix} no es compatible · coincidencias de otras plataformas"
 msgid "{prefix} isn't supported. Searched: {searched}."
 msgstr "{prefix} no es compatible. Buscado en: {searched}."
 
+#: src/service/market/error.rs
+msgid "{provider} has no {timeframe} history"
+msgstr "{provider} no tiene historial de {timeframe}"
+
 #: src/ui/portfolio/empty.rs
 msgid "{quantity} at {price}"
 msgstr "{quantity} a {price}"
@@ -18722,6 +18935,10 @@ msgstr "{side} {quantity} {market} en “{account}”: {changes}"
 #: src/host/mcp/confirmation.rs
 msgid "{side} {quantity} {market} {kind} on “{account}”"
 msgstr "{side} {quantity} {market} {kind} en “{account}”"
+
+#: src/model/paper/note.rs
+msgid "{side} {quantity} {symbol} {kind} order submitted"
+msgstr "Orden {kind} enviada: {side} {quantity} {symbol}"
 
 #: src/ui/broker/chart_trading.rs
 msgid "{side} {size} @ {price}"
@@ -19191,6 +19408,11 @@ msgctxt "bold button"
 msgid "B"
 msgstr "N"
 
+#: src/pine_studio/menu_bar/edit.rs
+msgctxt "changed lines of the script"
+msgid "Change"
+msgstr "Cambio"
+
 #: src/pine_studio/editor/completion.rs
 msgctxt "completion kind"
 msgid "built-in function"
@@ -19331,6 +19553,31 @@ msgctxt "order duration"
 msgid "Immediate or cancel"
 msgstr "Inmediata o cancelar"
 
+#: src/model/paper/note.rs
+msgctxt "order role in a sentence"
+msgid "Entry"
+msgstr "de entrada"
+
+#: src/model/paper/note.rs
+msgctxt "order role in a sentence"
+msgid "StopLoss"
+msgstr "de stop loss"
+
+#: src/model/paper/note.rs
+msgctxt "order role in a sentence"
+msgid "TakeProfit"
+msgstr "de take profit"
+
+#: src/model/paper/note.rs
+msgctxt "order side in a sentence"
+msgid "BUY"
+msgstr "COMPRA"
+
+#: src/model/paper/note.rs
+msgctxt "order side in a sentence"
+msgid "SELL"
+msgstr "VENTA"
+
 #: src/trading/paper/backend.rs
 msgctxt "order status"
 msgid "Cancelled"
@@ -19408,6 +19655,26 @@ msgctxt "order type"
 msgid "Stop-limit"
 msgstr "Stop limit"
 
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "Limit"
+msgstr "Limit"
+
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "Market"
+msgstr "a mercado"
+
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "Stop"
+msgstr "Stop"
+
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "StopLimit"
+msgstr "Stop-limit"
+
 #: src/model/chart/kind.rs src/model/chart/table.rs
 msgctxt "price"
 msgid "Close"
@@ -19417,6 +19684,31 @@ msgstr "Cierre"
 msgctxt "price"
 msgid "Open"
 msgstr "Apertura"
+
+#: src/model/paper/note.rs
+msgctxt "price a fill used"
+msgid "BarFallback"
+msgstr "cierre de la barra"
+
+#: src/model/paper/note.rs
+msgctxt "price a fill used"
+msgid "BidAsk"
+msgstr "bid/ask"
+
+#: src/model/paper/note.rs
+msgctxt "price a fill used"
+msgid "LastPriceFallback"
+msgstr "último precio"
+
+#: src/model/watchlist/mod.rs
+msgctxt "price change, column header"
+msgid "Change"
+msgstr "Var."
+
+#: src/model/watchlist/mod.rs
+msgctxt "price change, spoken in full"
+msgid "Change"
+msgstr "Variación"
 
 #: src/ui/chart/card/crosshair.rs
 msgctxt "readout label"

@@ -13,6 +13,9 @@
 //!   for `count`, and passes it as `{count}`.
 //! * `tr_c!("month abbreviation", "Jan")` is for English text that translates differently in
 //!   different places (a verb and a noun spelt alike).
+//! * `tr_noop!("Image hosting")` marks text that sits in a `static` or a `const` (a table of
+//!   providers, say), where a macro cannot run: it is a [`Marked`], read with `.text()` where it is
+//!   drawn, which is when the language is known.
 //!
 //! The English text is the key of the catalogs (gettext's `msgid`), so the code reads as it did
 //! before, and a message nobody translated shows in English. The catalogs are gettext `.po` files;
@@ -55,6 +58,37 @@ pub fn translate(context: &'static str, key: &'static str) -> &'static str {
         .unwrap_or(key)
 }
 
+/// English text written where a macro cannot run (a `static` table) and translated where it is
+/// used: gettext's `N_()`. Made with `tr_noop!`, so the text is in the catalogs, and read with
+/// [`Marked::text`], so it is in the language of the frame that draws it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Marked(&'static str);
+
+impl Marked {
+    /// No text: a field with nothing to say.
+    pub const EMPTY: Marked = Marked("");
+
+    #[doc(hidden)]
+    pub const fn new(text: &'static str) -> Self {
+        Self(text)
+    }
+
+    /// The text in the language in use.
+    pub fn text(self) -> &'static str {
+        if self.0.is_empty() {
+            return "";
+        }
+        translate("", self.0)
+    }
+
+    /// The English text, the message's key: for what must not change with the language, never for
+    /// showing. Tests compare by it.
+    #[cfg(test)]
+    pub fn msgid(self) -> &'static str {
+        self.0
+    }
+}
+
 /// The text of a counted message for `count`: `one` or `other` in English, the form the language
 /// uses in any other. A catalog finds the message by `one`, as gettext does.
 pub fn translate_counted(count: u64, one: &'static str, other: &'static str) -> &'static str {
@@ -90,6 +124,14 @@ macro_rules! tr {
             $crate::i18n::translate("", $key),
             &[$((stringify!($name), &$value as &dyn ::std::fmt::Display)),+],
         )
+    }};
+}
+
+/// Text for a `static`: a [`Marked`]. See the module documentation.
+macro_rules! tr_noop {
+    ($key:literal) => {{
+        const { $crate::i18n::check::plain($key) };
+        $crate::i18n::Marked::new($key)
     }};
 }
 
@@ -144,4 +186,4 @@ macro_rules! tr_n {
 }
 
 #[allow(unused_imports)]
-pub(crate) use {tr, tr_c, tr_n};
+pub(crate) use {tr, tr_c, tr_n, tr_noop};

@@ -112,12 +112,24 @@ msgstr ""
 msgid "1 bar"
 msgstr ""
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "1 day"
+msgstr ""
+
 #: src/ui/mcp/confirmation.rs
 msgid "1 of {waiting} waiting. Expires in {time}."
 msgstr ""
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "1 week"
+msgstr ""
+
 #: src/model/portfolio/statistics.rs
 msgid "1 year"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "180 days"
 msgstr ""
 
 #: src/ui/portfolio/overview/hero.rs
@@ -134,6 +146,7 @@ msgid "24h volume"
 msgstr ""
 
 #: src/model/portfolio/statistics.rs
+#: src/service/snapshot/providers/imgbb.rs
 msgid "30 days"
 msgstr ""
 
@@ -152,6 +165,10 @@ msgstr ""
 
 #: src/model/portfolio/statistics.rs
 msgid "7 days"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "90 days"
 msgstr ""
 
 #: src/pine_studio/drawer/simulation.rs
@@ -470,6 +487,10 @@ msgstr ""
 
 #: src/ui/settings/brokers.rs
 msgid "Access"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Access token (optional)"
 msgstr ""
 
 #: src/trading/confirm.rs
@@ -818,6 +839,10 @@ msgstr ""
 
 #: src/pine_studio/preview/market_picker.rs
 msgid "Add your Alpaca API keys in Settings."
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -1169,6 +1194,10 @@ msgstr ""
 msgid "Allowed"
 msgstr ""
 
+#: src/service/market/error.rs
+msgid "Alpaca error: {error}"
+msgstr ""
+
 #: src/pine_studio/preview/chart.rs
 msgid "Alpaca isn't set up"
 msgstr ""
@@ -1250,6 +1279,10 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "An estimate: {assets} could not be priced and is left out."
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "An https:// address that takes the image and answers with a link."
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -3312,6 +3345,10 @@ msgid ""
 "CoinMarketCap charts have no tradable price, so paper trading skips them."
 msgstr ""
 
+#: src/service/market/error.rs
+msgid "CoinMarketCap error: {error}"
+msgstr ""
+
 #: src/ui/settings/api_keys.rs
 msgid ""
 "CoinMarketCap works without an API key. Adding one gives DegenView higher API "
@@ -4399,6 +4436,7 @@ msgstr ""
 msgid "Dashed"
 msgstr ""
 
+#: src/service/market/error.rs
 #: src/service/watchlist_quotes/provider.rs
 msgid "Data error: {error}"
 msgstr ""
@@ -4488,6 +4526,10 @@ msgstr ""
 
 #: src/native_bridge.rs
 msgid "DegenView Documentation"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "DegenView Snapshots on GitHub"
 msgstr ""
 
 #: src/ui/settings/snapshots.rs
@@ -5597,6 +5639,11 @@ msgstr ""
 msgid "Enter an order type."
 msgstr ""
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid ""
+"Enter its upload address below. Add the access token if the host asks for one."
+msgstr ""
+
 #: src/ui/settings/mcp/security.rs
 msgid "Enter the address of this Mac to listen on"
 msgstr ""
@@ -5923,6 +5970,10 @@ msgstr ""
 msgid "Extreme Greed"
 msgstr ""
 
+#: src/model/paper/mod.rs
+msgid "FX conversion from {from} to {to} is unavailable."
+msgstr ""
+
 #: src/mcp/state.rs
 #: src/model/mcp/activity.rs
 #: src/ui/webhook/settings.rs
@@ -6145,6 +6196,10 @@ msgstr ""
 #: src/ui/broker/panel.rs
 #: src/ui/trade/tables.rs
 msgid "Filled / Size"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "Filled {quantity} {symbol} @ {price} [{source}]; commission {commission}"
 msgstr ""
 
 #: src/ui/broker/panel.rs
@@ -6544,6 +6599,10 @@ msgstr ""
 #: src/ui/settings/ai.rs
 #: src/ui/settings/api_keys.rs
 msgid "Get API Key"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Get an ImgBB API key"
 msgstr ""
 
 #: src/ui/trade/order_sheet/mod.rs
@@ -6999,6 +7058,10 @@ msgstr ""
 msgid "Host"
 msgstr ""
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Host your own"
+msgstr ""
+
 #: src/ui/settings/snapshots.rs
 msgid "Hosting"
 msgstr ""
@@ -7170,6 +7233,10 @@ msgstr ""
 msgid "Image"
 msgstr ""
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Image hosting with your own API key"
+msgstr ""
+
 #: src/ui/drawing/layer/draw.rs
 msgid "Image unavailable (waiting to sync)"
 msgstr ""
@@ -7180,6 +7247,41 @@ msgstr ""
 
 #: src/ui/settings/snapshots.rs
 msgid "Images are drawn again at the scale, not enlarged, so text stays sharp."
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid ""
+"Images are uploaded to ImgBB with your API key. Anyone who has the link can "
+"open the image, and ImgBB's terms apply. ImgBB is asked to delete the image "
+"after the time you choose; with Never it keeps it."
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid ""
+"Images go to the host you enter, which you run or trust. Whoever has a link "
+"can open the image, and the host decides how long it keeps it."
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB API key"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid ""
+"ImgBB is asked to delete the image after this time, and the link stops working"
+" then."
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB privacy policy"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "ImgBB terms of service"
 msgstr ""
 
 #: src/pine_studio/ai/panel.rs
@@ -7544,6 +7646,10 @@ msgstr ""
 msgid "Keep drawing: on (stay on the tool)"
 msgstr ""
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Keep images for"
+msgstr ""
+
 #: src/ui/window/tab_link_menu/mod.rs
 msgid "Keep linked charts aligned to the same point in time."
 msgstr ""
@@ -7626,6 +7732,10 @@ msgstr ""
 msgid ""
 "Kept in your Keychain and inserted wherever you place it, in the URL or a "
 "header."
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Kept in your system's secure storage, never in the settings or synced."
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -9149,12 +9259,17 @@ msgstr ""
 msgid "Network"
 msgstr ""
 
+#: src/service/market/error.rs
 #: src/service/watchlist_quotes/provider.rs
 msgid "Network error: {error}"
 msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
 msgid "Neutral"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Never"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -9468,6 +9583,10 @@ msgstr ""
 
 #: src/ui/mcp/activity.rs
 msgid "No entries match these filters."
+msgstr ""
+
+#: src/model/paper/mod.rs
+msgid "No executable market price is available."
 msgstr ""
 
 #: src/ui/chart/indicator_picker/sections.rs
@@ -10413,6 +10532,10 @@ msgstr ""
 msgid "Open the API Keys section of the dashboard and generate a key."
 msgstr ""
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Open the API page and copy your API key."
+msgstr ""
+
 #: src/ui/settings/api_keys.rs
 msgid "Open the Alpaca dashboard"
 msgstr ""
@@ -10468,6 +10591,10 @@ msgstr ""
 msgid "Order cancelled"
 msgstr ""
 
+#: src/model/paper/mod.rs
+msgid "Order cannot be simulated reliably because market data is stale."
+msgstr ""
+
 #: src/model/broker/ticket.rs
 msgid "Order expired"
 msgstr ""
@@ -10494,6 +10621,12 @@ msgstr ""
 
 #: src/model/broker/ticket.rs
 msgid "Order rejected"
+msgstr ""
+
+#: src/model/paper/mod.rs
+msgid ""
+"Order rejected: insufficient available funds. Required margin: {required}; "
+"available funds: {available}."
 msgstr ""
 
 #: src/ui/trade/order_sheet/form.rs
@@ -10602,6 +10735,46 @@ msgstr ""
 msgid "P&L: —"
 msgstr ""
 
+#: src/model/paper/note.rs
+msgid "PAPER OCO counterpart canceled"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER account created with {balance} {currency}"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER account reset to {balance} {currency}"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER order accepted"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER order canceled"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER order modified"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER protection canceled; the position is closed"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER protection canceled; the position reversed"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER protection resized to the remaining {size}"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "PAPER {role} protection activated"
+msgstr ""
+
 #: src/ui/mcp/activity.rs
 msgid "Page {page} of {pages}"
 msgstr ""
@@ -10620,6 +10793,14 @@ msgstr ""
 
 #: src/ui/workspace/tool_sidebar.rs
 msgid "Paper Trading"
+msgstr ""
+
+#: src/model/paper/mod.rs
+msgid "Paper account not found."
+msgstr ""
+
+#: src/model/paper/mod.rs
+msgid "Paper order not found."
 msgstr ""
 
 #: src/workspace/chart/context/mod.rs
@@ -10703,6 +10884,10 @@ msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
 msgid "Paste from clipboard"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Paste it below and turn ImgBB on."
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -11746,6 +11931,10 @@ msgstr ""
 msgid "Realized P&L"
 msgstr ""
 
+#: src/model/paper/note.rs
+msgid "Realized gross P&L {amount} before commission"
+msgstr ""
+
 #: src/pine_studio/debug/panel/mod.rs
 msgid "Realtime"
 msgstr ""
@@ -12001,6 +12190,10 @@ msgstr ""
 msgid "Remove indicators"
 msgstr ""
 
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Remove key"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Remove level"
 msgstr ""
@@ -12031,6 +12224,10 @@ msgstr ""
 
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Remove this range"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Remove token"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
@@ -12716,6 +12913,12 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Run"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid ""
+"Run DegenView Snapshots on a server you control, or any host that implements "
+"the same protocol."
 msgstr ""
 
 #: src/service/system/sandbox.rs
@@ -13461,6 +13664,10 @@ msgstr ""
 msgid "Sends a one-pixel test image to check the settings."
 msgstr ""
 
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Sent as a bearer token, if the host asks for one."
+msgstr ""
+
 #: src/ui/webhook/picker.rs
 msgid "Sent as application/json"
 msgstr ""
@@ -13546,6 +13753,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Set up Alpaca to open a stock"
+msgstr ""
+
+#: src/service/market/error.rs
+msgid "Set up your Alpaca API key before using stock charts."
 msgstr ""
 
 #: src/app/window.rs
@@ -13875,6 +14086,10 @@ msgstr ""
 
 #: src/ui/settings/network/mod.rs
 msgid "Sign in"
+msgstr ""
+
+#: src/service/snapshot/providers/imgbb.rs
+msgid "Sign in to ImgBB, or create a free account."
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -14348,6 +14563,10 @@ msgstr ""
 #: src/pine_studio/debug/panel/lists.rs
 msgid ""
 "Stop the script, then type one: close[1], bar_index % 5 == 0, myArray.size()."
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "Stop triggered; PAPER stop-limit activated"
 msgstr ""
 
 #: src/model/broker/ticket.rs
@@ -15428,6 +15647,10 @@ msgstr ""
 msgid "The order book follows the focused chart when it is on Binance or Bybit."
 msgstr ""
 
+#: src/model/paper/mod.rs
+msgid "The order can no longer be changed."
+msgstr ""
+
 #: src/trading/edit/mod.rs
 msgid ""
 "The order changed while you were reviewing it. Nothing was sent. Review it "
@@ -16212,6 +16435,10 @@ msgstr ""
 msgid "This source reports no volume"
 msgstr ""
 
+#: src/model/paper/mod.rs
+msgid "This symbol is not supported by Paper Trading."
+msgstr ""
+
 #: src/model/broker/ticket.rs
 msgid "This type of order cannot be edited."
 msgstr ""
@@ -16950,6 +17177,14 @@ msgstr ""
 
 #: src/ui/settings/sync.rs
 msgid "Upload This Mac's Data Again"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Upload address"
+msgstr ""
+
+#: src/service/snapshot/providers/self_hosted.rs
+msgid "Upload to a server you run"
 msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
@@ -18320,6 +18555,10 @@ msgstr ""
 
 #: src/host/mcp/confirmation.rs
 msgid "quantity {value}"
+msgstr ""
+
+#: src/service/net/http.rs
+msgid "response exceeds {limit} bytes"
 msgstr ""
 
 #: src/host/mcp/confirmation.rs
@@ -19748,6 +19987,10 @@ msgstr ""
 msgid "{prefix} isn't supported. Searched: {searched}."
 msgstr ""
 
+#: src/service/market/error.rs
+msgid "{provider} has no {timeframe} history"
+msgstr ""
+
 #: src/ui/portfolio/empty.rs
 msgid "{quantity} at {price}"
 msgstr ""
@@ -19856,6 +20099,10 @@ msgstr ""
 
 #: src/host/mcp/confirmation.rs
 msgid "{side} {quantity} {market} {kind} on “{account}”"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgid "{side} {quantity} {symbol} {kind} order submitted"
 msgstr ""
 
 #: src/ui/broker/chart_trading.rs
@@ -20485,6 +20732,31 @@ msgctxt "order duration"
 msgid "Immediate or cancel"
 msgstr ""
 
+#: src/model/paper/note.rs
+msgctxt "order role in a sentence"
+msgid "Entry"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order role in a sentence"
+msgid "StopLoss"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order role in a sentence"
+msgid "TakeProfit"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order side in a sentence"
+msgid "BUY"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order side in a sentence"
+msgid "SELL"
+msgstr ""
+
 #: src/trading/paper/backend.rs
 msgctxt "order status"
 msgid "Cancelled"
@@ -20567,6 +20839,26 @@ msgctxt "order type"
 msgid "Stop-limit"
 msgstr ""
 
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "Limit"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "Market"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "Stop"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "order type in a sentence"
+msgid "StopLimit"
+msgstr ""
+
 #: src/model/chart/kind.rs
 #: src/model/chart/table.rs
 msgctxt "price"
@@ -20577,6 +20869,21 @@ msgstr ""
 #: src/model/chart/table.rs
 msgctxt "price"
 msgid "Open"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "price a fill used"
+msgid "BarFallback"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "price a fill used"
+msgid "BidAsk"
+msgstr ""
+
+#: src/model/paper/note.rs
+msgctxt "price a fill used"
+msgid "LastPriceFallback"
 msgstr ""
 
 #: src/model/watchlist/mod.rs

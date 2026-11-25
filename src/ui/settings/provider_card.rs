@@ -344,13 +344,13 @@ fn body(
     if !descriptor.setup_steps.is_empty() {
         titled_group(ui, tr!("Set up"), |ui| {
             for (index, step) in descriptor.setup_steps.iter().enumerate() {
-                step_row(ui, index + 1, step);
+                step_row(ui, index + 1, step.text());
             }
         });
     }
-    muted(ui, descriptor.notice);
+    muted(ui, descriptor.notice.text());
     for link in descriptor.links {
-        gray_link(ui, link.label, link.url);
+        gray_link(ui, link.label.text(), link.url);
     }
     if !descriptor.fields.is_empty() {
         ui.add_space(4.0);
@@ -362,8 +362,8 @@ fn body(
                 let response = field(
                     ui,
                     ("snapshot-field", descriptor.id, spec.key),
-                    spec.title,
-                    Some(spec.hint),
+                    spec.title.text(),
+                    Some(spec.hint.text()),
                     spec.placeholder,
                     form.values.entry(spec.key.to_owned()).or_default(),
                     false,
@@ -382,7 +382,7 @@ fn body(
                 let response = field(
                     ui,
                     ("snapshot-field", descriptor.id, spec.key),
-                    spec.title,
+                    spec.title.text(),
                     Some(&hint),
                     spec.placeholder,
                     form.values.entry(spec.key.to_owned()).or_default(),
@@ -445,7 +445,7 @@ fn actions_row(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             for spec in descriptor.secret_fields() {
                 if input.secrets.state(descriptor.id, spec) == SecretState::Saved
-                    && destructive_button(ui, spec.remove_label).clicked()
+                    && destructive_button(ui, spec.remove_label.text()).clicked()
                 {
                     actions.push(SnapshotsAction::RemoveSecret {
                         provider: descriptor.id,
@@ -469,7 +469,7 @@ fn secret_hint(spec: &FieldSpec, state: SecretState) -> String {
                 variable = variable
             )
         }
-        _ => spec.hint.to_owned(),
+        _ => spec.hint.text().to_owned(),
     }
 }
 
@@ -482,7 +482,7 @@ fn choice_field(
 ) -> bool {
     ui.spacing_mut().item_spacing.y = 0.0;
     ui.label(kit::text(
-        spec.title,
+        spec.title.text(),
         kit::size::SUBHEADLINE + 1.0,
         kit::MEDIUM,
         theme::text_primary(),
@@ -490,7 +490,7 @@ fn choice_field(
     ui.add_space(6.0);
     let labels: Vec<String> = choices
         .iter()
-        .map(|choice| choice.label.to_owned())
+        .map(|choice| choice.label.text().to_owned())
         .collect();
     let selected = choices
         .iter()
@@ -502,10 +502,10 @@ fn choice_field(
         })
         .unwrap_or(0);
     let picked = form::dropdown_field(ui, &labels, selected, true);
-    if !spec.hint.is_empty() {
+    if !spec.hint.text().is_empty() {
         ui.add_space(6.0);
         ui.label(kit::text(
-            spec.hint,
+            spec.hint.text(),
             kit::size::CAPTION + 0.5,
             kit::REGULAR,
             theme::text_secondary(),
@@ -555,7 +555,7 @@ fn header(
         response,
         tr!(
             "{name}, {state}, {fold}",
-            name = descriptor.name,
+            name = descriptor.name.text(),
             state = word,
             fold = if open {
                 tr!("expanded")
@@ -595,7 +595,7 @@ fn header(
     let flipped = kit::switch(
         &mut child,
         &mut on,
-        &tr!("Use {name}", name = descriptor.name),
+        &tr!("Use {name}", name = descriptor.name.text()),
     )
     .clicked();
 
@@ -619,11 +619,11 @@ fn header(
     let summary_text = if enabled && !checking && matches!(readiness, Readiness::Ready) {
         provider.status_line(settings)
     } else {
-        descriptor.summary.to_owned()
+        descriptor.summary.text().to_owned()
     };
     let name = fitted(
         ui,
-        descriptor.name,
+        descriptor.name.text(),
         kit::size::HEADLINE,
         kit::SEMIBOLD,
         theme::text_primary(),
@@ -920,7 +920,7 @@ mod tests {
         let key = imgbb_descriptor().field("key").unwrap();
         assert!(secret_hint(key, SecretState::Saved).contains("secure storage"));
         assert!(secret_hint(key, SecretState::FromEnvironment).contains("DEGENVIEW_IMGBB_KEY"));
-        assert_eq!(secret_hint(key, SecretState::Missing), key.hint);
+        assert_eq!(secret_hint(key, SecretState::Missing), key.hint.text());
         let token = host_descriptor().field("token").unwrap();
         assert!(
             secret_hint(token, SecretState::FromEnvironment).contains("DEGENVIEW_SNAPSHOT_TOKEN")
@@ -933,7 +933,7 @@ mod tests {
             let descriptor = provider.descriptor();
             for field in descriptor.secret_fields() {
                 assert!(
-                    !field.remove_label.is_empty(),
+                    !field.remove_label.msgid().is_empty(),
                     "{}.{} needs a remove button label",
                     descriptor.id,
                     field.key

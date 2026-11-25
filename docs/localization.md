@@ -30,6 +30,7 @@ the language in use. The English text is the key of the catalogs (gettext's `msg
 | `tr!("{symbol} crossed {price}", symbol = s, price = p)` | `String` | A sentence with values, put in by name. |
 | `tr_n!(count, "{count} alert", "{count} alerts")` | `String` | A counted message: the plural form the language uses for `count`. `{count}` is passed for you. |
 | `tr_c!("month abbreviation", "Jan")` | `&'static str` | English that translates differently in different places (the same word as a verb and as a noun). The context is the first argument (`msgctxt`). |
+| `tr_noop!("Image hosting")` | `i18n::Marked` | Text in a `static` or `const` table (a registry of providers), where a macro cannot run. The text is in the catalogs; read it with `.text()` where it is drawn. |
 
 The compiler checks each message (`i18n::check`, a `const` block in the macros), so a mistake is a
 build error at the call:
@@ -47,6 +48,12 @@ Rules that need a person:
 - **One message, one meaning.** Reuse a text only for the same meaning; use `tr_c!` when two places
   need different translations of the same English (a test fails on a text written both counted and
   plain).
+- **A table of text is marked, not translated where it is written.** A `static` registry (the snapshot
+  providers) holds `tr_noop!` values and the code that draws it calls `.text()`. A field typed `Marked`
+  cannot be drawn by mistake: it is not a `&str`.
+- **A record of what happened is data, not a sentence.** The paper journal stores the English sentence
+  (for exports and MCP) and a `PaperNote` (what happened); the table writes the sentence from the note in
+  the language in use. A line written before notes existed has none and shows its sentence.
 - **Do not keep the text.** The language can change under a running process (the alert agent follows
   Settings, a test sets one with `with_locale`), so a `&'static str` or `String` from a macro
   belongs to the frame being drawn. A cache that must survive a
