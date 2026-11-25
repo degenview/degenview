@@ -3,9 +3,9 @@
 //! Every provider plans its requests from these lists (`bucket::FoldPlan`), and the symbol picker
 //! asks `DataSource::serves` before offering a timeframe, so the two agree by construction. A
 //! source folds the coarsest finer native candle for a timeframe it lacks and never substitutes a
-//! nearby length (`bucket::fold_base` says what nests).
+//! nearby length (`Grid::fold_base` says what nests).
 
-use super::bucket::FoldPlan;
+use super::bucket::{FoldPlan, Grid};
 use super::samples;
 use super::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
@@ -156,9 +156,10 @@ const COINBASE: [Timeframe; 6] = [
 ];
 
 /// Alpaca serves any minute count to 59 and hour count to 23, but only the lengths that divide
-/// the hour are used: it is not documented where its other bars start, and one that is not on our
-/// midnight grid would cut buckets the other sources do not. Days, weeks and months are as it
-/// stamps them (at New York midnight).
+/// the hour are used: it is not documented where its other bars start. Its `1Hour` bars are cut on
+/// the clock hour (09:00 to 10:00 New York), which is not where a stock's session grid cuts
+/// (09:30), so a stock's hours fold from the 30 minute bars (`Grid::UsEquities`) and the native
+/// hour is never the base. Days, weeks and months are as it stamps them (at New York midnight).
 const ALPACA: [Timeframe; 8] = [
     minutes(1),
     minutes(5),
@@ -205,10 +206,19 @@ impl DataSource {
         }
     }
 
+    /// Where the source's markets cut their buckets: a stock's intraday candles follow the US
+    /// session, everything else the UTC day.
+    pub fn grid(self) -> Grid {
+        match self {
+            Self::Alpaca => Grid::UsEquities,
+            _ => Grid::Utc,
+        }
+    }
+
     /// How `timeframe` is made from the source's own candles; `None` for a source that has none
     /// or whose candles no fold of reaches it.
     pub fn plan(self, timeframe: Timeframe) -> Option<FoldPlan> {
-        FoldPlan::new(timeframe, self.natives())
+        FoldPlan::in_grid(self.grid(), timeframe, self.natives())
     }
 
     /// Whether the source can chart `timeframe`: its candles fold to it, CoinGecko's price

@@ -17,6 +17,7 @@ use super::support::{ChartSpan, SecurityKey};
 use super::types::{BarFlags, RuntimeContext};
 use super::value::{RefKind, RuntimeValue};
 use crate::model::Kline;
+use crate::model::market::bucket::Grid;
 use crate::pine::builtins::array;
 use crate::pine::logs::LogRequest;
 use crate::pine::syntax::ast::{Argument, Expression, Statement};
@@ -61,6 +62,9 @@ struct ChartBar {
     realtime: bool,
     /// Whether this is the chart bar's first tick (`barstate.isnew`); true on history.
     new: bool,
+    /// Where the market of the series being read cuts its buckets: the chart's own, or another
+    /// symbol's.
+    series_grid: Grid,
     /// The candles of the series, when the provider holds them (a finer or a foreign request): its
     /// last candle, and the last that closed by the history's end, are not where the chart's own
     /// buckets would put them (a stock has no candle between the close and the next open).
@@ -85,6 +89,7 @@ impl ChartBar {
         loaded_end: None,
         realtime: false,
         new: true,
+        series_grid: Grid::Utc,
         candles: None,
     };
 
@@ -92,17 +97,18 @@ impl ChartBar {
     /// that is the last confirmed history one ends the history. `last_bar_time` is where the chart's
     /// last bar opens, when known; without it only the bar that is the last one has the last candle.
     fn of(
+        grid: Grid,
         bar: &Kline,
         seconds: f64,
         flags: &BarFlags,
         history_end: Option<i64>,
         last_bar_time: Option<i64>,
     ) -> Self {
-        let end = Self::end_of(bar, seconds);
+        let end = Self::end_of(grid, bar, seconds);
         let last_end = flags
             .is_last
             .then_some(end)
-            .or_else(|| last_bar_time.map(|open| time::bucket::bar_end(open, seconds)))
+            .or_else(|| last_bar_time.map(|open| time::bucket::bar_end(grid, open, seconds)))
             .unwrap_or(i64::MIN);
         Self {
             start: bar.open_time,
@@ -112,22 +118,25 @@ impl ChartBar {
             loaded_end: history_end,
             realtime: flags.is_realtime,
             new: flags.is_new,
+            series_grid: grid,
             candles: None,
         }
     }
 
-    /// This chart bar reading the series `candles` of `interval` seconds.
-    fn reading(self, candles: &[Kline], interval: f64) -> Self {
+    /// This chart bar reading the series `candles` of `interval` seconds, cut on `series_grid`.
+    fn reading(self, candles: &[Kline], interval: f64, series_grid: Grid) -> Self {
         let edges = candles.last().map(|last| SeriesEdges {
             last: last.open_time,
             last_confirmed: self.history_end.and_then(|end| {
-                let closed = candles
-                    .partition_point(|candle| time::bucket::end(candle.open_time, interval) <= end);
+                let closed = candles.partition_point(|candle| {
+                    time::bucket::end(series_grid, candle.open_time, interval) <= end
+                });
                 closed.checked_sub(1).map(|index| candles[index].open_time)
             }),
         });
         Self {
             candles: edges,
+            series_grid,
             ..self
         }
     }
@@ -136,25 +145,27 @@ impl ChartBar {
     /// ended by the history's end (always, when that is not known). The one still forming on a live
     /// chart bar is not, so it is read as a tick and is not confirmed.
     fn has_closed(&self, candle: &Kline, interval: f64) -> bool {
-        self.loaded_end
-            .is_none_or(|end| time::bucket::end(candle.open_time, interval) <= end)
+        self.loaded_end.is_none_or(|end| {
+            time::bucket::end(self.series_grid, candle.open_time, interval) <= end
+        })
     }
 
     /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
-    fn replayed(bar: &Kline, seconds: f64, history_end: Option<i64>) -> Self {
+    fn replayed(grid: Grid, bar: &Kline, seconds: f64, history_end: Option<i64>) -> Self {
         Self {
             start: bar.open_time,
-            end: Self::end_of(bar, seconds),
+            end: Self::end_of(grid, bar, seconds),
             history_end,
             loaded_end: history_end,
+            series_grid: grid,
             ..Self::BEFORE_CHART
         }
     }
 
     /// Where the bar closes: the end of its bucket, which is not `open_time + seconds` for a length
     /// that does not divide the day (a 5h bar opened at 20:00 closes at midnight) or a calendar month.
-    fn end_of(bar: &Kline, seconds: f64) -> i64 {
-        time::bucket::bar_end(bar.open_time, seconds)
+    fn end_of(grid: Grid, bar: &Kline, seconds: f64) -> i64 {
+        time::bucket::bar_end(grid, bar.open_time, seconds)
     }
 
     /// The bar states of `candle`, a candle of `interval` seconds, evaluated for this chart bar.
@@ -179,7 +190,7 @@ impl ChartBar {
     /// (TradingView-measured: a completed month reads 1 from every chart bar inside it, the final
     /// incomplete month 0, probes A and B; a developing day on a 4h history reads 1, probe R1).
     fn flags_of(&self, candle: &Kline, interval: f64, commit: bool, is_first: bool) -> BarFlags {
-        let candle_end = time::bucket::end(candle.open_time, interval);
+        let candle_end = time::bucket::end(self.series_grid, candle.open_time, interval);
         let (is_last, is_last_confirmed_history) = match self.candles {
             Some(edges) => (
                 candle.open_time == edges.last,
@@ -188,7 +199,8 @@ impl ChartBar {
             None => (
                 candle.open_time < self.last_end && self.last_end <= candle_end,
                 self.history_end.is_some_and(|end| {
-                    candle_end <= end && time::bucket::end(candle_end, interval) > end
+                    candle_end <= end
+                        && time::bucket::end(self.series_grid, candle_end, interval) > end
                 }),
             ),
         };
@@ -234,6 +246,8 @@ struct SecurityRequest {
     lookahead_on: bool,
     gaps_on: bool,
     foreign: Option<Arc<Vec<Kline>>>,
+    /// Where the series' market cuts its buckets (the chart's for its own symbol).
+    grid: Grid,
 }
 
 // MARK: Entry points
@@ -318,6 +332,7 @@ impl Session {
         let intrabars = self.serve_intrabars(
             candles,
             request.interval,
+            request.grid,
             &request.expression,
             site,
             context,
@@ -435,7 +450,11 @@ impl Session {
                 context.flags.is_realtime,
             )
         {
-            return self.serve_intrabars(&candles, seconds, &expression, site, context);
+            let grid = match values.get("symbol") {
+                Some(RuntimeValue::String(text)) => self.series_grid(text),
+                _ => self.symbol.grid,
+            };
+            return self.serve_intrabars(&candles, seconds, grid, &expression, site, context);
         }
         // The chart's own timeframe: each chart bar is its own single intrabar.
         let mut intrabars: Option<RuntimeValue> = None;
@@ -450,6 +469,7 @@ impl Session {
                     lookahead_on: false,
                     gaps_on: false,
                     foreign: None,
+                    grid: self.symbol.grid,
                 },
                 site,
                 context,
@@ -486,6 +506,7 @@ impl Session {
             .last_bar_time
             .filter(|last| self.security_depth == 0 && *last > bar.open_time);
         ChartBar::of(
+            self.symbol.grid,
             bar,
             self.bar_seconds,
             flags,
@@ -501,6 +522,16 @@ impl Session {
     /// `request.security()` on a standard ticker gives the real market data there.
     fn is_chart_series(&self, symbol: &str) -> bool {
         self.symbol.chart.is_standard() && (symbol.is_empty() || symbol == self.symbol.ticker_id)
+    }
+
+    /// Where `symbol`'s market cuts its buckets: the chart's own, or the provider's say for another.
+    fn series_grid(&self, symbol: &str) -> Grid {
+        if self.is_chart_series(symbol) {
+            return self.symbol.grid;
+        }
+        self.security_data
+            .as_ref()
+            .map_or(Grid::Utc, |provider| provider.grid(symbol))
     }
 
     fn security_request(
@@ -578,6 +609,7 @@ impl Session {
         } else {
             None
         };
+        let grid = self.series_grid(&symbol_name);
         Ok(Some(SecurityRequest {
             symbol: if is_chart_symbol {
                 String::new()
@@ -591,6 +623,7 @@ impl Session {
             gaps_on: values.get("gaps").and_then(RuntimeValue::text_value)
                 == Some("barmerge.gaps_on"),
             foreign,
+            grid,
         }))
     }
 
@@ -628,7 +661,8 @@ impl Session {
                 let spacing_ms = (self.bar_seconds * 1000.0).round() as i64;
                 Some(ChartSpan {
                     start_ms,
-                    end_ms: time::bucket::bar_end(last, self.bar_seconds).max(last + spacing_ms),
+                    end_ms: time::bucket::bar_end(self.symbol.grid, last, self.bar_seconds)
+                        .max(last + spacing_ms),
                     spacing_ms,
                 })
             }
@@ -746,7 +780,7 @@ impl Session {
             return Ok(());
         };
         for candle in candles.iter() {
-            if time::bucket::end(candle.open_time, request.interval) > before {
+            if time::bucket::end(request.grid, candle.open_time, request.interval) > before {
                 break;
             }
             site.last_result = self.evaluate_higher_timeframe(
@@ -834,7 +868,7 @@ impl Session {
                 &Step {
                     bar: &bar,
                     confirmed: true,
-                    chart: ChartBar::replayed(&bar, seconds, self.history_end),
+                    chart: ChartBar::replayed(self.symbol.grid, &bar, seconds, self.history_end),
                     skipped_after: Some(skipped_after),
                 },
             )?;
@@ -886,7 +920,7 @@ impl Session {
             skipped_after,
         } = *step;
         let replay = skipped_after.is_some();
-        let start = time::bucket::start(bar.open_time, request.interval);
+        let start = time::bucket::start(request.grid, bar.open_time, request.interval);
         // This chart bar is the first of its bucket (the chart's first bar counts when it opens one).
         let opens = match state.bucket {
             Some(previous) => previous != start,
@@ -912,8 +946,8 @@ impl Session {
             developing.push(accumulated.clone());
         }
         developing.push(bar.clone());
-        let developing = fold_one(&developing, request.interval);
-        let end = time::bucket::end(start, request.interval);
+        let developing = fold_one(request.grid, &developing, request.interval);
+        let end = time::bucket::end(request.grid, start, request.interval);
         // The chart bar closes the bucket when its own end reaches the bucket's: a monthly bar is
         // not `open_time + 30 days` (a 31-day month would never close its quarter or year).
         let closes_bucket = chart.end >= end;
@@ -979,15 +1013,16 @@ impl Session {
             self.working.securities.insert(key, state);
             return Ok(result);
         }
-        let chart = self
-            .chart_bar(&bar, &context.flags)
-            .reading(candles, request.interval);
+        let chart =
+            self.chart_bar(&bar, &context.flags)
+                .reading(candles, request.interval, request.grid);
         let mut fresh = false;
         if context.flags.is_confirmed {
             let chart_close = self.bar_end(&bar);
             while state.completed_candles < candles.len() {
                 let candle = &candles[state.completed_candles];
-                if time::bucket::end(candle.open_time, request.interval) > chart_close {
+                if time::bucket::end(request.grid, candle.open_time, request.interval) > chart_close
+                {
                     break;
                 }
                 state.last_result =
@@ -1008,7 +1043,7 @@ impl Session {
         let opens = held.is_some_and(|index| state.bucket != Some(candles[index].open_time));
         let closes = held.is_some_and(|index| {
             index >= state.completed_candles
-                && time::bucket::end(candles[index].open_time, request.interval)
+                && time::bucket::end(request.grid, candles[index].open_time, request.interval)
                     <= self.bar_end(&bar)
         });
         if request.gaps_on && !self.owns_value(request, fresh, opens, closes) {
@@ -1051,6 +1086,7 @@ impl Session {
         &mut self,
         candles: &[Kline],
         interval: f64,
+        grid: Grid,
         expression: &Expression,
         site: usize,
         context: &mut RuntimeContext,
@@ -1069,7 +1105,7 @@ impl Session {
         // all its own (TradingView probes R2 and R5).
         let chart = self.chart_bar(&bar, &context.flags);
         let window_end = self.bar_end(&bar);
-        let ends = |candle: &Kline| time::bucket::end(candle.open_time, interval);
+        let ends = |candle: &Kline| time::bucket::end(grid, candle.open_time, interval);
         let low = candles.partition_point(|candle| ends(candle) <= bar.open_time);
         let request = SecurityRequest {
             symbol: String::new(),
@@ -1078,8 +1114,9 @@ impl Session {
             lookahead_on: false,
             gaps_on: false,
             foreign: None,
+            grid,
         };
-        let chart = chart.reading(candles, interval);
+        let chart = chart.reading(candles, interval, grid);
         let mut results = Vec::new();
         let mut index = low;
         while index < candles.len() && ends(&candles[index]) <= window_end {
@@ -1300,11 +1337,11 @@ fn unserved_symbol_message(name: &str) -> String {
 
 /// Folds candles (which share one bucket) into a single higher-timeframe candle, closing where the
 /// bucket ends.
-fn fold_one(candles: &[Kline], interval_seconds: f64) -> Kline {
-    let start = time::bucket::start(candles[0].open_time, interval_seconds);
+fn fold_one(grid: Grid, candles: &[Kline], interval_seconds: f64) -> Kline {
+    let start = time::bucket::start(grid, candles[0].open_time, interval_seconds);
     let mut folded = Kline {
         open_time: start,
-        close_time: time::bucket::end(start, interval_seconds),
+        close_time: time::bucket::end(grid, start, interval_seconds),
         ..candles[0].clone()
     };
     for candle in &candles[1..] {
@@ -1450,7 +1487,11 @@ mod tests {
 
     #[test]
     fn fold_one_takes_open_high_low_close_and_sums_volume() {
-        let folded = fold_one(&[bar(3_600_000, 10.0), bar(7_200_000, 12.0)], 14_400.0);
+        let folded = fold_one(
+            Grid::Utc,
+            &[bar(3_600_000, 10.0), bar(7_200_000, 12.0)],
+            14_400.0,
+        );
         assert_eq!(folded.open, 10.0);
         assert_eq!(folded.close, 12.0);
         assert_eq!(folded.volume, 2.0);
@@ -1460,7 +1501,7 @@ mod tests {
     #[test]
     fn fold_one_of_a_quarter_spans_the_calendar_quarter() {
         let february = time::calendar::make(2024, 2, 10, 0, 0, 0, 0).unwrap();
-        let folded = fold_one(&[bar(february, 10.0)], 7_776_000.0);
+        let folded = fold_one(Grid::Utc, &[bar(february, 10.0)], 7_776_000.0);
         assert_eq!(
             folded.open_time,
             time::calendar::make(2024, 1, 1, 0, 0, 0, 0).unwrap()

@@ -187,7 +187,7 @@ while one is in flight (a bar that opened meanwhile moves the oldest bar held, a
 for with the old end, would leave it missing); the chart holds at most 100,000 candles.
 
 `DataSource::supports_older_history(timeframe)` says what can page. Coarser bars (1w, 1M, 3M, 1Y)
-are folded from finer pages with `model::market::bucket::fold`, whose first bucket is dropped when the
+are folded from finer pages with `bucket::Grid::fold`, whose first bucket is dropped when the
 page was cut by the request, so a bar is never split across two pages.
 
 | Provider | Older pages |

@@ -161,6 +161,9 @@ pub struct SymbolInfo {
     /// How the chart the script runs on is drawn: `chart.is_*` reads this, and a script on a
     /// price-based chart is fed that chart's constructed bars.
     pub chart: crate::model::ChartKind,
+    /// Where the market cuts its buckets: a stock's intraday candles follow its session, so a
+    /// higher timeframe of it closes where the session does.
+    pub grid: crate::model::market::bucket::Grid,
 }
 
 impl Default for SymbolInfo {
@@ -172,6 +175,7 @@ impl Default for SymbolInfo {
             kind: "crypto".to_owned(),
             base_currency: None,
             chart: crate::model::ChartKind::Standard,
+            grid: crate::model::market::bucket::Grid::Utc,
         }
     }
 }

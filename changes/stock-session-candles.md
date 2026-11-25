@@ -1,0 +1,2 @@
+fixed: US stock charts of 1h and longer intraday timeframes now cut their candles on the regular session like TradingView does: 4h is 09:30 and 13:30 New York, the last candle of a day closes at 16:00, and pre-market and after-hours candles are no longer drawn.
+fixed: Pine scripts on a stock that request a higher timeframe (a 4h, a day, a week) now get that candle when the session closes, where TradingView gives it, instead of at midnight.

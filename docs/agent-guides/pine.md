@@ -341,6 +341,14 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   higher-timeframe one: the last intrabar stands for the chart bar and the first with `lookahead_on`,
   on history and on the live bar alike (probe S5: ETHUSDT `"5"` on a BTCUSDT 1h chart reads offset
   55 / 0 on a history bar and 20 / 0 on the live one at 13:22, like BTCUSDT's own).
+  A stock's buckets are cut on its session, not the UTC day (`bucket::Grid::UsEquities`, see
+  [Market data](market-data.md#timeframes)): `SymbolInfo::grid` is the chart's grid, the provider
+  says another symbol's (`SecurityDataProvider::grid`), and every `time::bucket` helper takes it. A
+  4h candle of AAPL ends at 13:30 and at 16:00 New York, so a request closes the chart bar that ends
+  there, and a day, week or month ends at the close of its last weekday (`Grid::session_end_ms`),
+  not at the next UTC midnight (TradingView probe A8, 2026-11-25). The differences that remain
+  (extended hours, early closes, holidays, the `time("D")` of a day) are listed in
+  [Market data](market-data.md#timeframes).
   `gaps_on` puts the value on the chart bar that closes the candle (`SecurityRequest::gaps_on`,
   `Session::owns_value`), and on the live bar that closes it the developing candle's value; with
   `lookahead_on` on the bar that opens the candle. Every other bar is `na`, for the chart's own symbol

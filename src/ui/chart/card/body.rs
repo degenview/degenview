@@ -48,6 +48,7 @@ pub(super) fn symbol_info(symbol: &str, source: DataSource, chart_type: ChartTyp
         .to_owned(),
         base_currency: None,
         chart: chart_type.kind(),
+        grid: source.grid(),
     }
 }
 
@@ -724,5 +725,20 @@ mod tests {
     fn no_candles_or_an_empty_span_give_no_source_bar_length() {
         assert_eq!(source_bar_seconds(&[], None, true), None);
         assert_eq!(source_bar_seconds(&[candle(1_000, 500)], None, true), None);
+    }
+
+    #[test]
+    fn a_stock_chart_hands_scripts_the_session_grid_and_every_other_market_the_utc_one() {
+        use crate::model::market::bucket::Grid;
+        let grid = |source| symbol_info("X", source, ChartType::Candles).grid;
+        assert_eq!(grid(DataSource::Alpaca), Grid::UsEquities);
+        for source in [
+            DataSource::Binance,
+            DataSource::Coinbase,
+            DataSource::Okx,
+            DataSource::DexScreener,
+        ] {
+            assert_eq!(grid(source), Grid::Utc, "{source:?}");
+        }
     }
 }
