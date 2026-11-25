@@ -327,7 +327,12 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
   developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
   candle is complete in the data whichever chart bar reads it. The candle still open at the
-  history's end, and one developing in real time, read false (TradingView probes A, B and R1).
+  history's end, and one developing in real time, read false (TradingView probes A, B and R1). The
+  same holds for the elements of a finer request: the newest intrabar of a live chart bar is still
+  forming, so it runs as a tick (`ChartBar::has_closed`, no commit) and reads islast + isrealtime and
+  not isconfirmed (probe S4, BTCUSDT 1h, a `"5"` request at 13:11: `38 54 9`, the second tick on; a
+  script that ran through the candle's close keeps the flags it had then, which a fresh load cannot
+  reproduce).
   `timeframe.change` in a request is per call site of the request's own state, so it is false on
   the first candle of the series (see the per-site rule above), TradingView-measured.
   A chart bar completes a higher-timeframe candle when its own end (`ChartBar::end`, the end of its

@@ -132,6 +132,14 @@ impl ChartBar {
         }
     }
 
+    /// Whether `candle` of `interval` seconds is complete in the data this run was loaded with: it
+    /// ended by the history's end (always, when that is not known). The one still forming on a live
+    /// chart bar is not, so it is read as a tick and is not confirmed.
+    fn has_closed(&self, candle: &Kline, interval: f64) -> bool {
+        self.loaded_end
+            .is_none_or(|end| time::bucket::end(candle.open_time, interval) <= end)
+    }
+
     /// A confirmed chart bar before the one now running, replayed for a site the call skipped.
     fn replayed(bar: &Kline, seconds: f64, history_end: Option<i64>) -> Self {
         Self {
@@ -993,12 +1001,15 @@ impl Session {
         let mut results = Vec::new();
         let mut index = low;
         while index < candles.len() && ends(&candles[index]) <= window_end {
+            // A candle still forming (the live chart bar's newest intrabar) is a tick: it does not
+            // move the site's state on and it is not confirmed (TradingView probe S4: `9`, not `43`).
+            let closed = chart.has_closed(&candles[index], interval);
             results.push(self.evaluate_higher_timeframe(
                 &mut state,
                 &candles[index],
                 &request,
                 chart,
-                true,
+                closed,
             )?);
             index += 1;
         }

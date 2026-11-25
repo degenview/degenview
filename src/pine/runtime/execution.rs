@@ -665,4 +665,46 @@ mod tests {
         assert_eq!(at(1, 4), Some(2.0), "last");
         assert_eq!(at(2, 4), Some(2.0), "realtime");
     }
+
+    #[test]
+    fn a_candle_still_forming_on_a_live_bar_is_not_confirmed() {
+        // TradingView probe S4 (BTCUSDT 1h, 5m request, 13:07 in the bar opened at 13:00): the 13:00
+        // candle read `54` (confirmed, last confirmed history), the forming 13:05 one `9` (last,
+        // realtime, not confirmed). Here the 15m candles of the bar opened at 4:00, read at 4:40.
+        let hour = 3_600_000;
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\n\
+             plot(array.indexof(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isconfirmed ? 0.0 : 1.0), 1.0))\n\
+             plot(array.size(request.security_lower_tf(syminfo.tickerid, \"15\", barstate.isconfirmed ? 0.0 : 1.0)))",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            Some(Box::new(Quarter)),
+            None,
+        )
+        .expect("valid controller")
+        .with_bar_seconds(3600.0);
+        let bars: Vec<Kline> = (0..5)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        let update = controller.update(&bars, None, 4 * hour + 40 * 60_000);
+        let at = |plot: usize, bar: usize| update.output.plots[plot].values[bar];
+        assert_eq!(
+            at(0, 3),
+            Some(-1.0),
+            "every candle of a closed bar is confirmed"
+        );
+        assert_eq!(at(1, 4), Some(3.0), "4:00, 4:15 and the 4:30 one forming");
+        assert_eq!(at(0, 4), Some(2.0), "only the forming one is unconfirmed");
+    }
 }
