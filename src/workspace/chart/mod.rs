@@ -396,6 +396,14 @@ impl Chart {
         }
     }
 
+    /// Records that candles for `timeframe` have just arrived, from a refresh or the live feed.
+    /// The newest candle is what a countdown reads, so a live bar accepted for the timeframe is
+    /// a bar of it even while the history behind it is still on its way.
+    pub(super) fn note_arrival(&mut self, timeframe: Timeframe, now_ms: i64) {
+        self.last_data_ms = Some(now_ms);
+        self.data_timeframe = Some(timeframe);
+    }
+
     /// How often the source is asked for candles while it answers.
     fn refresh_cadence(&self) -> Duration {
         match self.source {
@@ -566,8 +574,7 @@ impl Chart {
                         .set_series(SeriesLine::build(&self.pm_series, fetched.series));
                 }
                 self.error = None;
-                self.last_data_ms = Some(crate::clock::now_ms());
-                self.data_timeframe = Some(timeframe);
+                self.note_arrival(timeframe, crate::clock::now_ms());
             }
             Err(error) => self.error = Some(error),
         }

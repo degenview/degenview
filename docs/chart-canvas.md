@@ -191,12 +191,16 @@ hovered label or cell after the tables are drawn (see the Pine guide), and a sna
   models: a countdown would run through a closed market); a replay cuts the chart (`cut_ms`);
   nothing is loaded for the timeframe (`Chart::data_timeframe`); or data has not arrived for three
   refresh intervals of the source (arrival of a refresh or the live feed, not of a trade, so a
-  quiet market is not a dead one; a failed refresh alone does not hide it).
+  quiet market is not a dead one; a failed refresh alone does not hide it). Both are recorded by
+  `Chart::note_arrival`, which a refresh and an accepted live bar call alike, so a chart the socket
+  keeps current counts down while its REST answer is slow or failing.
 - **Text** (`countdown::format`): `MM:SS` under an hour, `HH:MM:SS` under a day, `4d 3h` from a day
   (hours rounded up), never negative.
 - **Tag.** The price row stays on the price line; the countdown is a second, smaller row of the same
   filled tag under it, in the same colour. Where the plot ends too soon for the row it goes above
-  the price instead. Comparison-overlay tags keep clear of the whole tag (`TagBand`). The axis is
+  the price instead. Comparison-overlay tags keep clear of the whole tag (`TagBand`): the room they have is the plot
+  less the tag, each keeps its side, and one its side has no room for goes to the other, so the
+  plot's edge never pushes a tag back over the countdown. The axis is
   measured with the widest text the timeframe can show (`widest_texts`) whenever the setting is on
   and the chart's type and source are eligible, whether or not the countdown is showing, so its width
   never changes with the digits or with the connection.

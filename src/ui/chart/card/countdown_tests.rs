@@ -2,8 +2,8 @@
 //! stays where it was, and that the axis keeps its width as the digits change.
 
 use super::canvas_tests::{Drawn, Harness};
-use crate::model::ChartCanvas;
 use crate::model::chart::countdown::Countdown;
+use crate::model::{ChartCanvas, Timeframe};
 use eframe::egui::Pos2;
 
 fn countdown(remaining_ms: i64) -> Countdown {
@@ -101,34 +101,163 @@ fn switched_off_the_tag_shows_the_price_alone() {
     assert!(drawn.texts.iter().all(|(_, text, _)| text != "02:05"));
 }
 
+/// How far in from the card's edge the plot ends: the price axis' width.
+fn plot_right_of(harness: &mut Harness) -> f32 {
+    super::overlay_tests::plot_right(&harness.draw().0)
+}
+
+/// A chart of a day timeframe whose prices are `scale` times the fixture's.
+fn daily(scale: f64, countdown: bool) -> Harness {
+    let mut harness = harness_with(None);
+    harness.card.set_timeframe(Timeframe::DAY_1);
+    harness.card.appearance_mut().canvas.bar_countdown = countdown;
+    for candle in &mut harness.candles {
+        candle.open *= scale;
+        candle.high *= scale;
+        candle.low *= scale;
+        candle.close *= scale;
+    }
+    harness
+}
+
 #[test]
-fn overlay_tags_keep_clear_of_the_two_row_tag_on_both_sides() {
-    use super::overlays::{TagBand, spread};
-    use eframe::egui::{Color32, Rect};
-    let plot = Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, 400.0));
-    let band = TagBand {
-        top: 100.0,
-        bottom: 131.0,
-    };
-    let half = 9.0;
-    let tags = [95.0, 105.0, 118.0, 130.0, 140.0]
-        .into_iter()
-        .map(|y| (y, Color32::GRAY, String::new()))
-        .collect();
-    let placed = spread(tags, half, plot, Some(band));
-    assert_eq!(placed.len(), 5);
-    for (y, _, _) in &placed {
-        assert!(
-            y + half <= band.top || y - half >= band.bottom,
-            "a tag at {y} overlaps the band"
-        );
+fn the_axis_reserves_room_for_the_countdown_text_of_the_timeframe() {
+    let with = plot_right_of(&mut daily(1.0, true));
+    let without = plot_right_of(&mut daily(1.0, false));
+    assert!(
+        with < without,
+        "a short price leaves the countdown (23:59:59 on a daily bar) wider than the labels: {with} vs {without}"
+    );
+}
+
+#[test]
+fn price_labels_wider_than_the_reservation_still_widen_the_axis() {
+    let short = plot_right_of(&mut daily(1.0, true));
+    let long_with = plot_right_of(&mut daily(10_000.0, true));
+    let long_without = plot_right_of(&mut daily(10_000.0, false));
+    assert!(long_with < short, "{long_with} vs {short}");
+    assert_eq!(
+        long_with, long_without,
+        "where the labels are wider the countdown adds nothing"
+    );
+}
+
+#[test]
+fn a_bar_of_an_hour_reserves_less_than_a_day() {
+    let mut hourly = daily(1.0, true);
+    hourly.card.set_timeframe(Timeframe::HOUR_1);
+    assert!(
+        plot_right_of(&mut hourly) > plot_right_of(&mut daily(1.0, true)),
+        "an hour never reads `23:59:59`"
+    );
+}
+
+mod placement {
+    use super::super::overlays::{TagBand, spread};
+    use eframe::egui::{Color32, Pos2, Rect};
+
+    const HALF: f32 = 9.0;
+
+    fn plot(height: f32) -> Rect {
+        Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, height))
     }
-    for pair in placed.windows(2) {
-        assert!(
-            pair[1].0 - pair[0].0 >= 2.0 * half + 1.0 - 1e-3,
-            "{placed:?}"
-        );
+
+    fn place(ys: &[f32], plot: Rect, band: Option<TagBand>) -> Vec<f32> {
+        let tags = ys
+            .iter()
+            .map(|y| (*y, Color32::GRAY, String::new()))
+            .collect();
+        spread(tags, HALF, plot, band)
+            .into_iter()
+            .map(|tag| tag.0)
+            .collect()
     }
-    let above = placed.iter().filter(|(y, _, _)| *y < band.top).count();
-    assert_eq!(above, 2, "the tags that were above it stay above");
+
+    fn clear_of(placed: &[f32], band: TagBand) {
+        for y in placed {
+            assert!(
+                y + HALF <= band.top || y - HALF >= band.bottom,
+                "a tag at {y} overlaps the band {band:?}"
+            );
+        }
+    }
+
+    fn apart(placed: &[f32]) {
+        let mut sorted = placed.to_vec();
+        sorted.sort_by(f32::total_cmp);
+        for pair in sorted.windows(2) {
+            assert!(pair[1] - pair[0] >= 2.0 * HALF + 1.0 - 1e-3, "{sorted:?}");
+        }
+    }
+
+    fn inside(placed: &[f32], plot: Rect) {
+        for y in placed {
+            assert!(*y >= plot.top() + HALF && *y <= plot.bottom() - HALF, "{y}");
+        }
+    }
+
+    #[test]
+    fn tags_keep_clear_of_the_two_row_tag_on_both_sides() {
+        let band = TagBand {
+            top: 100.0,
+            bottom: 131.0,
+        };
+        let placed = place(&[95.0, 105.0, 118.0, 130.0, 140.0], plot(400.0), Some(band));
+        clear_of(&placed, band);
+        apart(&placed);
+        assert_eq!(placed.iter().filter(|y| **y < band.top).count(), 2);
+    }
+
+    #[test]
+    fn a_tag_the_bottom_edge_leaves_no_room_for_goes_above_instead_of_into_the_tag() {
+        // The last price is near the bottom: its countdown row went above the price, so the
+        // tag ends at the plot's bottom and a tag that was below it has nowhere to stand there.
+        let plot = plot(200.0);
+        let band = TagBand {
+            top: 150.0,
+            bottom: 181.0,
+        };
+        for ys in [&[185.0][..], &[185.0, 190.0, 195.0][..]] {
+            let placed = place(ys, plot, Some(band));
+            assert_eq!(placed.len(), ys.len());
+            clear_of(&placed, band);
+            apart(&placed);
+            inside(&placed, plot);
+        }
+    }
+
+    #[test]
+    fn a_tag_the_top_edge_leaves_no_room_for_goes_below() {
+        let plot = plot(200.0);
+        let band = TagBand {
+            top: 10.0,
+            bottom: 41.0,
+        };
+        let placed = place(&[5.0, 12.0, 30.0], plot, Some(band));
+        clear_of(&placed, band);
+        apart(&placed);
+        inside(&placed, plot);
+    }
+
+    #[test]
+    fn more_tags_than_the_axis_holds_overlap_inside_the_plot_without_panicking() {
+        let plot = plot(60.0);
+        let band = TagBand {
+            top: 20.0,
+            bottom: 50.0,
+        };
+        let placed = place(&[10.0, 30.0, 55.0], plot, Some(band));
+        assert_eq!(placed.len(), 3);
+        for y in &placed {
+            assert!(*y >= plot.top() && *y <= plot.bottom());
+        }
+    }
+
+    #[test]
+    fn tags_with_nothing_to_avoid_are_left_where_they_are_and_keep_their_spacing_at_an_edge() {
+        assert_eq!(place(&[50.0, 100.0], plot(400.0), None), [50.0, 100.0]);
+        let piled = place(&[395.0, 396.0, 397.0], plot(400.0), None);
+        apart(&piled);
+        inside(&piled, plot(400.0));
+    }
 }

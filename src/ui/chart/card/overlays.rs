@@ -513,52 +513,104 @@ pub(super) struct TagBand {
     pub bottom: f32,
 }
 
+/// One tag on the axis: where it is centred, what it is filled with, what it says.
+type AxisTag = (f32, Color32, String);
+
 /// Pushes tags apart so neighbours do not stack, keeping them in the plot and clear of `avoid`
-/// (the last price's tag, which the chart itself draws); top to bottom. A tag keeps the side of
-/// `avoid` it was on.
+/// (the last price's tag, which the chart itself draws); top to bottom.
+///
+/// The room the tags have is the plot less `avoid`: the stretch above it and the stretch below
+/// it. A tag keeps the side of `avoid` it was on; one that its side has no room for goes to the
+/// other, nearest first, so no tag is ever pushed back over `avoid` by the edge of the plot. Only
+/// when there are more tags than the axis holds do they stack over the whole plot, as when there
+/// is nothing to avoid.
 pub(super) fn spread(
-    tags: Vec<(f32, Color32, String)>,
+    tags: Vec<AxisTag>,
     half: f32,
     plot: Rect,
     avoid: Option<TagBand>,
-) -> Vec<(f32, Color32, String)> {
+) -> Vec<AxisTag> {
     let Some(band) = avoid else {
         return stack(tags, half, plot);
     };
+    let above = Span::new(plot.top(), band.top - 1.0);
+    let below = Span::new(band.bottom + 1.0, plot.bottom());
+    let (above_room, below_room) = (above.capacity(half), below.capacity(half));
     let middle = (band.top + band.bottom) / 2.0;
-    let (mut above, mut below): (Vec<_>, Vec<_>) = tags.into_iter().partition(|tag| tag.0 < middle);
-    let pitch = 2.0 * half + 1.0;
-    // Those above stack upward from the band's top, those below downward from its bottom.
-    above.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let mut ceiling = band.top - 1.0 - half;
-    for tag in &mut above {
-        tag.0 = tag.0.min(ceiling);
-        ceiling = tag.0 - pitch;
+    let (mut upper, mut lower): (Vec<_>, Vec<_>) = tags.into_iter().partition(|tag| tag.0 < middle);
+    // Nearest to the band first on both sides.
+    upper.sort_by(|a, b| b.0.total_cmp(&a.0));
+    lower.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut over_upper = upper.split_off(above_room.min(upper.len()));
+    let mut over_lower = lower.split_off(below_room.min(lower.len()));
+    let spill_down = over_upper.len().min(below_room - lower.len());
+    let spill_up = over_lower.len().min(above_room - upper.len());
+    lower.extend(over_upper.drain(..spill_down));
+    upper.extend(over_lower.drain(..spill_up));
+    if !over_upper.is_empty() || !over_lower.is_empty() {
+        let all = upper
+            .into_iter()
+            .chain(lower)
+            .chain(over_upper)
+            .chain(over_lower);
+        return stack(all.collect(), half, plot);
     }
-    below.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut floor = band.bottom + 1.0 + half;
-    for tag in &mut below {
+    let mut placed = stack(upper, half, above.rect(plot));
+    placed.extend(stack(lower, half, below.rect(plot)));
+    placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+    placed
+}
+
+/// A stretch of the axis between two heights.
+struct Span {
+    top: f32,
+    bottom: f32,
+}
+
+impl Span {
+    fn new(top: f32, bottom: f32) -> Self {
+        Self { top, bottom }
+    }
+
+    /// How many tags of height `2 * half` fit, one point apart.
+    fn capacity(&self, half: f32) -> usize {
+        let length = self.bottom - self.top;
+        if length < 2.0 * half {
+            0
+        } else {
+            ((length + 1.0) / (2.0 * half + 1.0)).floor() as usize
+        }
+    }
+
+    /// The plot narrowed to this stretch, which is all `stack` reads of it.
+    fn rect(&self, plot: Rect) -> Rect {
+        Rect::from_min_max(
+            Pos2::new(plot.left(), self.top),
+            Pos2::new(plot.right(), self.bottom.max(self.top)),
+        )
+    }
+}
+
+/// Spreads tags that sit closer than a tag is tall, top to bottom, inside the plot: pushed down
+/// from the top, then back up from the bottom, so a pile at an edge keeps its spacing instead
+/// of collapsing onto one height.
+fn stack(mut tags: Vec<AxisTag>, half: f32, plot: Rect) -> Vec<AxisTag> {
+    let pitch = 2.0 * half + 1.0;
+    let (lowest, highest) = (plot.top() + half, plot.bottom() - half);
+    tags.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut floor = lowest;
+    for tag in &mut tags {
         tag.0 = tag.0.max(floor);
         floor = tag.0 + pitch;
     }
-    above.extend(below);
-    stack(above, half, plot)
-}
-
-/// Spreads tags that sit closer than a tag is tall, top to bottom, inside the plot.
-fn stack(
-    mut tags: Vec<(f32, Color32, String)>,
-    half: f32,
-    plot: Rect,
-) -> Vec<(f32, Color32, String)> {
-    tags.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut floor = f32::MIN;
+    let mut ceiling = highest;
+    for tag in tags.iter_mut().rev() {
+        tag.0 = tag.0.min(ceiling);
+        ceiling = tag.0 - pitch;
+    }
+    // More tags than the plot holds: they overlap, but stay in it.
     for tag in &mut tags {
-        tag.0 = tag
-            .0
-            .max(floor)
-            .clamp(plot.top() + half, plot.bottom() - half);
-        floor = tag.0 + 2.0 * half + 1.0;
+        tag.0 = tag.0.clamp(lowest, highest.max(lowest));
     }
     tags
 }

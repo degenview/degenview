@@ -94,7 +94,7 @@ impl ChartWorkspace {
                     .apply(timeframe, base, &mut chart.candles, kline.clone())
             {
                 chart.live = Some(LiveMark::new(open_time, now));
-                chart.last_data_ms = Some(crate::clock::now_ms());
+                chart.note_arrival(timeframe, crate::clock::now_ms());
             }
         }
     }
@@ -130,6 +130,91 @@ mod tests {
         let lens: Vec<usize> = workspace.charts.iter().map(|c| c.candles.len()).collect();
         assert_eq!(lens, [2, 2, 1]);
         assert!(workspace.charts[0].live.is_some() && workspace.charts[1].live.is_some());
+    }
+
+    /// A 1-minute kline of the bar that holds the clock now.
+    fn minute_bar_now() -> Kline {
+        let now = crate::clock::now_ms();
+        let open = crate::model::market::bucket::bucket_start_ms(Timeframe::MINUTE_1, now);
+        let mut bar = candle(open, 1.0);
+        bar.close_time = open + 60_000 - 1;
+        bar
+    }
+
+    #[test]
+    fn a_live_bar_alone_gives_a_chart_its_countdown_while_the_history_is_still_coming() {
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::MINUTE_1;
+        workspace
+            .charts
+            .push(Chart::blank(1, "BTCUSDT", DataSource::Binance));
+        let now = crate::clock::now_ms();
+        assert!(
+            workspace.charts[0]
+                .bar_countdown(Timeframe::MINUTE_1, false, now)
+                .is_none(),
+            "nothing has arrived"
+        );
+
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            minute_bar_now(),
+            Instant::now(),
+        );
+        assert!(
+            workspace.charts[0]
+                .bar_countdown(Timeframe::MINUTE_1, false, crate::clock::now_ms())
+                .is_some(),
+            "the socket's bar is a bar of this timeframe, REST or no REST"
+        );
+    }
+
+    #[test]
+    fn a_live_bar_of_a_new_timeframe_counts_down_where_old_candles_do_not() {
+        let mut workspace = empty_workspace(1);
+        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
+        // The chart was fetched on 5 minutes; the workspace has moved on to 1 minute.
+        chart.candles = vec![candle(1, 1.0)];
+        chart.note_arrival(Timeframe::MINUTE_5, crate::clock::now_ms());
+        workspace.charts.push(chart);
+        workspace.timeframe = Timeframe::MINUTE_1;
+        let at = |workspace: &ChartWorkspace| {
+            workspace.charts[0].bar_countdown(Timeframe::MINUTE_1, false, crate::clock::now_ms())
+        };
+        assert!(
+            at(&workspace).is_none(),
+            "the old candles are not a bar of it"
+        );
+
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            minute_bar_now(),
+            Instant::now(),
+        );
+        assert!(at(&workspace).is_some());
+    }
+
+    #[test]
+    fn a_live_bar_the_chart_drops_records_no_arrival() {
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::MINUTE_1;
+        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
+        chart.candles = vec![candle(1_000_000_000_000, 1.0)];
+        workspace.charts.push(chart);
+        // Older than the newest candle: dropped.
+        workspace.apply_live_kline(
+            DataSource::Binance,
+            Timeframe::MINUTE_1,
+            "BTCUSDT",
+            candle(1, 1.0),
+            Instant::now(),
+        );
+        assert_eq!(workspace.charts[0].last_data_ms, None);
+        assert_eq!(workspace.charts[0].data_timeframe, None);
     }
 
     #[test]
