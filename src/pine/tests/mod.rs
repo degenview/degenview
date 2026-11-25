@@ -15,6 +15,8 @@ pub(in crate::pine) mod language;
 #[cfg(test)]
 pub(in crate::pine) mod security_conditional;
 #[cfg(test)]
+pub(in crate::pine) mod stock_session;
+#[cfg(test)]
 pub(in crate::pine) mod ta_reference;
 #[cfg(test)]
 pub(in crate::pine) mod varip;

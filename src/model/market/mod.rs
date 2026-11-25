@@ -11,6 +11,7 @@ pub mod live;
 pub mod natives;
 pub(in crate::model) mod pm_series;
 pub mod samples;
+pub mod session;
 pub(in crate::model) mod source;
 pub(in crate::model) mod timeframe;
 pub mod trend;

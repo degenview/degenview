@@ -364,7 +364,7 @@ fn a_us_stock_session_follows_daylight_saving() {
 }
 
 #[test]
-fn a_us_stock_has_no_weekend_sessions_and_notes_the_boundary_open() {
+fn a_us_stock_has_no_weekend_sessions() {
     let saturday = bar(ms(2024, 1, 6, 15, 0), HOUR, 10.0, 11.0, 9.0, 10.5);
     let stats = compute(
         &[saturday],
@@ -374,16 +374,37 @@ fn a_us_stock_has_no_weekend_sessions_and_notes_the_boundary_open() {
         &Filter::default(),
     );
     assert_eq!(stats, Err(Unavailable::NoBars));
-    let tuesday = bar(ms(2024, 1, 2, 15, 0), HOUR, 10.0, 11.0, 9.0, 10.5);
-    let stats = compute(
-        &[tuesday],
-        HOUR,
-        MarketHours::UsStock,
-        Outcome::DayUp,
-        &Filter::default(),
-    )
-    .unwrap();
-    assert!(stats.notes.contains(&Note::BoundaryOpen));
+}
+
+#[test]
+fn hourly_bars_on_the_clock_hour_blur_a_stocks_open_and_bars_cut_on_the_session_do_not() {
+    let compute_for = |open_utc_minutes: i64| {
+        // Tuesday 2 Jan 2024, standard time: the session opens at 14:30 UTC.
+        let first = bar(
+            ms(2024, 1, 2, 0, 0) + open_utc_minutes * 60_000,
+            HOUR,
+            10.0,
+            11.0,
+            9.0,
+            10.5,
+        );
+        compute(
+            &[first],
+            HOUR,
+            MarketHours::UsStock,
+            Outcome::DayUp,
+            &Filter::default(),
+        )
+        .unwrap()
+    };
+    // 14:00 UTC is 09:00 New York: the bar holds the pre-market half hour.
+    assert!(compute_for(14 * 60).notes.contains(&Note::BoundaryOpen));
+    // 14:30 UTC is the open itself.
+    assert!(
+        !compute_for(14 * 60 + 30)
+            .notes
+            .contains(&Note::BoundaryOpen)
+    );
 }
 
 #[test]

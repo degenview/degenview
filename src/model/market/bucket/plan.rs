@@ -2,23 +2,36 @@
 //! folding the coarsest finer native one. Every provider plans through this, so what a source can
 //! chart (`DataSource::serves`) and what its fetch asks for cannot drift apart.
 
-use super::{DAY_MS, bucket_start_ms, fold, fold_base};
+use super::{DAY_MS, Grid};
 use crate::model::{Kline, TimeUnit, Timeframe};
 
 /// The most days a calendar month has, for sizing a fold that must hold a whole month.
 const LONGEST_MONTH_DAYS: i64 = 31;
 
-/// A target timeframe and the native candle length it is served from.
+/// A target timeframe and the native candle length it is served from, cut on a [`Grid`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FoldPlan {
     target: Timeframe,
     base: Timeframe,
+    grid: Grid,
 }
 
 impl FoldPlan {
-    /// The plan for `target` over a source's `natives`; `None` when none nests in it.
+    /// The plan for `target` over a source's `natives` on the UTC grid; `None` when none nests in
+    /// it.
     pub fn new(target: Timeframe, natives: &[Timeframe]) -> Option<Self> {
-        fold_base(target, natives).map(|base| Self { target, base })
+        Self::in_grid(Grid::Utc, target, natives)
+    }
+
+    /// The plan for `target` over a source's `natives`, cut on `grid`.
+    pub fn in_grid(grid: Grid, target: Timeframe, natives: &[Timeframe]) -> Option<Self> {
+        grid.fold_base(target, natives)
+            .map(|base| Self { target, base, grid })
+    }
+
+    /// Where the target's buckets are cut.
+    pub fn grid(self) -> Grid {
+        self.grid
     }
 
     pub fn target(self) -> Timeframe {
@@ -52,23 +65,26 @@ impl FoldPlan {
 
     /// The base candles to ask for to end with `limit` whole target candles: those, and one more
     /// target candle's worth for the fragment the start of the request cuts off. A native target
-    /// is asked for as it is.
+    /// is asked for as it is. A grid that leaves candles out asks for more, so what is left is
+    /// still enough ([`Grid::fetch_slack`]).
     pub fn base_count(self, limit: usize) -> usize {
-        if self.is_native() {
+        let needed = if self.is_native() {
             limit
         } else {
             (limit + 1) * self.per_target()
-        }
+        };
+        needed * self.grid.fetch_slack(self.base)
     }
 
     /// `candles` (ascending, of the base length) as target candles: folded unless the source has the
     /// target itself. `truncated` says the series starts where a request stopped, not where the
-    /// market began, so the fragment a fold makes of its first bucket is dropped.
+    /// market began, so the fragment a fold makes of its first bucket is dropped. On the session
+    /// grid the candles outside the session are left out either way.
     pub fn fold(self, candles: Vec<Kline>, truncated: bool) -> Vec<Kline> {
         if self.is_native() {
-            candles
+            self.grid.retain_traded(candles, self.target)
         } else {
-            fold(&candles, self.target, truncated)
+            self.grid.fold(&candles, self.target, truncated)
         }
     }
 
@@ -99,9 +115,10 @@ impl FoldPlan {
         let begins_inside = candles
             .first()
             .is_some_and(|first| since_ms > self.earliest_slot(first.open_time));
-        let in_one_bucket = candles.first().zip(candles.last()).is_some_and(|(a, b)| {
-            bucket_start_ms(self.target, a.open_time) == bucket_start_ms(self.target, b.open_time)
-        });
+        let in_one_bucket = candles
+            .first()
+            .zip(candles.last())
+            .is_some_and(|(a, b)| self.target_start(a.open_time) == self.target_start(b.open_time));
         if begins_inside && in_one_bucket {
             return Vec::new();
         }
@@ -116,9 +133,9 @@ impl FoldPlan {
         let Some(last) = base.last().filter(|_| !self.is_native()) else {
             return Vec::new();
         };
-        let bucket = bucket_start_ms(self.target, last.open_time);
+        let bucket = self.target_start(last.open_time);
         base.iter()
-            .filter(|candle| bucket_start_ms(self.target, candle.open_time) == bucket)
+            .filter(|candle| self.target_start(candle.open_time) == bucket)
             .cloned()
             .collect()
     }
@@ -126,7 +143,12 @@ impl FoldPlan {
     /// Where the first base slot of the target bucket holding `open_time` sits: the bucket's start
     /// plus the offset the provider stamps base candles with.
     fn earliest_slot(self, open_time: i64) -> i64 {
-        bucket_start_ms(self.target, open_time) + open_time - bucket_start_ms(self.base, open_time)
+        self.target_start(open_time) + open_time - self.grid.bucket_start_ms(self.base, open_time)
+    }
+
+    /// Open time of the target bucket that holds `t_ms`.
+    fn target_start(self, t_ms: i64) -> i64 {
+        self.grid.bucket_start_ms(self.target, t_ms)
     }
 
     fn trimmed(self, candles: Vec<Kline>, truncated: bool, limit: usize) -> Vec<Kline> {

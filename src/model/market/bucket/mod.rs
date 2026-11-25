@@ -2,7 +2,7 @@
 //! ones. Every provider, the chart and Pine cut buckets here, so one market looks the same
 //! whichever source serves it.
 //!
-//! Buckets are anchored in UTC:
+//! Buckets are anchored in UTC (the [`Grid::Utc`] every crypto source shares):
 //!
 //! - **Seconds, minutes and hours** restart at midnight: a `22m` day has 65 full buckets and a
 //!   shorter last one that ends at 00:00 (a `7s` day ends the same way).
@@ -13,12 +13,18 @@
 //!   is the calendar quarter and `12M` the calendar year.
 //!
 //! A bucket closes 1 ms before the next opens.
+//!
+//! A US stock's intraday buckets are cut on its session instead ([`Grid::UsEquities`]: anchored at
+//! 09:30 New York, restarted by every session, cut at the 16:00 close, nothing outside it). A
+//! source says which grid its markets use (`DataSource::grid`) and plans with it ([`FoldPlan`]).
 
 use crate::format::{civil_from_days, days_from_civil};
 use crate::model::{Kline, TimeUnit, Timeframe};
 
+mod grid;
 mod plan;
 
+pub use grid::Grid;
 pub use plan::FoldPlan;
 
 const DAY_MS: i64 = 86_400_000;
@@ -71,53 +77,6 @@ fn month_index(days: i64) -> i64 {
 /// Midnight UTC on the first of the month `index` months after 1970-01.
 fn month_start_ms(index: i64) -> i64 {
     days_from_civil(1970 + index.div_euclid(12), index.rem_euclid(12) + 1, 1) * DAY_MS
-}
-
-/// Fold ascending candles into buckets of `tf`, the way Binance cuts them. Each bucket opens at
-/// its start and closes a millisecond before the next; the forming last bucket is kept.
-///
-/// `truncated` says the series starts where a request stopped rather than where the market
-/// began: its first bucket is then a fragment and is dropped, so no bar shows a range the data
-/// did not cover.
-pub fn fold(candles: &[Kline], tf: Timeframe, truncated: bool) -> Vec<Kline> {
-    let mut out: Vec<Kline> = Vec::new();
-    for candle in candles {
-        let bucket = bucket_start_ms(tf, candle.open_time);
-        match out.last_mut() {
-            Some(last) if last.open_time == bucket => last.absorb(candle),
-            _ => out.push(Kline {
-                open_time: bucket,
-                close_time: next_bucket_start_ms(tf, bucket) - 1,
-                ..candle.clone()
-            }),
-        }
-    }
-    if truncated
-        && let (Some(first), Some(bucket)) = (candles.first(), out.first())
-        && first.open_time > bucket.open_time
-        && out.len() > 1
-    {
-        out.remove(0);
-    }
-    out
-}
-
-/// The coarsest of the `natives` whose buckets nest exactly inside `target`'s, so `target` can be
-/// folded from it: `target` itself when it is native. None when no native does.
-///
-/// Intraday natives must divide the day (their buckets restart at midnight like every intraday
-/// bucket here; one that does not has an anchoring a provider chooses, not us) and, for an
-/// intraday target, divide the target. Days nest in days of a multiple of their count, and in
-/// weeks and months as single days; weeks in weeks, months in months.
-pub fn fold_base(target: Timeframe, natives: &[Timeframe]) -> Option<Timeframe> {
-    if natives.contains(&target) {
-        return Some(target);
-    }
-    natives
-        .iter()
-        .copied()
-        .filter(|native| nests_in(*native, target))
-        .max()
 }
 
 /// Whether every bucket of `base` lies inside one bucket of `target`, and every bucket of `target`

@@ -48,6 +48,7 @@ pub(super) fn symbol_info(symbol: &str, source: DataSource, chart_type: ChartTyp
         .to_owned(),
         base_currency: None,
         chart: chart_type.kind(),
+        grid: source.grid(),
     }
 }
 

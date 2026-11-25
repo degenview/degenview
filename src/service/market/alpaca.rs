@@ -399,7 +399,7 @@ mod tests {
                 volume: 1.0,
             },
         ];
-        let folded = bucket::fold(&bars, Timeframe::MONTH_3, false);
+        let folded = bucket::Grid::Utc.fold(&bars, Timeframe::MONTH_3, false);
         assert_eq!(folded.len(), 2);
         assert_eq!(folded[0].open_time, jan);
         assert_eq!(folded[0].high, 12.0);
@@ -473,16 +473,72 @@ mod tests {
 
     #[test]
     fn other_lengths_fold_the_coarsest_native_that_nests() {
-        assert_eq!(request("1h", 100), ("1Hour".to_owned(), 100));
-        assert_eq!(request("4h", 100), ("1Hour".to_owned(), 101 * 4));
-        // 3Hour and 20Min exist on Alpaca but are not on our grid: a fold of the hour is.
-        assert_eq!(request("3h", 100), ("1Hour".to_owned(), 101 * 3));
-        assert_eq!(request("45m", 100), ("15Min".to_owned(), 101 * 3));
-        assert_eq!(request("22m", 100), ("1Min".to_owned(), 101 * 22));
+        // A stock's session opens at 09:30, so its hours are not Alpaca's clock-hour bars: they
+        // fold from the half hours (a fold of two), and so do 3Hour and 4Hour.
+        // Each is asked for three times over: Alpaca's answer holds the pre and post market, which
+        // the session grid leaves out.
+        assert_eq!(request("30m", 100), ("30Min".to_owned(), 3 * 100));
+        assert_eq!(request("1h", 100), ("30Min".to_owned(), 3 * 101 * 2));
+        assert_eq!(request("4h", 100), ("30Min".to_owned(), 3 * 101 * 8));
+        assert_eq!(request("3h", 100), ("30Min".to_owned(), 3 * 101 * 6));
+        assert_eq!(request("45m", 100), ("15Min".to_owned(), 3 * 101 * 3));
+        assert_eq!(request("22m", 100), ("1Min".to_owned(), 3 * 101 * 22));
         assert_eq!(request("2d", 100), ("1Day".to_owned(), 101 * 2));
         assert_eq!(request("2w", 100), ("1Week".to_owned(), 101 * 2));
         assert_eq!(request("3M", 100), ("1Month".to_owned(), 101 * 3));
         assert_eq!(request("1Y", 500), ("1Month".to_owned(), 501 * 12));
+    }
+
+    /// A day of 30 minute bars, 08:00 to 20:00 New York on 24 Nov 2026 (13:00 to 01:00 UTC), as
+    /// Alpaca answers them: the pre and post market among them.
+    fn half_hours_of_the_24th() -> Vec<Kline> {
+        let bars: Vec<String> = (0..24)
+            .map(|index| {
+                let minutes = 13 * 60 + index * 30;
+                let (day, hour, minute) = (24 + minutes / 1440, minutes / 60 % 24, minutes % 60);
+                format!(
+                    r#"{{"t":"2026-11-{day:02}T{hour:02}:{minute:02}:00Z","o":1,"h":2,"l":0.5,"c":1.5,"v":10}}"#
+                )
+            })
+            .collect();
+        parse_bars(
+            &format!(r#"{{"bars":[{}]}}"#, bars.join(",")),
+            Timeframe::new(30, TimeUnit::Minute).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_stocks_hours_are_cut_from_the_open_and_leave_out_the_extended_hours() {
+        let bars = half_hours_of_the_24th();
+        let hour = plan(DataSource::Alpaca, Timeframe::HOUR_1).unwrap();
+        let since = day_ms(2026, 11, 24);
+        let shown = hour.shape_since(bars.clone(), 1_000, since, 100);
+        let open = day_ms(2026, 11, 24) + 14 * 3_600_000 + 30 * 60_000;
+        let opens: Vec<i64> = shown.iter().map(|bar| bar.open_time).collect();
+        // TradingView, AAPL 24 Nov 2026: 09:30 10:30 ... 15:30 New York, nothing around them.
+        assert_eq!(
+            opens,
+            (0..7)
+                .map(|hour| open + hour * 3_600_000)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(shown[0].close_time, open + 3_600_000 - 1);
+        assert_eq!(
+            shown[6].close_time,
+            open + 6 * 3_600_000 + 30 * 60_000 - 1,
+            "the 15:30 candle is half an hour long: it closes at 16:00"
+        );
+        assert_eq!(shown[0].volume, 20.0);
+        let four = plan(
+            DataSource::Alpaca,
+            Timeframe::new(4, TimeUnit::Hour).unwrap(),
+        )
+        .unwrap();
+        let shown = four.shape_since(bars, 1_000, since, 100);
+        let opens: Vec<i64> = shown.iter().map(|bar| bar.open_time).collect();
+        assert_eq!(opens, [open, open + 4 * 3_600_000]);
+        assert_eq!(shown[1].close_time, open + 6 * 3_600_000 + 30 * 60_000 - 1);
     }
 
     #[test]

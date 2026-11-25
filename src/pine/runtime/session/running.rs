@@ -58,8 +58,10 @@ impl Session {
         self.first_bar_time = bars.first().map(|bar| bar.open_time).or(live_open);
         let seconds = self.bar_seconds;
         self.history_end = bars.last().map(|bar| {
+            let grid = self.symbol.grid;
             let end = crate::pine::time::bucket::end(
-                crate::pine::time::bucket::start(bar.open_time, seconds),
+                grid,
+                crate::pine::time::bucket::start(grid, bar.open_time, seconds),
                 seconds,
             );
             match self.now_ms {

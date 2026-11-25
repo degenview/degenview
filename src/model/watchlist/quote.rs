@@ -1,8 +1,8 @@
 //! What a watchlist row shows for one market. Transient: never stored with a
 //! watchlist, and a missing value stays `None` so the row shows a dash, not zero.
 
-use crate::format;
 use crate::i18n::tr;
+use crate::model::market::session;
 use crate::model::{DataSource, PriceFormat};
 
 /// Text for a value the provider did not supply.
@@ -209,47 +209,10 @@ pub fn evaluate_freshness(source: DataSource, received_at_ms: i64, now_ms: i64) 
     if now_ms - received_at_ms > maximum_age_secs(source) * 1_000 {
         return Freshness::Stale;
     }
-    if source == DataSource::Alpaca && !is_us_market_open(now_ms) {
+    if source == DataSource::Alpaca && !session::is_open(now_ms) {
         return Freshness::MarketClosed;
     }
     Freshness::Live
-}
-
-/// Regular US session, Monday to Friday 9:30 to 16:00 Eastern. Holidays are not
-/// modelled, so on one a stock reads "live" at its last close.
-pub fn is_us_market_open(epoch_ms: i64) -> bool {
-    let local = epoch_ms.div_euclid(1_000) + eastern_offset_secs(epoch_ms);
-    let days = local.div_euclid(86_400);
-    // 1970-01-01 was a Thursday; 0 = Monday.
-    let weekday = (days + 3).rem_euclid(7);
-    if weekday >= 5 {
-        return false;
-    }
-    let minutes = local.rem_euclid(86_400) / 60;
-    (9 * 60 + 30..16 * 60).contains(&minutes)
-}
-
-/// UTC offset of America/New_York at `epoch_ms`: -5h, or -4h during US daylight time
-/// (02:00 local on the second Sunday of March to 02:00 on the first Sunday of November).
-fn eastern_offset_secs(epoch_ms: i64) -> i64 {
-    let seconds = epoch_ms.div_euclid(1_000);
-    let (year, ..) = format::civil_from_days(seconds.div_euclid(86_400));
-    // Transitions in UTC: 02:00 EST = 07:00 UTC (spring); 02:00 EDT = 06:00 UTC (autumn).
-    let spring = nth_sunday(year, 3, 2) * 86_400 + 7 * 3_600;
-    let autumn = nth_sunday(year, 11, 1) * 86_400 + 6 * 3_600;
-    if (spring..autumn).contains(&seconds) {
-        -4 * 3_600
-    } else {
-        -5 * 3_600
-    }
-}
-
-/// Days since the epoch of the `nth` Sunday of a month.
-fn nth_sunday(year: i64, month: i64, nth: i64) -> i64 {
-    let first = format::days_from_civil(year, month, 1);
-    // Sunday is weekday 6 with Monday = 0.
-    let weekday = (first + 3).rem_euclid(7);
-    first + (6 - weekday).rem_euclid(7) + (nth - 1) * 7
 }
 
 // MARK: Formatting
@@ -481,29 +444,15 @@ mod tests {
     #[test]
     fn us_market_hours_follow_daylight_time() {
         // Monday 2024-01-15 14:29 UTC = 09:29 EST (closed); 14:30 UTC = 09:30 (open).
-        assert!(!is_us_market_open(1_705_328_940_000));
-        assert!(is_us_market_open(1_705_329_000_000));
+        assert!(!session::is_open(1_705_328_940_000));
+        assert!(session::is_open(1_705_329_000_000));
         // 21:00 UTC = 16:00 EST: closed again.
-        assert!(!is_us_market_open(1_705_352_400_000));
+        assert!(!session::is_open(1_705_352_400_000));
         // Monday 2024-07-15 13:30 UTC = 09:30 EDT (open); 13:29 UTC is closed.
-        assert!(is_us_market_open(1_721_050_200_000));
-        assert!(!is_us_market_open(1_721_050_140_000));
+        assert!(session::is_open(1_721_050_200_000));
+        assert!(!session::is_open(1_721_050_140_000));
         // Saturday 2024-07-13 15:00 UTC.
-        assert!(!is_us_market_open(1_720_882_800_000));
-    }
-
-    #[test]
-    fn daylight_time_boundaries_for_2024() {
-        // Second Sunday of March 2024 is the 10th; first Sunday of November is the 3rd.
-        assert_eq!(nth_sunday(2024, 3, 2), format::days_from_civil(2024, 3, 10));
-        assert_eq!(
-            nth_sunday(2024, 11, 1),
-            format::days_from_civil(2024, 11, 3)
-        );
-        let before = format::days_from_civil(2024, 3, 10) * 86_400_000 + 6 * 3_600_000;
-        let after = format::days_from_civil(2024, 3, 10) * 86_400_000 + 7 * 3_600_000;
-        assert_eq!(eastern_offset_secs(before), -5 * 3_600);
-        assert_eq!(eastern_offset_secs(after), -4 * 3_600);
+        assert!(!session::is_open(1_720_882_800_000));
     }
 
     #[test]

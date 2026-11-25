@@ -243,7 +243,7 @@ impl Session {
         if self.fixed_bar_seconds.is_none() && bar.close_time > bar.open_time {
             bar.close_time + 1
         } else {
-            crate::pine::time::bucket::close_time(bar.open_time, self.bar_seconds)
+            crate::pine::time::bucket::close_time(self.symbol.grid, bar.open_time, self.bar_seconds)
         }
     }
 
