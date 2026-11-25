@@ -1576,7 +1576,7 @@ msgstr "Auto · {interval}"
 
 #: src/ui/portfolio/cmc_import.rs
 msgid "Auto-matched"
-msgstr "Emparejado auto."
+msgstr "Emparejado"
 
 #: src/pine_studio/ai/panel.rs
 msgid "Auto: a change that compiles is applied when the assistant finishes, as one undo step. Click to review each change yourself."
@@ -2437,7 +2437,7 @@ msgstr "Cambio"
 
 #: src/model/watchlist/mod.rs
 msgid "Change %"
-msgstr "Cambio %"
+msgstr "Var. %"
 
 #: src/model/mcp/operation.rs
 msgid "Change a drawing"
@@ -2481,7 +2481,7 @@ msgstr "Modificar orden"
 
 #: src/model/watchlist/quote.rs
 msgid "Change over the last 24 hours"
-msgstr "Cambio en las últimas 24 horas"
+msgstr "Variación en las últimas 24 horas"
 
 #: src/model/watchlist/quote.rs
 msgid "Change over the market's comparison window"
@@ -2599,7 +2599,7 @@ msgstr "Mostrar todas las opciones juntas en el gráfico"
 
 #: src/workspace/chart/mod.rs
 msgid "Chart fetch stopped before returning data"
-msgstr "La carga del gráfico se detuvo antes de devolver datos"
+msgstr "La carga del gráfico se ha detenido antes de devolver datos"
 
 #: src/ui/alert/script_list.rs
 msgid "Chart not open"
@@ -2607,7 +2607,7 @@ msgstr "Gráfico no abierto"
 
 #: src/model/drawings/tool.rs
 msgid "Chart patterns"
-msgstr "Patrones de gráfico"
+msgstr "Patrones gráficos"
 
 #: src/ui/chart/card/header.rs src/ui/workspace/toolbar.rs
 msgid "Chart settings"
@@ -2896,12 +2896,12 @@ msgstr "Borrado"
 #: src/ui/settings/storage.rs
 msgid "Cleared {size}, but {count} item could not be removed."
 msgid_plural "Cleared {size}, but {count} items could not be removed."
-msgstr[0] "Se liberaron {size}, pero {count} elemento no se pudo quitar."
-msgstr[1] "Se liberaron {size}, pero {count} elementos no se pudieron quitar."
+msgstr[0] "Se han liberado {size}, pero {count} elemento no se ha podido quitar."
+msgstr[1] "Se han liberado {size}, pero {count} elementos no se han podido quitar."
 
 #: src/ui/settings/storage.rs
 msgid "Cleared {size}."
-msgstr "Se liberaron {size}."
+msgstr "Se han liberado {size}."
 
 #: src/ui/settings/storage.rs
 msgid "Clearing…"
@@ -3338,7 +3338,7 @@ msgstr "Conectado"
 
 #: src/ui/settings/brokers.rs
 msgid "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}"
-msgstr "Conectado, pero no se pudo guardar la clave, así que se olvidará al salir. Una clave guardada antes puede seguir almacenada y volver a conectarse en el próximo inicio: {error}"
+msgstr "Conectado, pero no se ha podido guardar la clave, así que se olvidará al salir. Una clave guardada antes puede seguir almacenada y volver a conectarse en el próximo inicio: {error}"
 
 #: src/ui/settings/brokers.rs
 msgid "Connected. Nothing is saved: connect again after restarting DegenView."
@@ -3620,7 +3620,7 @@ msgstr "No se ha podido comparar la versión {current}."
 
 #: src/ui/webhook/settings.rs
 msgid "Could not connect"
-msgstr "No se pudo conectar"
+msgstr "No se ha podido conectar"
 
 #: src/service/update/install/app_bundle.rs
 #: src/service/update/install/portable_binary.rs
@@ -3693,11 +3693,11 @@ msgstr "No se ha podido quitar del llavero: {reason}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not remove the key: {error}"
-msgstr "No se pudo quitar la clave: {error}"
+msgstr "No se ha podido quitar la clave: {error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not remove the keys: {error}"
-msgstr "No se pudieron quitar las claves: {error}"
+msgstr "No se han podido quitar las claves: {error}"
 
 #: src/host/sync/mod.rs
 msgid "Could not save changes from iCloud: {error}"
@@ -3753,7 +3753,7 @@ msgstr "No se han podido guardar tus temas: {error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not save: {error}"
-msgstr "No se pudo guardar: {error}"
+msgstr "No se ha podido guardar: {error}"
 
 #: src/host/sync/mod.rs
 msgid "Could not send those deletions: {error}"
@@ -3765,7 +3765,7 @@ msgstr "No se ha podido configurar este Mac para la sincronización con iCloud: 
 
 #: src/pine_studio/ai/mod.rs
 msgid "Could not start the request."
-msgstr "No se pudo iniciar la solicitud."
+msgstr "No se ha podido iniciar la solicitud."
 
 #: src/host/sync/mod.rs
 msgid "Could not switch to that Apple Account: {error}"
@@ -3797,7 +3797,7 @@ msgstr "No se ha podido escribir {path}: {error}"
 
 #: src/ui/settings/about.rs
 msgid "Couldn't check for updates"
-msgstr "No se pudo comprobar si hay actualizaciones"
+msgstr "No se ha podido comprobar si hay actualizaciones"
 
 #: src/service/watchlist_quotes/engine.rs
 msgid "Couldn't find this pair's network"
@@ -3805,23 +3805,23 @@ msgstr "No se ha encontrado la red de este par"
 
 #: src/ui/chart/settings/compare.rs
 msgid "Couldn't load: {message}"
-msgstr "No se pudo cargar: {message}"
+msgstr "No se ha podido cargar: {message}"
 
 #: src/ui/chart/card/mod.rs
 msgid "Couldn't refresh · showing the last result"
-msgstr "No se pudo actualizar · se muestra el último resultado"
+msgstr "No se ha podido actualizar · se muestra el último resultado"
 
 #: src/ui/chart/card/mod.rs
 msgid "Couldn't refresh · showing the last result ({error})"
-msgstr "No se pudo actualizar · se muestra el último resultado ({error})"
+msgstr "No se ha podido actualizar · se muestra el último resultado ({error})"
 
 #: src/ui/settings/about.rs
 msgid "Couldn't update to DegenView {version}"
-msgstr "No se pudo actualizar a DegenView {version}"
+msgstr "No se ha podido actualizar a DegenView {version}"
 
 #: src/model/watchlist/mod.rs src/workspace/watchlist.rs
 msgid "Couldn’t Save"
-msgstr "No se pudo guardar"
+msgstr "No se ha podido guardar"
 
 #: src/app/window.rs
 msgid "Couldn’t Save Open Tabs"
@@ -3829,27 +3829,27 @@ msgstr "No se han podido guardar las pestañas abiertas"
 
 #: src/workspace/layout/autosave.rs
 msgid "Couldn’t change Autosave: {error}"
-msgstr "No se pudo cambiar el autoguardado: {error}"
+msgstr "No se ha podido cambiar el guardado automático: {error}"
 
 #: src/workspace/layout/mod.rs
 msgid "Couldn’t delete the layout: {error}"
-msgstr "No se pudo eliminar el diseño: {error}"
+msgstr "No se ha podido eliminar el diseño: {error}"
 
 #: src/workspace/tab_link/mod.rs
 msgid "Couldn’t load {symbol}. This tab kept {previous}."
-msgstr "No se pudo cargar {symbol}. Esta pestaña mantiene {previous}."
+msgstr "No se ha podido cargar {symbol}. Esta pestaña mantiene {previous}."
 
 #: src/workspace/layout/mod.rs
 msgid "Couldn’t rename the layout: {error}"
-msgstr "No se pudo renombrar el diseño: {error}"
+msgstr "No se ha podido renombrar el diseño: {error}"
 
 #: src/workspace/layout/mod.rs
 msgid "Couldn’t save the layout: {error}"
-msgstr "No se pudo guardar el diseño: {error}"
+msgstr "No se ha podido guardar el diseño: {error}"
 
 #: src/workspace/layout/mod.rs
 msgid "Couldn’t save “{layout}”: {error}"
-msgstr "No se pudo guardar “{layout}”: {error}"
+msgstr "No se ha podido guardar “{layout}”: {error}"
 
 #: src/model/chart/price_format.rs
 msgid "Count the zeros"
@@ -4679,7 +4679,7 @@ msgstr "Haz doble clic en una fila para ver sus transacciones."
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Down"
-msgstr "Abajo"
+msgstr "A la baja"
 
 #: src/ui/chart/settings/style.rs
 msgid "Down bars"
@@ -5514,7 +5514,7 @@ msgstr "Exportar lista de seguimiento"
 
 #: src/ui/paper/panel/mod.rs
 msgid "Exported {summary} to “{name}”."
-msgstr "Exportación a “{name}”: {summary}."
+msgstr "Se ha exportado {summary} a “{name}”."
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Exported “{file}”."
@@ -5564,7 +5564,7 @@ msgstr "Fallido"
 #: src/ui/drawing/layer/forecast_shapes.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Failure"
-msgstr "Fallo"
+msgstr "Fracaso"
 
 #: src/ui/chart/settings/style.rs
 msgid "Falling columns."
@@ -5851,11 +5851,11 @@ msgstr "Busca un símbolo para ejecutar este script."
 
 #: src/pine_studio/profiler/ui.rs
 msgid "Find what makes a script slow"
-msgstr "Descubre qué hace lento a un script"
+msgstr "Descubre qué hace lento un script"
 
 #: src/pine_studio/ai/panel.rs
 msgid "Find what makes this script slow"
-msgstr "Averigua qué hace lento este script"
+msgstr "Descubre qué hace lento este script"
 
 #: src/ui/portfolio/cmc_import.rs
 msgid "Finding {currency} markets — Binance, then Coinbase, CoinGecko and DEXScreener…"
@@ -6209,7 +6209,7 @@ msgstr "Color superior del degradado"
 
 #: src/model/pattern/elliott.rs
 msgid "Grand Supercycle"
-msgstr "Gran supraciclo"
+msgstr "Gran superciclo"
 
 #: src/ui/chart/cmc_gauge.rs
 msgid "Greed"
@@ -6293,7 +6293,7 @@ msgstr "Cabeceras"
 
 #: src/ui/webhook/editor.rs
 msgid "Headers, {count} set"
-msgstr "Cabeceras, {count} definidas"
+msgstr "Cabeceras definidas: {count}"
 
 #: src/ui/settings/window.rs
 msgid "Healthy"
@@ -6603,7 +6603,7 @@ msgstr "Las barras horarias difuminan la apertura"
 
 #: src/model/session_stats/mod.rs
 msgid "Hourly bars: a day's open is its first bar's open, which may be a pre-market price."
-msgstr "Barras horarias: la apertura de un día es la de su primera barra, que puede ser un precio de pre-mercado."
+msgstr "Barras horarias: la apertura de un día es la de su primera barra, que puede ser un precio de premercado."
 
 #: src/model/drawings/style.rs
 msgid "Hourly candles"
@@ -6801,12 +6801,12 @@ msgstr "“{name}” importado."
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Imported “{name}”. One value in the file was not usable and was skipped: {value}"
-msgstr "“{name}” importado. Un valor del archivo no se pudo usar y se omitió: {value}"
+msgstr "“{name}” importado. Un valor del archivo no se ha podido usar y se omitió: {value}"
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Imported “{name}”. {count} value in the file was not usable and was skipped, such as: {value}"
 msgid_plural "Imported “{name}”. {count} values in the file were not usable and were skipped, such as: {value}"
-msgstr[0] "“{name}” importado. {count} valor del archivo no se pudo usar y se omitió, por ejemplo: {value}"
+msgstr[0] "“{name}” importado. {count} valor del archivo no se ha podido usar y se omitió, por ejemplo: {value}"
 msgstr[1] "“{name}” importado. {count} valores del archivo no se pudieron usar y se omitieron, por ejemplo: {value}"
 
 #: src/ui/settings/pine_studio/mod.rs
@@ -7159,11 +7159,11 @@ msgstr "Clave del entorno"
 
 #: src/ui/settings/ai.rs
 msgid "Key removed."
-msgstr "Clave quitada."
+msgstr "Clave eliminada."
 
 #: src/ui/settings/api_keys.rs
 msgid "Key removed. Public API mode is active."
-msgstr "Clave quitada. El modo de API pública está activo."
+msgstr "Clave eliminada. El modo de API pública está activo."
 
 #: src/ui/settings/api_keys.rs
 msgid "Keys removed. Stock charts need keys to load."
@@ -8484,7 +8484,7 @@ msgstr "Pon nombre a la copia."
 
 #: src/ui/chart/settings/style.rs
 msgid "Name the highest high and lowest low in view."
-msgstr "Nombra el máximo más alto y el mínimo más bajo a la vista."
+msgstr "Rotula el máximo más alto y el mínimo más bajo visibles."
 
 #: src/ui/watchlist/sidebar/mod.rs
 msgid "Name the new watchlist."
@@ -8943,11 +8943,11 @@ msgstr "Ninguna línea ha ocupado una parte medible del tiempo."
 
 #: src/ui/settings/mcp/security.rs
 msgid "No local network address found. Type the one to listen on"
-msgstr "No se encontró ninguna dirección de red local. Escribe en la que escuchar"
+msgstr "No se ha encontrado ninguna dirección de red local. Escribe la dirección en la que escuchar"
 
 #: src/ui/trade/order_sheet/mod.rs
 msgid "No market in focus"
-msgstr "Ningún mercado enfocado"
+msgstr "Ningún mercado activo"
 
 #: src/ui/chart/settings/compare.rs
 msgid "No market matches “{query}”"
@@ -9406,7 +9406,7 @@ msgstr "Nada que restablecer"
 
 #: src/ui/settings/sync.rs
 msgid "Nothing was lost: both versions were kept. Delete the copies you don't need, then dismiss these."
-msgstr "No se perdió nada: se conservaron ambas versiones. Elimina las copias que no necesites y luego descarta estos avisos."
+msgstr "No se ha perdido nada: se conservaron ambas versiones. Elimina las copias que no necesites y luego descarta estos avisos."
 
 #: src/ui/mcp/activity.rs
 msgid "Nothing yet. Calls from connected clients appear here."
@@ -9703,7 +9703,7 @@ msgstr "Abrir script…"
 #: src/ui/broker/panel.rs src/ui/chart/symbol_picker/mod.rs
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Open Settings"
-msgstr "Abrir ajustes"
+msgstr "Abrir Ajustes"
 
 #: src/pine_studio/workspace.rs
 msgid "Open a Script"
@@ -9731,7 +9731,7 @@ msgstr "Marcas de apertura y cierre"
 
 #: src/ui/watchlist/sidebar/menus.rs
 msgid "Open in Focused Chart"
-msgstr "Abrir en el gráfico enfocado"
+msgstr "Abrir en el gráfico activo"
 
 #: src/ui/watchlist/sidebar/menus.rs
 msgid "Open in New Tab"
@@ -10068,7 +10068,7 @@ msgstr "Pausar"
 
 #: src/ui/replay/bar.rs
 msgid "Pause (Shift–Down Arrow)"
-msgstr "Pausa (Shift–Flecha abajo)"
+msgstr "Pausar (Shift–Flecha abajo)"
 
 #: src/model/mcp/operation.rs
 msgid "Pause a price alert"
@@ -10465,7 +10465,7 @@ msgstr "Cartera · {scope}"
 
 #: src/model/chart/snapshot/studio.rs
 msgid "Portion"
-msgstr "Porción"
+msgstr "Zona"
 
 #: src/ui/drawing/properties/style.rs src/ui/drawing/properties/text.rs
 msgid "Position"
@@ -10617,7 +10617,7 @@ msgstr "Variación de precio"
 
 #: src/model/chart/context/mod.rs
 msgid "Price is at the market"
-msgstr "El precio está en el mercado"
+msgstr "El precio coincide con el de mercado"
 
 #: src/model/drawings/tool.rs src/ui/drawing/properties/style.rs
 msgid "Price label"
@@ -10818,7 +10818,7 @@ msgstr "Pull/Stack: tamaño añadido (+) o retirado (−) en el precio durante l
 
 #: src/ui/market_flow/book/ladder.rs
 msgid "Pulled {size} in the last 10 s"
-msgstr "Retirado {size} en los últimos 10 s"
+msgstr "Se han retirado {size} en los últimos 10 s"
 
 #: src/model/editor_theme/roles.rs
 msgid "Punctuation"
@@ -12521,7 +12521,7 @@ msgstr "Seleccionado"
 
 #: src/model/chart/snapshot/studio.rs
 msgid "Selected portion"
-msgstr "Porción seleccionada"
+msgstr "Zona seleccionada"
 
 #: src/model/editor_theme/roles.rs
 msgid "Selected suggestion"
@@ -13380,7 +13380,7 @@ msgstr "Salir: ejecutar hasta que la función retorne"
 
 #: src/pine_studio/debug/panel/toolbar.rs
 msgid "Step over: run this statement and stop at the next one"
-msgstr "Paso por encima: ejecuta esta instrucción y se detiene en la siguiente"
+msgstr "Paso por encima: ejecutar esta instrucción y detenerse en la siguiente"
 
 #: src/ui/replay/bar.rs
 msgid "Step {number} of {count}"
@@ -13546,11 +13546,11 @@ msgstr[1] "Estrategia · {count} operaciones"
 
 #: src/ui/chart/settings/appearance.rs
 msgid "Stretches where the price falls."
-msgstr "Se extiende donde el precio baja."
+msgstr "Tramos en los que el precio baja."
 
 #: src/ui/chart/settings/appearance.rs
 msgid "Stretches where the price rises."
-msgstr "Se extiende donde el precio sube."
+msgstr "Tramos en los que el precio sube."
 
 #: src/model/editor_theme/roles.rs
 msgid "Strings"
@@ -13612,7 +13612,7 @@ msgstr "Super Bowl"
 
 #: src/model/pattern/elliott.rs
 msgid "Supercycle"
-msgstr "Supraciclo"
+msgstr "Superciclo"
 
 #: src/ui/chart/card/table.rs
 msgid "Supertrend flip"
@@ -13715,11 +13715,11 @@ msgstr "Mono del sistema"
 
 #: src/platform.rs
 msgid "System follows your Mac's light or dark setting."
-msgstr "Sistema sigue el ajuste claro u oscuro de tu Mac."
+msgstr "La opción Sistema sigue el ajuste claro u oscuro de tu Mac."
 
 #: src/platform.rs
 msgid "System follows your computer's light or dark setting."
-msgstr "Sistema sigue el ajuste claro u oscuro de tu ordenador."
+msgstr "La opción Sistema sigue el ajuste claro u oscuro de tu ordenador."
 
 #: src/ui/trade/venue_pill.rs
 msgid "TEST"
@@ -13775,7 +13775,7 @@ msgstr "Flujo de taker"
 
 #: src/ui/market_flow/flow.rs
 msgid "Taker flow follows the focused chart when it shows a crypto market."
-msgstr "El flujo de taker sigue al gráfico enfocado cuando muestra un mercado de criptomonedas."
+msgstr "El flujo de taker sigue al gráfico activo cuando muestra un mercado de criptomonedas."
 
 #: src/ui/market_flow/flow.rs
 msgid "Takers bought {bought} and sold {sold}"
@@ -13954,7 +13954,7 @@ msgstr "Ese nombre es una constante de Pine."
 
 #: src/pine_studio/editor/symbols.rs
 msgid "That name would clash with another name in scope."
-msgstr "Ese nombre chocaría con otro nombre del ámbito."
+msgstr "Ese nombre entraría en conflicto con otro del ámbito."
 
 #: src/workspace/trade/broker.rs
 msgid "That order is no longer working."
@@ -14030,7 +14030,7 @@ msgstr "La cuenta ha cambiado desde que se preparó la orden. No se ha enviado n
 
 #: src/ui/trade/order_sheet/state.rs
 msgid "The account changed since you set this order up. Nothing was sent. Check the order again."
-msgstr "La cuenta cambió desde que preparaste esta orden. No se envió nada. Vuelve a comprobar la orden."
+msgstr "La cuenta ha cambiado desde que preparaste esta orden. No se ha enviado nada. Vuelve a comprobar la orden."
 
 #: src/ui/broker/panel.rs
 msgid "The account orders go to"
@@ -14055,7 +14055,7 @@ msgstr "El ángulo de la flecha tal como se dibuja en pantalla."
 
 #: src/pine_studio/ai/mod.rs
 msgid "The assistant stopped unexpectedly."
-msgstr "El asistente se detuvo inesperadamente."
+msgstr "El asistente se ha detenido inesperadamente."
 
 #: src/ui/chart/settings/appearance.rs
 msgid "The axis reads prices; equal price differences are equally tall."
@@ -14131,7 +14131,7 @@ msgstr "La caché ya estaba vacía."
 
 #: src/trading/broker/backend.rs
 msgid "The cancel was sent but the answer was lost. The order is being checked."
-msgstr "La cancelación se envió, pero se perdió la respuesta. Se está comprobando la orden."
+msgstr "La cancelación se ha enviado, pero se ha perdido la respuesta. Se está comprobando la orden."
 
 #: src/pine_studio/preview/fetch.rs
 msgid "The candles could not be loaded."
@@ -14179,15 +14179,15 @@ msgstr "El gráfico sale de esta pestaña. Puedes volver a añadirlo desde la b�
 
 #: src/ui/trade/order_sheet/state.rs
 msgid "The check of this order is out of date. Nothing was sent. Check the order again."
-msgstr "La comprobación de esta orden está desactualizada. No se envió nada. Vuelve a comprobar la orden."
+msgstr "La comprobación de esta orden está desactualizada. No se ha enviado nada. Vuelve a comprobar la orden."
 
 #: src/ui/settings/brokers.rs
 msgid "The check stopped unexpectedly. Try again."
-msgstr "La comprobación se detuvo inesperadamente. Vuelve a intentarlo."
+msgstr "La comprobación se ha detenido inesperadamente. Vuelve a intentarlo."
 
 #: src/workspace/drawing/links.rs
 msgid "The choice could not be saved."
-msgstr "No se pudo guardar la elección."
+msgstr "No se ha podido guardar la elección."
 
 #: src/ui/chart/settings/style.rs
 msgid "The close of each bar, or its highs and lows too."
@@ -14219,7 +14219,7 @@ msgstr "Se perdió la conexión, reintentando"
 
 #: src/ui/settings/ai.rs src/ui/settings/api_keys.rs
 msgid "The connection test stopped unexpectedly."
-msgstr "La prueba de conexión se detuvo inesperadamente."
+msgstr "La prueba de conexión se ha detenido inesperadamente."
 
 #: src/ui/workspace/layout_prompts.rs
 msgid "The copy keeps what you see now and saves separately from the original."
@@ -14359,7 +14359,7 @@ msgstr "El diario está vacío"
 
 #: src/ui/settings/ai.rs
 msgid "The key could not be saved for later ({error}). It works until you quit DegenView."
-msgstr "No se pudo guardar la clave para más adelante ({error}). Funciona hasta que salgas de DegenView."
+msgstr "No se ha podido guardar la clave para más adelante ({error}). Funciona hasta que salgas de DegenView."
 
 #: src/platform.rs
 msgid "The key stays in Windows Credential Manager on this computer."
@@ -14375,7 +14375,7 @@ msgstr "La clave permanece en el almacenamiento seguro de este ordenador."
 
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
-msgstr "No se pudo escribir el último autoguardado. Elige Guardar diseño."
+msgstr "No se ha podido escribir el último autoguardado. Elige Guardar diseño."
 
 #: src/ui/chart/settings/style.rs
 msgid "The left tick is the open, the right the close."
@@ -14439,7 +14439,7 @@ msgstr "La coincidencia en la que está la barra de búsqueda."
 
 #: src/pine_studio/ai/mod.rs
 msgid "The model list stopped unexpectedly."
-msgstr "La lista de modelos se detuvo inesperadamente."
+msgstr "La lista de modelos se ha detenido inesperadamente."
 
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/mcp/security.rs
 msgid "The most a credential with remote access can do, even on this Mac."
@@ -14467,7 +14467,7 @@ msgstr "El número de la línea donde está el cursor de texto."
 
 #: src/ui/market_flow/book/mod.rs
 msgid "The order book follows the focused chart when it is on Binance or Bybit."
-msgstr "El libro de órdenes sigue al gráfico enfocado cuando está en Binance o Bybit."
+msgstr "El libro de órdenes sigue al gráfico activo cuando está en Binance o Bybit."
 
 #: src/trading/edit/mod.rs
 msgid "The order changed while you were reviewing it. Nothing was sent. Review it again."
@@ -14475,7 +14475,7 @@ msgstr "La orden ha cambiado mientras la revisabas. No se ha enviado nada. Reví
 
 #: src/ui/trade/order_sheet/status.rs
 msgid "The order could not be checked."
-msgstr "No se pudo comprobar la orden."
+msgstr "No se ha podido comprobar la orden."
 
 #: src/trading/broker/backend.rs
 msgid "The order is being changed. Try again in a moment."
@@ -14495,7 +14495,7 @@ msgstr "La orden no está completa."
 
 #: src/ui/broker/panel.rs
 msgid "The order was found and is placed."
-msgstr "La orden se ha encontrado y está colocada."
+msgstr "Se ha encontrado la orden y está activa."
 
 #: src/ui/chart/settings/canvas.rs
 msgid "The page the chart is drawn on. Colors you leave alone follow the app theme."
@@ -14511,11 +14511,11 @@ msgstr "No se ha podido guardar la contraseña para más adelante ({error}). Fun
 
 #: src/workspace/drawing/content.rs
 msgid "The picture could not be read."
-msgstr "No se pudo leer la imagen."
+msgstr "No se ha podido leer la imagen."
 
 #: src/workspace/drawing/content.rs
 msgid "The picture could not be saved: {error}"
-msgstr "No se pudo guardar la imagen: {error}"
+msgstr "No se ha podido guardar la imagen: {error}"
 
 #: src/ui/drawing/properties/content.rs
 msgid "The picture is not available yet"
@@ -14615,7 +14615,7 @@ msgstr "La respuesta alcanzó el límite de longitud del modelo y el script qued
 
 #: src/workspace/overlay/mod.rs
 msgid "The request stopped before it answered"
-msgstr "La solicitud se detuvo antes de recibir respuesta"
+msgstr "La solicitud se ha detenido antes de recibir respuesta"
 
 #: src/ui/chart/settings/canvas.rs
 msgid "The room around the price range."
@@ -14779,7 +14779,7 @@ msgstr "La tabla se queda aquí por mucho que se desplace el gráfico."
 
 #: src/ui/settings/provider_card.rs
 msgid "The test stopped unexpectedly."
-msgstr "La prueba se detuvo inesperadamente."
+msgstr "La prueba se ha detenido inesperadamente."
 
 #: src/ui/chart/symbol_picker/predictions/trending.rs
 msgid "The trending list stopped loading."
@@ -15163,7 +15163,7 @@ msgstr "Esto envía una orden real a {name}. Revisa cada línea."
 
 #: src/pine_studio/ai/mod.rs
 msgid "This server does not accept tools, so the assistant answered without them."
-msgstr "Este servidor no admite herramientas, así que el asistente respondió sin ellas."
+msgstr "Este servidor no admite herramientas, así que el asistente ha respondido sin ellas."
 
 #: src/host/snapshot/mod.rs
 msgid "This snapshot host is not in this version of DegenView. Choose another in Settings ▸ Snapshots."
@@ -15183,7 +15183,7 @@ msgstr "Esta versión no conoce el host seleccionado"
 
 #: src/ui/webhook/editor.rs
 msgid "This webhook couldn't be saved"
-msgstr "No se pudo guardar este webhook"
+msgstr "No se ha podido guardar este webhook"
 
 #: src/ui/webhook/settings.rs
 msgid "This webhook is currently used by {count} alert. Deleting it will stop webhook delivery for that alert."
@@ -15760,7 +15760,7 @@ msgstr "Script sin título"
 
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Up"
-msgstr "Arriba"
+msgstr "Al alza"
 
 #: src/ui/chart/settings/style.rs
 msgid "Up bars"
@@ -16178,7 +16178,7 @@ msgstr "Ver el proyecto en GitHub"
 
 #: src/ui/portfolio/sheets.rs
 msgid "Viewing"
-msgstr "Viendo"
+msgstr "Actual"
 
 #: src/model/tab/link/mod.rs
 msgid "Violet"
@@ -16229,7 +16229,7 @@ msgstr "Velas de volumen"
 
 #: src/model/drawings/tool.rs
 msgid "Volume-based"
-msgstr "Basado en volumen"
+msgstr "Basadas en volumen"
 
 #: src/ui/drawing/layer/forecast_shapes.rs
 msgid "Volume: {volume}"
@@ -16530,7 +16530,7 @@ msgstr "Cuando pides un cambio al asistente, el script abierto y tu mensaje se e
 
 #: src/ui/settings/snapshots.rs
 msgid "Where Copy link, Open in new tab and Tweet image upload a snapshot. Turn one on to share; only one is used at a time."
-msgstr "Dónde suben una captura Copiar enlace, Abrir en una pestaña nueva y Tuitear imagen. Activa uno para compartir; solo se usa uno a la vez."
+msgstr "Servicio al que Copiar enlace, Abrir en una pestaña nueva y Tuitear imagen suben la captura. Activa uno para compartir; solo se usa uno a la vez."
 
 #: src/ui/chart/settings/style.rs
 msgid "Where the baseline sits, as a percentage of the chart's height from the bottom."
@@ -16609,7 +16609,7 @@ msgstr "Escribir un borrador de script"
 
 #: src/ui/alert/script_list.rs
 msgid "Write and manage the scripts whose alert() calls appear here"
-msgstr "Escribe y gestiona los scripts cuyas llamadas a alert() aparecen aquí"
+msgstr "Escribir y gestionar los scripts cuyas llamadas a alert() aparecen aquí"
 
 #: src/ui/workspace/toolbar.rs
 msgid "Write changes to this layout a moment after you make them."
@@ -17093,7 +17093,7 @@ msgstr "ningún día"
 
 #: src/ui/mcp/activity.rs
 msgid "nobody answered in time"
-msgstr "nadie respondió a tiempo"
+msgstr "nadie ha respondido a tiempo"
 
 #: src/ui/chart/card/overlay_card.rs
 msgid "not available on price-based chart types"
@@ -17185,7 +17185,7 @@ msgstr "stop-limit {stop} / {limit}"
 
 #: src/model/watchlist/text.rs
 msgid "stopped early: too much to import"
-msgstr "se detuvo antes de tiempo: demasiado que importar"
+msgstr "se ha detenido antes de tiempo: demasiado que importar"
 
 #: src/model/editor_theme/roles.rs
 msgid "ta.sma, plot, input.int and the other functions Pine provides."
@@ -17418,7 +17418,7 @@ msgstr[1] "{count} activos"
 #: src/ui/portfolio/cards/value.rs
 msgid "{count} asset could not be priced"
 msgid_plural "{count} assets could not be priced"
-msgstr[0] "No se pudo valorar {count} activo"
+msgstr[0] "No se ha podido valorar {count} activo"
 msgstr[1] "No se pudieron valorar {count} activos"
 
 #: src/model/drawings/mod.rs src/pine_studio/drawer/trades.rs
@@ -17502,7 +17502,7 @@ msgstr[1] "{count} errores de compilación con esta selección"
 #: src/ui/mcp/activity.rs
 msgid "{count} could not be read"
 msgid_plural "{count} could not be read"
-msgstr[0] "No se pudo leer {count}"
+msgstr[0] "No se ha podido leer {count}"
 msgstr[1] "No se pudieron leer {count}"
 
 #: src/pine_studio/inputs.rs
@@ -17870,7 +17870,7 @@ msgstr "Seleccionados: {count}"
 msgid "{count} selected webhook was deleted and will be skipped."
 msgid_plural "{count} selected webhooks were deleted and will be skipped."
 msgstr[0] "Se eliminó el webhook seleccionado y se omitirá."
-msgstr[1] "Se eliminaron {count} webhooks seleccionados y se omitirán."
+msgstr[1] "Se han eliminado {count} webhooks seleccionados y se omitirán."
 
 #: src/ui/portfolio/statistics/mod.rs
 msgid "{count} sell"
@@ -18198,7 +18198,7 @@ msgstr "{kind} {ticker}, {quantity}, {date}"
 
 #: src/ui/settings/provider_card.rs
 msgid "{label} accepted a test image."
-msgstr "{label} aceptó una imagen de prueba."
+msgstr "{label} ha aceptado una imagen de prueba."
 
 #: src/model/chart/snapshot/mod.rs
 msgid "{label} did not return a link."
@@ -18491,7 +18491,7 @@ msgstr "{name}: {offset}, Importe: {amount}"
 
 #: src/ui/chart/card/overlay_card.rs
 msgid "{note} — could not load: {message}"
-msgstr "{note} — no se pudo cargar: {message}"
+msgstr "{note} — no se ha podido cargar: {message}"
 
 #: src/ui/chart/card/overlay_card.rs
 msgid "{note} — {status}"
@@ -18971,7 +18971,7 @@ msgstr "“{client}” solicita permiso"
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "“{name}” could not be loaded: {why}"
-msgstr "No se pudo cargar “{name}”: {why}"
+msgstr "No se ha podido cargar “{name}”: {why}"
 
 #: src/model/watchlist/mod.rs
 msgid "“{name}” is already in this watchlist."
