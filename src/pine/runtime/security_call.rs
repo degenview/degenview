@@ -763,7 +763,7 @@ impl Session {
             self.warm_up(&mut state, request, before)?;
         }
         self.replay_skipped_bars(&mut state, request, bar.open_time)?;
-        let (result, fresh) = self.advance_site(
+        let (result, owns_value) = self.advance_site(
             &mut state,
             request,
             &Step {
@@ -773,7 +773,7 @@ impl Session {
                 skipped_after: None,
             },
         )?;
-        let result = if request.gaps_on && !fresh {
+        let result = if request.gaps_on && !owns_value {
             RuntimeValue::Na
         } else {
             result
@@ -847,7 +847,7 @@ impl Session {
     }
 
     /// Takes `step`'s bar into the site's candle. Returns the expression's value for the bar and
-    /// whether a higher-timeframe bar was completed on it. A replayed bar (`skipped_after` is set)
+    /// whether the bar carries the value under `gaps_on` (`owns_value`). A replayed bar (`skipped_after` is set)
     /// only keeps the site's state current: nothing is evaluated for the bar itself, and a candle it
     /// completes is evaluated with the chart variables of that bar.
     fn advance_site(
@@ -864,6 +864,11 @@ impl Session {
         } = *step;
         let replay = skipped_after.is_some();
         let start = time::bucket::start(bar.open_time, request.interval);
+        // This chart bar is the first of its bucket (the chart's first bar counts when it opens one).
+        let opens = match state.bucket {
+            Some(previous) => previous != start,
+            None => bar.open_time <= start,
+        };
         let mut fresh = false;
         if state.bucket != Some(start) {
             // The chart skipped the bucket's last bar, so complete it now.
@@ -910,7 +915,29 @@ impl Session {
                 result = state.last_result.clone();
             }
         }
-        Ok((result, fresh))
+        Ok((
+            result,
+            self.owns_value(request, fresh, opens, closes_bucket),
+        ))
+    }
+
+    /// Whether the chart bar carries the higher-timeframe value under `gaps_on` (every other bar is
+    /// `na`): the one that closes the candle, which on the live bar is the developing candle's value;
+    /// with `lookahead_on` the one that opens it (TradingView probe S6b, BTCUSDT 1h and a 120 request:
+    /// `-60 / na / -60` and `na / 0 / na` over the last three bars, own symbol and another alike).
+    /// `fresh` is a candle completed on the bar, including one the chart skipped the last bar of.
+    fn owns_value(
+        &self,
+        request: &SecurityRequest,
+        fresh: bool,
+        opens: bool,
+        closes_bucket: bool,
+    ) -> bool {
+        if request.lookahead_on {
+            opens
+        } else {
+            fresh || closes_bucket
+        }
     }
 
     /// `request.security` for a symbol the chart does not carry, from the provider's snapshot.
@@ -954,8 +981,18 @@ impl Session {
             result =
                 self.evaluate_higher_timeframe(&mut state, &candles[index], request, chart, false)?;
         }
-        if request.gaps_on && !fresh {
+        let held = last_index(bar.open_time, candles);
+        let opens = held.is_some_and(|index| state.bucket != Some(candles[index].open_time));
+        let closes = held.is_some_and(|index| {
+            index >= state.completed_candles
+                && time::bucket::end(candles[index].open_time, request.interval)
+                    <= self.bar_end(&bar)
+        });
+        if request.gaps_on && !self.owns_value(request, fresh, opens, closes) {
             result = RuntimeValue::Na;
+        }
+        if let Some(index) = held {
+            state.bucket = Some(candles[index].open_time);
         }
         state.processed_bar = Some(bar.open_time);
         state.bar_result = result.clone();

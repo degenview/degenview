@@ -766,4 +766,79 @@ mod tests {
         );
         assert_eq!(at(2, 4), Some(0.0), "the forming candle is not confirmed");
     }
+
+    /// Candles of the requested length from midnight to 12:00, for any symbol.
+    struct Uniform;
+    impl crate::pine::runtime::support::SecurityDataProvider for Uniform {
+        fn candles(&self, key: &crate::pine::runtime::support::SecurityKey) -> Option<Vec<Kline>> {
+            let step = (key.interval * 1000.0) as i64;
+            Some(
+                (0..43_200_000 / step)
+                    .map(|i| Kline {
+                        open_time: i * step,
+                        close_time: i * step + step - 1,
+                        open: 1.0,
+                        high: 1.0,
+                        low: 1.0,
+                        close: 1.0,
+                        volume: 1.0,
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    #[test]
+    fn gaps_on_gives_a_bar_its_value_where_the_candle_closes_or_with_lookahead_where_it_opens() {
+        // TradingView probe S6b (BTCUSDT 1h live at 13:31, a 120 request, own symbol and ETHUSDT
+        // alike): with `gaps_on` the value sits on the last chart bar of the candle, the live bar's
+        // being the developing candle's; with `gaps_on` and `lookahead_on` on the first chart bar.
+        let hour = 3_600_000;
+        let bars: Vec<Kline> = (0..6)
+            .map(|h| Kline {
+                open_time: h * hour,
+                close_time: h * hour + hour - 1,
+                open: 1.0,
+                high: 1.0,
+                low: 1.0,
+                close: 1.0,
+                volume: 1.0,
+            })
+            .collect();
+        for symbol in ["syminfo.tickerid", "\"OTHER\""] {
+            let source = format!(
+                "//@version=6\nindicator(\"T\")\n\
+                 plot(request.security({symbol}, \"120\", time, gaps = barmerge.gaps_on))\n\
+                 plot(request.security({symbol}, \"120\", time, gaps = barmerge.gaps_on, lookahead = barmerge.lookahead_on))"
+            );
+            let mut controller = ExecutionController::new(
+                &source,
+                HashMap::new(),
+                SymbolInfo::default(),
+                None,
+                Limits::default(),
+                &NoLibraries,
+                Some(Box::new(Uniform)),
+                None,
+            )
+            .expect("valid controller")
+            .with_bar_seconds(3600.0);
+            // 5:40: the bar opened at 5:00 is live and the last of the candle 4:00-6:00.
+            let update = controller.update(&bars, None, 5 * hour + 40 * 60_000);
+            assert!(update.error.is_none(), "{symbol}: {:?}", update.error);
+            let plotted =
+                |plot: usize| -> Vec<Option<f64>> { update.output.plots[plot].values.clone() };
+            let two = 2.0 * hour as f64;
+            assert_eq!(
+                plotted(0),
+                [None, Some(0.0), None, Some(two), None, Some(2.0 * two)],
+                "{symbol}: the closing bar, the live one included"
+            );
+            assert_eq!(
+                plotted(1),
+                [Some(0.0), None, Some(two), None, Some(2.0 * two), None],
+                "{symbol}, lookahead_on: the opening bar"
+            );
+        }
+    }
 }
