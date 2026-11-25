@@ -3,6 +3,7 @@
 //! other is `na`), on a random walk, so a built-in that drifts from its definition fails here.
 
 use super::bench::{bars, run_script};
+use super::varip::live_bar;
 
 /// The plotted series of `source`, one `Vec` per `plot`, over `count` one-minute bars.
 pub(super) fn plots(source: &str, count: usize) -> Vec<Vec<Option<f64>>> {
@@ -287,7 +288,7 @@ fn the_cumulative_variables_keep_a_state_each() {
         )
         .remove(0)
     };
-    let names = crate::pine::builtins::ta::extra::VARIABLES;
+    let names = crate::pine::builtins::ta::extra::VARIABLES.map(|variable| variable.name);
     let together = plots(
         &format!(
             "//@version=6\nindicator(\"All\")\n{}",
@@ -300,5 +301,306 @@ fn the_cumulative_variables_keep_a_state_each() {
     );
     for (name, plotted) in names.iter().zip(&together) {
         assert_same(name, plotted, &alone(name));
+    }
+}
+
+#[test]
+fn stdev_and_variance_honour_biased() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Dispersion\")
+n = 20
+sampleVariance = ta.variance(close, n) * n / (n - 1)
+plot(ta.variance(close, n, false))
+plot(sampleVariance)
+plot(ta.stdev(close, n, false))
+plot(math.sqrt(sampleVariance))
+plot(ta.stdev(close, n))
+plot(ta.stdev(close, n, true))
+plot(ta.variance(close, 1, false))
+",
+        600,
+    );
+    assert_same("variance", &plotted[0], &plotted[1]);
+    assert_same("stdev", &plotted[2], &plotted[3]);
+    assert_same("stdev is biased by default", &plotted[4], &plotted[5]);
+    assert!(
+        plotted[6].iter().all(Option::is_none),
+        "one value has no sample variance"
+    );
+}
+
+#[test]
+fn bbw_is_the_band_width_in_percent() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Bbw\")
+[basis, upper, lower] = ta.bb(close, 20, 2)
+plot(ta.bbw(close, 20, 2))
+plot((upper - lower) / basis * 100)
+",
+        600,
+    );
+    assert_same("bbw", &plotted[0], &plotted[1]);
+}
+
+#[test]
+fn iii_is_the_intensity_of_each_bar_not_a_running_total() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Iii\")
+plot(ta.iii)
+plot(high == low ? na : ((2 * close - high - low) / (high - low)) * volume)
+",
+        600,
+    );
+    assert_same("iii", &plotted[0], &plotted[1]);
+}
+
+#[test]
+fn obv_pvt_and_cum_start_on_the_second_bar_like_their_reference_code() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Cumulative\")
+plot(ta.obv)
+plot(ta.cum(math.sign(ta.change(close)) * volume))
+plot(ta.pvt)
+plot(ta.cum((ta.change(close) / close[1]) * volume))
+plot(ta.cum(bar_index < 3 ? na : 1))
+",
+        600,
+    );
+    assert_same("obv", &plotted[0], &plotted[1]);
+    assert_same("pvt", &plotted[2], &plotted[3]);
+    assert_eq!(first_value(&plotted[0]), Some(1));
+    assert_eq!(first_value(&plotted[2]), Some(1));
+    assert_eq!(plotted[4][2], None, "cum of a leading na is na");
+    assert_eq!(plotted[4][3], Some(1.0));
+}
+
+#[test]
+fn stdev_and_variance_take_named_and_positional_arguments_alike() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Named dispersion\")
+plot(ta.stdev(close, 20, false))
+plot(ta.stdev(source = close, length = 20, biased = false))
+plot(ta.stdev(length = 20, source = close, biased = false))
+plot(ta.variance(close, 20))
+plot(ta.variance(close, length = 20))
+plot(ta.variance(close, 20, true))
+plot(ta.variance(close, biased = true, length = 20))
+",
+        600,
+    );
+    assert_same("stdev named", &plotted[0], &plotted[1]);
+    assert_same("stdev reordered", &plotted[0], &plotted[2]);
+    assert_same("variance mixed", &plotted[3], &plotted[4]);
+    assert_same("variance explicit biased", &plotted[3], &plotted[5]);
+    assert_same("variance named biased", &plotted[3], &plotted[6]);
+}
+
+#[test]
+fn the_volume_variables_follow_a_live_bar_like_their_formulas() {
+    // The bar being drawn is recomputed on every tick and folded for good only when it closes: the
+    // variable must give what the formula written out in Pine gives at each of the four stages
+    // (the history, the live bar's first tick, a changed tick and its close).
+    let seen = live_bar(
+        "plot(ta.obv)
+plot(ta.cum(math.sign(ta.change(close)) * volume))
+plot(ta.pvt)
+plot(ta.cum(ta.change(close) / close[1] * volume))
+plot(ta.accdist)
+plot(ta.cum(close == high and close == low or high == low ? 0.0 : (2 * close - low - high) / (high - low) * volume))
+plot(ta.iii)
+plot((2 * close - high - low) / (high - low) * volume)
+plot(ta.wvad)
+plot((close - open) / (high - low) * volume)",
+    );
+    assert_eq!(seen.len(), 4);
+    for (stage, plotted) in seen.iter().enumerate() {
+        for (name, pair) in ["obv", "pvt", "accdist", "iii", "wvad"]
+            .iter()
+            .zip(plotted.chunks(2))
+        {
+            assert!(
+                (pair[0] - pair[1]).abs() <= 1e-9 * pair[0].abs().max(pair[1].abs()).max(1.0),
+                "stage {stage}: {name} {} against its formula {}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+    // The changed tick moved the close, so a total that depends on its size moved with it, and the
+    // close kept that value.
+    assert_ne!(seen[1][2], seen[2][2], "pvt follows the changed tick");
+    assert_eq!(
+        seen[2], seen[3],
+        "the close folds what the last tick showed"
+    );
+}
+
+#[test]
+fn stdev_and_variance_over_a_window_of_one() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"One\")
+plot(ta.stdev(close, 1))
+plot(ta.variance(close, 1))
+plot(ta.stdev(close, 1, false))
+plot(ta.variance(close, 1, false))
+plot(ta.stdev(close, 2, false))
+",
+        50,
+    );
+    assert!(
+        plotted[0].iter().all(|v| *v == Some(0.0)),
+        "population of one is 0"
+    );
+    assert!(plotted[1].iter().all(|v| *v == Some(0.0)));
+    assert!(
+        plotted[2].iter().all(Option::is_none),
+        "no sample figure of one value"
+    );
+    assert!(plotted[3].iter().all(Option::is_none));
+    assert_eq!(
+        first_value(&plotted[4]),
+        Some(1),
+        "a sample needs two values"
+    );
+}
+
+#[test]
+fn stdev_and_variance_with_a_length_that_is_not_a_window_are_na() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"None\")
+plot(ta.stdev(close, 0))
+plot(ta.stdev(close, -3, false))
+plot(ta.variance(close, 0, false))
+plot(ta.variance(close, -1))
+",
+        50,
+    );
+    for series in &plotted {
+        assert!(series.iter().all(Option::is_none));
+    }
+}
+
+#[test]
+fn the_sample_figure_is_the_population_one_scaled_wherever_the_window_is_complete() {
+    // A source with gaps: both are na on the same bars (a window with a missing value), and the
+    // ratio is the same wherever they have a value.
+    let plotted = plots(
+        "//@version=6
+indicator(\"Gaps\")
+source = bar_index % 17 == 3 ? na : close
+n = 10
+plot(ta.stdev(source, n, false))
+plot(ta.stdev(source, n) * math.sqrt(n / (n - 1.0)))
+plot(ta.variance(source, n, false))
+plot(ta.variance(source, n) * n / (n - 1.0))
+",
+        400,
+    );
+    assert_same("stdev", &plotted[0], &plotted[1]);
+    assert_same("variance", &plotted[2], &plotted[3]);
+    assert!(plotted[0].iter().flatten().count() > 50);
+    assert!(plotted[0].iter().any(Option::is_none));
+}
+
+#[test]
+fn stdev_and_variance_work_where_a_script_may_put_them() {
+    let plotted = plots(
+        "//@version=6
+indicator(\"Places\", overlay = true)
+f(x) => ta.stdev(x, 20, false)
+g(x, n) => ta.variance(x, n, false)
+s = ta.stdev(close, 20, false)
+v = ta.variance(close, 20, false)
+plot(f(close))
+plot(s)
+plot(g(close, 20))
+plot(v)
+plot(ta.stdev(close, 20, false)[3])
+plot(s[3])
+plot(ta.stdev(close[2], 20, false))
+plot(s[2])
+plot(bar_index % 2 == 0 ? ta.stdev(close, 20, false)[1] : na)
+plot(bar_index % 2 == 0 ? s[1] : na)
+plot(bar_index % 3 == 0 ? ta.variance(close, 20, false)[1] : na)
+plot(bar_index % 3 == 0 ? v[1] : na)
+plot(ta.stdev(source = close, length = 20, biased = false))
+plot(ta.stdev(length = 20, source = close, biased = false))
+",
+        600,
+    );
+    assert_same("user function", &plotted[0], &plotted[1]);
+    assert_same("two arguments of a function", &plotted[2], &plotted[3]);
+    assert_same("history", &plotted[4], &plotted[5]);
+    assert_same("history of the source", &plotted[6], &plotted[7]);
+    assert_same("run ahead of a ternary arm", &plotted[8], &plotted[9]);
+    assert_same(
+        "variance run ahead of a ternary arm",
+        &plotted[10],
+        &plotted[11],
+    );
+    assert_same("named arguments", &plotted[12], &plotted[1]);
+    assert_same("reordered arguments", &plotted[13], &plotted[1]);
+}
+
+#[test]
+fn stdev_with_biased_false_works_inside_a_request() {
+    let data = bars(1_500, 60_000);
+    let session = run_script(
+        "//@version=6
+indicator(\"Request\", overlay = true)
+a = request.security(syminfo.tickerid, \"5\", ta.stdev(close, 20, false))
+b = request.security(syminfo.tickerid, \"5\", ta.stdev(close, 20) * math.sqrt(20 / 19.0))
+plot(a)
+plot(b)
+",
+        &data,
+        true,
+        |_| {},
+    );
+    let plotted: Vec<Vec<Option<f64>>> = session
+        .output()
+        .plots
+        .into_iter()
+        .map(|plot| plot.values)
+        .collect();
+    assert_same("request", &plotted[0], &plotted[1]);
+    assert!(plotted[0].iter().flatten().count() > 100);
+}
+
+#[test]
+fn the_bundled_obv_starts_on_the_second_bar_and_its_signal_on_the_twenty_second() {
+    // `ta.obv` is na on the first bar, as on TradingView, so the 21-bar average of it needs bars 1
+    // to 21 and is first real on bar 21.
+    let obv = crate::model::pine::bundled::find("obv").expect("the bundled OBV");
+    let plotted = plots(obv.source, 400);
+    assert_eq!(plotted.len(), 2, "the line and its signal");
+    assert_eq!(plotted[0][0], None);
+    assert_eq!(first_value(&plotted[0]), Some(1));
+    assert_eq!(first_value(&plotted[1]), Some(21));
+    assert!(plotted[0][1..].iter().all(Option::is_some));
+    assert!(plotted[1][21..].iter().all(Option::is_some));
+}
+
+#[test]
+fn every_bundled_indicator_still_runs_and_draws() {
+    for indicator in &crate::model::pine::bundled::ALL {
+        let data = bars(600, 60_000);
+        let output = run_script(indicator.source, &data, false, |_| {}).output();
+        let has_value = output
+            .plots
+            .iter()
+            .any(|plot| plot.values.iter().any(Option::is_some));
+        assert!(
+            has_value || !output.markers.is_empty() || !output.arrows.is_empty(),
+            "{} draws nothing",
+            indicator.id
+        );
     }
 }

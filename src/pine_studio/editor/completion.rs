@@ -170,6 +170,7 @@ pub fn builtins() -> &'static [Item] {
         }
         for name in extra::VARIABLES
             .iter()
+            .map(|variable| &variable.name)
             .chain(&registry::DRAWING_COLLECTIONS)
         {
             add(name, Kind::Variable);

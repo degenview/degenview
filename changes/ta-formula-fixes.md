@@ -1,0 +1,2 @@
+fixed: `ta.stdev(source, length, false)` and `ta.variance(source, length, false)` in Pine scripts now give the sample figure (divided by n - 1) instead of ignoring `biased`, as on TradingView.
+fixed: `ta.bbw` is now in percent, `ta.iii` is the value of each bar instead of a running total, and `ta.obv`, `ta.pvt` and `ta.cum` start on the first bar that has a value, as on TradingView. Scripts that use them may plot and trade differently.

@@ -183,15 +183,16 @@ impl Session {
         name: &str,
         context: &RuntimeContext,
     ) -> Option<RuntimeValue> {
-        let slot = extra::VARIABLES
+        let (slot, variable) = extra::VARIABLES
             .iter()
-            .position(|candidate| *candidate == name)?;
+            .enumerate()
+            .find(|(_, candidate)| candidate.name == name)?;
         let key = usize::MAX - slot;
         // The state leaves the map while it reads the committed history out of `working`.
         let mut state = self.working.ta_states.remove(&key).unwrap_or_default();
-        let value = extra::cumulative(name, &context.bar, &self.working, &mut state);
+        let value = extra::cumulative(variable, &context.bar, &self.working, &mut state);
         self.working.ta_states.insert(key, state);
-        value
+        Some(value)
     }
 }
 
@@ -203,11 +204,14 @@ mod tests {
     fn a_cumulative_variable_is_listed_once_so_its_state_slot_is_its_own() {
         // The slot is the position in `VARIABLES` (`cumulative_variable`): a name listed twice
         // would still read, but two reads of it would no longer share one state.
-        for (position, name) in extra::VARIABLES.iter().enumerate() {
+        for (position, variable) in extra::VARIABLES.iter().enumerate() {
             assert_eq!(
-                extra::VARIABLES.iter().position(|other| other == name),
+                extra::VARIABLES
+                    .iter()
+                    .position(|other| other.name == variable.name),
                 Some(position),
-                "{name} is listed twice"
+                "{} is listed twice",
+                variable.name
             );
         }
     }

@@ -13,7 +13,7 @@ const HISTORY: usize = 3;
 
 /// The last value of every plot after the history and after each of the live bar's three
 /// executions: its first tick, a changed tick and its close.
-fn live_bar(source: &str) -> Vec<Vec<f64>> {
+pub(super) fn live_bar(source: &str) -> Vec<Vec<f64>> {
     live_bar_with(source, &NoLibraries)
 }
 
