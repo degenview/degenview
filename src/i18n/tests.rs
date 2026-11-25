@@ -768,3 +768,18 @@ fn a_list_is_joined_the_way_the_language_joins_it() {
         assert_eq!(join_list(&items), "Mon, Tue, and Wed")
     });
 }
+
+#[test]
+fn sentences_are_joined_with_the_space_their_language_puts_between_them() {
+    use super::join_sentences;
+    assert_eq!(
+        join_sentences(&["One.", "Two.", "Three"]),
+        "One. Two. Three"
+    );
+    assert_eq!(
+        join_sentences(&["一。", "二！", "三？", "四"]),
+        "一。二！三？四"
+    );
+    assert_eq!(join_sentences(&["", "Only."]), "Only.");
+    assert_eq!(join_sentences::<&str>(&[]), "");
+}

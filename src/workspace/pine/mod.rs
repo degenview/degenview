@@ -220,7 +220,7 @@ impl ChartWorkspace {
                 .add_pine_instance_to(
                     chart_id,
                     script_id,
-                    indicator.name,
+                    indicator.name.text(),
                     indicator.source,
                     &HashMap::new(),
                     true,
@@ -372,7 +372,7 @@ impl ChartWorkspace {
                 .add_pine_instance_to(
                     chart_id,
                     crate::model::pine::bundled::script_id(indicator),
-                    indicator.name,
+                    indicator.name.text(),
                     indicator.source,
                     &HashMap::new(),
                     true,

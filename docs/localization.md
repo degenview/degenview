@@ -72,7 +72,8 @@ Rules that need a person:
   (`if cfg!(windows) { tr!(…) } else { tr!(…) }`), never a platform word put into a sentence: another
   language writes the sentence its own way and inflects the word. A text that needs the platform's
   name gets a function there that returns the whole sentence ("Secret not found in your Keychain",
-  "Show in Finder"). Where a longer text holds one, split it into sentences and join them with a space.
+  "Show in Finder"). Where a longer text holds one, split it into sentences and join them with `i18n::join_sentences`, which
+  writes the space the language wants (none after Chinese 。).
 - **A status line keeps no text.** A `StatusMessage` that says the same thing whatever happened, such
   as `StatusMessage::saved_securely()`, is stored as how to write it and written when drawn, so a
   language chosen after the save reaches it. `StatusMessage::ok`/`error` with text keep that text as

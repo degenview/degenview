@@ -42,3 +42,20 @@ pub fn join_list<S: AsRef<str>>(items: &[S]) -> String {
         .format(items.iter().map(|item| item.as_ref()))
         .to_string()
 }
+
+/// Whole sentences as one text. Chinese and Japanese write no space after a full stop, other
+/// languages write one, so the space follows from how the sentence before it ends.
+pub fn join_sentences<S: AsRef<str>>(sentences: &[S]) -> String {
+    let mut text = String::new();
+    for sentence in sentences
+        .iter()
+        .map(AsRef::as_ref)
+        .filter(|s| !s.is_empty())
+    {
+        if !text.is_empty() && !text.ends_with(['。', '！', '？']) {
+            text.push(' ');
+        }
+        text.push_str(sentence);
+    }
+    text
+}

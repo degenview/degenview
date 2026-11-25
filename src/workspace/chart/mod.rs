@@ -333,7 +333,7 @@ impl Chart {
         if !has_it {
             let id = self
                 .chart
-                .add_pine_instance(Some(script_id), rsi.name, rsi.source);
+                .add_pine_instance(Some(script_id), rsi.name.text(), rsi.source);
             self.chart.set_pine_visible(id, !hidden);
         }
     }

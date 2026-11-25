@@ -141,7 +141,9 @@ pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) ->
         NoticeKind::Expired => (tr!("Order expired"), false),
     };
     let body = match (&order.reason, notice.kind) {
-        (Some(reason), NoticeKind::Rejected | NoticeKind::Cancelled) => format!("{what}. {reason}"),
+        (Some(reason), NoticeKind::Rejected | NoticeKind::Cancelled) => {
+            tr!("{what}. {reason}", what = what, reason = reason)
+        }
         (_, NoticeKind::PartiallyFilled) => {
             tr!(
                 "{what}: {filled} filled.",

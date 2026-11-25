@@ -258,6 +258,10 @@ msgstr "仅是一个绘图：不会下单，其中的内容均为假设。"
 msgid "A faint market name behind the candles. Off."
 msgstr "蜡烛图后面淡淡的市场名称。已关闭。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "A fractal is a bar whose high (or low) is the highest (lowest) of the bars either side of it. Each is confirmed after those bars close, and the mark is placed back on the bar. Fractals are often used as support, resistance and stop levels."
+msgstr "分形是指其最高价（或最低价）高于（或低于）两侧相邻K线的一根K线。每个分形在两侧K线收盘后才会被确认，标记会回溯画在对应的K线上。分形常被用作支撑、阻力和止损位。"
+
 #: src/ui/alert/editor.rs
 msgid "A fresh current price is required for percentage alerts."
 msgstr "百分比提醒需要最新的当前价格。"
@@ -317,6 +321,10 @@ msgstr "两点之间虚构的一段走势：不是预测，也不是真实K线�
 #: src/model/indicators/catalog.rs
 msgid "A moving average that weights recent closes more. Choose its period from the chip on the chart (9, 20, 50, 100 or 200)."
 msgstr "更看重近期收盘价的移动平均线。在图表上的标签中选择周期（9、20、50、100 或 200）。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "A moving average with bands set by the Average True Range, so the channel follows volatility. Closes outside the channel suggest a strong move; a flat, narrow channel suggests a range."
+msgstr "均线加上由平均真实波幅（ATR）确定的通道带，因此通道会跟随波动率变化。收盘价突破通道表示走势强劲；通道平坦而狭窄则表示处于区间震荡。"
 
 #: src/pine_studio/editor/symbols.rs
 msgid "A name is letters, digits and underscores, and does not start with a digit."
@@ -391,6 +399,14 @@ msgstr "令牌不含空格，只能由普通字母、数字和符号组成。"
 msgid "A trade appears here once a position is closed."
 msgstr "仓位平仓后，交易会显示在这里。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "A trailing stop that accelerates toward price."
+msgstr "向价格加速靠拢的移动止损。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "A volume-weighted RSI, 0 to 100."
+msgstr "成交量加权的 RSI，范围 0 到 100。"
+
 #: src/model/drawings/tool.rs
 msgid "ABCD pattern"
 msgstr "ABCD 形态"
@@ -398,6 +414,14 @@ msgstr "ABCD 形态"
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "ABOUT"
 msgstr "简介"
+
+#: src/model/pine/bundled/mod.rs
+msgid "ADX / DMI"
+msgstr "ADX / DMI"
+
+#: src/model/pine/bundled/mod.rs
+msgid "ADX measures how strong a trend is, not which way: above about 25 there is a trend. +DI over -DI means the trend is up, the reverse that it is down."
+msgstr "ADX 衡量趋势的强度，而不是方向：高于约 25 表示存在趋势。+DI 在 -DI 之上表示趋势向上，反之则向下。"
 
 #: src/ui/settings/window.rs
 msgid "AI Assistant"
@@ -438,6 +462,10 @@ msgstr "API 密钥已保存"
 #: src/ui/webhook/editor.rs
 msgid "API token or key"
 msgstr "API 令牌或密钥"
+
+#: src/model/pine/bundled/mod.rs
+msgid "ATR"
+msgstr "ATR"
 
 #: src/ui/chart/settings/style.rs
 msgid "ATR length"
@@ -856,6 +884,10 @@ msgstr "已添加 {market}"
 msgid "Address"
 msgstr "地址"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Adds the bar's volume on an up close and subtracts it on a down close, with a moving average of the total as its signal. Rising OBV while price is flat suggests accumulation."
+msgstr "收涨时加上该K线的成交量，收跌时减去，并以总和的均线作为信号。价格持平而 OBV 上升，提示有资金在吸筹。"
+
 #: src/ui/portfolio/transactions.rs
 msgid "Adjustment"
 msgstr "调整"
@@ -1208,6 +1240,10 @@ msgstr "金额"
 msgid "An API key has no spaces and is at most 128 plain characters."
 msgstr "API 密钥不含空格，最多 128 个普通字符。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "An EMA with bands a multiple of the ATR away."
+msgstr "EMA 加上距离为若干倍 ATR 的通道带。"
+
 #: src/ui/settings/network/mod.rs
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr "支持 CONNECT 的 HTTP 代理，大多数都支持。"
@@ -1350,6 +1386,10 @@ msgstr "已应用。撤销可恢复旧脚本。"
 msgid "Applies every change as one undo step"
 msgstr "将所有更改作为一步撤销应用"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Applies the Stochastic to the RSI instead of price. It reaches the ends of its range far more often than RSI itself, so it times turns earlier and gives more false ones."
+msgstr "把随机指标应用于 RSI，而不是价格。它比 RSI 本身更频繁地触及区间两端，因此判断转折更早，但假信号也更多。"
+
 #: src/ui/paper/account_sheet.rs
 msgid "Applies to every market. 1× means no borrowing."
 msgstr "适用于所有市场。1× 表示不借入资金。"
@@ -1454,6 +1494,14 @@ msgstr "面积图"
 #: src/model/editor_theme/roles.rs
 msgid "Arithmetic, comparison, assignment and ?: operators."
 msgstr "算术、比较、赋值和 ?: 运算符。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Aroon"
+msgstr "阿隆指标"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Aroon Up and Aroon Down, each 0 to 100, say how many bars ago the highest high and the lowest low were. A strong Aroon Up with a weak Aroon Down is an uptrend."
+msgstr "Aroon Up 与 Aroon Down 的取值各为 0 到 100，表示最高价和最低价出现在多少根K线之前。Aroon Up 强而 Aroon Down 弱，说明处于上升趋势。"
 
 #: src/model/cursor/mod.rs src/model/drawings/style.rs
 #: src/model/drawings/tool.rs
@@ -1639,6 +1687,10 @@ msgstr "平均"
 msgid "Average Cost"
 msgstr "平均成本"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Average True Range: the typical bar size including gaps."
+msgstr "平均真实波幅：包含缺口在内的K线典型幅度。"
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Average high-low"
 msgstr "平均高低差"
@@ -1654,6 +1706,10 @@ msgstr "平均成本"
 #: src/pine_studio/drawer/figures.rs src/ui/pine/report.rs
 msgid "Avg trade"
 msgstr "平均每笔交易"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Awesome Oscillator"
+msgstr "Awesome Oscillator"
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "B"
@@ -1866,6 +1922,10 @@ msgstr "买价 {price}"
 #: src/ui/market_flow/book/ladder.rs
 msgid "Bid {size} ({worth})"
 msgstr "买价挂单 {size}（{worth}）"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Bill Williams' histogram: a 5-period average of the midpoint minus a 34-period one. Green bars are rising and red bars falling; crossing zero is a momentum shift."
+msgstr "比尔·威廉姆斯的柱状图：K线中点的 5 周期均线减去 34 周期均线。绿柱上升、红柱下降；穿越零轴表示动能转换。"
 
 #: src/ui/market_flow/mod.rs
 msgid "Binance and Bybit announce them as they happen."
@@ -2171,6 +2231,10 @@ msgstr "买入 {quantity}{symbol} @ {price} 止损限价"
 msgid "Buy {symbol} stop"
 msgstr "买入 {symbol} 止损"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Buying and selling pressure over N bars, -1 to +1."
+msgstr "N 根K线内的买卖压力，范围 -1 到 +1。"
+
 #: src/ui/portfolio/import_preview.rs src/ui/portfolio/transactions.rs
 msgid "By Type"
 msgstr "按类型"
@@ -2194,6 +2258,10 @@ msgstr "Bybit 拒绝了请求（HTTP 403）：并非所有国家和地区都可�
 #: src/ui/drawing/properties/coordinates.rs
 msgid "C"
 msgstr "C"
+
+#: src/model/pine/bundled/mod.rs
+msgid "CCI"
+msgstr "CCI"
 
 #: src/ui/chart/cmc_gauge.rs
 msgid "CMC Altcoin Season Index, {value} out of 100, {classification}."
@@ -2273,6 +2341,7 @@ msgstr "无法在此交易该市场"
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/pine_studio/mod.rs
 #: src/ui/watchlist/sidebar/modals.rs src/ui/webhook/editor.rs
 #: src/ui/window/update_sheet/mod.rs src/ui/workspace/layout_prompts.rs
+#: src/workspace/chart/snapshot/mod.rs
 msgid "Cancel"
 msgstr "取消"
 
@@ -2442,6 +2511,10 @@ msgstr "居中到市价"
 #: src/ui/settings/mcp/security.rs
 msgid "Certificate"
 msgstr "证书"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Chaikin Money Flow"
+msgstr "佳庆资金流"
 
 #: src/pine_studio/drawer/simulation.rs
 msgid "Chance of a loss"
@@ -3223,6 +3296,10 @@ msgstr "手续费"
 msgid "Committed to open orders"
 msgstr "已被挂单占用"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Commodity Channel Index: distance from the average price."
+msgstr "顺势指标：价格偏离均价的距离。"
+
 #: src/pine_studio/library/empty_library.rs src/pine_studio/library/picker.rs
 msgid "Community scripts"
 msgstr "社区脚本"
@@ -3267,6 +3344,10 @@ msgstr "对比标的"
 #: src/model/chart/object_tree.rs
 msgid "Compared symbols"
 msgstr "对比的标的"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Compares the close with the high-low range of the last N bars, smoothed into %K and %D. Above the upper level is overbought and below the lower level is oversold."
+msgstr "把收盘价与最近 N 根K线的最高价到最低价区间比较，平滑成 %K 和 %D。高于上限为超买，低于下限为超卖。"
 
 #: src/pine_studio/preview/state.rs
 msgid "Compile failed"
@@ -3797,6 +3878,10 @@ msgstr "无法开启 iCloud 同步：{error}"
 #: src/service/update/archive.rs
 msgid "Could not unpack the download: {error}"
 msgstr "无法解压下载的文件：{error}"
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Could not upload the snapshot"
+msgstr "无法上传快照"
 
 #: src/host/sync/mod.rs
 msgid "Could not use this Apple Account: {error}"
@@ -4666,6 +4751,10 @@ msgstr "全部忽略"
 msgid "Distance"
 msgstr "距离"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Distance of the close below the recent high, 0 to -100."
+msgstr "收盘价低于近期高点的距离，范围 0 到 -100。"
+
 #: src/ui/settings/broker_words.rs
 msgid "Do not tick Transfer. DegenView never moves funds and does not need it."
 msgstr "不要勾选 Transfer。DegenView 从不转移资金，也不需要它。"
@@ -4685,6 +4774,10 @@ msgstr "不同步"
 #: src/pine_studio/debug/panel/bar_break.rs
 msgid "Don't stop at this bar"
 msgstr "不在这根K线处停止"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Donchian Channels"
+msgstr "唐奇安通道"
 
 #: src/model/mcp/activity.rs src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/settings/mod.rs src/ui/chart/settings/templates/mod.rs
@@ -4874,6 +4967,10 @@ msgstr "价格创出新低时绘制。"
 #: src/ui/chart/settings/style.rs
 msgid "Draws one value of each bar. Scripts and indicators still read the real OHLC."
 msgstr "每根K线只绘制一个值。脚本和指标仍读取真实的 OHLC。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Draws the highest high and lowest low over a window with their midpoint. A close beyond a band is a breakout, which is the entry rule of the classic turtle system."
+msgstr "画出一段窗口内的最高价和最低价及其中点。收盘价突破通道边界即为突破，这正是经典海龟交易法的入场规则。"
 
 #: src/ui/chart/settings/style.rs
 msgid "Draws the market's own open, high, low and close."
@@ -5634,6 +5731,10 @@ msgstr "类别"
 msgid "Far"
 msgstr "远端"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Fast minus slow average of the bar midpoint."
+msgstr "K线中点的快速均线减去慢速均线。"
+
 #: src/pine_studio/library/script_actions.rs
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Favorite"
@@ -5964,6 +6065,10 @@ msgstr "第一个极值点"
 #: src/ui/drawing/properties/coordinates.rs
 msgid "First line"
 msgstr "第一条线"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Fits a straight line through the last N closes and draws bands a multiple of the standard deviation above and below it. The slope is the trend and the bands show how stretched price is from it."
+msgstr "对最近 N 个收盘价拟合一条直线，并在其上下画出相距若干倍标准差的通道带。斜率即趋势，通道带显示价格偏离趋势有多远。"
 
 #: src/ui/chart/settings/overlay.rs
 msgid "Fitted to the height of the chart. Its price is in the tag and the legend, not on the axis."
@@ -6753,6 +6858,10 @@ msgstr "价格在坐标轴、十字光标和读数中的显示方式。"
 msgid "How problems show up"
 msgstr "问题如何显示"
 
+#: src/model/pine/bundled/mod.rs
+msgid "How recently the highest high and lowest low happened."
+msgstr "最高价和最低价出现得有多近。"
+
 #: src/model/portfolio/card.rs
 msgid "How the portfolio splits across assets"
 msgstr "投资组合在各资产间的分布"
@@ -6784,6 +6893,14 @@ msgstr "色相"
 #: src/ui/chart/object_tree/mod.rs
 msgid "INDICATORS"
 msgstr "指标"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Ichimoku Cloud"
+msgstr "一目均衡云"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Ichimoku Kinko Hyo draws a conversion and a base line and a cloud between two leading spans shifted forward. Price above the cloud is bullish, below is bearish, inside is indecision. The lagging span is not drawn."
+msgstr "一目均衡表绘制转换线、基准线，以及位于两条前移先行线之间的云带。价格在云上为看涨，在云下为看跌，在云中则表示方向不明。滞后线不绘制。"
 
 #: src/ui/settings/window.rs
 msgid "If the background item is disabled or unavailable, alerts keep evaluating while DegenView is open."
@@ -7238,6 +7355,10 @@ msgstr "保留你输入的内容。保存时将覆盖该文件。"
 msgid "Keeps your watchlists, layouts, drawings, templates, scripts, portfolios and paper-trading accounts the same on every Mac signed in to your Apple Account. Everything also stays on this Mac."
 msgstr "让登录同一 Apple 账户的每台 Mac 上的自选列表、布局、绘图、模板、脚本、投资组合和模拟交易账户保持一致。所有内容同时保留在本机。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Keltner Channels"
+msgstr "肯特纳通道"
+
 #: src/platform.rs
 msgid "Kept in Windows Credential Manager and inserted wherever you place it, in the URL or a header."
 msgstr "保存在 Windows 凭据管理器中，并插入到你指定的位置：URL 或请求头。"
@@ -7522,6 +7643,10 @@ msgstr "许可证"
 msgid "Light"
 msgstr "浅色"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Like RSI but built from the typical price times volume. Above 80 is overbought and below 20 oversold; a new price extreme that MFI does not confirm is a divergence. It needs volume."
+msgstr "类似 RSI，但由典型价格乘以成交量构成。高于 80 为超买，低于 20 为超卖；价格创出新极值而 MFI 没有确认，即为背离。需要成交量数据。"
+
 #: src/model/broker/ticket.rs
 msgid "Limit"
 msgstr "限价"
@@ -7698,6 +7823,10 @@ msgstr "第 {line} 行：{reason}"
 #: src/pine_studio/profiler/marks.rs
 msgid "Line {line}: {snippet}"
 msgstr "第 {line} 行：{snippet}"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Linear Regression Bands"
+msgstr "线性回归带"
 
 #: src/model/drawings/tool.rs src/ui/chart/settings/canvas.rs
 msgid "Lines"
@@ -8043,6 +8172,10 @@ msgstr "下轨"
 msgid "Lower the size to see the smaller ones."
 msgstr "调低数额即可查看更小的爆仓。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "MACD"
+msgstr "MACD"
+
 #: src/ui/settings/mcp/server.rs src/ui/settings/window.rs
 msgid "MCP Server"
 msgstr "MCP 服务器"
@@ -8197,6 +8330,10 @@ msgstr "使用图表刻度的市场从图表起点开始绘制，因此价格只
 msgid "Markets you open will show up here."
 msgstr "你打开过的市场会显示在这里。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Marks swing highs and lows confirmed by the bars on each side."
+msgstr "标出由两侧K线确认的波段高点和低点。"
+
 #: src/model/indicators/catalog.rs
 msgid "Marks where a Supertrend (10, 3) changes direction."
 msgstr "标出 Supertrend (10, 3) 改变方向的位置。"
@@ -8268,6 +8405,10 @@ msgstr "显示在线条旁的测量值。"
 #: src/model/drawings/tool.rs
 msgid "Measurers"
 msgstr "测量工具"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Measures how far the typical price is from its moving average in units of the mean deviation. Readings beyond +100 or -100 mark an unusually strong move."
+msgstr "以平均偏差为单位，衡量典型价格偏离其均线的程度。读数超过 +100 或 -100 表示异常强劲的走势。"
 
 #: src/pine_studio/drawer/simulation.rs src/ui/drawing/properties/style.rs
 msgid "Median"
@@ -8341,6 +8482,10 @@ msgstr "中线样式"
 msgid "Middle point"
 msgstr "中点"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Midline averages and a projected cloud that frames the trend."
+msgstr "中线均值及向前投影的云带，用来框定趋势。"
+
 #: src/native_bridge.rs src/ui/window/chrome.rs
 msgid "Minimize"
 msgstr "最小化"
@@ -8412,6 +8557,10 @@ msgstr "修改了第 {first}–{last} 行"
 #: src/model/indicators/catalog.rs
 msgid "Momentum"
 msgstr "动量"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Money Flow Index"
+msgstr "资金流量指标"
 
 #: src/model/drawings/style.rs src/model/market/timeframe/mod.rs
 msgid "Monthly candles"
@@ -8529,6 +8678,14 @@ msgstr "上移"
 #: src/ui/chart/settings/canvas.rs
 msgid "Move, collapse, maximize and remove, on each script pane."
 msgstr "每个脚本窗格上的移动、折叠、最大化和移除按钮。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Moving Average Convergence Divergence with signal and histogram."
+msgstr "指数平滑异同移动平均线，含信号线和柱状图。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Moving Average Ribbon"
+msgstr "均线带"
 
 #: src/ui/snapshot_studio/window/preview.rs
 msgid "Moving the picture is not available for several charts"
@@ -9266,7 +9423,8 @@ msgstr "没有选中任何星期，因此没有符合条件的日子。"
 msgid "No working orders"
 msgstr "无挂单"
 
-#: src/ui/paper/account_sheet.rs src/ui/settings/mcp/permissions_sheet.rs
+#: src/model/chart/snapshot/studio.rs src/ui/paper/account_sheet.rs
+#: src/ui/settings/mcp/permissions_sheet.rs
 msgid "None"
 msgstr "无"
 
@@ -9587,6 +9745,10 @@ msgstr "数字"
 msgid "O columns"
 msgstr "O 列"
 
+#: src/model/pine/bundled/mod.rs
+msgid "OBV"
+msgstr "OBV"
+
 #: src/ui/chart/settings/canvas.rs
 msgid "OHLC values"
 msgstr "OHLC 数值"
@@ -9683,6 +9845,10 @@ msgstr "命中次数等于"
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "On this chart"
 msgstr "此图表上"
+
+#: src/model/pine/bundled/mod.rs
+msgid "On-Balance Volume: a running total of signed volume."
+msgstr "能量潮：带符号成交量的累计值。"
 
 #: src/ui/alert/editor.rs
 msgid "Once"
@@ -10161,6 +10327,10 @@ msgstr "此图表无法使用模拟交易。"
 #: src/ui/paper/panel/mod.rs src/ui/paper/panel_gallery.rs
 msgid "Paper trading settings"
 msgstr "模拟交易设置"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Parabolic SAR"
+msgstr "抛物线 SAR"
 
 #: src/model/drawings/tool.rs
 msgid "Parallel channel"
@@ -11049,6 +11219,10 @@ msgstr "问题"
 msgid "Quit {app}"
 msgstr "退出 {app}"
 
+#: src/model/pine/bundled/mod.rs
+msgid "RSI"
+msgstr "RSI"
+
 #: src/model/drawings/style.rs
 msgid "Radiation"
 msgstr "辐射"
@@ -11285,6 +11459,10 @@ msgstr "常规"
 #: src/model/broker/ticket.rs src/model/paper/format.rs src/ui/broker/panel.rs
 msgid "Rejected"
 msgstr "已拒绝"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Relative Strength Index, 14 periods, 0 to 100."
+msgstr "相对强弱指数，14 周期，范围 0 到 100。"
 
 #: src/model/editor_theme/typography.rs
 msgid "Relaxed"
@@ -12378,6 +12556,10 @@ msgstr "保存此图表的类型、颜色和画布，供任何图表套用。不
 msgid "Saving adds a second one that fires at the same time."
 msgstr "保存后会多出一个同时触发的提醒。"
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Saving or copying an image never uploads anything."
+msgstr "保存或复制图片绝不会上传任何内容。"
+
 #: src/ui/settings/snapshots.rs
 msgid "Saving or copying an image never uploads anything. Sharing uploads the image to the host that is on, and DegenView asks once before the first upload to each. A host's Test button sends a one-pixel image to check the settings."
 msgstr "保存或复制图片不会上传任何内容。分享会把图片上传到已开启的主机，对每个主机，DegenView 都会在首次上传前询问一次。主机的“测试”按钮会发送一张 1 像素的图片来检查设置。"
@@ -13207,6 +13389,10 @@ msgstr "显示文件中的文本。撤销可找回你的更改。"
 msgid "Shows this asset's transactions"
 msgstr "显示此资产的交易记录"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Shows where the close is relative to the highest high of the last N bars. Above -20 is overbought and below -80 is oversold. It is the Stochastic turned upside down."
+msgstr "显示收盘价相对最近 N 根K线最高价的位置。高于 -20 为超买，低于 -80 为超卖。它相当于上下翻转的随机指标。"
+
 #: src/ui/chart/settings/appearance.rs
 msgid "Shows {count} decimal place on the price axis."
 msgid_plural "Shows {count} decimal places on the price axis."
@@ -13261,6 +13447,14 @@ msgstr "模拟"
 #: src/model/drawings/tool.rs
 msgid "Sine line"
 msgstr "正弦线"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Six averages (SMA, EMA, WMA or HMA) from a first length in equal steps. A fanned-out ribbon means a strong trend, a tangle means a range, and the order of the lines flips when the trend does."
+msgstr "六条均线（SMA、EMA、WMA 或 HMA），从第一个长度起按相等步长递增。均线带呈扇形散开表示趋势强劲，缠绕在一起表示区间震荡，趋势反转时各线的顺序也会翻转。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Six moving averages of increasing length."
+msgstr "六条长度递增的移动平均线。"
 
 #: src/trading/confirm.rs src/trading/edit/mod.rs src/ui/broker/panel.rs
 #: src/ui/market_flow/book/tape.rs src/ui/market_flow/mod.rs
@@ -13598,6 +13792,14 @@ msgstr "第 {number} 步，共 {count} 步"
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Steps of the chart's last printed price place."
 msgstr "以图表最新显示价格的最小小数位为步长。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Stochastic"
+msgstr "随机指标"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Stochastic RSI"
+msgstr "随机 RSI"
 
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Stock"
@@ -14243,6 +14445,10 @@ msgstr "无法读取保护已保存 MCP 凭据的钥匙串密钥，因此服务�
 msgid "The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off."
 msgstr "保护已保存 MCP 凭据的钥匙串密钥已丢失，这些凭据不再可信。服务器保持关闭。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "The Stochastic formula applied to RSI."
+msgstr "把随机指标公式应用于 RSI。"
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr "账户资金不足以下最小订单。"
@@ -14279,6 +14485,10 @@ msgstr "箭头在屏幕上呈现的角度。"
 #: src/pine_studio/ai/mod.rs
 msgid "The assistant stopped unexpectedly."
 msgstr "助手意外停止。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "The average price weighted by volume since the start of the day, with bands a multiple of the volume-weighted standard deviation away. Traders use it as the fair price of the session. It needs volume."
+msgstr "自当日开盘起按成交量加权的平均价，带有相距若干倍成交量加权标准差的通道带。交易者把它当作当日的公允价格。需要成交量数据。"
 
 #: src/ui/chart/settings/appearance.rs
 msgid "The axis reads prices; equal price differences are equally tall."
@@ -14472,6 +14682,10 @@ msgstr "当日最高价高于前一日最高价。"
 msgid "The day's low goes below the previous day's low."
 msgstr "当日最低价低于前一日最低价。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "The difference between a fast and a slow EMA, a signal line of that difference, and a histogram of the gap. The histogram is darker while momentum is growing. A MACD line crossing its signal is the classic trigger."
+msgstr "快速 EMA 与慢速 EMA 之差、该差值的信号线，以及两者差距的柱状图。动能增强时柱状图颜色更深。MACD 线上穿或下穿信号线是经典的触发信号。"
+
 #: src/service/update/archive.rs
 msgid "The download contains an unsafe file path."
 msgstr "下载内容包含不安全的文件路径。"
@@ -14560,6 +14774,10 @@ msgstr "显示的第一根K线为 100，其余为 100 加上各自的涨跌幅�
 msgid "The guide of the block the caret is in."
 msgstr "文本光标所在代码块的参考线。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "The highest high and lowest low of the last N bars."
+msgstr "最近 N 根K线的最高价和最低价。"
+
 #: src/model/editor_theme/roles.rs
 msgid "The highlighted row of the suggestion list."
 msgstr "建议列表中高亮的行。"
@@ -14599,6 +14817,10 @@ msgstr "密钥保留在这台电脑的安全存储中。"
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
 msgstr "上次自动保存写入失败。选择“保存布局”。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "The least-squares line of recent closes with deviation bands."
+msgstr "近期收盘价的最小二乘直线，带有偏差通道带。"
 
 #: src/ui/chart/settings/style.rs
 msgid "The left tick is the open, the right the close."
@@ -15522,6 +15744,10 @@ msgstr "极小"
 msgid "To"
 msgstr "至"
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "To share this chart, DegenView uploads its image to {destination}."
+msgstr "要分享此图表，DegenView 会把它的图片上传到 {destination}。"
+
 #: src/ui/drawing/content/sheet.rs
 msgid "To show its text and the author's picture, DegenView sends this post's link to {host}, asks X's embed service for the author's picture and downloads it from X's image server. The few lines and the picture it gets back are kept on the card. Nothing else is sent: no account, no cookies, nothing about your charts."
 msgstr "为了显示帖子文字和作者头像，DegenView 会把此帖子的链接发送到 {host}，向 X 的嵌入服务请求作者头像，并从 X 的图片服务器下载。获取到的几行文字和头像会保存在卡片上。除此之外不会发送任何内容：没有账户、没有 Cookie，也不涉及你的图表。"
@@ -15723,6 +15949,10 @@ msgstr "趋势角度"
 msgid "Trend line"
 msgstr "趋势线"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Trend strength (ADX) with the +DI and -DI direction lines."
+msgstr "趋势强度（ADX）及 +DI、-DI 方向线。"
+
 #: src/model/drawings/tool.rs
 msgid "Trend-based fib extension"
 msgstr "基于趋势的斐波那契扩展"
@@ -15773,6 +16003,7 @@ msgstr "重试…"
 
 #: src/pine_studio/ai/panel.rs src/pine_studio/profiler/ui.rs
 #: src/ui/broker/panel.rs src/ui/trade/order_sheet/status.rs
+#: src/workspace/chart/snapshot/mod.rs
 msgid "Try again"
 msgstr "重试"
 
@@ -16104,6 +16335,10 @@ msgstr "正在更新 DegenView…"
 msgid "Updating {percent}%"
 msgstr "正在更新 {percent}%"
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Upload"
+msgstr "上传"
+
 #: src/ui/settings/sync.rs
 msgid "Upload This Mac's Data Again"
 msgstr "重新上传本机数据"
@@ -16111,6 +16346,10 @@ msgstr "重新上传本机数据"
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Upload address"
 msgstr "上传地址"
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Upload this chart image?"
+msgstr "要上传此图表的图片吗？"
 
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Upload to a server you run"
@@ -16285,6 +16524,10 @@ msgstr "正在使用来自系统的 {server}"
 #: src/ui/settings/network/mod.rs
 msgid "Using {server} from this page"
 msgstr "正在使用此页面设置的 {server}"
+
+#: src/model/pine/bundled/mod.rs
+msgid "VWAP"
+msgstr "VWAP"
 
 #: src/ui/portfolio/import_preview.rs
 msgid "Validating and importing…"
@@ -16486,6 +16729,10 @@ msgstr "成交量柱"
 #: src/model/chart/kind.rs
 msgid "Volume Candles"
 msgstr "成交量蜡烛图"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Volume weighted average price, restarted each day, with bands."
+msgstr "成交量加权平均价，每日重置，带通道带。"
 
 #: src/model/drawings/tool.rs
 msgid "Volume-based"
@@ -16728,6 +16975,10 @@ msgstr "Webhook…"
 msgid "Weekly candles"
 msgstr "周K线"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Weights each bar's volume by where it closed inside its range and sums over N bars. Above zero means closes lean toward the highs (buying pressure). It needs volume."
+msgstr "按收盘价在K线区间内的位置给每根K线的成交量加权，并对 N 根K线求和。高于零表示收盘价偏向高位（买压）。需要成交量数据。"
+
 #: src/ui/settings/appearance.rs
 msgid "What a chart tab shows. The layout name and the price follow the tab's focused chart."
 msgstr "图表标签页显示的内容。布局名称和价格跟随该标签页中当前聚焦的图表。"
@@ -16796,6 +17047,10 @@ msgstr "“复制链接”“在新标签页中打开”和“发推文图片”
 msgid "Where the baseline sits, as a percentage of the chart's height from the bottom."
 msgstr "基线位置，以距图表底部占图表高度的百分比表示。"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Where the close sits inside the recent range, 0 to 100."
+msgstr "收盘价位于近期区间的位置，范围 0 到 100。"
+
 #: src/ui/drawing/properties/style.rs
 msgid "Where the median starts and ends."
 msgstr "中线的起止位置。"
@@ -16834,6 +17089,26 @@ msgstr "宽度"
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Width point"
 msgstr "宽度点"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Wilder's Average True Range, in price units or as a percent of the close. It measures volatility, not direction, and is widely used to size stops and positions."
+msgstr "威尔德的平均真实波幅，以价格单位或收盘价的百分比表示。它衡量波动率而非方向，被广泛用来确定止损和仓位大小。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Wilder's Parabolic Stop and Reverse puts a dot below the bars while the trend is up and above them while it is down, speeding up as the trend runs. A dot that flips side is a reversal signal."
+msgstr "威尔德的抛物线转向指标：上升趋势时在K线下方画点，下降趋势时画在上方，随着趋势延续而加速。圆点换到另一侧即为反转信号。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Wilder's momentum oscillator: the average gain over the average loss across the last N bars, scaled from 0 to 100. Above the upper level is conventionally overbought and below the lower level oversold."
+msgstr "威尔德的动量震荡指标：最近 N 根K线的平均涨幅与平均跌幅之比，缩放到 0 至 100。高于上限通常视为超买，低于下限视为超卖。"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Williams %R"
+msgstr "威廉指标 %R"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Williams Fractals"
+msgstr "威廉分形"
 
 #: src/ui/portfolio/statistics/win_rate.rs
 msgid "Win Rate"
@@ -19106,6 +19381,10 @@ msgstr "{what}，已关闭"
 #: src/ui/chart/settings/scripts/rows.rs
 msgid "{what}, on"
 msgstr "{what}，已开启"
+
+#: src/model/broker/ticket.rs
+msgid "{what}. {reason}"
+msgstr "{what}。{reason}"
 
 #: src/model/broker/ticket.rs
 msgid "{what}: {filled} filled."

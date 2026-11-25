@@ -44,7 +44,7 @@ mod tests;
 #[cfg(test)]
 pub use active::with_locale;
 pub use active::{current, preference, revision, set};
-pub use list::join_list;
+pub use list::{join_list, join_sentences};
 pub use locale::{Locale, resolve};
 pub use preference::Preference;
 pub use template::fill;
@@ -83,9 +83,8 @@ impl Marked {
         translate("", self.0)
     }
 
-    /// The English text, the message's key: for what must not change with the language, never for
-    /// showing. Tests compare by it.
-    #[cfg(test)]
+    /// The English text, the message's key: for what must not change with the language (what an MCP
+    /// client reads, a test compares), never for showing.
     pub fn msgid(self) -> &'static str {
         self.0
     }

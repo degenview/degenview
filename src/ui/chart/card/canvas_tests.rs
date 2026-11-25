@@ -1680,7 +1680,7 @@ pub(super) fn add_bundled(harness: &mut Harness, id: &str) {
     let indicator = crate::model::pine::bundled::find(id).expect("a bundled indicator");
     let instance = harness.card.add_pine_instance(
         Some(crate::model::pine::bundled::script_id(indicator)),
-        indicator.name,
+        indicator.name.msgid(),
         indicator.source,
     );
     let ran = |harness: &Harness| {
@@ -1743,7 +1743,7 @@ fn a_bundled_indicator_gets_the_placement_it_declares() {
             harness.card.pane_count(),
             usize::from(!indicator.overlay),
             "{}: {}",
-            indicator.name,
+            indicator.name.msgid(),
             if indicator.overlay {
                 "an overlay stays on the price pane"
             } else {

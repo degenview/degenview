@@ -85,7 +85,7 @@ pub fn cancel_report(results: &[CancelResult]) -> CancelReport {
         sentences.push(sentence);
     }
     CancelReport {
-        text: sentences.join(" "),
+        text: crate::i18n::join_sentences(&sentences),
         error,
     }
 }
