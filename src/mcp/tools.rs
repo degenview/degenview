@@ -192,7 +192,7 @@ impl McpIndicator {
         match self.target() {
             IndicatorTarget::BuiltIn(kind) => kind.menu_title(),
             IndicatorTarget::Bundled(id) => {
-                bundled::find(id).map_or(id, |indicator| indicator.name)
+                bundled::find(id).map_or(id, |indicator| indicator.name.msgid())
             }
         }
     }

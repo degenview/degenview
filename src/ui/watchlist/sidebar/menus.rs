@@ -4,7 +4,7 @@
 use super::header::flag_row;
 use super::{PromptKind, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState};
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::watchlist::{
     EntryId, Watchlist, WatchlistColumn, WatchlistFlag, WatchlistInstrument, WatchlistSortKey,
 };
@@ -29,7 +29,7 @@ pub(super) fn menu_width_now(ui: &egui::Ui) -> f32 {
     let labels = [
         tr!("Add Section…"),
         tr!("Sort By"),
-        tr!("Columns"),
+        tr_c!("watchlist columns", "Columns"),
         tr!("Filter by Flag"),
         tr!("Show Details"),
         tr!("Import Symbols…"),

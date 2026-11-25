@@ -62,7 +62,7 @@ impl FetchError {
 pub fn request_url(link: &Link) -> String {
     format!(
         "https://{FETCH_HOST}/oembed?url={}&omit_script=true&dnt=true",
-        percent_encode(&link.url())
+        crate::service::net::url::encode_component(&link.url())
     )
 }
 
@@ -300,19 +300,6 @@ fn decode_entities(text: &str) -> String {
         }
     }
     out.push_str(rest);
-    out
-}
-
-/// A value written into a query string.
-fn percent_encode(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() * 2);
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            out.push(byte as char);
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
     out
 }
 

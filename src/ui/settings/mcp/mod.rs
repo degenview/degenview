@@ -148,16 +148,16 @@ struct AccessOverview {
 const NAMED_AREAS: usize = 3;
 
 fn named(areas: &[&str]) -> String {
-    let shown = areas
+    let mut shown: Vec<String> = areas
         .iter()
         .take(NAMED_AREAS)
-        .copied()
-        .collect::<Vec<_>>()
-        .join(", ");
-    match areas.len().saturating_sub(NAMED_AREAS) {
-        0 => shown,
-        more => tr!("{areas} +{more} more", areas = shown, more = more),
+        .map(|area| (*area).to_owned())
+        .collect();
+    let more = areas.len().saturating_sub(NAMED_AREAS);
+    if more > 0 {
+        shown.push(tr!("{count} more", count = more));
     }
+    crate::i18n::join_list(&shown)
 }
 
 fn access_overview(set: &PermissionSet) -> AccessOverview {

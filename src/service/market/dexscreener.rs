@@ -1,4 +1,5 @@
 use crate::model::{Kline, Timeframe};
+use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -37,7 +38,7 @@ impl MarketSource for DexScreener {
         if q.is_empty() {
             return Ok(Vec::new());
         }
-        let url = format!("{BASE_URL}/search?q={q}");
+        let url = search_url(&q);
         let body = crate::service::net::http::get_text(
             &url,
             &[],
@@ -45,6 +46,11 @@ impl MarketSource for DexScreener {
         )?;
         parse_search(&body, query)
     }
+}
+
+/// The search address for an already trimmed, lower-cased query.
+fn search_url(query: &str) -> String {
+    format!("{BASE_URL}/search?q={}", encode_component(query))
 }
 
 fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -103,6 +109,14 @@ fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_query_outside_ascii_is_escaped_in_the_search_address() {
+        assert_eq!(
+            search_url("比特币 & co"),
+            format!("{BASE_URL}/search?q=%E6%AF%94%E7%89%B9%E5%B8%81%20%26%20co")
+        );
+    }
 
     #[test]
     fn search_dedupes_by_pair_keeping_highest_liquidity() {

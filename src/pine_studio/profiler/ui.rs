@@ -15,7 +15,7 @@ use eframe::egui::{
 
 use super::marks::{HotRow, ProfileMarks, SummaryGroup, SummaryRow, count};
 use super::{Profile, Status};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::pine::profile::RegionKind;
 use crate::pine_studio::drawer::tab_chrome::{
     self as chrome, BUTTON, banner, caption, card, hairline,
@@ -461,7 +461,12 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, fresh: Freshness) {
                 tr!("Total time"),
                 &marks.totals.time,
             ),
-            (Icon::BarChart, kit::GREEN, tr!("Bars"), &marks.totals.bars),
+            (
+                Icon::BarChart,
+                kit::GREEN,
+                tr_c!("number of bars", "Bars"),
+                &marks.totals.bars,
+            ),
             (
                 Icon::Repeat,
                 kit::ORANGE,

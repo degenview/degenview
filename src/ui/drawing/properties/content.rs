@@ -3,7 +3,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, toggle_row};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::Geometry;
 use crate::ui::chart::settings::style::number_field;
 use crate::ui::icons::Icon;
@@ -132,7 +132,7 @@ impl DrawingProperties {
             theme::text_secondary(),
         ));
 
-        page.section(ui, tr!("Size"), None);
+        page.section(ui, tr_c!("text or image size", "Size"), None);
         let (low, high) = crate::model::annotation::link_card::CARD_SIZE_RANGE;
         let mut size = card.size;
         for (axis, title, id) in [

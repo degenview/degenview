@@ -5,6 +5,7 @@ pub mod ai;
 pub mod api_keys;
 pub(in crate::ui) mod appearance;
 pub mod art;
+pub mod broker_words;
 pub mod brokers;
 pub mod card;
 pub mod mcp;

@@ -1406,8 +1406,8 @@ impl SymbolPicker {
                 .searched(self.scope)
                 .into_iter()
                 .map(lookup::short_name)
-                .collect::<Vec<_>>()
-                .join(", ");
+                .collect::<Vec<_>>();
+            let searched = crate::i18n::join_list(&searched);
             let detail = match &lookup.unsupported {
                 Some(prefix) => tr!(
                     "{prefix} isn't supported. Searched: {searched}.",

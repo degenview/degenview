@@ -224,14 +224,13 @@ fn row_detail(entry: &McpAuditEntry) -> String {
                 parts.push(entry.client_name.clone());
             }
             if !entry.targets.is_empty() {
-                parts.push(
-                    entry
+                parts.push(crate::i18n::join_list(
+                    &entry
                         .targets
                         .iter()
                         .map(|target| target_text(&target.kind, &target.id))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                );
+                        .collect::<Vec<_>>(),
+                ));
             }
             if !entry.code.is_empty() {
                 parts.push(entry.code.clone());
@@ -331,12 +330,13 @@ fn row_tooltip(entry: &McpAuditEntry, utc_offset_secs: i64) -> String {
     if !entry.targets.is_empty() {
         lines.push(tr!(
             "Named: {targets}",
-            targets = entry
-                .targets
-                .iter()
-                .map(|target| target_text(&target.kind, &target.id))
-                .collect::<Vec<_>>()
-                .join(", ")
+            targets = crate::i18n::join_list(
+                &entry
+                    .targets
+                    .iter()
+                    .map(|target| target_text(&target.kind, &target.id))
+                    .collect::<Vec<_>>()
+            )
         ));
     }
     if !entry.request_id.is_empty() {
@@ -1110,7 +1110,7 @@ mod tests {
         assert_eq!(row_title(&done), "Get pine report");
         assert_eq!(
             row_detail(&done),
-            "Client a · workspace 46, chart 3 · 312 ms"
+            "Client a · workspace 46 and chart 3 · 312 ms"
         );
         let failed = call(2, "a", McpAuditOutcome::Failed);
         assert_eq!(outcome_tag(&failed).0, "Failed");
@@ -1162,7 +1162,7 @@ mod tests {
             "Tool: degenview_get_pine_report",
             "Result: Failed (NOT_FOUND)",
             "Took 312 ms",
-            "Named: workspace 46, chart 3",
+            "Named: workspace 46 and chart 3",
             "Request id: req-9",
             "Entry id: 7",
         ] {

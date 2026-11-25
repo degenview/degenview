@@ -129,7 +129,7 @@ impl ChartType {
             Self::LineBreak => tr!("Line Break"),
             Self::PointAndFigure => tr!("Point & Figure"),
             Self::Range => tr!("Range"),
-            Self::Line => tr!("Line"),
+            Self::Line => tr_c!("chart type", "Line"),
             Self::LineWithMarkers => tr!("Line with Markers"),
             Self::StepLine => tr!("Step Line"),
             Self::Area => tr!("Area"),

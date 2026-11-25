@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use degenview_brokers::{Decimal, Side};
 use eframe::egui;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::trading::model::{OrderRow, RowStatus, Tone};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone as BadgeTone;
@@ -75,7 +75,7 @@ pub fn figure(value: Decimal) -> String {
 pub fn price_text(row: &OrderRow) -> String {
     match row.price {
         Some(price) => figure(price),
-        None if row.kind == "Market" => tr!("Market").to_owned(),
+        None if row.kind == "Market" => tr_c!("order type", "Market").to_owned(),
         None => "—".to_owned(),
     }
 }

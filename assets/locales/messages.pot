@@ -100,6 +100,10 @@ msgstr ""
 msgid "+{hidden} more"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "-----BEGIN EC PRIVATE KEY----- … (or a base64 Ed25519 key)"
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "//@version=6 and the other //@ directives."
 msgstr ""
@@ -260,6 +264,14 @@ msgstr ""
 msgid "A faint market name behind the candles. Off."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"A fractal is a bar whose high (or low) is the highest (lowest) of the bars "
+"either side of it. Each is confirmed after those bars close, and the mark is "
+"placed back on the bar. Fractals are often used as support, resistance and "
+"stop levels."
+msgstr ""
+
 #: src/ui/alert/editor.rs
 msgid "A fresh current price is required for percentage alerts."
 msgstr ""
@@ -326,6 +338,13 @@ msgstr ""
 msgid ""
 "A moving average that weights recent closes more. Choose its period from the "
 "chip on the chart (9, 20, 50, 100 or 200)."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"A moving average with bands set by the Average True Range, so the channel "
+"follows volatility. Closes outside the channel suggest a strong move; a flat, "
+"narrow channel suggests a range."
 msgstr ""
 
 #: src/pine_studio/editor/symbols.rs
@@ -409,12 +428,30 @@ msgstr ""
 msgid "A trade appears here once a position is closed."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "A trailing stop that accelerates toward price."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "A volume-weighted RSI, 0 to 100."
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "ABCD pattern"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "ABOUT"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "ADX / DMI"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"ADX measures how strong a trend is, not which way: above about 25 there is a "
+"trend. +DI over -DI means the trend is up, the reverse that it is down."
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -447,12 +484,20 @@ msgstr ""
 msgid "API key configured"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "API key name"
+msgstr ""
+
 #: src/ui/settings/ai.rs
 msgid "API key saved"
 msgstr ""
 
 #: src/ui/webhook/editor.rs
 msgid "API token or key"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "ATR"
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -897,6 +942,13 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Adds the bar's volume on an up close and subtracts it on a down close, with a "
+"moving average of the total as its signal. Rising OBV while price is flat "
+"suggests accumulation."
+msgstr ""
+
 #: src/ui/portfolio/transactions.rs
 msgid "Adjustment"
 msgstr ""
@@ -1263,6 +1315,10 @@ msgstr ""
 msgid "An API key has no spaces and is at most 128 plain characters."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "An EMA with bands a multiple of the ATR away."
+msgstr ""
+
 #: src/ui/settings/network/mod.rs
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr ""
@@ -1418,6 +1474,13 @@ msgstr ""
 msgid "Applies every change as one undo step"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Applies the Stochastic to the RSI instead of price. It reaches the ends of its"
+" range far more often than RSI itself, so it times turns earlier and gives "
+"more false ones."
+msgstr ""
+
 #: src/ui/paper/account_sheet.rs
 msgid "Applies to every market. 1× means no borrowing."
 msgstr ""
@@ -1517,12 +1580,22 @@ msgid "Archived"
 msgstr ""
 
 #: src/model/chart/kind.rs
-#: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Area"
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
 msgid "Arithmetic, comparison, assignment and ?: operators."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Aroon"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Aroon Up and Aroon Down, each 0 to 100, say how many bars ago the highest high"
+" and the lowest low were. A strong Aroon Up with a weak Aroon Down is an "
+"uptrend."
 msgstr ""
 
 #: src/model/cursor/mod.rs
@@ -1723,6 +1796,10 @@ msgstr ""
 msgid "Average Cost"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Average True Range: the typical bar size including gaps."
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Average high-low"
 msgstr ""
@@ -1738,6 +1815,10 @@ msgstr ""
 #: src/pine_studio/drawer/figures.rs
 #: src/ui/pine/report.rs
 msgid "Avg trade"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Awesome Oscillator"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -1857,12 +1938,8 @@ msgstr ""
 
 #: src/model/chart/kind.rs
 #: src/model/pattern/bars.rs
-#: src/pine_studio/profiler/ui.rs
 #: src/ui/chart/card/crosshair.rs
 #: src/ui/chart/settings/style.rs
-#: src/ui/drawing/properties/forecast_pages.rs
-#: src/ui/drawing/properties/style.rs
-#: src/ui/replay/bar.rs
 msgid "Bars"
 msgstr ""
 
@@ -1969,6 +2046,13 @@ msgstr ""
 
 #: src/ui/market_flow/book/ladder.rs
 msgid "Bid {size} ({worth})"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Bill Williams' histogram: a 5-period average of the midpoint minus a 34-period"
+" one. Green bars are rising and red bars falling; crossing zero is a momentum "
+"shift."
 msgstr ""
 
 #: src/ui/market_flow/mod.rs
@@ -2308,6 +2392,10 @@ msgstr ""
 msgid "Buy {symbol} stop"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Buying and selling pressure over N bars, -1 to +1."
+msgstr ""
+
 #: src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
 msgid "By Type"
@@ -2332,6 +2420,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "C"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "CCI"
 msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
@@ -2429,6 +2521,7 @@ msgstr ""
 #: src/ui/webhook/editor.rs
 #: src/ui/window/update_sheet/mod.rs
 #: src/ui/workspace/layout_prompts.rs
+#: src/workspace/chart/snapshot/mod.rs
 msgid "Cancel"
 msgstr ""
 
@@ -2609,6 +2702,10 @@ msgstr ""
 
 #: src/ui/settings/mcp/security.rs
 msgid "Certificate"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Chaikin Money Flow"
 msgstr ""
 
 #: src/pine_studio/drawer/simulation.rs
@@ -2975,6 +3072,10 @@ msgstr ""
 
 #: src/ui/portfolio/tab/bar.rs
 msgid "Choose portfolio"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid "Choose the ECDSA signature algorithm if you are offered one."
 msgstr ""
 
 #: src/ui/portfolio/tab/mod.rs
@@ -3415,8 +3516,6 @@ msgid "Colour {hex}"
 msgstr ""
 
 #: src/model/chart/kind.rs
-#: src/ui/watchlist/sidebar/header.rs
-#: src/ui/watchlist/sidebar/menus.rs
 msgid "Columns"
 msgstr ""
 
@@ -3438,6 +3537,10 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "Committed to open orders"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Commodity Channel Index: distance from the average price."
 msgstr ""
 
 #: src/pine_studio/library/empty_library.rs
@@ -3488,6 +3591,13 @@ msgstr ""
 
 #: src/model/chart/object_tree.rs
 msgid "Compared symbols"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Compares the close with the high-low range of the last N bars, smoothed into "
+"%K and %D. Above the upper level is overbought and below the lower level is "
+"oversold."
 msgstr ""
 
 #: src/pine_studio/preview/state.rs
@@ -3842,6 +3952,11 @@ msgstr ""
 msgid "Copy the answer"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Copy the key name and the private key (shown once) into the fields below."
+msgstr ""
+
 #: src/ui/settings/about.rs
 msgid "Copy the version and build date for a bug report"
 msgstr ""
@@ -4045,6 +4160,10 @@ msgstr ""
 
 #: src/service/update/archive.rs
 msgid "Could not unpack the download: {error}"
+msgstr ""
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Could not upload the snapshot"
 msgstr ""
 
 #: src/host/sync/mod.rs
@@ -4974,6 +5093,14 @@ msgstr ""
 msgid "Distance"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Distance of the close below the recent high, 0 to -100."
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid "Do not tick Transfer. DegenView never moves funds and does not need it."
+msgstr ""
+
 #: src/ui/settings/about.rs
 msgid "Documentation"
 msgstr ""
@@ -4988,6 +5115,10 @@ msgstr ""
 
 #: src/pine_studio/debug/panel/bar_break.rs
 msgid "Don't stop at this bar"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Donchian Channels"
 msgstr ""
 
 #: src/model/mcp/activity.rs
@@ -5192,6 +5323,13 @@ msgstr ""
 #: src/ui/chart/settings/style.rs
 msgid ""
 "Draws one value of each bar. Scripts and indicators still read the real OHLC."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Draws the highest high and lowest low over a window with their midpoint. A "
+"close beyond a band is a breakout, which is the entry rule of the classic "
+"turtle system."
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -6005,6 +6143,10 @@ msgstr ""
 msgid "Far"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Fast minus slow average of the bar midpoint."
+msgstr ""
+
 #: src/pine_studio/library/script_actions.rs
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Favorite"
@@ -6353,6 +6495,13 @@ msgstr ""
 msgid "First line"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Fits a straight line through the last N closes and draws bands a multiple of "
+"the standard deviation above and below it. The slope is the trend and the "
+"bands show how stretched price is from it."
+msgstr ""
+
 #: src/ui/chart/settings/overlay.rs
 msgid ""
 "Fitted to the height of the chart. Its price is in the tag and the legend, not"
@@ -6646,6 +6795,12 @@ msgid ""
 "Gives every chart in this workspace this chart's type, colors and canvas. "
 "Symbols, timeframes, indicators, scripts, alerts and drawings stay as they "
 "are."
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Go to API keys and create a Secret API key for the portfolio you want to "
+"trade."
 msgstr ""
 
 #: src/native_bridge.rs
@@ -7189,6 +7344,10 @@ msgstr ""
 msgid "How problems show up"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "How recently the highest high and lowest low happened."
+msgstr ""
+
 #: src/model/portfolio/card.rs
 msgid "How the portfolio splits across assets"
 msgstr ""
@@ -7220,6 +7379,17 @@ msgstr ""
 
 #: src/ui/chart/object_tree/mod.rs
 msgid "INDICATORS"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Ichimoku Cloud"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Ichimoku Kinko Hyo draws a conversion and a base line and a cloud between two "
+"leading spans shifted forward. Price above the cloud is bullish, below is "
+"bearish, inside is indecision. The lagging span is not drawn."
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -7410,7 +7580,6 @@ msgstr ""
 msgid "Indent guides"
 msgstr ""
 
-#: src/pine_studio/debug/panel/bar_break.rs
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Index"
 msgstr ""
@@ -7576,6 +7745,12 @@ msgstr ""
 msgid "Iterations"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Its answers are fixed examples. The balances, orders and fills do not change "
+"when you place, edit or cancel an order, and it has no live prices."
+msgstr ""
+
 #: src/host/mcp/confirmation.rs
 msgid "Its drawings go with it."
 msgstr ""
@@ -7714,6 +7889,10 @@ msgid ""
 "Keeps your watchlists, layouts, drawings, templates, scripts, portfolios and "
 "paper-trading accounts the same on every Mac signed in to your Apple Account. "
 "Everything also stays on this Mac."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Keltner Channels"
 msgstr ""
 
 #: src/platform.rs
@@ -8023,6 +8202,13 @@ msgstr ""
 msgid "Light"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Like RSI but built from the typical price times volume. Above 80 is overbought"
+" and below 20 oversold; a new price extreme that MFI does not confirm is a "
+"divergence. It needs volume."
+msgstr ""
+
 #: src/model/broker/ticket.rs
 msgid "Limit"
 msgstr ""
@@ -8041,7 +8227,6 @@ msgstr ""
 msgid "Limited"
 msgstr ""
 
-#: src/model/chart/kind.rs
 #: src/ui/chart/settings/overlay.rs
 #: src/ui/drawing/properties/style.rs
 msgid "Line"
@@ -8211,6 +8396,10 @@ msgstr ""
 
 #: src/pine_studio/profiler/marks.rs
 msgid "Line {line}: {snippet}"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Linear Regression Bands"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -8572,6 +8761,10 @@ msgstr ""
 msgid "Lower the size to see the smaller ones."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "MACD"
+msgstr ""
+
 #: src/ui/settings/mcp/server.rs
 #: src/ui/settings/window.rs
 msgid "MCP Server"
@@ -8690,12 +8883,10 @@ msgstr ""
 msgid "Marker size"
 msgstr ""
 
-#: src/model/broker/ticket.rs
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
 #: src/ui/market_flow/mod.rs
-#: src/ui/portfolio/transaction_editor.rs
 #: src/ui/trade/tables.rs
 msgid "Market"
 msgstr ""
@@ -8743,6 +8934,10 @@ msgstr ""
 
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Markets you open will show up here."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Marks swing highs and lows confirmed by the bars on each side."
 msgstr ""
 
 #: src/model/indicators/catalog.rs
@@ -8817,6 +9012,12 @@ msgstr ""
 
 #: src/model/drawings/tool.rs
 msgid "Measurers"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Measures how far the typical price is from its moving average in units of the "
+"mean deviation. Readings beyond +100 or -100 mark an unusually strong move."
 msgstr ""
 
 #: src/pine_studio/drawer/simulation.rs
@@ -8896,6 +9097,10 @@ msgstr ""
 msgid "Middle point"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Midline averages and a projected cloud that frames the trend."
+msgstr ""
+
 #: src/native_bridge.rs
 #: src/ui/window/chrome.rs
 msgid "Minimize"
@@ -8969,6 +9174,10 @@ msgstr ""
 
 #: src/model/indicators/catalog.rs
 msgid "Momentum"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Money Flow Index"
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -9091,6 +9300,14 @@ msgstr ""
 
 #: src/ui/chart/settings/canvas.rs
 msgid "Move, collapse, maximize and remove, on each script pane."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Moving Average Convergence Divergence with signal and histogram."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Moving Average Ribbon"
 msgstr ""
 
 #: src/ui/snapshot_studio/window/preview.rs
@@ -9633,6 +9850,10 @@ msgstr ""
 msgid "No journal entries"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "No key is used, so there is nothing to grant. Press Connect."
+msgstr ""
+
 #: src/ui/settings/ai.rs
 msgid "No key needed for a local server"
 msgstr ""
@@ -9857,6 +10078,7 @@ msgstr ""
 msgid "No working orders"
 msgstr ""
 
+#: src/model/chart/snapshot/studio.rs
 #: src/ui/paper/account_sheet.rs
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "None"
@@ -10201,6 +10423,10 @@ msgstr ""
 msgid "O columns"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "OBV"
+msgstr ""
+
 #: src/ui/chart/settings/canvas.rs
 msgid "OHLC values"
 msgstr ""
@@ -10307,6 +10533,10 @@ msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "On this chart"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "On-Balance Volume: a running total of signed volume."
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -10538,6 +10768,11 @@ msgstr ""
 
 #: src/ui/settings/api_keys.rs
 msgid "Open the Alpaca dashboard"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -10824,6 +11059,10 @@ msgstr ""
 #: src/ui/paper/panel/mod.rs
 #: src/ui/paper/panel_gallery.rs
 msgid "Paper trading settings"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Parabolic SAR"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -11609,6 +11848,10 @@ msgstr ""
 msgid "Privacy"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "Private key"
+msgstr ""
+
 #: src/pine_studio/drawer/mod.rs
 msgid "Problems"
 msgstr ""
@@ -11765,6 +12008,10 @@ msgstr ""
 
 #: src/native_bridge.rs
 msgid "Quit {app}"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "RSI"
 msgstr ""
 
 #: src/model/drawings/style.rs
@@ -12018,6 +12265,10 @@ msgstr ""
 msgid "Rejected"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Relative Strength Index, 14 periods, 0 to 100."
+msgstr ""
+
 #: src/model/editor_theme/typography.rs
 msgid "Relaxed"
 msgstr ""
@@ -12260,6 +12511,10 @@ msgstr ""
 
 #: src/ui/chart/indicator_strip.rs
 msgid "Remove {title}"
+msgstr ""
+
+#: src/ui/settings/card.rs
+msgid "Removed"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -13115,6 +13370,10 @@ msgstr ""
 msgid "Save this chart's look, or give it another."
 msgstr ""
 
+#: src/ui/settings/card.rs
+msgid "Saved"
+msgstr ""
+
 #: src/host/settings/mod.rs
 msgid "Saved conversations cleared."
 msgstr ""
@@ -13179,6 +13438,10 @@ msgstr ""
 
 #: src/ui/alert/editor.rs
 msgid "Saving adds a second one that fires at the same time."
+msgstr ""
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Saving or copying an image never uploads anything."
 msgstr ""
 
 #: src/ui/settings/snapshots.rs
@@ -14065,6 +14328,13 @@ msgstr ""
 msgid "Shows this asset's transactions"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Shows where the close is relative to the highest high of the last N bars. "
+"Above -20 is overbought and below -80 is oversold. It is the Stochastic turned"
+" upside down."
+msgstr ""
+
 #: src/ui/chart/settings/appearance.rs
 msgid "Shows {count} decimal place on the price axis."
 msgid_plural "Shows {count} decimal places on the price axis."
@@ -14124,15 +14394,23 @@ msgstr ""
 msgid "Sine line"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Six averages (SMA, EMA, WMA or HMA) from a first length in equal steps. A "
+"fanned-out ribbon means a strong trend, a tangle means a range, and the order "
+"of the lines flips when the trend does."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Six moving averages of increasing length."
+msgstr ""
+
 #: src/trading/confirm.rs
 #: src/trading/edit/mod.rs
 #: src/ui/broker/panel.rs
-#: src/ui/drawing/properties/content.rs
-#: src/ui/drawing/properties/text.rs
 #: src/ui/market_flow/book/tape.rs
 #: src/ui/market_flow/mod.rs
 #: src/ui/paper/tables.rs
-#: src/ui/snapshot_studio/window/toolbar.rs
 msgid "Size"
 msgstr ""
 
@@ -14483,6 +14761,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Steps of the chart's last printed price place."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Stochastic"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Stochastic RSI"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
@@ -15166,6 +15452,10 @@ msgid ""
 "cannot be trusted. The server stays off."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "The Stochastic formula applied to RSI."
+msgstr ""
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr ""
@@ -15207,6 +15497,13 @@ msgstr ""
 
 #: src/pine_studio/ai/mod.rs
 msgid "The assistant stopped unexpectedly."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"The average price weighted by volume since the start of the day, with bands a "
+"multiple of the volume-weighted standard deviation away. Traders use it as the"
+" fair price of the session. It needs volume."
 msgstr ""
 
 #: src/ui/chart/settings/appearance.rs
@@ -15417,6 +15714,13 @@ msgstr ""
 msgid "The day's low goes below the previous day's low."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"The difference between a fast and a slow EMA, a signal line of that "
+"difference, and a histogram of the gap. The histogram is darker while momentum"
+" is growing. A MACD line crossing its signal is the classic trigger."
+msgstr ""
+
 #: src/service/update/archive.rs
 msgid "The download contains an unsafe file path."
 msgstr ""
@@ -15507,6 +15811,10 @@ msgstr ""
 msgid "The guide of the block the caret is in."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "The highest high and lowest low of the last N bars."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "The highlighted row of the suggestion list."
 msgstr ""
@@ -15547,6 +15855,10 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "The least-squares line of recent closes with deviation bands."
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -16109,6 +16421,10 @@ msgstr ""
 msgid "There is nothing on this chart to take a picture of yet."
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "There is nothing to create: Coinbase's sandbox needs no API key."
+msgstr ""
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "There is nothing to spend."
 msgstr ""
@@ -16473,6 +16789,10 @@ msgstr ""
 msgid "Three quarters by"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid "Tick View, and Trade only if you want to place orders from DegenView."
+msgstr ""
+
 #: src/ui/portfolio/asset_picker.rs
 msgid "Ticker symbol (e.g. BTC or PEPE)"
 msgstr ""
@@ -16556,6 +16876,10 @@ msgstr ""
 
 #: src/ui/mcp/activity.rs
 msgid "To"
+msgstr ""
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "To share this chart, DegenView uploads its image to {destination}."
 msgstr ""
 
 #: src/ui/drawing/content/sheet.rs
@@ -16778,6 +17102,10 @@ msgstr ""
 msgid "Trend line"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Trend strength (ADX) with the +DI and -DI direction lines."
+msgstr ""
+
 #: src/model/drawings/tool.rs
 msgid "Trend-based fib extension"
 msgstr ""
@@ -16830,6 +17158,7 @@ msgstr ""
 #: src/pine_studio/profiler/ui.rs
 #: src/ui/broker/panel.rs
 #: src/ui/trade/order_sheet/status.rs
+#: src/workspace/chart/snapshot/mod.rs
 msgid "Try again"
 msgstr ""
 
@@ -17175,12 +17504,20 @@ msgstr ""
 msgid "Updating {percent}%"
 msgstr ""
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Upload"
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Upload This Mac's Data Again"
 msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Upload address"
+msgstr ""
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Upload this chart image?"
 msgstr ""
 
 #: src/service/snapshot/providers/self_hosted.rs
@@ -17242,6 +17579,12 @@ msgstr ""
 
 #: src/ui/settings/sync.rs
 msgid "Use iCloud's Data"
+msgstr ""
+
+#: src/ui/settings/broker_words.rs
+msgid ""
+"Use it to try the order ticket and its previews without a real account. "
+"Nothing here reaches your Coinbase account."
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -17357,6 +17700,10 @@ msgstr ""
 
 #: src/ui/settings/network/mod.rs
 msgid "Using {server} from this page"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "VWAP"
 msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
@@ -17501,6 +17848,12 @@ msgstr ""
 msgid "View balances and orders"
 msgstr ""
 
+#: src/ui/settings/broker_words.rs
+msgid ""
+"View lets DegenView read balances and orders. Trade lets it place and cancel "
+"orders. Transfer is never needed."
+msgstr ""
+
 #: src/ui/settings/brokers.rs
 msgid "View only"
 msgstr ""
@@ -17561,6 +17914,10 @@ msgstr ""
 
 #: src/model/chart/kind.rs
 msgid "Volume Candles"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Volume weighted average price, restarted each day, with bands."
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -17810,6 +18167,13 @@ msgstr ""
 msgid "Weekly candles"
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Weights each bar's volume by where it closed inside its range and sums over N "
+"bars. Above zero means closes lean toward the highs (buying pressure). It "
+"needs volume."
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid ""
 "What a chart tab shows. The layout name and the price follow the tab's focused"
@@ -17893,6 +18257,10 @@ msgid ""
 "bottom."
 msgstr ""
 
+#: src/model/pine/bundled/mod.rs
+msgid "Where the close sits inside the recent range, 0 to 100."
+msgstr ""
+
 #: src/ui/drawing/properties/style.rs
 msgid "Where the median starts and ends."
 msgstr ""
@@ -17933,6 +18301,35 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Width point"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Wilder's Average True Range, in price units or as a percent of the close. It "
+"measures volatility, not direction, and is widely used to size stops and "
+"positions."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Wilder's Parabolic Stop and Reverse puts a dot below the bars while the trend "
+"is up and above them while it is down, speeding up as the trend runs. A dot "
+"that flips side is a reversal signal."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid ""
+"Wilder's momentum oscillator: the average gain over the average loss across "
+"the last N bars, scaled from 0 to 100. Above the upper level is conventionally"
+" overbought and below the lower level oversold."
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Williams %R"
+msgstr ""
+
+#: src/model/pine/bundled/mod.rs
+msgid "Williams Fractals"
 msgstr ""
 
 #: src/ui/portfolio/statistics/win_rate.rs
@@ -18704,10 +19101,6 @@ msgstr[1] ""
 msgid "{amount} vs invested"
 msgstr ""
 
-#: src/ui/settings/mcp/mod.rs
-msgid "{areas} +{more} more"
-msgstr ""
-
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "{arrow} {amount}"
 msgstr ""
@@ -19180,6 +19573,10 @@ msgid "{count} month ago"
 msgid_plural "{count} months ago"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/settings/mcp/mod.rs
+msgid "{count} more"
+msgstr ""
 
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} more favorite"
@@ -20412,6 +20809,10 @@ msgid "{what}, on"
 msgstr ""
 
 #: src/model/broker/ticket.rs
+msgid "{what}. {reason}"
+msgstr ""
+
+#: src/model/broker/ticket.rs
 msgid "{what}: {filled} filled."
 msgstr ""
 
@@ -20606,6 +21007,11 @@ msgctxt "badge"
 msgid "TP"
 msgstr ""
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgctxt "bar index"
+msgid "Index"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 msgctxt "bold button"
 msgid "B"
@@ -20614,6 +21020,11 @@ msgstr ""
 #: src/pine_studio/menu_bar/edit.rs
 msgctxt "changed lines of the script"
 msgid "Change"
+msgstr ""
+
+#: src/model/chart/kind.rs
+msgctxt "chart type"
+msgid "Line"
 msgstr ""
 
 #: src/pine_studio/editor/completion.rs
@@ -20659,6 +21070,11 @@ msgstr ""
 #: src/pine_studio/editor/completion.rs
 msgctxt "completion kind"
 msgid "your symbol"
+msgstr ""
+
+#: src/ui/portfolio/transaction_editor.rs
+msgctxt "fill with the market price"
+msgid "Market"
 msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
@@ -20729,6 +21145,14 @@ msgstr ""
 #: src/ui/market_flow/flow.rs
 msgctxt "net over the last minute, column head"
 msgid "1m"
+msgstr ""
+
+#: src/pine_studio/profiler/ui.rs
+#: src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/style.rs
+#: src/ui/replay/bar.rs
+msgctxt "number of bars"
+msgid "Bars"
 msgstr ""
 
 #: src/ui/market_flow/book/ladder.rs
@@ -20839,9 +21263,11 @@ msgctxt "order type"
 msgid "Limit"
 msgstr ""
 
+#: src/model/broker/ticket.rs
 #: src/trading/broker/backend.rs
 #: src/trading/model.rs
 #: src/trading/paper/backend.rs
+#: src/ui/trade/tables.rs
 msgctxt "order type"
 msgid "Market"
 msgstr ""
@@ -21015,6 +21441,13 @@ msgctxt "test environment badge"
 msgid "Test"
 msgstr ""
 
+#: src/ui/drawing/properties/content.rs
+#: src/ui/drawing/properties/text.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "text or image size"
+msgid "Size"
+msgstr ""
+
 #: src/service/update/check.rs
 msgctxt "update channel"
 msgid "Release Candidate"
@@ -21040,6 +21473,12 @@ msgctxt "venue kind"
 msgid "Test"
 msgstr ""
 
+#: src/ui/watchlist/sidebar/header.rs
+#: src/ui/watchlist/sidebar/menus.rs
+msgctxt "watchlist columns"
+msgid "Columns"
+msgstr ""
+
 #: src/ui/window/tab_link_menu/mod.rs
 msgctxt "what a link syncs, in a list"
 msgid "date range"
@@ -21058,4 +21497,9 @@ msgstr ""
 #: src/ui/window/tab_link_menu/mod.rs
 msgctxt "what a link syncs, in a list"
 msgid "time"
+msgstr ""
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "what the image shows"
+msgid "Area"
 msgstr ""

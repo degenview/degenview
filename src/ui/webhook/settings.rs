@@ -321,15 +321,14 @@ pub fn body(
         Icon::InfoCircle,
         theme::text_secondary(),
         tr!("How it works"),
-        // Whole sentences, one message each, joined with a space: the platform's is its own message.
-        Some(&format!(
-            "{} {} {}",
+        // Whole sentences, one message each: the platform's is its own message.
+        Some(&crate::i18n::join_sentences(&[
             tr!("Alerts send their final message as the request body."),
             crate::platform::webhook_secret_is_kept(),
             tr!(
                 "Each alert triggers one attempt per webhook, with a 3 second limit and no retries, so a slow or failing server can never send the same message twice."
-            )
-        )),
+            ),
+        ])),
         None,
     );
 

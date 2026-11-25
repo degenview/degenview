@@ -354,6 +354,20 @@ impl StatusMessage {
         })))
     }
 
+    /// "Saved", in the language in use when it is drawn.
+    pub(crate) fn saved() -> Self {
+        Self::ok(Words::Written(Arc::new(|| {
+            crate::i18n::tr!("Saved").to_owned()
+        })))
+    }
+
+    /// "Removed", in the language in use when it is drawn.
+    pub(crate) fn removed() -> Self {
+        Self::ok(Words::Written(Arc::new(|| {
+            crate::i18n::tr!("Removed").to_owned()
+        })))
+    }
+
     /// A provider's failure: the headline is the text, the rest is kept for a card.
     pub(crate) fn failure(report: ErrorReport) -> Self {
         Self {

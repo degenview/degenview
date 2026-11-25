@@ -689,9 +689,10 @@ fn the_plural_formulas_translators_write_agree_with_cldr() {
     use super::plural_forms::PluralForms;
     use icu_plurals::PluralRules;
 
-    let formulas: [(&str, usize, &str); 9] = [
+    let formulas: [(&str, usize, &str); 10] = [
         ("de", 2, "n != 1"),
         ("es", 2, "n != 1"),
+        ("zh", 1, "0"),
         ("fr", 2, "n > 1"),
         ("pt-BR", 2, "n > 1"),
         ("ja", 1, "0"),
@@ -741,4 +742,44 @@ fn the_plural_formulas_translators_write_agree_with_cldr() {
             "{tag}: the counts reach more forms than nplurals says"
         );
     }
+}
+
+// MARK: Lists
+
+#[test]
+fn a_list_is_joined_the_way_the_language_joins_it() {
+    use super::{Locale, join_list, with_locale};
+    let items = ["Mon", "Tue", "Wed"];
+    with_locale(Locale::ENGLISH, || {
+        assert_eq!(join_list(&items), "Mon, Tue, and Wed");
+        assert_eq!(join_list(&items[..2]), "Mon and Tue");
+        assert_eq!(join_list(&items[..1]), "Mon");
+        assert_eq!(join_list::<&str>(&[]), "");
+    });
+    with_locale(Locale::from_tag("es").expect("Spanish is offered"), || {
+        assert_eq!(join_list(&items), "Mon, Tue y Wed");
+    });
+    with_locale(Locale::from_tag("zh").expect("Chinese is offered"), || {
+        assert_eq!(join_list(&items), "Mon、Tue和Wed");
+        assert_eq!(join_list(&items[..2]), "Mon和Tue");
+    });
+    // The pseudo-locale writes lists as English, like its dates.
+    with_locale(Locale::PSEUDO, || {
+        assert_eq!(join_list(&items), "Mon, Tue, and Wed")
+    });
+}
+
+#[test]
+fn sentences_are_joined_with_the_space_their_language_puts_between_them() {
+    use super::join_sentences;
+    assert_eq!(
+        join_sentences(&["One.", "Two.", "Three"]),
+        "One. Two. Three"
+    );
+    assert_eq!(
+        join_sentences(&["一。", "二！", "三？", "四"]),
+        "一。二！三？四"
+    );
+    assert_eq!(join_sentences(&["", "Only."]), "Only.");
+    assert_eq!(join_sentences::<&str>(&[]), "");
 }

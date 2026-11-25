@@ -1,3 +1,4 @@
+mod cjk;
 #[cfg(test)]
 mod fonts_tests;
 
@@ -523,7 +524,8 @@ pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 /// system monospace font (SF Mono) first in the monospace one. The fonts egui ships stay as glyph
 /// fallbacks, and a machine without SF Mono simply keeps them. STIX Two Math and Apple Symbols go last
 /// in both families so characters the others lack — "𝓑𝓾𝔂" and other math alphanumerics, arrows,
-/// geometric shapes — draw instead of showing tofu squares.
+/// geometric shapes — draw instead of showing tofu squares. A language written in Han characters adds
+/// the system's font for them (`cjk`).
 fn base_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     fonts
@@ -566,9 +568,23 @@ fn base_fonts() -> egui::FontDefinitions {
             }
         }
     }
+    if let Some(data) = cjk::system_font(crate::i18n::current(), INTER) {
+        fonts
+            .font_data
+            .insert("han".to_owned(), std::sync::Arc::new(data));
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .push("han".to_owned());
+        }
+    }
     add_symbol_fallback(&mut fonts);
     fonts
 }
+
+const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 
 /// Inter Regular (`assets/fonts`, SIL OFL 1.1; the licence and where the file comes from are in
 /// `assets/fonts/README.md`): the font of the app's text on every platform.
@@ -578,7 +594,6 @@ fn base_fonts() -> egui::FontDefinitions {
 /// compared with a 2x screen. Unhinted keeps the font's own proportions at any scale.
 pub fn bundled_ui_font() -> std::sync::Arc<egui::FontData> {
     static FONT: std::sync::OnceLock<std::sync::Arc<egui::FontData>> = std::sync::OnceLock::new();
-    const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
     FONT.get_or_init(|| {
         std::sync::Arc::new(egui::FontData::from_static(INTER).tweak(egui::FontTweak {
             hinting: Some(false),

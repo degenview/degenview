@@ -9,6 +9,7 @@
 //! has happened.
 
 use crate::host::snapshot::{Hosting, SnapshotHost, turn_on_a_host};
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
@@ -525,26 +526,25 @@ impl ChartWorkspace {
             );
         }
         if let Some(waiting) = &self.snapshot.consent {
-            let note = waiting
-                .destination
-                .note()
-                .map_or_else(String::new, |note| format!(" {note}"));
-            let message = format!(
-                "To share this chart, DegenView uploads its image to {}. {}{note} Saving or \
-                 copying an image never uploads anything.",
-                waiting.destination.label(),
-                waiting.destination.notice()
-            );
+            let message = crate::i18n::join_sentences(&[
+                tr!(
+                    "To share this chart, DegenView uploads its image to {destination}.",
+                    destination = waiting.destination.label()
+                ),
+                waiting.destination.notice().to_owned(),
+                waiting.destination.note().unwrap_or_default().to_owned(),
+                tr!("Saving or copying an image never uploads anything.").to_owned(),
+            ]);
             let outcome = kit::alert(
                 ctx,
                 Id::new(("snapshot-consent", self.id)),
                 &kit::Alert {
                     icon: Icon::ShareUp,
                     tint: kit::ORANGE,
-                    title: "Upload this chart image?",
+                    title: tr!("Upload this chart image?"),
                     message: &message,
-                    accept: "Upload",
-                    dismiss: "Cancel",
+                    accept: tr!("Upload"),
+                    dismiss: tr!("Cancel"),
                     cautious: true,
                 },
             );
@@ -561,10 +561,10 @@ impl ChartWorkspace {
                 &kit::Alert {
                     icon: Icon::TriangleFill,
                     tint: kit::ORANGE,
-                    title: "Could not upload the snapshot",
+                    title: tr!("Could not upload the snapshot"),
                     message: &waiting.message,
-                    accept: "Try again",
-                    dismiss: "Cancel",
+                    accept: tr!("Try again"),
+                    dismiss: tr!("Cancel"),
                     cautious: false,
                 },
             );

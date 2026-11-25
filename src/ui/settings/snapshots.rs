@@ -233,7 +233,7 @@ fn approved_hint(consented: &[String]) -> String {
     } else {
         tr!(
             "You agreed to upload to {hosts}. DegenView asks again for any other host.",
-            hosts = consented.join(", ")
+            hosts = crate::i18n::join_list(consented)
         )
     }
 }
@@ -274,7 +274,7 @@ mod tests {
     fn the_privacy_card_names_the_destinations_agreed_to() {
         assert!(approved_hint(&[]).contains("asks before the first upload"));
         let hint = approved_hint(&["api.imgbb.com".into(), "b.example:8443".into()]);
-        assert!(hint.contains("api.imgbb.com, b.example:8443"));
+        assert!(hint.contains("api.imgbb.com and b.example:8443"));
     }
 
     #[test]

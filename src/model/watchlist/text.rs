@@ -88,8 +88,7 @@ impl ImportReport {
         if self.truncated {
             parts.push(tr!("stopped early: too much to import").to_owned());
         }
-        // A list of short phrases, the separator is not part of any sentence.
-        parts.join(", ")
+        crate::i18n::join_list(&parts)
     }
 }
 
@@ -693,7 +692,7 @@ mod tests {
         assert_eq!(list.sections().count(), 1);
         assert_eq!(
             report.summary(),
-            "Added 1 symbol, 1 already in the list, 1 skipped"
+            "Added 1 symbol, 1 already in the list, and 1 skipped"
         );
         // The new market landed inside the reused section.
         let eth = list
@@ -711,7 +710,7 @@ mod tests {
             sections_added: 2,
             ..ImportReport::default()
         };
-        assert_eq!(report.summary(), "Added 2 symbols, 2 sections");
+        assert_eq!(report.summary(), "Added 2 symbols and 2 sections");
         assert_eq!(
             ImportReport {
                 added: 1,
@@ -719,7 +718,7 @@ mod tests {
                 ..ImportReport::default()
             }
             .summary(),
-            "Added 1 symbol, 1 section"
+            "Added 1 symbol and 1 section"
         );
     }
 

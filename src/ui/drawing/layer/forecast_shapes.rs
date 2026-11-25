@@ -788,7 +788,7 @@ fn measurement(
             parts.push(duration);
         }
         if !parts.is_empty() {
-            lines.push(parts.join(", "));
+            lines.push(parts.join(" · "));
         }
         if options.volume
             && let Some(volume) = forecast::measure::volume_over(

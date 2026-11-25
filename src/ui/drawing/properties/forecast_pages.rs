@@ -7,7 +7,7 @@
 
 use super::rows::{Page, color_card, color_well, toggle_row};
 use super::{DrawingProperties, Icon, Id, Ui, card, number_field, picker_row};
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::chart::kind::PriceSource;
 use crate::model::forecast::style::{
     MAX_ACCOUNT, MAX_BAND_MULTIPLIER, MAX_QTY_PRECISION, MAX_ROW_TICKS, ProfileVolume, RowsLayout,
@@ -236,7 +236,7 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         page.section(
             ui,
-            tr!("Bars"),
+            tr_c!("number of bars", "Bars"),
             Some(tr!(
                 "A copy kept in the drawing: later changes to the chart do not move it."
             )),
@@ -628,7 +628,13 @@ impl DrawingProperties {
         }
         if kind.has_time() {
             page.section(ui, tr!("Time"), None);
-            toggle_row(ui, Icon::Hash, tr!("Bars"), "", &mut options.bars);
+            toggle_row(
+                ui,
+                Icon::Hash,
+                tr_c!("number of bars", "Bars"),
+                "",
+                &mut options.bars,
+            );
             toggle_row(ui, Icon::Clock, tr!("Date and time"), "", &mut options.time);
             toggle_row(
                 ui,
