@@ -840,7 +840,7 @@ msgstr "Hinterlege zum Teilen deinen ImgBB-API-Schlüssel unter Einstellungen �
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
-msgstr "Trage deine kostenlosen Alpaca-Schlüssel in den Einstellungen ein, um US-Aktien zu laden."
+msgstr "Trage deine kostenlosen Alpaca-API-Schlüssel in den Einstellungen ein, um US-Aktien zu suchen und als Chart anzuzeigen."
 
 #: src/pine_studio/ai/host.rs
 msgid "Add your {provider} API key to start"
@@ -6187,11 +6187,11 @@ msgstr "Fokussiere einen Markt-Chart: Eine Order gilt für den Markt des Charts.
 
 #: src/ui/settings/network/mod.rs
 msgid "Follows the HTTP_PROXY and HTTPS_PROXY variables, then the proxy in System Settings ▸ Network."
-msgstr "Folgt den Variablen HTTP_PROXY und HTTPS_PROXY, dann dem Proxy unter Windows-Einstellungen ▸ Netzwerk und Internet ▸ Proxy."
+msgstr "Folgt den Variablen HTTP_PROXY und HTTPS_PROXY, dann dem Proxy unter Systemeinstellungen ▸ Netzwerk."
 
 #: src/ui/settings/network/mod.rs
 msgid "Follows the HTTP_PROXY and HTTPS_PROXY variables, then the proxy in Windows Settings ▸ Network & internet ▸ Proxy."
-msgstr "Folgt den Variablen HTTP_PROXY und HTTPS_PROXY, dann dem Proxy unter Systemeinstellungen ▸ Netzwerk."
+msgstr "Folgt den Variablen HTTP_PROXY und HTTPS_PROXY, dann dem Proxy unter Windows-Einstellungen ▸ Netzwerk und Internet ▸ Proxy."
 
 #: src/ui/settings/network/mod.rs
 msgid "Follows the HTTP_PROXY, HTTPS_PROXY and ALL_PROXY variables."
@@ -19269,7 +19269,7 @@ msgstr "Tabelle {rows} × {columns}"
 
 #: src/pine_studio/drawer/simulation.rs
 msgid "{runs} runs, each drawing {trades} of the closed trades at random, repeats allowed. Profits add up as money, so position sizing does not compound."
-msgstr "{runs} Läufe, die jeweils {trades} der geschlossenen Trades zufällig ziehen, auch mehrfach. Gewinne werden als Geldbeträge addiert, die Positionsgröße wirkt also nicht mit Zinseszins."
+msgstr "{runs} Läufe, die jeweils {trades} der geschlossenen Trades zufällig ziehen, auch mehrfach. Gewinne werden als Geldbeträge addiert, die Positionsgröße wächst also nicht nach dem Zinseszinsprinzip mit."
 
 #: src/ui/portfolio/cards/value.rs
 msgid "{scope} · {count} asset"
@@ -19387,11 +19387,11 @@ msgstr "{side} {size} {product} · {kind}"
 
 #: src/model/alert/draft/mod.rs
 msgid "{signed} from now. The price is already above this level; it fires after dropping below and crossing back up."
-msgstr "{signed} ab jetzt. Der Preis liegt bereits über diesem Niveau; der Alarm löst aus, nachdem der Preis darunter gefallen ist und es wieder nach oben kreuzt."
+msgstr "{signed} zum aktuellen Preis. Der Preis liegt bereits über diesem Niveau; der Alarm löst aus, nachdem der Preis darunter gefallen ist und es wieder nach oben kreuzt."
 
 #: src/model/alert/draft/mod.rs
 msgid "{signed} from now. The price is already below this level; it fires after rising above and crossing back down."
-msgstr "{signed} ab jetzt. Der Preis liegt bereits unter diesem Niveau; der Alarm löst aus, nachdem der Preis darüber gestiegen ist und es wieder nach unten kreuzt."
+msgstr "{signed} zum aktuellen Preis. Der Preis liegt bereits unter diesem Niveau; der Alarm löst aus, nachdem der Preis darüber gestiegen ist und es wieder nach unten kreuzt."
 
 #: src/model/alert/draft/mod.rs
 msgid "{signed} from the current price"

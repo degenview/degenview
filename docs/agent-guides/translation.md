@@ -95,7 +95,9 @@ vocabulary.
    keep each chunk's header.
 3. **One agent per chunk**, in parallel, each given the glossary, the style rules in this guide and
    the instruction to open the call site of every entry. Ask for a `.po` fragment back with every
-   entry filled.
+   entry filled, each `msgstr` under its own `msgid`. Never take a numbered list of translations and
+   join it back by position: two entries trade places, both still read as good text, and no gettext
+   tool notices (the German proxy hints sent Mac users to Windows Settings that way).
 4. **Merge and check:**
 
    ```bash
@@ -112,6 +114,9 @@ vocabulary.
    - sample at least 100 entries against their call sites, favouring short labels;
    - look for English left in a translation, untranslated placeholders, doubled spaces, a changed
      `…`.
+   Then have readers who did not translate go through **every** pair of English and translation,
+   asking only whether the second says what the first says (swapped, omitted, reversed, wrong
+   sense). Tests catch placeholders and platform names; nothing else catches a misplaced entry.
 6. **Contexts.** Anything the pass shows as one msgid with two meanings goes back to the source
    (`tr_c!`), then to the template, then to the catalog. Never settle for a compromise word.
 

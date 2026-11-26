@@ -301,8 +301,9 @@ Watchlist, Long, Short, Stop-Loss, Take-Profit, Order, Trade, Broker, Replay, We
 menu bar takes Apple's names (Ablage, Darstellung, Im Dock ablegen). Vocabulary is kept by reading
 the catalog (Alarm, Zeiteinheit, Kerze, Balken, Preisskala, Haltepunkt, Handelsplatz). A noun keeps
 its capital inside a sentence, which is why a name put into one goes through `i18n::in_sentence`
-instead of `to_lowercase`. It was looked at in a real window on Linux (Fedora, GNOME) and macOS
-(menu bar and window), not on Windows, and has had no native speaker's review.
+instead of `to_lowercase`. It was looked at in real windows on Linux (Fedora, GNOME), macOS (menu
+bar and window) and Windows 11 on ARM64 (language switch and restart, settings pages, installer),
+and has had no native speaker's review.
 
 ## Not done yet
 

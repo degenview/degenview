@@ -405,6 +405,11 @@ fn a_windows_path_has_the_same_reference_as_on_any_other_os() {
 
 // MARK: The catalogs
 
+/// Names no language translates and no translation brings in on its own. One that appears from
+/// nowhere belongs to another message: entries joined by position can trade places, and each still
+/// reads as good text.
+const PLATFORM_NAMES: [&str; 3] = ["Windows", "macOS", "Linux"];
+
 /// What is wrong with a catalog beside the messages in the source.
 fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<String> {
     let unique = unique_messages(source);
@@ -425,6 +430,13 @@ fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<Strin
             problems.push(format!(
                 "{msgid:?} is counted in one place and not in the other"
             ));
+        }
+        for platform in PLATFORM_NAMES {
+            if !msgid.contains(platform) && texts.iter().any(|text| text.contains(platform)) {
+                problems.push(format!(
+                    "the translation of {msgid:?} names {platform}, which the message does not"
+                ));
+            }
         }
         // A translation uses the values the source passes, and a plain one all of them.
         let allowed: BTreeSet<&str> = used.args.iter().map(String::as_str).collect();
@@ -530,6 +542,9 @@ msgstr[2] "{count} оповещений"
 
     let wrong_context = russian("msgid \"Jan\"\nmsgstr \"янв\"\n");
     assert_eq!(problems_in_catalog(&wrong_context, &source).len(), 1);
+
+    let swapped = russian("msgid \"Save\"\nmsgstr \"Сохранить в Windows\"\n");
+    assert_eq!(problems_in_catalog(&swapped, &source).len(), 1);
 
     let not_counted = russian("msgid \"{count} alert\"\nmsgstr \"{count} оповещение\"\n");
     assert_eq!(problems_in_catalog(&not_counted, &source).len(), 1);
