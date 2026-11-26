@@ -35,7 +35,7 @@ struct Language {
 }
 
 /// Every language, English first. Add a language here, with its catalog (`docs/localization.md`).
-const LANGUAGES: [Language; 5] = [
+const LANGUAGES: [Language; 6] = [
     Language {
         tag: "en",
         native_name: "English",
@@ -65,6 +65,13 @@ const LANGUAGES: [Language; 5] = [
         catalog: Some(include_str!("../../assets/locales/zh.po")),
     },
     Language {
+        tag: "ru",
+        native_name: "Русский",
+        kind: Kind::Natural,
+        capital_nouns: false,
+        catalog: Some(include_str!("../../assets/locales/ru.po")),
+    },
+    Language {
         tag: "en-XA",
         native_name: "Pseudo-locale (en-XA)",
         kind: Kind::Pseudo,
@@ -84,7 +91,7 @@ impl Locale {
     /// and tests, which shows clipped text, fixed widths and text that was never put through
     /// `tr!`. `en-XA` is the standard tag for it.
     #[cfg(test)]
-    pub const PSEUDO: Locale = Locale(4);
+    pub const PSEUDO: Locale = Locale(5);
 
     /// How many languages there are.
     pub(super) const COUNT: usize = LANGUAGES.len();
