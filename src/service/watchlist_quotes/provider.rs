@@ -8,6 +8,7 @@ use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Timeframe};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 
 /// One market to price. `symbol` is the id the provider's quote call takes.
@@ -84,7 +85,19 @@ pub fn chunk_size(source: DataSource) -> usize {
 
 // MARK: Live provider
 
-pub struct LiveProvider;
+pub struct LiveProvider {
+    /// The price about a day ago of each Oanda instrument, with when it was read. Oanda's
+    /// pricing answer carries no 24h figure; one hourly candle per instrument supplies it.
+    oanda_day_ago: Mutex<HashMap<String, (f64, i64)>>,
+}
+
+impl Default for LiveProvider {
+    fn default() -> Self {
+        Self {
+            oanda_day_ago: Mutex::new(HashMap::new()),
+        }
+    }
+}
 
 const COINBASE_URL: &str = "https://api.exchange.coinbase.com";
 const OKX_URL: &str = "https://www.okx.com/api/v5";
@@ -114,7 +127,7 @@ impl QuoteProvider for LiveProvider {
             DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
             DataSource::DexScreener => Ok(dexscreener(requests)),
             DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
-            DataSource::Oanda => oanda(requests).map(Outcome::from_quotes),
+            DataSource::Oanda => oanda(requests, &self.oanda_day_ago).map(Outcome::from_quotes),
             DataSource::Polymarket | DataSource::Kalshi => Ok(prediction(source, requests)),
             DataSource::CoinMarketCap => Ok(Outcome::default()),
         }
@@ -372,8 +385,12 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
     parse_alpaca_snapshots(&body, requests)
 }
 
-/// Oanda's `/accounts/{id}/pricing`: the mid of the bid and ask of every instrument asked for.
-fn oanda(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+/// Oanda's `/accounts/{id}/pricing`: the mid of the inside bid and ask of every instrument
+/// asked for, plus the price about a day ago so the change column has a basis.
+fn oanda(
+    requests: &[QuoteRequest],
+    day_ago: &Mutex<HashMap<String, (f64, i64)>>,
+) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
         return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
     };
@@ -388,7 +405,68 @@ fn oanda(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quot
     );
     let auth = format!("Bearer {token}");
     let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())])?;
-    parse_oanda_pricing(&body, requests)
+    let mut quotes = parse_oanda_pricing(&body, requests)?;
+    let now = crate::clock::now_ms();
+    let mut read = |instrument: &str| oanda_day_ago_price(&token, instrument);
+    fill_day_ago(
+        &mut quotes,
+        requests,
+        &mut day_ago.lock().unwrap(),
+        now,
+        &mut read,
+    );
+    Ok(quotes)
+}
+
+/// How long a read price-a-day-ago stays: re-read at most this often.
+const OANDA_REFERENCE_TTL_MS: i64 = 30 * 60_000;
+
+/// Sets each quote's `previous_day_price` from the cache, reading the instruments the cache
+/// does not hold fresh. A failed read just leaves the reference unset, like Kraken's ticker.
+fn fill_day_ago(
+    quotes: &mut HashMap<String, SourceQuote>,
+    requests: &[QuoteRequest],
+    cache: &mut HashMap<String, (f64, i64)>,
+    now: i64,
+    read: &mut dyn FnMut(&str) -> Option<f64>,
+) {
+    for request in requests {
+        let Some(quote) = quotes.get_mut(&request.symbol) else {
+            continue;
+        };
+        let instrument = request.symbol.to_uppercase();
+        let reference = match cache.get(&instrument) {
+            Some((price, read_at)) if now - read_at < OANDA_REFERENCE_TTL_MS => Some(*price),
+            _ => {
+                let price = read(&instrument);
+                if let Some(price) = price {
+                    cache.insert(instrument, (price, now));
+                }
+                price
+            }
+        };
+        if let Some(price) = reference {
+            quote.previous_day_price = Some(price);
+        }
+    }
+}
+
+/// The open of the oldest of the last 25 hourly candles: the price about a day ago. The
+/// candles endpoint needs no account id, only the token.
+fn oanda_day_ago_price(token: &str, instrument: &str) -> Option<f64> {
+    let url = format!(
+        "{}/instruments/{instrument}/candles?price=M&granularity=H1&count=25",
+        crate::service::market::oanda::BASE_URL
+    );
+    let auth = format!("Bearer {token}");
+    let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())]).ok()?;
+    parse_oanda_day_ago(&body)
+}
+
+fn parse_oanda_day_ago(body: &str) -> Option<f64> {
+    let value: Value = serde_json::from_str(body).ok()?;
+    let candle = value.get("candles")?.as_array()?.first()?;
+    number(candle.pointer("/mid/o"))
 }
 
 /// `{"prices": [{"instrument": "EUR_USD", "bids": [{"price": "1.08501"}], "asks": [{"price":
@@ -1545,6 +1623,89 @@ mod tests {
             parse_oanda_pricing(r#"{"errorMessage":"bad"}"#, &[request("EUR_USD")])
                 .expect_err("no prices")
                 == QuoteFailure::Failed("Unexpected Oanda response".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_day_ago_price_is_the_open_of_the_oldest_hourly_candle() {
+        let body = r#"{"candles":[
+            {"time":"2026-11-25T16:00:00Z","mid":{"o":"5100.00","h":"5110.0","l":"5090.0","c":"5105.0"}},
+            {"time":"2026-11-26T16:00:00Z","mid":{"o":"5200.00","h":"5210.0","l":"5190.0","c":"5205.0"}}
+        ]}"#;
+        assert_eq!(parse_oanda_day_ago(body), Some(5100.0));
+        assert_eq!(parse_oanda_day_ago(r#"{"candles":[]}"#), None);
+        assert_eq!(parse_oanda_day_ago("not json"), None);
+        assert_eq!(parse_oanda_day_ago(r#"{"errorMessage":"bad"}"#), None);
+    }
+
+    #[test]
+    fn a_day_ago_price_is_read_once_while_fresh_and_a_failed_read_is_not_cached() {
+        let mut quotes = HashMap::from([
+            (
+                request("EUR_USD").symbol,
+                SourceQuote {
+                    price: 1.1,
+                    previous_day_price: None,
+                    volume_24h: None,
+                    volume_kind: None,
+                    timestamp_ms: None,
+                },
+            ),
+            (
+                request("SPX500_USD").symbol,
+                SourceQuote {
+                    price: 5100.0,
+                    previous_day_price: None,
+                    volume_24h: None,
+                    volume_kind: None,
+                    timestamp_ms: None,
+                },
+            ),
+            (
+                request("NOQUOTE").symbol,
+                SourceQuote {
+                    price: 0.0,
+                    previous_day_price: None,
+                    volume_24h: None,
+                    volume_kind: None,
+                    timestamp_ms: None,
+                },
+            ),
+        ]);
+        let requests = vec![
+            request("EUR_USD"),
+            request("SPX500_USD"),
+            request("NOQUOTE"),
+        ];
+        let mut cache: HashMap<String, (f64, i64)> = HashMap::new();
+        cache.insert("EUR_USD".to_owned(), (1.05, 1_000));
+        let mut reads = Vec::new();
+        let mut read = |instrument: &str| -> Option<f64> {
+            reads.push(instrument.to_owned());
+            match instrument {
+                "SPX500_USD" => Some(5000.0),
+                _ => None,
+            }
+        };
+        let now = 1_000 + OANDA_REFERENCE_TTL_MS - 1;
+        fill_day_ago(&mut quotes, &requests, &mut cache, now, &mut read);
+        // Once the entry ages out, it is read again.
+        let aged = 1_000 + OANDA_REFERENCE_TTL_MS;
+        fill_day_ago(&mut quotes, &requests, &mut cache, aged, &mut read);
+        drop(read);
+        // The fresh cached entries are used without a read; the aged-out one is read again.
+        assert_eq!(reads, ["SPX500_USD", "NOQUOTE", "EUR_USD", "NOQUOTE"]);
+        assert_eq!(
+            quotes["EUR_USD"].previous_day_price,
+            Some(1.05),
+            "a failed re-read keeps the last known reference"
+        );
+        assert_eq!(quotes["SPX500_USD"].previous_day_price, Some(5000.0));
+        assert_eq!(quotes["NOQUOTE"].previous_day_price, None);
+        assert_eq!(cache.get("SPX500_USD"), Some(&(5000.0, now)));
+        assert!(
+            !cache.contains_key("NOQUOTE"),
+            "a failed read is not cached"
         );
     }
 
