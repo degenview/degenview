@@ -1,0 +1,1 @@
+fixed: Two, three and four week candles (and unusual month lengths such as 5M) now start where TradingView's do, counted from the start of each year. Existing charts on these timeframes show different candles.

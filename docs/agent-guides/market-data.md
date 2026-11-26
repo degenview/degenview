@@ -53,8 +53,13 @@ watchlists.
 - Buckets are `model::market::bucket` and nothing else cuts them (providers, chart and Pine), on the
   market's `bucket::Grid` (`DataSource::grid`). `Grid::Utc` is every crypto source: seconds, minutes
   and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from 1970-01-01,
-  weeks start on Monday, months count from 1970-01 (so `3M` is the calendar quarter, `12M` the
-  year). A bucket closes 1 ms before the next opens.
+  weeks start on Monday and count from the first Monday of each year (a year's last multi-week
+  bucket can be short; the days before that Monday belong to the previous year's), months count
+  from January each year (so `3M` is the calendar quarter, `12M` the year), both as TradingView
+  anchors them (2026-11-26, `time("2W" | "3W" | "4W" | "2M" | "5M")` on `BINANCE:BTCUSDT`). A bucket
+  closes 1 ms before the next opens. Multi-**day** buckets are known to differ: TradingView counts
+  them from 1 January (a stock's in trading days), which providers' own multi-day candles and gap
+  filling do not yet follow.
   `Grid::UsEquities` is a US stock (Alpaca): its **intraday** buckets anchor at the session open,
   09:30 New York (`model::market::session`, which holds the clock changes), every session restarts
   them, the last one is cut at the 16:00 close (1h is `09:30 10:30 … 15:30`, 4h `09:30 13:30`, as
