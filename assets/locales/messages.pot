@@ -2310,8 +2310,13 @@ msgid ""
 "bars."
 msgstr ""
 
-#: src/ui/settings/pine_studio/mod.rs
+#: src/platform.rs
 msgid "Built in: JetBrains Mono. Or any monospaced font installed on this Mac."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Built in: JetBrains Mono. Or any monospaced font installed on this computer."
 msgstr ""
 
 #: src/ui/chart/indicator_picker/mod.rs
@@ -4091,6 +4096,24 @@ msgstr ""
 msgid "Could not remove the keys: {error}"
 msgstr ""
 
+#: src/platform.rs
+msgid ""
+"Could not replace the Keychain key, so nothing was changed ({error}). Delete "
+"the “{item}” item in Keychain Access, then restart DegenView."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Could not replace the key in Windows Credential Manager, so nothing was "
+"changed ({error}). Delete the “{item}” item there, then restart DegenView."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Could not replace the key in secure storage, so nothing was changed ({error})."
+" Delete the “{item}” item in your keyring, then restart DegenView."
+msgstr ""
+
 #: src/host/sync/mod.rs
 msgid "Could not save changes from iCloud: {error}"
 msgstr ""
@@ -4393,11 +4416,18 @@ msgstr ""
 msgid "Credentials"
 msgstr ""
 
-#: src/ui/settings/brokers.rs
+#: src/platform.rs
 msgid ""
 "Credentials are stored in your system's secure storage and never leave this "
 "Mac. They are not synced, and no script, alert or other program can use them "
 "to trade."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Credentials are stored in your system's secure storage and never leave this "
+"computer. They are not synced, and no script, alert or other program can use "
+"them to trade."
 msgstr ""
 
 #: src/model/cursor/mod.rs
@@ -5072,18 +5102,36 @@ msgstr ""
 msgid "Disconnected"
 msgstr ""
 
-#: src/ui/settings/brokers.rs
+#: src/platform.rs
 msgid ""
 "Disconnected, but the key could NOT be removed from this Mac and will connect "
 "again when DegenView starts. Remove it in your keychain, or try again: {error}"
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Disconnected, but the key could NOT be removed from this computer and will "
+"connect again when DegenView starts. Remove it in Windows Credential Manager, "
+"or try again: {error}"
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Disconnected, but the key could NOT be removed from this computer and will "
+"connect again when DegenView starts. Remove it in your keyring, or try again: "
+"{error}"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
 msgid "Disconnected."
 msgstr ""
 
-#: src/ui/settings/brokers.rs
+#: src/platform.rs
 msgid "Disconnected. The key was removed from this Mac."
+msgstr ""
+
+#: src/platform.rs
+msgid "Disconnected. The key was removed from this computer."
 msgstr ""
 
 #: src/ui/chart/indicator_picker/sections.rs
@@ -5465,10 +5513,16 @@ msgid ""
 " is an estimate."
 msgstr ""
 
-#: src/ui/settings/ai.rs
+#: src/platform.rs
 msgid ""
 "Each script's conversation with the assistant is kept on this Mac so it is "
 "there after a restart. It is never synced."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Each script's conversation with the assistant is kept on this computer so it "
+"is there after a restart. It is never synced."
 msgstr ""
 
 #: src/pine_studio/drawer/trades.rs
@@ -5799,8 +5853,12 @@ msgid ""
 "Enter its upload address below. Add the access token if the host asks for one."
 msgstr ""
 
-#: src/ui/settings/mcp/security.rs
+#: src/platform.rs
 msgid "Enter the address of this Mac to listen on"
+msgstr ""
+
+#: src/platform.rs
+msgid "Enter the address of this computer to listen on"
 msgstr ""
 
 #: src/model/chart/snapshot/mod.rs
@@ -6338,8 +6396,12 @@ msgstr ""
 msgid "Fill color"
 msgstr ""
 
-#: src/ui/settings/mcp/security.rs
+#: src/platform.rs
 msgid "Fill in this Mac's address on the local network"
+msgstr ""
+
+#: src/platform.rs
+msgid "Fill in this computer's address on the local network"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -8163,16 +8225,28 @@ msgstr ""
 msgid "Left shoulder"
 msgstr ""
 
-#: src/ui/settings/window.rs
+#: src/platform.rs
 msgid ""
 "Let AI assistants and automation on this Mac inspect DegenView, with "
 "permissions you control."
 msgstr ""
 
-#: src/ui/settings/mcp/server.rs
+#: src/platform.rs
+msgid ""
+"Let AI assistants and automation on this computer inspect DegenView, with "
+"permissions you control."
+msgstr ""
+
+#: src/platform.rs
 msgid ""
 "Lets AI assistants and automation on this Mac inspect DegenView, within the "
 "permissions below. Off until you turn it on."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"Lets AI assistants and automation on this computer inspect DegenView, within "
+"the permissions below. Off until you turn it on."
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -8796,10 +8870,16 @@ msgstr ""
 msgid "MCP Server"
 msgstr ""
 
-#: src/host/mcp/mod.rs
+#: src/platform.rs
 msgid ""
 "MCP credentials cannot be protected against edits to the database on this Mac "
 "({error})"
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"MCP credentials cannot be protected against edits to the database on this "
+"computer ({error})"
 msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
@@ -10492,8 +10572,12 @@ msgstr ""
 msgid "Off shows them only while the position is selected."
 msgstr ""
 
-#: src/ui/settings/mcp/permissions_sheet.rs
+#: src/platform.rs
 msgid "Off: this credential works from this Mac only."
+msgstr ""
+
+#: src/platform.rs
+msgid "Off: this credential works from this computer only."
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -10817,10 +10901,16 @@ msgstr ""
 msgid "OpenAI-compatible"
 msgstr ""
 
-#: src/ui/settings/ai.rs
+#: src/platform.rs
 msgid ""
 "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a "
 "server on this Mac."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a "
+"server on this computer."
 msgstr ""
 
 #: src/model/editor_theme/roles.rs
@@ -15362,8 +15452,13 @@ msgstr ""
 msgid "That is not a web address."
 msgstr ""
 
-#: src/ui/settings/mcp/security.rs
+#: src/platform.rs
 msgid "That is this Mac's own address. Turn the switch off to listen here only"
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"That is this computer's own address. Turn the switch off to listen here only"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
@@ -15457,16 +15552,22 @@ msgstr ""
 msgid "The CoinMarketCap CSV is empty."
 msgstr ""
 
-#: src/host/mcp/mod.rs
+#: src/platform.rs
 msgid ""
 "The Keychain key that protects the saved MCP credentials could not be read, so"
 " the server stays off. Restart DegenView to try again."
 msgstr ""
 
-#: src/host/mcp/mod.rs
+#: src/platform.rs
 msgid ""
 "The Keychain key that protects the saved MCP credentials is missing, so they "
 "cannot be trusted. The server stays off."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"The Keychain key was replaced but the saved MCP state could not be cleared. "
+"Choose Reset MCP Access again."
 msgstr ""
 
 #: src/model/pine/bundled/mod.rs
@@ -15863,6 +15964,24 @@ msgid ""
 msgstr ""
 
 #: src/platform.rs
+msgid ""
+"The key in secure storage that protects the saved MCP credentials could not be"
+" read, so the server stays off. Restart DegenView to try again."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage that protects the saved MCP credentials is missing, "
+"so they cannot be trusted. The server stays off."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage was replaced but the saved MCP state could not be "
+"cleared. Choose Reset MCP Access again."
+msgstr ""
+
+#: src/platform.rs
 msgid "The key stays in Windows Credential Manager on this computer."
 msgstr ""
 
@@ -15954,9 +16073,12 @@ msgstr ""
 msgid "The model list stopped unexpectedly."
 msgstr ""
 
-#: src/ui/settings/mcp/permissions_sheet.rs
-#: src/ui/settings/mcp/security.rs
+#: src/platform.rs
 msgid "The most a credential with remote access can do, even on this Mac."
+msgstr ""
+
+#: src/platform.rs
+msgid "The most a credential with remote access can do, even on this computer."
 msgstr ""
 
 #: src/ui/settings/mcp/permissions_sheet.rs
@@ -16164,7 +16286,13 @@ msgstr ""
 msgid "The same size, different candles."
 msgstr ""
 
-#: src/host/mcp/mod.rs
+#: src/platform.rs
+msgid ""
+"The saved MCP credentials do not match the seal kept in secure storage, so "
+"they were changed outside DegenView. The server stays off."
+msgstr ""
+
+#: src/platform.rs
 msgid ""
 "The saved MCP credentials do not match the seal kept in the Keychain, so they "
 "were changed outside DegenView. The server stays off."
@@ -16724,11 +16852,18 @@ msgstr ""
 msgid "This release is missing its iCloud environment."
 msgstr ""
 
-#: src/ui/settings/brokers.rs
+#: src/platform.rs
 msgid ""
 "This removes the key from this Mac and stops the connection. Orders already "
 "placed stay live at the broker. It does not revoke the key: to do that, delete"
 " it in the broker's own settings."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"This removes the key from this computer and stops the connection. Orders "
+"already placed stay live at the broker. It does not revoke the key: to do "
+"that, delete it in the broker's own settings."
 msgstr ""
 
 #: src/ui/alert/center.rs
@@ -17618,6 +17753,14 @@ msgstr ""
 msgid "Use from other machines"
 msgstr ""
 
+#: src/platform.rs
+msgid "Use https://, or http:// only for a server on this Mac."
+msgstr ""
+
+#: src/platform.rs
+msgid "Use https://, or http:// only for a server on this computer."
+msgstr ""
+
 #: src/ui/settings/sync.rs
 msgid "Use iCloud's Data"
 msgstr ""
@@ -18225,16 +18368,28 @@ msgid ""
 " chart."
 msgstr ""
 
-#: src/ui/mcp/activity.rs
+#: src/platform.rs
 msgid ""
 "What connected clients asked DegenView to do, newest first. Kept on this Mac "
 "only, and holds ids and results, never what a request contained."
 msgstr ""
 
-#: src/ui/mcp/activity.rs
+#: src/platform.rs
+msgid ""
+"What connected clients asked DegenView to do, newest first. Kept on this "
+"computer only, and holds ids and results, never what a request contained."
+msgstr ""
+
+#: src/platform.rs
 msgid ""
 "What connected clients asked DegenView to do. Kept on this Mac only; it holds "
 "ids and results, never what a request contained."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"What connected clients asked DegenView to do. Kept on this computer only; it "
+"holds ids and results, never what a request contained."
 msgstr ""
 
 #: src/pine_studio/ai/panel.rs
@@ -20923,9 +21078,15 @@ msgstr ""
 msgid "“{name}” is already in this watchlist."
 msgstr ""
 
-#: src/ui/settings/pine_studio/mod.rs
+#: src/platform.rs
 msgid ""
 "“{name}” is not installed on this Mac, so the default is used until it is."
+msgstr ""
+
+#: src/platform.rs
+msgid ""
+"“{name}” is not installed on this computer, so the default is used until "
+"it is."
 msgstr ""
 
 #: src/ui/webhook/editor.rs

@@ -75,6 +75,9 @@ Rules that need a person:
   name gets a function there that returns the whole sentence ("Secret not found in your Keychain",
   "Show in Finder"). Where a longer text holds one, split it into sentences and join them with `i18n::join_sentences`, which
   writes the space the language wants (none after Chinese 。).
+- **Only a Mac is called a Mac.** A message that names a Mac or the Keychain is worded in
+  `platform.rs`, beside what Windows and Linux say instead. The exceptions are what only iCloud Sync
+  can show, and `only_a_mac_is_called_a_mac` (`src/i18n/tests.rs`) lists them.
 - **A status line keeps no text.** A `StatusMessage` that says the same thing whatever happened, such
   as `StatusMessage::saved_securely()`, is stored as how to write it and written when drawn, so a
   language chosen after the save reaches it. `StatusMessage::ok`/`error` with text keep that text as

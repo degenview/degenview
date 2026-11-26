@@ -72,7 +72,7 @@ pub(super) fn permissions_sheet(
                 ui,
                 Icon::Link,
                 tr!("Remote ceiling"),
-                tr!("The most a credential with remote access can do, even on this Mac."),
+                crate::platform::mcp_remote_ceiling_hint(),
                 theme::text_secondary(),
             ),
             None => sheet::header(
@@ -170,7 +170,7 @@ fn client_remote_block(
                                 "Held to the remote ceiling, and every change waits for your approval."
                             )
                         } else {
-                            tr!("Off: this credential works from this Mac only.")
+                            crate::platform::mcp_local_only()
                         },
                     );
                 });

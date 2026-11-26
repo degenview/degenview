@@ -814,3 +814,46 @@ fn sentences_are_joined_with_the_space_their_language_puts_between_them() {
     assert_eq!(join_sentences(&["", "Only."]), "Only.");
     assert_eq!(join_sentences::<&str>(&[]), "");
 }
+
+// MARK: Words only a Mac has
+
+/// Files whose every message is shown on a Mac only, or is worded per platform.
+const MAC_WORDING_FILES: [&str; 3] = [
+    "src/platform.rs",
+    "src/ui/settings/sync.rs",
+    "src/host/sync/mod.rs",
+];
+
+/// Messages elsewhere that only iCloud Sync, which exists on a Mac alone, can bring up.
+const ICLOUD_MESSAGES: [&str; 6] = [
+    "Keep your watchlists, layouts, drawings, templates, scripts, portfolios and paper trading the same on every Mac.",
+    "Paused: two Macs changed this account. Placing an order here takes it over.",
+    "Running on another Mac. Placing an order here takes it over.",
+    "Stop Watching on This Mac",
+    "This alert came from another Mac and is switched off on this one, so it notifies from one Mac only. Choose Watch on This Mac to turn it on here too.",
+    "Watch on This Mac",
+];
+
+fn names_a_mac(message: &str) -> bool {
+    message
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| matches!(word, "Mac" | "Macs") || word.eq_ignore_ascii_case("keychain"))
+}
+
+#[test]
+fn only_a_mac_is_called_a_mac() {
+    let wrong: Vec<String> = messages_in_source()
+        .into_iter()
+        .filter(|(file, used)| {
+            names_a_mac(&used.key)
+                && !MAC_WORDING_FILES.contains(&file.as_str())
+                && !ICLOUD_MESSAGES.contains(&used.key.as_str())
+        })
+        .map(|(file, used)| format!("{file}:{}: {}", used.line, used.key))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "shown on Windows and Linux too, so word it per platform in `platform.rs`:\n{}",
+        wrong.join("\n")
+    );
+}

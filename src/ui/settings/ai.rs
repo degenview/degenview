@@ -307,9 +307,7 @@ pub fn body(
                             ui,
                             "ai-base-url",
                             tr!("Server Base URL"),
-                            Some(tr!(
-                                "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
-                            )),
+                            Some(crate::platform::ai_server_url_hint()),
                             "http://localhost:11434/v1",
                             &mut state.draft.compatible_base_url,
                             false,
@@ -399,9 +397,7 @@ pub fn body(
         card(ui, |ui| {
             ui.add(
                 egui::Label::new(kit::text(
-                    tr!(
-                        "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced."
-                    ),
+                    crate::platform::ai_history_hint(),
                     kit::size::SUBHEADLINE + 1.0,
                     kit::REGULAR,
                     theme::text_secondary(),
