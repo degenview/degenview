@@ -172,11 +172,11 @@ const ALPACA: [Timeframe; 8] = [
 ];
 
 /// Oanda's granularities: S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30, H1, H2, H4, H6, H8,
-/// H12, D, W and M. The intraday ones are cut on the UTC clock like every intraday bucket here;
-/// the day, week and month are stamped at 5pm New York (21:00 or 22:00 UTC), an offset inside
-/// their UTC bucket, which is kept as Alpaca's New York midnight offset is, so folds still land
-/// in the right bucket.
-const OANDA: [Timeframe; 20] = [
+/// H12, D and W. Every request asks Oanda for UTC alignment (`alignmentTimezone=UTC`,
+/// `dailyAlignment=0`, `weeklyAlignment=Monday`), so these bars open on the UTC grid like every
+/// bucket here. The monthly candle is left out: even at UTC midnight Oanda stamps it on the
+/// last day of the previous month, off the grid, so months fold from days.
+const OANDA: [Timeframe; 19] = [
     seconds(5),
     seconds(10),
     seconds(15),
@@ -196,7 +196,6 @@ const OANDA: [Timeframe; 20] = [
     hours(12),
     Timeframe::DAY_1,
     Timeframe::WEEK_1,
-    Timeframe::MONTH_1,
 ];
 
 /// GeckoTerminal's OHLCV aggregates (it indexes DEXScreener's pools): minute 1, 5 and 15, hour 1,

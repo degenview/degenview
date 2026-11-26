@@ -2,9 +2,12 @@
 //! list for search. Both need a login — a personal access token and the account id (Settings ▸
 //! Oanda) — sent as a bearer token; the candles endpoint itself takes only the token.
 //!
-//! Oanda stamps its day, week and month candles at 5pm New York (21:00 or 22:00 UTC) rather than
-//! at UTC midnight: the offset into the UTC day is kept, as Alpaca's New York midnight offset is,
-//! so a fold still lands the candle in the bucket its stamp sits in.
+//! Oanda aligns its hourly, daily and weekly bars to 5pm New York by default, which puts an H12
+//! bar across two UTC days. Every request here instead asks for UTC alignment
+//! (`alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday`), so the seconds, minutes,
+//! hours, days and weeks it returns open exactly on the app's UTC grid. Its monthly candle is
+//! stamped on the last day of the previous month even then, off that grid, so months are folded
+//! from days rather than asked for.
 
 use super::candles::plan;
 use super::catalog::Catalog;
@@ -16,8 +19,6 @@ use serde_json::Value;
 
 /// Oanda's live trading API, the one the standalone `oandaohlc` downloader uses.
 pub(in crate::service) const BASE_URL: &str = "https://api-fxtrade.oanda.com/v3";
-
-const DAY_MS: i64 = 86_400_000;
 
 pub struct Oanda;
 
@@ -97,49 +98,18 @@ impl MarketSource for Oanda {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        const PAGE: usize = MAX_PER_REQUEST;
         let plan = plan(DataSource::Oanda, timeframe)?;
         let base = plan.base();
         let requested = plan.base_count(max);
-        let step = base.nominal_ms();
-        let page_ms = step * PAGE as i64;
-        let first = (end_ms - step * requested as i64).max(start_ms);
-        let starts: Vec<i64> = (0..)
-            .map(|index| first + index * page_ms)
-            .take_while(|start| *start < end_ms)
-            .collect();
-        let mut candles: Vec<Kline> = Vec::new();
-        for batch in starts.chunks(PARALLEL) {
-            let pages: Vec<Result<Vec<Kline>, ProviderError>> = std::thread::scope(|scope| {
-                let handles: Vec<_> = batch
-                    .iter()
-                    .map(|&from| {
-                        scope.spawn(move || {
-                            let page_end = (from + page_ms).min(end_ms);
-                            let body =
-                                candles_request(symbol, base, Some(from), Some(page_end), PAGE)?;
-                            Ok(parse_candles(&body, base)?
-                                .into_iter()
-                                .filter(|candle| {
-                                    candle.open_time >= from && candle.open_time < page_end
-                                })
-                                .collect::<Vec<_>>())
-                        })
-                    })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|handle| {
-                        handle.join().unwrap_or_else(|_| {
-                            Err(ProviderError::other("The candle download stopped."))
-                        })
-                    })
-                    .collect()
-            });
-            for page in pages {
-                candles.extend(page?);
-            }
-        }
+        let page_ms = base.nominal_ms() * MAX_PER_REQUEST as i64;
+        let fetch_page = |from: i64, to: i64| -> Result<Vec<Kline>, ProviderError> {
+            let body = candles_request(symbol, base, Some(from), Some(to), MAX_PER_REQUEST)?;
+            Ok(parse_candles(&body, base)?
+                .into_iter()
+                .filter(|candle| candle.open_time >= from && candle.open_time < to)
+                .collect())
+        };
+        let mut candles = page_back(start_ms, end_ms, requested, page_ms, &fetch_page)?;
         candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
         candles.sort_by_key(|candle| candle.open_time);
         candles.dedup_by_key(|candle| candle.open_time);
@@ -163,8 +133,10 @@ impl MarketSource for Oanda {
     }
 }
 
-/// The URL of one candles request: mid prices of `bar`, the newest `count` of them, or the ones
-/// in `[from_ms, to_ms)` when a window is given.
+/// The URL of one candles request: mid prices of `bar`, aligned to UTC midnight so the bars open
+/// on the app's grid, either the newest `count` of them or the ones in `[from_ms, to_ms)` when a
+/// window is given. Oanda's spec says `count` must not be sent together with `from`/`to`, so a
+/// window carries no count.
 fn candles_url(
     instrument: &str,
     bar: Timeframe,
@@ -173,17 +145,83 @@ fn candles_url(
     count: usize,
 ) -> String {
     let mut url = format!(
-        "{BASE_URL}/instruments/{instrument}/candles?price=M&granularity={}&count={}",
+        "{BASE_URL}/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday",
         granularity(bar),
-        count.clamp(1, MAX_PER_REQUEST)
     );
-    if let Some(from) = from_ms {
-        url.push_str(&format!("&from={}", crate::format::iso8601(from)));
-    }
-    if let Some(to) = to_ms {
-        url.push_str(&format!("&to={}", crate::format::iso8601(to)));
+    if from_ms.is_none() && to_ms.is_none() {
+        url.push_str(&format!("&count={}", count.clamp(1, MAX_PER_REQUEST)));
+    } else {
+        if let Some(from) = from_ms {
+            url.push_str(&format!("&from={}", crate::format::iso8601(from)));
+        }
+        if let Some(to) = to_ms {
+            url.push_str(&format!("&to={}", crate::format::iso8601(to)));
+        }
     }
     url
+}
+
+/// How many pages in a row may come back empty before the answer counts as the start of the
+/// market's history: a closed market (the weekend closes forex from Friday to Sunday) leaves
+/// whole wall-clock pages empty, and that must not end the chart's history.
+const MAX_EMPTY_PAGES: usize = 8;
+
+/// Pages `[start_ms, end_ms)` back from `end_ms` in pages of `page_ms`, in batches of
+/// `PARALLEL`, until `requested` candles are held, the floor `start_ms` is reached, or
+/// `MAX_EMPTY_PAGES` pages in a row came back empty.
+fn page_back(
+    start_ms: i64,
+    end_ms: i64,
+    requested: usize,
+    page_ms: i64,
+    fetch: &(dyn Fn(i64, i64) -> Result<Vec<Kline>, ProviderError> + Sync),
+) -> Result<Vec<Kline>, ProviderError> {
+    let mut candles: Vec<Kline> = Vec::new();
+    let mut empty_pages = 0;
+    let mut next_end = end_ms;
+    while next_end > start_ms && candles.len() < requested && empty_pages < MAX_EMPTY_PAGES {
+        let mut starts: Vec<i64> = (1..=PARALLEL as i64)
+            .map(|index| next_end - index * page_ms)
+            .take_while(|start| *start > start_ms)
+            .collect();
+        if starts.is_empty() {
+            // The rest of the range is shorter than a page: one last page at the floor.
+            starts.push(start_ms);
+        }
+        let batch_end = next_end;
+        let pages: Vec<Result<Vec<Kline>, ProviderError>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = starts
+                .iter()
+                .map(|&from| {
+                    scope.spawn(move || {
+                        let to = (from + page_ms).min(batch_end);
+                        fetch(from, to)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle.join().unwrap_or_else(|_| {
+                        Err(ProviderError::other("The candle download stopped."))
+                    })
+                })
+                .collect()
+        });
+        let mut got = 0;
+        for page in pages {
+            let page = page?;
+            got += page.len();
+            candles.extend(page);
+        }
+        empty_pages = if got == 0 {
+            empty_pages + starts.len()
+        } else {
+            0
+        };
+        next_end = *starts.last().expect("one start at least");
+    }
+    Ok(candles)
 }
 
 /// One candles request, with the saved credentials.
@@ -233,38 +271,15 @@ fn parse_candle(row: &Value, bar: Timeframe) -> Result<Kline, ProviderError> {
     let volume = row.get("volume").and_then(Value::as_f64).unwrap_or(0.0);
     Ok(Kline {
         open_time,
-        close_time: close_ms(bar, open_time),
+        // The bars are asked for on the UTC grid, so a candle closes a millisecond before the
+        // next one opens.
+        close_time: open_time + bar.nominal_ms() - 1,
         open: price("o")?,
         high: price("h")?,
         low: price("l")?,
         close: price("c")?,
         volume,
     })
-}
-
-/// Where a candle of `bar` that opens at `open_ms` ends: a millisecond before the next one opens.
-/// A month's stamp is the last day of the month before the one the candle covers (5pm New York),
-/// so its close is the last day of the covered month at the same time of day.
-fn close_ms(bar: Timeframe, open_ms: i64) -> i64 {
-    match bar.unit() {
-        TimeUnit::Month => {
-            let days = open_ms.div_euclid(DAY_MS);
-            let (year, month, _) = crate::format::civil_from_days(days);
-            let (covered_year, covered_month) = if month == 12 {
-                (year + 1, 1)
-            } else {
-                (year, month + 1)
-            };
-            // The first day of the month after the covered one; the day before it is the close.
-            let after = crate::format::days_from_civil(
-                covered_year + covered_month / 12,
-                covered_month % 12 + 1,
-                1,
-            );
-            (after - 1) * DAY_MS + (open_ms - days * DAY_MS) - 1
-        }
-        _ => open_ms + bar.nominal_ms() - 1,
-    }
 }
 
 /// One instrument of the account from `/accounts/{id}/instruments`: all the search needs of it.
@@ -334,6 +349,9 @@ fn matching_instruments(instruments: &[Instrument], needle: &str) -> Vec<SearchR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const DAY_MS: i64 = 86_400_000;
 
     #[test]
     fn parses_oanda_candles_with_their_forming_one() {
@@ -378,44 +396,18 @@ mod tests {
     }
 
     #[test]
-    fn a_monthly_candle_closes_on_the_last_day_of_the_month_it_covers() {
-        // Oanda stamps January's candle on 31 Jan 2025 at 22:00 UTC (5pm New York); it covers
-        // February, so it closes on 28 Feb 2025 at 22:00 UTC, a millisecond before 29 Feb would
-        // open — 2025 is not a leap year.
-        let jan31 = crate::format::days_from_civil(2025, 1, 31) * DAY_MS + 22 * 3_600_000;
-        let close = close_ms(Timeframe::MONTH_1, jan31);
-        let feb28 = crate::format::days_from_civil(2025, 2, 28) * DAY_MS + 22 * 3_600_000;
-        assert_eq!(close, feb28 - 1);
-        // A leap February's candle closes on the 29th.
-        let jan31_2024 = crate::format::days_from_civil(2024, 1, 31) * DAY_MS + 22 * 3_600_000;
-        let feb29_2024 = crate::format::days_from_civil(2024, 2, 29) * DAY_MS + 22 * 3_600_000;
-        assert_eq!(close_ms(Timeframe::MONTH_1, jan31_2024), feb29_2024 - 1);
-        // December's stamp covers January.
-        let dec31 = crate::format::days_from_civil(2024, 12, 31) * DAY_MS + 22 * 3_600_000;
-        let jan31_2025 = crate::format::days_from_civil(2025, 1, 31) * DAY_MS + 22 * 3_600_000;
-        assert_eq!(close_ms(Timeframe::MONTH_1, dec31), jan31_2025 - 1);
-    }
-
-    #[test]
-    fn daily_and_weekly_candles_span_their_nominal_length() {
-        let day = crate::format::days_from_civil(2026, 10, 9) * DAY_MS + 21 * 3_600_000;
-        assert_eq!(close_ms(Timeframe::DAY_1, day), day + DAY_MS - 1);
-        assert_eq!(close_ms(Timeframe::WEEK_1, day), day + 7 * DAY_MS - 1);
-        assert_eq!(close_ms(Timeframe::MINUTE_5, day), day + 5 * 60_000 - 1);
-    }
-
-    #[test]
-    fn a_candles_request_asks_for_mid_prices_of_the_granularity() {
+    fn a_candles_request_asks_for_mid_prices_of_the_granularity_on_the_utc_grid() {
         let from = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
         let to = from + DAY_MS;
         assert_eq!(
             candles_url("EUR_USD", Timeframe::HOUR_4, None, None, 500),
-            "https://api-fxtrade.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=H4&count=500"
+            "https://api-fxtrade.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=H4&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=500"
         );
+        // A window carries no count: Oanda's spec refuses count together with from/to.
         assert_eq!(
             candles_url("XAU_USD", Timeframe::DAY_1, Some(from), Some(to), 5_000),
             format!(
-                "https://api-fxtrade.oanda.com/v3/instruments/XAU_USD/candles?price=M&granularity=D&count=5000&from={}&to={}",
+                "https://api-fxtrade.oanda.com/v3/instruments/XAU_USD/candles?price=M&granularity=D&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&from={}&to={}",
                 crate::format::iso8601(from),
                 crate::format::iso8601(to)
             )
@@ -437,7 +429,7 @@ mod tests {
             tokens,
             [
                 "S5", "S10", "S15", "S30", "M1", "M2", "M4", "M5", "M10", "M15", "M30", "H1", "H2",
-                "H4", "H6", "H8", "H12", "D", "W", "M"
+                "H4", "H6", "H8", "H12", "D", "W"
             ]
         );
     }
@@ -461,7 +453,6 @@ mod tests {
             ("12h", "H12"),
             ("1d", "D"),
             ("1w", "W"),
-            ("1M", "M"),
         ] {
             assert_eq!(base_of(token), (granularity.to_owned(), 500), "{token}");
         }
@@ -476,10 +467,69 @@ mod tests {
         assert_eq!(base_of("8h"), ("H8".to_owned(), 500));
         assert_eq!(base_of("2d"), ("D".to_owned(), 501 * 2));
         assert_eq!(base_of("2w"), ("W".to_owned(), 501 * 2));
-        assert_eq!(base_of("3M"), ("M".to_owned(), 501 * 3));
-        assert_eq!(base_of("1Y"), ("M".to_owned(), 501 * 12));
+        // Oanda's monthly candle is stamped off the UTC grid, so months fold from days, sized
+        // for the longest month.
+        assert_eq!(base_of("1M"), ("D".to_owned(), 501 * 31));
+        assert_eq!(base_of("3M"), ("D".to_owned(), 501 * 93));
+        assert_eq!(base_of("1Y"), ("D".to_owned(), 501 * 372));
         // Oanda has no second candles, so 1s cannot be folded to.
         assert!(plan(DataSource::Oanda, Timeframe::SECOND_1).is_err());
+    }
+
+    fn candle_at(t: i64) -> Kline {
+        Kline {
+            open_time: t,
+            close_time: t,
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1.0,
+        }
+    }
+
+    #[test]
+    fn paging_back_crosses_a_closed_market_instead_of_ending_history() {
+        // The market trades everywhere except [40, 60) — a "weekend".
+        let fetch = |from: i64, to: i64| -> Result<Vec<Kline>, ProviderError> {
+            Ok((from..to)
+                .filter(|&t| t < 40 || t >= 60)
+                .map(candle_at)
+                .collect())
+        };
+        // The oldest candle held opens at 65, just after the gap: the pages right before it
+        // are empty, and paging must go through them to the candles before the gap.
+        let candles = page_back(0, 65, 5, 10, &fetch).expect("pages");
+        assert!(candles.len() >= 5);
+        assert!(candles.iter().any(|c| c.open_time == 62), "after the gap");
+        assert!(candles.iter().any(|c| c.open_time == 38), "before the gap");
+    }
+
+    #[test]
+    fn empty_pages_stop_after_the_cap_so_history_ends_once() {
+        let calls = AtomicUsize::new(0);
+        let fetch = |_from: i64, _to: i64| -> Result<Vec<Kline>, ProviderError> {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Vec::new())
+        };
+        let candles = page_back(0, 1_000, 100, 10, &fetch).expect("pages");
+        assert!(candles.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), MAX_EMPTY_PAGES);
+    }
+
+    #[test]
+    fn paging_stops_at_the_requested_floor() {
+        let calls = AtomicUsize::new(0);
+        let fetch = |from: i64, to: i64| -> Result<Vec<Kline>, ProviderError> {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok((from..to).filter(|&t| t >= 60).map(candle_at).collect())
+        };
+        // The range [50, 65) holds [50, 60) closed and [60, 65) traded.
+        let candles = page_back(50, 65, 100, 10, &fetch).expect("pages");
+        assert_eq!(candles.len(), 5);
+        assert!(candles.iter().all(|c| (50..65).contains(&c.open_time)));
+        // Two pages asked: [55, 65), then the partial page [50, 55) at the floor — never below.
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]
