@@ -45,6 +45,7 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
         ]),
         (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
         (Alpaca, _) => Err(ProviderError::MissingKey(Alpaca)),
+        (DataSource::Oanda, "eurusd") => Ok(vec![pair(DataSource::Oanda, "EUR_USD", "EUR", "USD")]),
         (DataSource::Oanda, _) => Err(ProviderError::MissingKey(DataSource::Oanda)),
         (DataSource::Polymarket, "fed") => Ok(vec![
             chance(DataSource::Polymarket, "Fed decision", "Cut", Some(0.2)),
@@ -471,7 +472,24 @@ fn a_stock_needs_an_alpaca_key_before_it_opens() {
     let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
     assert!(output.is_none());
     assert!(rig.picker.is_open());
-    assert!(rig.picker.needs_alpaca);
+    assert_eq!(
+        rig.picker.pick_needs_credentials,
+        Some(SettingsPage::Alpaca)
+    );
+}
+
+#[test]
+fn opening_an_oanda_market_without_credentials_prompts_for_oanda_settings() {
+    let mut rig = Rig::new(1100.0, "eurusd");
+    assert_eq!(rig.names(), ["EUR_USD"]);
+    assert!(
+        rig.frame(vec![press(Key::Enter, Modifiers::NONE)])
+            .is_none()
+    );
+    let lookup = rig.picker.lookup();
+    let listing = rig.picker.listing(&rig.screen.ctx);
+    let notice = rig.picker.notice(&listing, &lookup).expect("setup prompt");
+    assert_eq!(notice.settings, Some(SettingsPage::Oanda));
 }
 
 #[test]
@@ -515,13 +533,20 @@ fn a_missing_oanda_login_prompts_only_where_oanda_is_the_venue() {
             == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca, and Oanda."),
         "{shown:?}"
     );
-    assert!(!shown.iter().any(|text| text == "Oanda could not be searched"), "{shown:?}");
+    assert!(
+        !shown
+            .iter()
+            .any(|text| text == "Oanda could not be searched"),
+        "{shown:?}"
+    );
     let ctx = rig.screen.ctx.clone();
     let lookup = rig.picker.lookup();
     let listing = rig.picker.listing(&ctx);
     // The Alpaca card still shows (as it always did on All); no Oanda card does.
     assert_eq!(
-        rig.picker.notice(&listing, &lookup).and_then(|n| n.settings),
+        rig.picker
+            .notice(&listing, &lookup)
+            .and_then(|n| n.settings),
         Some(SettingsPage::Alpaca),
         "no Oanda credential card on the All tab"
     );

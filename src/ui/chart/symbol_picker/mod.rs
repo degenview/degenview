@@ -201,7 +201,7 @@ pub struct SymbolPicker {
     select_all: bool,
     /// The user's watchlists, fed by the workspace while the Watchlists tab shows.
     watchlists: Vec<WatchlistGroup>,
-    needs_alpaca: bool,
+    pick_needs_credentials: Option<SettingsPage>,
     /// The Settings page a notice's button asked to open.
     settings_request: Option<SettingsPage>,
 }
@@ -235,7 +235,7 @@ impl SymbolPicker {
             focus_frames: 0,
             select_all: false,
             watchlists: Vec::new(),
-            needs_alpaca: false,
+            pick_needs_credentials: None,
             settings_request: None,
         }
     }
@@ -759,6 +759,7 @@ impl SymbolPicker {
             self.added = None;
             return None;
         }
+        self.pick_needs_credentials = None;
         let output = match pick {
             Pick::Card(card) => {
                 if kind == PickKind::Watchlist {
@@ -768,10 +769,10 @@ impl SymbolPicker {
                 }
             }
             Pick::Market(result) => {
-                if result.source == DataSource::Alpaca
-                    && service::keychain::api_keys::alpaca_credentials().is_none()
+                if let Some(page) = SettingsPage::for_source(result.source)
+                    && !page.has_credentials()
                 {
-                    self.needs_alpaca = true;
+                    self.pick_needs_credentials = Some(page);
                     return None;
                 }
                 if self.mode != PickMode::Watchlist
@@ -835,7 +836,7 @@ impl SymbolPicker {
             }
             self.search.edited();
             self.highlight = 0;
-            self.needs_alpaca = false;
+            self.pick_needs_credentials = None;
             self.added = None;
         }
 
@@ -1398,7 +1399,10 @@ impl SymbolPicker {
         } else if let Some((source, error)) = listing.errors.iter().find(|(source, error)| {
             // A missing key is the notice card's job, not the empty state's: on a broad
             // search it must not override the ordinary no-results message.
-            *source != DataSource::Alpaca && !matches!(error, ProviderError::MissingKey(_))
+            !matches!(error, ProviderError::MissingKey(_))
+                && SettingsPage::for_source(*source)
+                    .and_then(SettingsPage::search_failure_title)
+                    .is_none()
         }) {
             widgets::no_results(
                 ui,
@@ -1443,49 +1447,40 @@ impl SymbolPicker {
             || matches!(self.scope.venues().as_slice(), [only] if *only == source)
     }
 
-    /// What the card under the list says, when a searched provider cannot be searched or opened:
-    /// Alpaca keys are missing (the search said so, or a stock was picked without them) or its
-    /// search failed. Oanda's credential prompt shows only where the user is looking at
-    /// Oanda's own venue — the Forex tab or an `OANDA:` prefix; on a broad search a missing
-    /// Oanda login is not the empty state.
+    /// Credential prompts follow the provider carried by the error. Explicit
+    /// venue searches take precedence over providers advertised on broad searches.
     fn notice(&self, listing: &Listing, lookup: &Lookup) -> Option<Notice> {
-        if self.targets(DataSource::Oanda, lookup)
-            && let Some((_, ProviderError::MissingKey(_))) = listing
-                .errors
-                .iter()
-                .find(|(source, _)| *source == DataSource::Oanda)
-        {
-            return Some(Notice::missing_key(
-                tr!("Set up Oanda to search forex"),
-                tr!("Add your Oanda credentials in Settings to search and chart forex, metals and index CFDs.").to_owned(),
-                SettingsPage::Oanda,
-            ));
-        }
-        let failure = listing
-            .errors
-            .iter()
-            .find(|(source, _)| *source == DataSource::Alpaca)
-            .map(|(_, error)| error);
-        match failure {
-            Some(ProviderError::MissingKey(_)) => Some(Notice::missing_key(
-                tr!("Stocks need an Alpaca key"),
-                tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
-                    .to_owned(),
-                SettingsPage::Alpaca,
-            )),
-            Some(error) => Some(Notice {
-                title: tr!("Stocks could not be searched"),
-                detail: error.to_string(),
-                settings: None,
-            }),
-            None if self.needs_alpaca => Some(Notice::missing_key(
-                tr!("Set up Alpaca to open a stock"),
-                tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
-                    .to_owned(),
-                SettingsPage::Alpaca,
-            )),
-            None => None,
-        }
+        let missing = |targeted: bool| {
+            listing.errors.iter().find_map(|(_, error)| {
+                let ProviderError::MissingKey(source) = error else {
+                    return None;
+                };
+                let page = SettingsPage::for_source(*source)?;
+                let visible = if targeted {
+                    self.targets(*source, lookup)
+                } else {
+                    page.advertises_on_broad_search()
+                };
+                visible.then(|| page.credentials_notice(false))
+            })
+        };
+        self.pick_needs_credentials
+            .map(|page| page.credentials_notice(true))
+            .or_else(|| missing(true))
+            .or_else(|| missing(false))
+            .or_else(|| {
+                listing.errors.iter().find_map(|(source, error)| {
+                    if matches!(error, ProviderError::MissingKey(_)) {
+                        return None;
+                    }
+                    let title = SettingsPage::for_source(*source)?.search_failure_title()?;
+                    Some(Notice {
+                        title,
+                        detail: error.to_string(),
+                        settings: None,
+                    })
+                })
+            })
     }
 
     /// The keys that work here, and the button that charts ticked choices together. A narrow
@@ -1789,6 +1784,55 @@ const NOTICE_BUTTON_INSET: f32 = (NOTICE_HEIGHT - NOTICE_BUTTON_HEIGHT) / 2.0;
 enum SettingsPage {
     Alpaca,
     Oanda,
+}
+
+impl SettingsPage {
+    fn for_source(source: DataSource) -> Option<Self> {
+        match source {
+            DataSource::Alpaca => Some(Self::Alpaca),
+            DataSource::Oanda => Some(Self::Oanda),
+            _ => None,
+        }
+    }
+
+    fn has_credentials(self) -> bool {
+        use service::keychain::api_keys;
+        match self {
+            Self::Alpaca => api_keys::alpaca_credentials().is_some(),
+            Self::Oanda => api_keys::oanda_credentials().is_some(),
+        }
+    }
+
+    fn advertises_on_broad_search(self) -> bool {
+        matches!(self, Self::Alpaca)
+    }
+
+    fn search_failure_title(self) -> Option<&'static str> {
+        match self {
+            Self::Alpaca => Some(tr!("Stocks could not be searched")),
+            Self::Oanda => None,
+        }
+    }
+
+    fn credentials_notice(self, for_pick: bool) -> Notice {
+        let (title, detail) = match self {
+            Self::Alpaca => (
+                if for_pick {
+                    tr!("Set up Alpaca to open a stock")
+                } else {
+                    tr!("Stocks need an Alpaca key")
+                },
+                tr!("Add your free Alpaca API keys in Settings to search and chart US stocks."),
+            ),
+            Self::Oanda => (
+                tr!("Set up Oanda to search forex"),
+                tr!(
+                    "Add your Oanda credentials in Settings to search and chart forex, metals and index CFDs."
+                ),
+            ),
+        };
+        Notice::missing_key(title, detail.to_owned(), self)
+    }
 }
 
 struct Notice {

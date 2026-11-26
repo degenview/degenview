@@ -8,8 +8,8 @@ use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
-    AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, OandaCredentials,
-    OandaCredentialsStore,
+    AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, CredentialPair,
+    CredentialsStore, OandaCredentials, OandaCredentialsStore,
 };
 use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::{self, Icon};
@@ -21,26 +21,15 @@ use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
 
-#[derive(Default)]
-pub struct AlpacaForm {
-    pub key_id: String,
-    pub secret_key: String,
-    /// Whether the saved credentials have been read into the fields yet (reading may prompt).
-    loaded: bool,
-    pub is_saved: bool,
-    pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), ProviderError>>>,
-    autosave: Autosave,
-}
+pub type AlpacaForm = CredentialForm<AlpacaCredentials>;
+pub type OandaForm = CredentialForm<OandaCredentials>;
 
 #[derive(Default)]
-pub struct OandaForm {
-    pub account_id: String,
-    pub access_token: String,
-    /// Whether the saved credentials have been read into the fields yet (reading may prompt).
+pub struct CredentialForm<C> {
+    credentials: C,
     loaded: bool,
-    pub is_saved: bool,
-    pub status: Option<StatusMessage>,
+    is_saved: bool,
+    status: Option<StatusMessage>,
     test: Option<Pending<Result<(), ProviderError>>>,
     autosave: Autosave,
 }
@@ -62,175 +51,118 @@ pub struct ApiKeysState {
     pub cmc: CmcForm,
 }
 
-// MARK: Alpaca rules
+pub trait CredentialFormCopy: CredentialPair {
+    const SOURCE: DataSource;
+    fn saved_label() -> &'static str;
+    fn removed_message() -> &'static str;
+    fn remove_error(error: String) -> String;
+}
 
-impl AlpacaForm {
-    /// Fills the fields from the saved credentials, once.
-    pub fn load(&mut self, store: &AlpacaCredentialsStore) {
-        if self.loaded {
-            return;
-        }
-        self.loaded = true;
-        self.is_saved = store.is_configured();
-        if self.is_saved {
-            let saved = store.credentials();
-            self.key_id = saved.key_id;
-            self.secret_key = saved.secret_key;
-        }
+impl CredentialFormCopy for AlpacaCredentials {
+    const SOURCE: DataSource = DataSource::Alpaca;
+
+    fn saved_label() -> &'static str {
+        tr!("Keys saved")
     }
 
-    pub fn can_save(&self) -> bool {
-        !self.key_id.trim().is_empty() && !self.secret_key.trim().is_empty()
+    fn removed_message() -> &'static str {
+        tr!("Keys removed. Stock charts need keys to load.")
     }
 
-    pub fn badge(&self) -> (&'static str, Tone) {
-        if self.is_saved {
-            (tr!("Keys saved"), Tone::Good)
-        } else {
-            (tr!("Not configured"), Tone::Neutral)
-        }
-    }
-
-    pub fn save(&mut self, store: &AlpacaCredentialsStore) {
-        let credentials = AlpacaCredentials {
-            key_id: self.key_id.clone(),
-            secret_key: self.secret_key.clone(),
-        };
-        self.status = Some(match store.save(&credentials) {
-            Ok(()) => {
-                self.is_saved = true;
-                StatusMessage::saved_securely()
-            }
-            Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
-        });
-    }
-
-    pub fn is_testing(&self) -> bool {
-        self.test.is_some()
-    }
-
-    /// Asks Alpaca for a bar with the typed keys, on Alpaca's workers; `poll_test` picks up the
-    /// answer.
-    pub fn start_test(
-        &mut self,
-        repaint: Option<&egui::Context>,
-        test: impl FnOnce(String, String) -> Result<(), ProviderError> + Send + 'static,
-    ) {
-        if self.test.is_some() {
-            return;
-        }
-        self.status = None;
-        let (key_id, secret_key) = (self.key_id.clone(), self.secret_key.clone());
-        self.test = Some(work_queue::start_for(
-            DataSource::Alpaca,
-            repaint,
-            move || test(key_id, secret_key),
-        ));
-    }
-
-    /// Takes the connection test's answer when it has arrived.
-    pub fn poll_test(&mut self) {
-        take_test_answer(&mut self.test, &mut self.status);
-    }
-
-    pub fn remove(&mut self, store: &AlpacaCredentialsStore) {
-        self.status = Some(match store.save(&AlpacaCredentials::default()) {
-            Ok(()) => {
-                self.key_id.clear();
-                self.secret_key.clear();
-                self.is_saved = false;
-                StatusMessage::ok(tr!("Keys removed. Stock charts need keys to load."))
-            }
-            Err(error) => {
-                StatusMessage::error(tr!("Could not remove the keys: {error}", error = error.0))
-            }
-        });
+    fn remove_error(error: String) -> String {
+        tr!("Could not remove the keys: {error}", error = error)
     }
 }
 
-// MARK: Oanda rules
+impl CredentialFormCopy for OandaCredentials {
+    const SOURCE: DataSource = DataSource::Oanda;
 
-impl OandaForm {
-    /// Fills the fields from the saved credentials, once.
-    pub fn load(&mut self, store: &OandaCredentialsStore) {
+    fn saved_label() -> &'static str {
+        tr!("Credentials saved")
+    }
+
+    fn removed_message() -> &'static str {
+        tr!("Credentials removed. Oanda charts need them to load.")
+    }
+
+    fn remove_error(error: String) -> String {
+        tr!("Could not remove the credentials: {error}", error = error)
+    }
+}
+
+impl<C: CredentialFormCopy> CredentialForm<C> {
+    fn load(&mut self, store: &CredentialsStore<C>) {
         if self.loaded {
             return;
         }
         self.loaded = true;
         self.is_saved = store.is_configured();
         if self.is_saved {
-            let saved = store.credentials();
-            self.account_id = saved.account_id;
-            self.access_token = saved.access_token;
+            self.credentials = store.credentials();
         }
     }
 
-    pub fn can_save(&self) -> bool {
-        !self.account_id.trim().is_empty() && !self.access_token.trim().is_empty()
+    fn can_save(&self) -> bool {
+        self.credentials.is_configured()
     }
 
-    pub fn badge(&self) -> (&'static str, Tone) {
+    fn badge(&self) -> (&'static str, Tone) {
         if self.is_saved {
-            (tr!("Credentials saved"), Tone::Good)
+            (C::saved_label(), Tone::Good)
         } else {
             (tr!("Not configured"), Tone::Neutral)
         }
     }
 
-    pub fn save(&mut self, store: &OandaCredentialsStore) {
-        let credentials = OandaCredentials {
-            account_id: self.account_id.clone(),
-            access_token: self.access_token.clone(),
-        };
-        self.status = Some(match store.save(&credentials) {
+    fn save(&mut self, store: &CredentialsStore<C>) {
+        self.status = Some(match store.save(&self.credentials) {
             Ok(()) => {
-                self.is_saved = true;
+                self.is_saved = self.can_save();
                 StatusMessage::saved_securely()
             }
             Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
         });
     }
 
-    pub fn is_testing(&self) -> bool {
+    fn save_if_due(&mut self, ctx: &egui::Context, store: &CredentialsStore<C>) {
+        if self.autosave.due(ctx) && self.can_save() {
+            self.save(store);
+        }
+    }
+
+    fn is_testing(&self) -> bool {
         self.test.is_some()
     }
 
-    /// Asks Oanda for the account's instrument list with the typed credentials, on Oanda's
-    /// workers; `poll_test` picks up the answer.
-    pub fn start_test(
+    fn start_test(
         &mut self,
         repaint: Option<&egui::Context>,
         test: impl FnOnce(String, String) -> Result<(), ProviderError> + Send + 'static,
     ) {
-        if self.test.is_some() {
+        if self.is_testing() {
             return;
         }
         self.status = None;
-        let (account_id, access_token) = (self.account_id.clone(), self.access_token.clone());
-        self.test = Some(work_queue::start_for(
-            DataSource::Oanda,
-            repaint,
-            move || test(account_id, access_token),
-        ));
+        let (first, second) = self.credentials.fields();
+        let (first, second) = (first.to_owned(), second.to_owned());
+        self.test = Some(work_queue::start_for(C::SOURCE, repaint, move || {
+            test(first, second)
+        }));
     }
 
-    /// Takes the connection test's answer when it has arrived.
-    pub fn poll_test(&mut self) {
+    fn poll_test(&mut self) {
         take_test_answer(&mut self.test, &mut self.status);
     }
 
-    pub fn remove(&mut self, store: &OandaCredentialsStore) {
-        self.status = Some(match store.save(&OandaCredentials::default()) {
+    fn remove(&mut self, store: &CredentialsStore<C>) {
+        self.autosave.cancel();
+        self.status = Some(match store.save(&C::default()) {
             Ok(()) => {
-                self.account_id.clear();
-                self.access_token.clear();
+                self.credentials = C::default();
                 self.is_saved = false;
-                StatusMessage::ok(tr!("Credentials removed. Oanda charts need them to load."))
+                StatusMessage::ok(C::removed_message())
             }
-            Err(error) => StatusMessage::error(tr!(
-                "Could not remove the credentials: {error}",
-                error = error.0
-            )),
+            Err(error) => StatusMessage::error(C::remove_error(error.0)),
         });
     }
 }
@@ -392,7 +324,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                     tr!("API Key ID"),
                     None,
                     "PK…",
-                    &mut form.key_id,
+                    &mut form.credentials.key_id,
                     false,
                 );
                 form.autosave.watch(&key_id, false);
@@ -403,7 +335,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                     tr!("Secret Key"),
                     Some(crate::platform::credential_stored_hint()),
                     "",
-                    &mut form.secret_key,
+                    &mut form.credentials.secret_key,
                     true,
                 );
                 form.autosave.watch(&secret, true);
@@ -421,7 +353,6 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 }
                 if form.is_saved && destructive_button(ui, tr!("Remove Keys")).clicked() {
                     form.remove(store);
-                    form.autosave.cancel();
                 }
             });
         });
@@ -431,9 +362,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
         }
     });
     // Both keys are needed, so nothing is saved until both are there.
-    if form.autosave.due(ui.ctx()) && form.can_save() {
-        form.save(store);
-    }
+    form.save_if_due(ui.ctx(), store);
     section(ui, tr!("Getting your keys"), None, |ui| {
         card(ui, |ui| {
             step_row(ui, 1, tr!("Create a free Alpaca account."));
@@ -476,7 +405,7 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
                     tr!("Account ID"),
                     None,
                     "001-…",
-                    &mut form.account_id,
+                    &mut form.credentials.account_id,
                     false,
                 );
                 form.autosave.watch(&account_id, false);
@@ -487,7 +416,7 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
                     tr!("Access Token"),
                     Some(crate::platform::credential_stored_hint()),
                     "",
-                    &mut form.access_token,
+                    &mut form.credentials.access_token,
                     true,
                 );
                 form.autosave.watch(&token, true);
@@ -505,7 +434,6 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
                 }
                 if form.is_saved && destructive_button(ui, tr!("Remove Credentials")).clicked() {
                     form.remove(store);
-                    form.autosave.cancel();
                 }
             });
         });
@@ -515,9 +443,7 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
         }
     });
     // Both fields are needed, so nothing is saved until both are there.
-    if form.autosave.due(ui.ctx()) && form.can_save() {
-        form.save(store);
-    }
+    form.save_if_due(ui.ctx(), store);
     section(ui, tr!("Getting your credentials"), None, |ui| {
         card(ui, |ui| {
             step_row(ui, 1, tr!("Create an Oanda account."));
@@ -633,9 +559,9 @@ mod tests {
         form.load(&store);
         assert_eq!(form.badge(), ("Not configured", Tone::Neutral));
         assert!(!form.can_save());
-        form.key_id = " PK1 ".into();
+        form.credentials.key_id = " PK1 ".into();
         assert!(!form.can_save(), "the secret is missing too");
-        form.secret_key = "S1".into();
+        form.credentials.secret_key = "S1".into();
         assert!(form.can_save());
         form.save(&store);
         assert_eq!(form.status, Some(StatusMessage::saved_securely()));
@@ -656,17 +582,24 @@ mod tests {
         form.load(&store);
         assert!(form.is_saved);
         assert_eq!(
-            (form.key_id.as_str(), form.secret_key.as_str()),
+            (
+                form.credentials.key_id.as_str(),
+                form.credentials.secret_key.as_str()
+            ),
             ("PK9", "S9")
         );
-        form.key_id = "typed".into();
+        form.credentials.key_id = "typed".into();
         form.load(&store);
         assert_eq!(
-            form.key_id, "typed",
+            form.credentials.key_id, "typed",
             "a second load does not overwrite edits"
         );
         form.remove(&store);
-        assert!(!form.is_saved && form.key_id.is_empty() && form.secret_key.is_empty());
+        assert!(
+            !form.is_saved
+                && form.credentials.key_id.is_empty()
+                && form.credentials.secret_key.is_empty()
+        );
         assert_eq!(
             form.status,
             Some(StatusMessage::ok(
@@ -683,9 +616,9 @@ mod tests {
         form.load(&store);
         assert_eq!(form.badge(), ("Not configured", Tone::Neutral));
         assert!(!form.can_save());
-        form.account_id = " 001-001 ".into();
+        form.credentials.account_id = " 001-001 ".into();
         assert!(!form.can_save(), "the token is missing too");
-        form.access_token = "tok".into();
+        form.credentials.access_token = "tok".into();
         assert!(form.can_save());
         form.save(&store);
         assert_eq!(form.status, Some(StatusMessage::saved_securely()));
@@ -696,14 +629,20 @@ mod tests {
         reloaded.load(&store);
         assert!(reloaded.is_saved);
         assert_eq!(
-            (reloaded.account_id.as_str(), reloaded.access_token.as_str()),
+            (
+                reloaded.credentials.account_id.as_str(),
+                reloaded.credentials.access_token.as_str()
+            ),
             ("001-001", "tok")
         );
-        reloaded.account_id = "typed".into();
+        reloaded.credentials.account_id = "typed".into();
         reloaded.load(&store);
-        assert_eq!(reloaded.account_id, "typed", "a second load keeps edits");
+        assert_eq!(
+            reloaded.credentials.account_id, "typed",
+            "a second load keeps edits"
+        );
         reloaded.remove(&store);
-        assert!(!reloaded.is_saved && reloaded.account_id.is_empty());
+        assert!(!reloaded.is_saved && reloaded.credentials.account_id.is_empty());
         assert_eq!(
             reloaded.status,
             Some(StatusMessage::ok(

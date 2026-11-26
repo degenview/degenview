@@ -107,9 +107,9 @@ pub struct AlpacaCredentials {
     pub secret_key: String,
 }
 
-impl AlpacaCredentials {
-    pub fn is_configured(&self) -> bool {
-        !self.key_id.trim().is_empty() && !self.secret_key.trim().is_empty()
+impl CredentialPair for AlpacaCredentials {
+    fn fields(&self) -> (&str, &str) {
+        (&self.key_id, &self.secret_key)
     }
 
     fn trimmed(&self) -> Self {
@@ -129,91 +129,16 @@ const ALPACA_OWN: Scope = Scope {
     shared_group: false,
 };
 
-#[derive(Default)]
-struct AlpacaCache {
-    credentials: Option<AlpacaCredentials>,
-    exists: Option<bool>,
-}
-
-pub struct AlpacaCredentialsStore {
-    backend: Box<dyn KeyBackend>,
-    cache: Mutex<AlpacaCache>,
-}
+pub type AlpacaCredentialsStore = CredentialsStore<AlpacaCredentials>;
 
 impl AlpacaCredentialsStore {
     pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
-        Self {
-            backend,
-            cache: Mutex::new(AlpacaCache::default()),
-        }
+        Self::new(backend, ALPACA_SHARED, ALPACA_ACCOUNT, Some(ALPACA_OWN))
     }
 
-    /// The app-wide store.
     pub fn shared() -> &'static Self {
         static STORE: OnceLock<AlpacaCredentialsStore> = OnceLock::new();
         STORE.get_or_init(|| Self::with_backend(default_backend()))
-    }
-
-    /// The saved credentials, or empty ones. The first read may prompt for Keychain access.
-    /// A key found only outside the shared group is copied into it, as the Swift app did.
-    pub fn credentials(&self) -> AlpacaCredentials {
-        let mut cache = lock(&self.cache);
-        if let Some(credentials) = &cache.credentials {
-            return credentials.clone();
-        }
-        let stored = self
-            .backend
-            .read(ALPACA_SHARED, ALPACA_ACCOUNT)
-            .or_else(|| self.backend.read(ALPACA_OWN, ALPACA_ACCOUNT))
-            .and_then(|text| {
-                serde_json::from_str::<AlpacaCredentials>(&text)
-                    .ok()
-                    .map(|credentials| (text, credentials))
-            });
-        let credentials = match stored {
-            Some((text, credentials)) => {
-                let _ = self.backend.write(ALPACA_SHARED, ALPACA_ACCOUNT, &text);
-                credentials
-            }
-            None => AlpacaCredentials::default(),
-        };
-        cache.credentials = Some(credentials.clone());
-        credentials
-    }
-
-    /// Whether credentials are saved. Reads attributes only, so it never prompts.
-    pub fn is_configured(&self) -> bool {
-        let mut cache = lock(&self.cache);
-        if let Some(credentials) = &cache.credentials {
-            return credentials.is_configured();
-        }
-        if let Some(exists) = cache.exists {
-            return exists;
-        }
-        let found = self.backend.exists(ALPACA_SHARED, ALPACA_ACCOUNT)
-            || self.backend.exists(ALPACA_OWN, ALPACA_ACCOUNT);
-        cache.exists = Some(found);
-        found
-    }
-
-    /// Saves trimmed credentials; incomplete ones remove the saved item.
-    pub fn save(&self, credentials: &AlpacaCredentials) -> Result<(), SecretStoreError> {
-        let normalized = credentials.trimmed();
-        if normalized.is_configured() {
-            let text = serde_json::to_string(&normalized)
-                .map_err(|error| SecretStoreError(error.to_string()))?;
-            self.backend.write(ALPACA_SHARED, ALPACA_ACCOUNT, &text)?;
-        } else {
-            // Both are tried; the cache below is changed only if both are gone.
-            let shared = self.backend.delete(ALPACA_SHARED, ALPACA_ACCOUNT);
-            let own = self.backend.delete(ALPACA_OWN, ALPACA_ACCOUNT);
-            shared.and(own)?;
-        }
-        let mut cache = lock(&self.cache);
-        cache.credentials = Some(normalized);
-        cache.exists = None;
-        drop(cache);
-        Ok(())
     }
 }
 
@@ -228,9 +153,9 @@ pub struct OandaCredentials {
     pub access_token: String,
 }
 
-impl OandaCredentials {
-    pub fn is_configured(&self) -> bool {
-        !self.account_id.trim().is_empty() && !self.access_token.trim().is_empty()
+impl CredentialPair for OandaCredentials {
+    fn fields(&self) -> (&str, &str) {
+        (&self.account_id, &self.access_token)
     }
 
     fn trimmed(&self) -> Self {
@@ -246,74 +171,114 @@ const OANDA_SHARED: Scope = Scope {
     shared_group: true,
 };
 
-#[derive(Default)]
-struct OandaCache {
-    credentials: Option<OandaCredentials>,
-    exists: Option<bool>,
-}
-
-pub struct OandaCredentialsStore {
-    backend: Box<dyn KeyBackend>,
-    cache: Mutex<OandaCache>,
-}
+pub type OandaCredentialsStore = CredentialsStore<OandaCredentials>;
 
 impl OandaCredentialsStore {
     pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
-        Self {
-            backend,
-            cache: Mutex::new(OandaCache::default()),
-        }
+        Self::new(backend, OANDA_SHARED, OANDA_ACCOUNT, None)
     }
 
-    /// The app-wide store.
     pub fn shared() -> &'static Self {
         static STORE: OnceLock<OandaCredentialsStore> = OnceLock::new();
         STORE.get_or_init(|| Self::with_backend(default_backend()))
     }
+}
 
-    /// The saved credentials, or empty ones. The first read may prompt for Keychain access.
-    pub fn credentials(&self) -> OandaCredentials {
+/// Two fields saved together as one Keychain item.
+pub trait CredentialPair: Clone + Default + Serialize + serde::de::DeserializeOwned {
+    fn fields(&self) -> (&str, &str);
+    fn trimmed(&self) -> Self;
+
+    fn is_configured(&self) -> bool {
+        let (first, second) = self.fields();
+        !first.trim().is_empty() && !second.trim().is_empty()
+    }
+}
+
+#[derive(Default)]
+struct CredentialsCache<C> {
+    credentials: Option<C>,
+    exists: Option<bool>,
+}
+
+pub struct CredentialsStore<C> {
+    backend: Box<dyn KeyBackend>,
+    scope: Scope,
+    account: &'static str,
+    legacy: Option<Scope>,
+    cache: Mutex<CredentialsCache<C>>,
+}
+
+impl<C: CredentialPair> CredentialsStore<C> {
+    fn new(
+        backend: Box<dyn KeyBackend>,
+        scope: Scope,
+        account: &'static str,
+        legacy: Option<Scope>,
+    ) -> Self {
+        Self {
+            backend,
+            scope,
+            account,
+            legacy,
+            cache: Mutex::default(),
+        }
+    }
+
+    /// Reads the saved credentials once. The first read may prompt for Keychain access.
+    pub fn credentials(&self) -> C {
         let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.clone();
         }
         let credentials = self
             .backend
-            .read(OANDA_SHARED, OANDA_ACCOUNT)
-            .and_then(|text| serde_json::from_str::<OandaCredentials>(&text).ok())
+            .read(self.scope, self.account)
+            .map(|text| serde_json::from_str::<C>(&text).ok())
+            .unwrap_or_else(|| self.read_legacy())
             .unwrap_or_default();
         cache.credentials = Some(credentials.clone());
         credentials
     }
 
-    /// Whether credentials are saved. Reads attributes only, so it never prompts.
+    fn read_legacy(&self) -> Option<C> {
+        let text = self.backend.read(self.legacy?, self.account)?;
+        let credentials = serde_json::from_str(&text).ok()?;
+        let _ = self.backend.write(self.scope, self.account, &text);
+        Some(credentials)
+    }
+
+    /// Checks the item's attributes without prompting for Keychain access.
     pub fn is_configured(&self) -> bool {
         let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.is_configured();
         }
-        if let Some(exists) = cache.exists {
-            return exists;
-        }
-        let found = self.backend.exists(OANDA_SHARED, OANDA_ACCOUNT);
-        cache.exists = Some(found);
-        found
+        *cache.exists.get_or_insert_with(|| {
+            self.backend.exists(self.scope, self.account)
+                || self
+                    .legacy
+                    .is_some_and(|scope| self.backend.exists(scope, self.account))
+        })
     }
 
-    /// Saves trimmed credentials; incomplete ones remove the saved item.
-    pub fn save(&self, credentials: &OandaCredentials) -> Result<(), SecretStoreError> {
+    /// Saves trimmed credentials. Incomplete credentials remove the saved item.
+    pub fn save(&self, credentials: &C) -> Result<(), SecretStoreError> {
         let normalized = credentials.trimmed();
+        let mut cache = lock(&self.cache);
         if normalized.is_configured() {
             let text = serde_json::to_string(&normalized)
                 .map_err(|error| SecretStoreError(error.to_string()))?;
-            self.backend.write(OANDA_SHARED, OANDA_ACCOUNT, &text)?;
+            self.backend.write(self.scope, self.account, &text)?;
         } else {
-            self.backend.delete(OANDA_SHARED, OANDA_ACCOUNT)?;
+            let current = self.backend.delete(self.scope, self.account);
+            let legacy = self
+                .legacy
+                .map_or(Ok(()), |scope| self.backend.delete(scope, self.account));
+            current.and(legacy)?;
         }
-        let mut cache = lock(&self.cache);
         cache.credentials = Some(normalized);
         cache.exists = None;
-        drop(cache);
         Ok(())
     }
 }

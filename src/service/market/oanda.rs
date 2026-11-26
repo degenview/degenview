@@ -11,6 +11,7 @@
 
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
@@ -18,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 /// Oanda's live trading API, the one the standalone `oandaohlc` downloader uses.
 pub(in crate::service) const BASE_URL: &str = "https://api-fxtrade.oanda.com/v3";
@@ -29,8 +31,13 @@ pub const OANDA: Oanda = Oanda;
 /// The most candles one Oanda request returns.
 const MAX_PER_REQUEST: usize = 5_000;
 
-/// Pages of a range are fetched side by side, as Binance's are.
-const PARALLEL: usize = 8;
+// Reserve one row for a candle returned at the cursor boundary. Forty pages can
+// fill a standard 500-bar chart even when a yearly view folds daily candles.
+const PAGING: Paging = Paging {
+    page: MAX_PER_REQUEST - 1,
+    max_candles: 40 * (MAX_PER_REQUEST - 1),
+    pause: Duration::ZERO,
+};
 
 fn credentials() -> Result<(String, String), ProviderError> {
     crate::service::keychain::api_keys::oanda_credentials()
@@ -84,7 +91,7 @@ impl MarketSource for Oanda {
             let end_ms = crate::clock::now_ms() + 1;
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
         }
-        let body = candles_request(symbol, plan.base(), None, None, requested)?;
+        let body = candles_request(symbol, plan.base(), None, requested)?;
         Ok(plan.shape(
             parse_candles(&body, plan.base())?,
             requested,
@@ -101,30 +108,21 @@ impl MarketSource for Oanda {
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Oanda, timeframe)?;
-        let base = plan.base();
-        let requested = plan.base_count(max);
-        let page_ms = base.nominal_ms() * MAX_PER_REQUEST as i64;
-        let fetch_page = |from: i64, to: i64| -> Result<Vec<Kline>, ProviderError> {
-            let body = candles_request(symbol, base, Some(from), Some(to), MAX_PER_REQUEST)?;
-            Ok(parse_candles(&body, base)?
-                .into_iter()
-                .filter(|candle| candle.open_time >= from && candle.open_time < to)
-                .collect())
-        };
-        let mut candles = page_back(start_ms, end_ms, requested, page_ms, &fetch_page)?;
-        candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
-        candles.sort_by_key(|candle| candle.open_time);
-        candles.dedup_by_key(|candle| candle.open_time);
-        if candles.len() > requested {
-            candles.drain(..candles.len() - requested);
-        }
-        Ok(plan.shape(candles, requested, max))
+        let requested = PAGING.requested(plan, max);
+        let candles = PAGING.back(start_ms, end_ms, requested, |before, wanted| {
+            candle_page(before, wanted, |count| {
+                let body = candles_request(symbol, plan.base(), Some(before), count)?;
+                parse_candles(&body, plan.base())
+            })
+        })?;
+        Ok(plan.shape_since(candles, requested, start_ms, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
         let (account_id, token) = credentials()?;
-        let instruments = catalog(account_id.trim()).get(|| download_instruments(&account_id, &token))?;
+        let instruments =
+            catalog(account_id.trim()).get(|| download_instruments(&account_id, &token))?;
         // `EUR/USD` and `eur_usd` find `EUR_USD`: Oanda writes an underscore.
         let needle = normalize(query);
         if needle.is_empty() {
@@ -135,94 +133,32 @@ impl MarketSource for Oanda {
     }
 }
 
-/// The URL of one candles request: mid prices of `bar`, aligned to UTC midnight so the bars open
-/// on the app's grid, either the newest `count` of them or the ones in `[from_ms, to_ms)` when a
-/// window is given. Oanda's spec says `count` must not be sent together with `from`/`to`, so a
-/// window carries no count.
-fn candles_url(
-    instrument: &str,
-    bar: Timeframe,
-    from_ms: Option<i64>,
-    to_ms: Option<i64>,
-    count: usize,
-) -> String {
+/// Mid prices aligned to the UTC grid. An end cursor asks for a count of
+/// candles leading up to that time, including when the market was closed.
+fn candles_url(instrument: &str, bar: Timeframe, to_ms: Option<i64>, count: usize) -> String {
     let mut url = format!(
-        "{BASE_URL}/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday",
+        "{BASE_URL}/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count={}",
         granularity(bar),
+        count.clamp(1, MAX_PER_REQUEST),
     );
-    if from_ms.is_none() && to_ms.is_none() {
-        url.push_str(&format!("&count={}", count.clamp(1, MAX_PER_REQUEST)));
-    } else {
-        if let Some(from) = from_ms {
-            url.push_str(&format!("&from={}", crate::format::iso8601(from)));
-        }
-        if let Some(to) = to_ms {
-            url.push_str(&format!("&to={}", crate::format::iso8601(to)));
-        }
+    if let Some(to) = to_ms {
+        url.push_str(&format!("&to={}", crate::format::iso8601(to)));
     }
     url
 }
 
-/// How many pages in a row may come back empty before the answer counts as the start of the
-/// market's history: a closed market (the weekend closes forex from Friday to Sunday) leaves
-/// whole wall-clock pages empty, and that must not end the chart's history.
-const MAX_EMPTY_PAGES: usize = 8;
-
-/// Pages `[start_ms, end_ms)` back from `end_ms` in pages of `page_ms`, in batches of
-/// `PARALLEL`, until `requested` candles are held, the floor `start_ms` is reached, or
-/// `MAX_EMPTY_PAGES` pages in a row came back empty.
-fn page_back(
-    start_ms: i64,
-    end_ms: i64,
-    requested: usize,
-    page_ms: i64,
-    fetch: &(dyn Fn(i64, i64) -> Result<Vec<Kline>, ProviderError> + Sync),
+/// Convert the provider's end cursor into the pager's exclusive cursor. Asking
+/// for one additional row lets a candle at the boundary be discarded without
+/// mistaking a full page for the start of history.
+fn candle_page(
+    before: i64,
+    wanted: usize,
+    fetch: impl FnOnce(usize) -> Result<Vec<Kline>, ProviderError>,
 ) -> Result<Vec<Kline>, ProviderError> {
-    let mut candles: Vec<Kline> = Vec::new();
-    let mut empty_pages = 0;
-    let mut next_end = end_ms;
-    while next_end > start_ms && candles.len() < requested && empty_pages < MAX_EMPTY_PAGES {
-        let mut starts: Vec<i64> = (1..=PARALLEL as i64)
-            .map(|index| next_end - index * page_ms)
-            .take_while(|start| *start > start_ms)
-            .collect();
-        if starts.is_empty() {
-            // The rest of the range is shorter than a page: one last page at the floor.
-            starts.push(start_ms);
-        }
-        let batch_end = next_end;
-        let pages: Vec<Result<Vec<Kline>, ProviderError>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = starts
-                .iter()
-                .map(|&from| {
-                    scope.spawn(move || {
-                        let to = (from + page_ms).min(batch_end);
-                        fetch(from, to)
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|handle| {
-                    handle.join().unwrap_or_else(|_| {
-                        Err(ProviderError::other("The candle download stopped."))
-                    })
-                })
-                .collect()
-        });
-        let mut got = 0;
-        for page in pages {
-            let page = page?;
-            got += page.len();
-            candles.extend(page);
-        }
-        empty_pages = if got == 0 {
-            empty_pages + starts.len()
-        } else {
-            0
-        };
-        next_end = *starts.last().expect("one start at least");
-    }
+    let mut candles = fetch(wanted + 1)?;
+    candles.retain(|candle| candle.open_time < before);
+    let extra = candles.len().saturating_sub(wanted);
+    candles.drain(..extra);
     Ok(candles)
 }
 
@@ -230,14 +166,13 @@ fn page_back(
 fn candles_request(
     instrument: &str,
     bar: Timeframe,
-    from_ms: Option<i64>,
     to_ms: Option<i64>,
     count: usize,
 ) -> Result<String, ProviderError> {
     let (_, token) = credentials()?;
     let auth = bearer(&token);
     crate::service::net::http::get_text(
-        &candles_url(instrument, bar, from_ms, to_ms, count),
+        &candles_url(instrument, bar, to_ms, count),
         &[("Authorization", auth.as_str())],
         crate::service::net::http::Retry::Transient,
     )
@@ -302,7 +237,7 @@ fn catalog(account_id: &str) -> &'static Catalog<Instrument> {
     let mut catalogs = CATALOGS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    *catalogs.entry(account_id.to_owned()).or_insert_with(|| {
+    catalogs.entry(account_id.to_owned()).or_insert_with(|| {
         let namespace: &'static str =
             Box::leak(format!("catalog_oanda_{account_id}").into_boxed_str());
         Box::leak(Box::new(Catalog::new(namespace)))
@@ -420,25 +355,20 @@ mod tests {
 
     #[test]
     fn a_candles_request_asks_for_mid_prices_of_the_granularity_on_the_utc_grid() {
-        let from = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
-        let to = from + DAY_MS;
+        let to = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
         assert_eq!(
-            candles_url("EUR_USD", Timeframe::HOUR_4, None, None, 500),
+            candles_url("EUR_USD", Timeframe::HOUR_4, None, 500),
             "https://api-fxtrade.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=H4&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=500"
         );
-        // A window carries no count: Oanda's spec refuses count together with from/to.
         assert_eq!(
-            candles_url("XAU_USD", Timeframe::DAY_1, Some(from), Some(to), 5_000),
+            candles_url("XAU_USD", Timeframe::DAY_1, Some(to), 5_000),
             format!(
-                "https://api-fxtrade.oanda.com/v3/instruments/XAU_USD/candles?price=M&granularity=D&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&from={}&to={}",
-                crate::format::iso8601(from),
+                "https://api-fxtrade.oanda.com/v3/instruments/XAU_USD/candles?price=M&granularity=D&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=5000&to={}",
                 crate::format::iso8601(to)
             )
         );
         // The count is capped at what one request holds.
-        assert!(
-            candles_url("EUR_USD", Timeframe::MINUTE_1, None, None, 9_999).ends_with("count=5000")
-        );
+        assert!(candles_url("EUR_USD", Timeframe::MINUTE_1, None, 9_999).ends_with("count=5000"));
     }
 
     #[test]
@@ -512,47 +442,32 @@ mod tests {
     }
 
     #[test]
-    fn paging_back_crosses_a_closed_market_instead_of_ending_history() {
-        // The market trades everywhere except [40, 60) — a "weekend".
-        let fetch = |from: i64, to: i64| -> Result<Vec<Kline>, ProviderError> {
-            Ok((from..to)
-                .filter(|&t| t < 40 || t >= 60)
-                .map(candle_at)
-                .collect())
+    fn count_pages_cross_a_closed_market_and_exclude_the_cursor() {
+        let paging = Paging {
+            page: 3,
+            max_candles: 9,
+            pause: Duration::ZERO,
         };
-        // The oldest candle held opens at 65, just after the gap: the pages right before it
-        // are empty, and paging must go through them to the candles before the gap.
-        let candles = page_back(0, 65, 5, 10, &fetch).expect("pages");
-        assert!(candles.len() >= 5);
-        assert!(candles.iter().any(|c| c.open_time == 62), "after the gap");
-        assert!(candles.iter().any(|c| c.open_time == 38), "before the gap");
-    }
-
-    #[test]
-    fn empty_pages_stop_after_the_cap_so_history_ends_once() {
-        let calls = AtomicUsize::new(0);
-        let fetch = |_from: i64, _to: i64| -> Result<Vec<Kline>, ProviderError> {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok(Vec::new())
-        };
-        let candles = page_back(0, 1_000, 100, 10, &fetch).expect("pages");
-        assert!(candles.is_empty());
-        assert_eq!(calls.load(Ordering::SeqCst), MAX_EMPTY_PAGES);
-    }
-
-    #[test]
-    fn paging_stops_at_the_requested_floor() {
-        let calls = AtomicUsize::new(0);
-        let fetch = |from: i64, to: i64| -> Result<Vec<Kline>, ProviderError> {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok((from..to).filter(|&t| t >= 60).map(candle_at).collect())
-        };
-        // The range [50, 65) holds [50, 60) closed and [60, 65) traded.
-        let candles = page_back(50, 65, 100, 10, &fetch).expect("pages");
-        assert_eq!(candles.len(), 5);
-        assert!(candles.iter().all(|c| (50..65).contains(&c.open_time)));
-        // Two pages asked: [55, 65), then the partial page [50, 55) at the floor — never below.
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        for includes_cursor in [true, false] {
+            let candles = paging
+                .back(35, 61, 7, |before, wanted| {
+                    candle_page(before, wanted, |count| {
+                        Ok((0..70)
+                            .filter(|&t| !(40..60).contains(&t))
+                            .filter(|&t| t < before || (includes_cursor && t == before))
+                            .map(candle_at)
+                            .rev()
+                            .take(count)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect())
+                    })
+                })
+                .unwrap();
+            let opens: Vec<_> = candles.iter().map(|candle| candle.open_time).collect();
+            assert_eq!(opens, [35, 36, 37, 38, 39, 60]);
+        }
     }
 
     #[test]
@@ -618,14 +533,28 @@ mod tests {
 
         let first = catalog("account-7-a");
         let second = catalog("account-7-b");
-        assert!(!std::ptr::eq(first, second), "different accounts, different catalogs");
-        assert!(std::ptr::eq(first, catalog("account-7-a")), "the same account keeps its catalog");
+        assert!(
+            !std::ptr::eq(first, second),
+            "different accounts, different catalogs"
+        );
+        assert!(
+            std::ptr::eq(first, catalog("account-7-a")),
+            "the same account keeps its catalog"
+        );
 
         let a = first
-            .get_from(&cache, || Ok(vec![Instrument { name: "EUR_USD".into() }]))
+            .get_from(&cache, || {
+                Ok(vec![Instrument {
+                    name: "EUR_USD".into(),
+                }])
+            })
             .expect("account A's list");
         let b = second
-            .get_from(&cache, || Ok(vec![Instrument { name: "USD_JPY".into() }]))
+            .get_from(&cache, || {
+                Ok(vec![Instrument {
+                    name: "USD_JPY".into(),
+                }])
+            })
             .expect("account B's list");
         assert_eq!(names(&a), ["EUR_USD"]);
         assert_eq!(names(&b), ["USD_JPY"]);
@@ -638,10 +567,14 @@ mod tests {
         first.clear_memory();
         second.clear_memory();
         let a = first
-            .get_from(&relaunched, || Err(ProviderError::other("must not be asked")))
+            .get_from(&relaunched, || {
+                Err(ProviderError::other("must not be asked"))
+            })
             .expect("account A's persisted list");
         let b = second
-            .get_from(&relaunched, || Err(ProviderError::other("must not be asked")))
+            .get_from(&relaunched, || {
+                Err(ProviderError::other("must not be asked"))
+            })
             .expect("account B's persisted list");
         assert_eq!(names(&a), ["EUR_USD"]);
         assert_eq!(names(&b), ["USD_JPY"]);
@@ -656,7 +589,9 @@ mod tests {
         let again = first
             .get_from(&empty_cache, || {
                 downloads.fetch_add(1, Ordering::SeqCst);
-                Ok(vec![Instrument { name: "GBP_USD".into() }])
+                Ok(vec![Instrument {
+                    name: "GBP_USD".into(),
+                }])
             })
             .expect("account A downloads again");
         assert_eq!(names(&again), ["GBP_USD"]);

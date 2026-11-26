@@ -6,7 +6,8 @@ use super::engine::Outcome;
 use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
-use crate::model::{DataSource, Timeframe};
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::ProviderError;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -88,9 +89,9 @@ pub fn chunk_size(source: DataSource) -> usize {
 // MARK: Live provider
 
 pub struct LiveProvider {
-    /// The price about a day ago of each Oanda instrument, with when it was read. Oanda's
+    /// Each Oanda instrument's reference for a given cutoff hour. Oanda's
     /// pricing answer carries no 24h figure; one hourly candle per instrument supplies it.
-    oanda_day_ago: Arc<Mutex<HashMap<String, (f64, i64)>>>,
+    oanda_day_ago: Arc<Mutex<HashMap<String, DayAgoReference>>>,
     /// Set while a background refresh of those prices runs, so rounds do not stack them.
     oanda_refreshing: Arc<AtomicBool>,
 }
@@ -397,7 +398,7 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
 /// one slow candle request cannot stall the quote round for every provider.
 fn oanda(
     requests: &[QuoteRequest],
-    day_ago: &Arc<Mutex<HashMap<String, (f64, i64)>>>,
+    day_ago: &Arc<Mutex<HashMap<String, DayAgoReference>>>,
     refreshing: &Arc<AtomicBool>,
 ) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
@@ -417,8 +418,8 @@ fn oanda(
     let mut quotes = parse_oanda_pricing(&body, requests)?;
     let now = crate::clock::now_ms();
     let stale = {
-        let mut cache = lock(day_ago);
-        fill_day_ago(&mut quotes, requests, &mut cache, now);
+        let cache = lock(day_ago);
+        fill_day_ago(&mut quotes, requests, &cache, now);
         stale_instruments(requests, &cache, now)
     };
     if !stale.is_empty()
@@ -428,11 +429,10 @@ fn oanda(
     {
         let cache = Arc::clone(day_ago);
         let flag = Arc::clone(refreshing);
-        let token = token.clone();
         crate::service::work_queue::submit_for(DataSource::Oanda, move || {
             for instrument in stale {
-                if let Some(price) = oanda_day_ago_price(&token, &instrument, now) {
-                    lock(&cache).insert(instrument, (price, now));
+                if let Ok(reference) = oanda_day_ago_price(&instrument, now) {
+                    lock(&cache).insert(instrument, reference);
                 }
             }
             flag.store(false, Ordering::Release);
@@ -441,80 +441,78 @@ fn oanda(
     Ok(quotes)
 }
 
-/// How long a read price-a-day-ago stays: re-read at most this often.
-const OANDA_REFERENCE_TTL_MS: i64 = 30 * 60_000;
+const HOUR_MS: i64 = 3_600_000;
 
-/// Sets each quote's `previous_day_price` from the cache, leaving the ones it does not hold
-/// fresh unset for now — the background refresh fills them in for a later round.
+#[derive(Clone, Copy)]
+struct DayAgoReference {
+    hour: i64,
+    price: Option<f64>,
+}
+
+fn day_ago_hour(now: i64) -> i64 {
+    (now - 24 * HOUR_MS).div_euclid(HOUR_MS) * HOUR_MS
+}
+
+/// Attach references already obtained for the current cutoff hour.
 fn fill_day_ago(
     quotes: &mut HashMap<String, SourceQuote>,
     requests: &[QuoteRequest],
-    cache: &mut HashMap<String, (f64, i64)>,
+    cache: &HashMap<String, DayAgoReference>,
     now: i64,
 ) {
+    let hour = day_ago_hour(now);
     for request in requests {
-        let Some(quote) = quotes.get_mut(&request.symbol) else {
-            continue;
-        };
-        let instrument = request.symbol.to_uppercase();
-        if let Some((price, read_at)) = cache.get(&instrument)
-            && now - read_at < OANDA_REFERENCE_TTL_MS
+        if let Some(quote) = quotes.get_mut(&request.symbol)
+            && let Some(reference) = cache.get(&request.symbol.to_uppercase())
+            && reference.hour == hour
         {
-            quote.previous_day_price = Some(*price);
+            quote.previous_day_price = reference.price;
         }
     }
 }
 
-/// The instruments whose day-ago price the cache does not hold fresh.
 fn stale_instruments(
     requests: &[QuoteRequest],
-    cache: &HashMap<String, (f64, i64)>,
+    cache: &HashMap<String, DayAgoReference>,
     now: i64,
 ) -> Vec<String> {
+    let hour = day_ago_hour(now);
     requests
         .iter()
         .map(|request| request.symbol.to_uppercase())
         .filter(|instrument| {
-            !matches!(cache.get(instrument), Some((_, read_at)) if now - read_at < OANDA_REFERENCE_TTL_MS)
+            cache
+                .get(instrument)
+                .is_none_or(|reference| reference.hour != hour)
         })
         .collect()
 }
 
-/// The price about a day ago of `instrument` at `now`: the open of the hourly candle that
-/// covers 24 hours back, when the market traded then. The candles endpoint needs no account
-/// id, only the token.
-fn oanda_day_ago_price(token: &str, instrument: &str, now: i64) -> Option<f64> {
-    let url = format!(
-        "{}/instruments/{instrument}/candles?price=M&granularity=H1&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=30",
-        crate::service::market::oanda::BASE_URL
-    );
-    let auth = format!("Bearer {token}");
-    let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())]).ok()?;
-    parse_oanda_day_ago(&body, now)
+/// The opening midpoint of the candle covering 24 hours ago. A closed market
+/// has no reference for that hour.
+fn oanda_day_ago_price(instrument: &str, now: i64) -> Result<DayAgoReference, ProviderError> {
+    day_ago_reference(now, |start, end| {
+        crate::service::fetch_klines_range(
+            DataSource::Oanda,
+            instrument,
+            Timeframe::HOUR_1,
+            start,
+            end,
+            1,
+        )
+    })
 }
 
-/// How far before the 24-hours-ago mark the reference candle may open and still count as a day
-/// ago: hourly candles open every hour while the market trades, so a bigger gap means it was
-/// closed (the weekend) and the span is not a day.
-const DAY_AGO_SLACK_MS: i64 = 3 * 3_600_000;
-
-fn parse_oanda_day_ago(body: &str, now: i64) -> Option<f64> {
-    let value: Value = serde_json::from_str(body).ok()?;
-    let cutoff = now - 24 * 3_600_000;
-    let (open, price) = value
-        .get("candles")?
-        .as_array()?
-        .iter()
-        .filter_map(|candle| {
-            let open = candle
-                .get("time")
-                .and_then(Value::as_str)
-                .and_then(crate::format::parse_iso8601)?;
-            Some((open, number(candle.pointer("/mid/o"))?))
-        })
-        .filter(|(open, _)| *open <= cutoff)
-        .max_by_key(|(open, _)| *open)?;
-    (cutoff - open <= DAY_AGO_SLACK_MS).then_some(price)
+fn day_ago_reference(
+    now: i64,
+    fetch: impl FnOnce(i64, i64) -> Result<Vec<Kline>, ProviderError>,
+) -> Result<DayAgoReference, ProviderError> {
+    let hour = day_ago_hour(now);
+    let price = fetch(hour, hour + HOUR_MS)?
+        .into_iter()
+        .find(|candle| candle.open_time == hour)
+        .map(|candle| candle.open);
+    Ok(DayAgoReference { hour, price })
 }
 
 /// `{"prices": [{"instrument": "EUR_USD", "bids": [{"price": "1.08501"}], "asks": [{"price":
@@ -573,7 +571,7 @@ const PREDICTION_POINTS: u32 = 720;
 
 /// The price a day before the last point of `series` (oldest first), or the oldest one when the
 /// market has not been traded that long.
-fn day_before(series: &[crate::model::Kline]) -> Option<f64> {
+fn day_before(series: &[Kline]) -> Option<f64> {
     const DAY_MS: i64 = 86_400_000;
     let last = series.last()?;
     series
@@ -1114,7 +1112,7 @@ pub fn parse_alpaca_snapshots(
 mod tests {
     #[test]
     fn a_prediction_quote_compares_with_the_price_a_day_earlier() {
-        use crate::model::Kline;
+        use Kline;
         let point = |hours: i64, price: f64| Kline {
             open_time: hours * 3_600_000,
             close_time: hours * 3_600_000,
@@ -1675,33 +1673,32 @@ mod tests {
     }
 
     #[test]
-    fn the_day_ago_price_is_the_candle_covering_24_hours_back() {
-        // Now is 2026-11-26T17:00:00Z; 24h back is 2026-11-25T17:00:00Z, covered by the candle
-        // that opened at 16:00. The candle of 2026-11-26T16:00 is too new to be the reference.
-        let body = r#"{"candles":[
-            {"time":"2026-11-25T15:00:00Z","mid":{"o":"5000.00","h":"5010.0","l":"4990.0","c":"5005.0"}},
-            {"time":"2026-11-25T16:00:00Z","mid":{"o":"5100.00","h":"5110.0","l":"5090.0","c":"5105.0"}},
-            {"time":"2026-11-26T16:00:00Z","mid":{"o":"5200.00","h":"5210.0","l":"5190.0","c":"5205.0"}}
-        ]}"#;
-        let now = crate::format::parse_iso8601("2026-11-26T17:00:00Z").unwrap();
-        assert_eq!(parse_oanda_day_ago(body, now), Some(5100.0));
+    fn the_day_ago_reference_requests_the_hour_covering_the_cutoff() {
+        let hour = crate::format::parse_iso8601("2026-11-25T17:00:00Z").unwrap();
+        let now = hour + 24 * HOUR_MS + 123_456;
+        let reference = day_ago_reference(now, |start, end| {
+            assert_eq!((start, end), (hour, hour + HOUR_MS));
+            Ok(vec![Kline {
+                open_time: start,
+                close_time: end - 1,
+                open: 5100.0,
+                high: 5110.0,
+                low: 5090.0,
+                close: 5105.0,
+                volume: 1.0,
+            }])
+        })
+        .unwrap();
+        assert_eq!(reference.price, Some(5100.0));
     }
 
     #[test]
-    fn no_day_ago_price_when_the_market_was_closed_24_hours_back() {
-        // Sunday 2026-11-29T23:00:00Z: 24h back is Saturday, when forex is closed. The newest
-        // candle then opened Friday 21:00 — 26h before the cutoff, past the slack, so the
-        // change over that span is not a 24h change and there is no reference.
-        let body = r#"{"candles":[
-            {"time":"2026-11-27T20:00:00Z","mid":{"o":"4900.00","h":"4910.0","l":"4890.0","c":"4905.0"}},
-            {"time":"2026-11-27T21:00:00Z","mid":{"o":"5000.00","h":"5010.0","l":"4990.0","c":"5005.0"}},
-            {"time":"2026-11-29T22:00:00Z","mid":{"o":"5050.00","h":"5060.0","l":"5040.0","c":"5055.0"}}
-        ]}"#;
+    fn a_closed_hour_has_no_reference_and_is_not_fetched_again() {
         let now = crate::format::parse_iso8601("2026-11-29T23:00:00Z").unwrap();
-        assert_eq!(parse_oanda_day_ago(body, now), None);
-        assert_eq!(parse_oanda_day_ago(r#"{"candles":[]}"#, now), None);
-        assert_eq!(parse_oanda_day_ago("not json", now), None);
-        assert_eq!(parse_oanda_day_ago(r#"{"errorMessage":"bad"}"#, now), None);
+        let reference = day_ago_reference(now, |_, _| Ok(Vec::new())).unwrap();
+        assert_eq!(reference.price, None);
+        let cache = HashMap::from([("EUR_USD".to_owned(), reference)]);
+        assert!(stale_instruments(&[request("EUR_USD")], &cache, now + 1).is_empty());
     }
 
     fn quote(price: f64) -> SourceQuote {
@@ -1725,10 +1722,15 @@ mod tests {
             .iter()
             .map(|request| (request.symbol.clone(), quote(1.0)))
             .collect();
-        let mut cache: HashMap<String, (f64, i64)> =
-            HashMap::from([("EUR_USD".to_owned(), (1.05, 1_000))]);
-        let now = 1_000 + OANDA_REFERENCE_TTL_MS - 1;
-        fill_day_ago(&mut quotes, &requests, &mut cache, now);
+        let now = 25 * HOUR_MS - 1;
+        let cache = HashMap::from([(
+            "EUR_USD".to_owned(),
+            DayAgoReference {
+                hour: day_ago_hour(now),
+                price: Some(1.05),
+            },
+        )]);
+        fill_day_ago(&mut quotes, &requests, &cache, now);
         assert_eq!(quotes["EUR_USD"].previous_day_price, Some(1.05));
         assert_eq!(
             quotes["SPX500_USD"].previous_day_price, None,
@@ -1740,14 +1742,14 @@ mod tests {
             "the instruments to refresh in the background"
         );
         // Once the entry ages out it is stale too, and a fresh quote is left without a change.
-        let aged = 1_000 + OANDA_REFERENCE_TTL_MS;
+        let aged = now + 1;
         assert_eq!(
             stale_instruments(&requests, &cache, aged),
             ["EUR_USD", "SPX500_USD", "NOQUOTE"]
         );
         let mut fresh: HashMap<String, SourceQuote> =
             HashMap::from([(request("EUR_USD").symbol, quote(1.1))]);
-        fill_day_ago(&mut fresh, &requests, &mut cache, aged);
+        fill_day_ago(&mut fresh, &requests, &cache, aged);
         assert_eq!(fresh["EUR_USD"].previous_day_price, None);
     }
 
