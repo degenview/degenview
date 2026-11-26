@@ -212,9 +212,18 @@
     state is the request's own. The runs of one bar (a loop) all compare with the previous bar,
     and what the last run found is what the next bar compares with.
   - `""` is the running series' own timeframe.
-  - A period opens where `time::bucket::period_open` says: the bucket's start, except that a US
-    stock's day, week or month opens with the session of its first weekday, so the day and the
-    session's first `"240"` open together (`Grid::period_open_ms`; holidays count as weekdays).
+  - Periods are cut on the grid of the series the call runs on (`Session::request_grid`, else the
+    chart's `symbol.grid`), so a request for a stock counts the same from a crypto chart as from a
+    stock one (probe Q1: `"240"`, `"D"` and a mix over ten sessions, 20, 10 and 20, and Bitcoin's
+    72, 12 and 60, from either chart).
+  - On a 24/7 market a period is named by its bucket's start. On a market with closing hours it is
+    named by the first bar the series has in the bucket (`Session::period_of`, from `series_bars`,
+    which a stock script that calls `timeframe.change` therefore keeps): a day, week or month opens
+    with its first bar, so the day, the week that begins with it and the session's first `"240"`
+    are one period, after a holiday too, without a holiday calendar (probe Q2, AAPL 30m around
+    Labor Day and New Year: `"D"` before noon else `"W"` 16 and 20, else `"M"` 21). A history that
+    starts inside a period names it by its first loaded bar. `time("W")` still reads the calendar's
+    Monday where TradingView reads the first traded day (Q2: 8 September against 7).
   - It does not read the chart's previous bar (`last_committed_open_time` only guards against a
     repeated bar).
   - Measured on TradingView over fixed windows. Per call site (probe R2, BINANCE:BTCUSDT 4h,
@@ -227,9 +236,10 @@
     function 25; in a request 26; a loop naming `"D"`, `"W"`, `"240"` 69, 81, 83; weeks against
     months to November 31, 88 and 1866; `""` 83 of 84 bars. Stock (probe R9, NASDAQ:AAPL 30m,
     18 sessions): `"D"` 17, `"240"` 35, `"D"` before noon else `"240"` 35, `"240"`/`"60"`
-    alternating 197, `"D"` before noon else `"W"` 31. DegenView gives the same values on the same
-    bar times. Not measured: a week that starts on a holiday, a stock's `""`, and `""` inside a
-    request. `ta.*` in a `for` loop still pushes one history entry per run (audit items 20/21),
+    alternating 197, `"D"` before noon else `"W"` 31. `""` inside `"D"`, `"W"`, same-timeframe and
+    `"720"` requests (Q3) 14, 2, 84 and 28. DegenView gives the same values on the same bar times
+    (`"2W"` on AAPL 1D needs the yearly week anchor of `model::market::bucket`). Not measured: a
+    stock's `""`. `ta.*` in a `for` loop still pushes one history entry per run (audit items 20/21),
     which `timeframe.change` does not.
 - `session.*` reads `trading_session::MarketSessions` by `syminfo.type`: crypto 24x7 UTC (session =
   UTC day); `stock` New York 09:30-16:00 weekdays, pre- from 04:00, post- to 20:00. Charts show the

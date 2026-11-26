@@ -85,16 +85,6 @@ pub fn start(grid: Grid, open_time: i64, seconds: f64) -> i64 {
     }
 }
 
-/// Where the period of the bar that opens at `open_time` starts trading: the start of its bucket,
-/// except that a market with closing hours opens its day, week or month with the first session
-/// (`Grid::period_open_ms`). Periods of different lengths that begin together share it.
-pub fn period_open(grid: Grid, open_time: i64, seconds: f64) -> i64 {
-    match timeframe_of(seconds) {
-        Some(timeframe) => grid.period_open_ms(timeframe, open_time),
-        None => start(grid, open_time, seconds),
-    }
-}
-
 /// End of the bucket that opens at `start`: where the next one opens, or where trading in it stops
 /// on a market whose day, week or month ends at its close (`Grid::session_end_ms`).
 pub fn end(grid: Grid, start: i64, seconds: f64) -> i64 {

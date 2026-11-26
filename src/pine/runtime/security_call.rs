@@ -234,6 +234,9 @@ struct SeriesFrame {
     bar_seconds: f64,
     /// The chart's own bar length, known only while a request runs.
     chart_bar_seconds: Option<f64>,
+    /// Where the series' market cuts its periods, set only while a request runs
+    /// (`Session::series_grid`).
+    grid: Option<Grid>,
 }
 
 /// One `request.security` call's resolved arguments. `foreign` holds another symbol's series; it is
@@ -1207,6 +1210,7 @@ impl Session {
             // The outermost request remembers the chart's own bar length for
             // `timeframe.main_period`.
             chart_bar_seconds: Some(self.chart_bar_seconds.unwrap_or(chart_bar_seconds)),
+            grid: Some(request.grid),
         });
         self.working.instructions = 0;
         self.working.bar_index += 1;
@@ -1295,6 +1299,7 @@ impl Session {
                 &mut self.chart_bar_seconds,
                 frame.chart_bar_seconds,
             ),
+            grid: std::mem::replace(&mut self.request_grid, frame.grid),
         }
     }
 
@@ -3292,6 +3297,41 @@ mod tests {
         assert_eq!(latest[0][4], Some((4 * hour + 30 * minute) as f64));
         let first = read(", lookahead = barmerge.lookahead_on");
         assert_eq!(first[0][4], Some((4 * hour) as f64));
+    }
+
+    #[test]
+    fn timeframe_change_in_a_request_cuts_periods_in_the_requested_markets_hours() {
+        // TradingView, probe Q1: a request for AAPL counts the same from a crypto chart as from an
+        // AAPL one. Two sessions of AAPL 30-minute bars, whose four-hour periods open at 09:30 and
+        // 13:30 New York: three changes after the first run.
+        struct Stock(Vec<Kline>);
+        impl SecurityDataProvider for Stock {
+            fn candles(&self, _key: &SecurityKey) -> Option<Vec<Kline>> {
+                Some(self.0.clone())
+            }
+            fn grid(&self, _symbol: &str) -> Grid {
+                Grid::UsEquities
+            }
+        }
+        const HALF_HOUR: i64 = 1_800_000;
+        let open = time::calendar::make(2026, 11, 9, 14, 30, 0, 0).unwrap();
+        let stock: Vec<Kline> = [0, 86_400_000]
+            .into_iter()
+            .flat_map(|day| (0..13).map(move |index| open + day + index * HALF_HOUR))
+            .map(|open_time| bar(open_time, 1.0))
+            .collect();
+        // A crypto chart of the same two days, every half hour of them.
+        let chart: Vec<Kline> = (0..96)
+            .map(|index| bar(open + index * HALF_HOUR, 1.0))
+            .collect();
+        let plots = loaded(
+            "plot(request.security(\"NASDAQ:AAPL\", \"30\", ta.cum(timeframe.change(\"240\") ? 1.0 : 0.0)))",
+            Stock(stock),
+            &chart,
+            1_800.0,
+            None,
+        );
+        assert_eq!(plots[0].last(), Some(&Some(3.0)));
     }
 
     #[test]

@@ -3779,14 +3779,21 @@ fn an_empty_timeframe_is_the_charts_own() {
 
 /// `body` over the regular-session 30-minute bars of 9, 10 and 11 November 2026 on a US stock.
 fn run_on_a_stock(body: &str) -> Session {
-    const MINUTE_MS: i64 = 60_000;
     // 9 Nov 2026 14:30 UTC, the New York open.
     let open = crate::pine::time::calendar::make(2026, 11, 9, 14, 30, 0, 0).unwrap();
-    let data: Vec<Kline> = (0..3)
+    run_over_sessions(open, &[0, 1, 2], body)
+}
+
+/// `body` over the 13 regular-session 30-minute bars of each of `days`, counted from the one whose
+/// session opens at `open`.
+fn run_over_sessions(open: i64, days: &[i64], body: &str) -> Session {
+    const MINUTE_MS: i64 = 60_000;
+    let data: Vec<Kline> = days
+        .iter()
         .flat_map(|day| {
             (0..13).map(move |bar| open + day * 1_440 * MINUTE_MS + bar * 30 * MINUTE_MS)
         })
-        .zip(bars(39))
+        .zip(bars(13 * days.len()))
         .map(|(open_time, bar)| Kline {
             open_time,
             close_time: open_time + 30 * MINUTE_MS,
@@ -3832,4 +3839,22 @@ fn a_stocks_day_opens_with_its_session() {
          n += timeframe.change(hour(time, \"America/New_York\") < 12 ? \"D\" : \"240\") ? 1 : 0",
     );
     assert_eq!(value(&session, "n"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn after_a_holiday_a_stocks_week_begins_with_the_first_day_that_trades() {
+    // Monday 31 August to Friday 4 September 2026, then Tuesday 8 and Wednesday 9: the 7th is Labor
+    // Day. The call names the day before noon and the week after, and is counted from the 8th. On
+    // the 8th both periods open with that day's first bar, so noon is no change (TradingView,
+    // probe Q2).
+    let open = crate::pine::time::calendar::make(2026, 8, 31, 13, 30, 0, 0).unwrap();
+    let session = run_over_sessions(
+        open,
+        &[0, 1, 2, 3, 4, 8, 9],
+        "var int n = 0\n\
+         changed = timeframe.change(hour(time, \"America/New_York\") < 12 ? \"D\" : \"W\")\n\
+         n += dayofmonth >= 8 and month == 9 and changed ? 1 : 0",
+    );
+    // The open of the 8th, the open of the 9th and noon of the 9th.
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(3));
 }

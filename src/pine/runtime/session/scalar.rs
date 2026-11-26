@@ -4,12 +4,36 @@
 use std::collections::HashMap;
 
 use super::Session;
+use crate::model::market::bucket::Grid;
 use crate::pine::builtins::{number_format, ta};
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::RuntimeValue;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
 impl Session {
+    /// The market grid of the series now running: a request's, else the chart's.
+    fn running_grid(&self) -> Grid {
+        self.request_grid.unwrap_or(self.symbol.grid)
+    }
+
+    /// Names the period of `seconds` that holds the bar opening at `bar`, for comparing periods: the
+    /// start of its bucket on a 24/7 market. A market with closing hours has no bar at the start of
+    /// a day, week or month, so there it is the first bar the series has in the bucket: a day and
+    /// the week or session period that begin with it are one, after a holiday too.
+    fn period_of(&self, bar: i64, seconds: f64) -> i64 {
+        let grid = self.running_grid();
+        let start = crate::pine::time::bucket::start(grid, bar, seconds);
+        if grid == Grid::Utc {
+            return start;
+        }
+        let first = self
+            .series_bars
+            .partition_point(|logged| logged.bar.open_time < start);
+        self.series_bars
+            .get(first)
+            .map_or(bar, |logged| logged.bar.open_time.min(bar))
+    }
+
     pub(crate) fn scalar_call(
         &mut self,
         name: &str,
@@ -146,8 +170,7 @@ impl Session {
                 Ok(Some(match seconds {
                     Some(seconds) => {
                         let bar = context.bar.open_time;
-                        let period =
-                            crate::pine::time::bucket::period_open(self.symbol.grid, bar, seconds);
+                        let period = self.period_of(bar, seconds);
                         let key = self.site_key(site, context);
                         let state = self.working.ta_states.entry(key).or_default();
                         RuntimeValue::Bool(
