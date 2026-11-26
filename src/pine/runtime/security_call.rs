@@ -1771,6 +1771,86 @@ mod tests {
         assert_eq!(developing[9], Some(1.0));
     }
 
+    /// The request's bar states as one number: islast 1, isconfirmed 2, ishistory 4, isrealtime 8,
+    /// islastconfirmedhistory 16, isnew 32 (the masks TradingView probes R3 and R4 read).
+    const BAR_STATES: &str = "states() => (barstate.islast ? 1 : 0) + (barstate.isconfirmed ? 2 : 0) + (barstate.ishistory ? 4 : 0) + (barstate.isrealtime ? 8 : 0) + (barstate.islastconfirmedhistory ? 16 : 0) + (barstate.isnew ? 32 : 0)\n";
+
+    fn request_states(lookahead: &str) -> String {
+        format!(
+            "{BAR_STATES}plot(request.security(syminfo.tickerid, \"1D\", states(), lookahead = barmerge.{lookahead}))"
+        )
+    }
+
+    #[test]
+    fn the_incomplete_final_candle_of_a_closed_history_is_history_and_not_confirmed() {
+        // TradingView (probes R3-R5, 2026-11-23, XETR:SAP and BATS:AAPL 1D, request "1M"): the final
+        // month reads islast 1, isconfirmed 0, ishistory 1, isrealtime 0 and not the last confirmed
+        // one, from every chart bar inside it. Probes A and B (2026-11-21) read ishistory 0; that did
+        // not reproduce.
+        let flags = |name: &str| {
+            plotted_as_history(
+                &format!(
+                    "plot(request.security(syminfo.tickerid, \"1D\", barstate.{name} ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))"
+                ),
+                &hourly_chart(0, 30),
+            )[27]
+        };
+        assert_eq!(flags("islast"), Some(1.0));
+        assert_eq!(flags("isconfirmed"), Some(0.0));
+        assert_eq!(flags("ishistory"), Some(1.0));
+        assert_eq!(flags("isrealtime"), Some(0.0));
+        assert_eq!(flags("islastconfirmedhistory"), Some(0.0));
+        assert_eq!(flags("isnew"), Some(1.0));
+    }
+
+    /// `source` over `history` loaded as one run with a live bar to follow, then the live bar's
+    /// first tick and a second one.
+    fn plotted_with_a_live_bar(source: &str, history: &[Kline], live: Kline) -> Vec<Option<f64>> {
+        let body = format!("//@version=6\nindicator(\"T\")\n{source}");
+        let program = compiler::compile(&body, Limits::default(), &NoLibraries);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        session
+            .load_history(history, Some(live.open_time), Some(3600.0))
+            .expect("history");
+        for is_new in [true, false] {
+            session
+                .execute(
+                    BarEvent {
+                        candle: live.clone(),
+                        phase: BarPhase::RealtimeTick { is_new },
+                    },
+                    true,
+                    None,
+                )
+                .expect("tick");
+        }
+        session.output().plots[0].values.clone()
+    }
+
+    #[test]
+    fn a_request_with_a_live_bar_reads_history_inside_the_candle_and_realtime_on_the_live_bar() {
+        // TradingView (probe R3, BTCUSDT 4h, request "D" lookahead_on, 2026-11-23): history bars
+        // inside the candle the live bar is in read islast 1, ishistory 1, isnew 1 (37); the live bar
+        // reads islast 1, isrealtime 1 (9); a completed candle reads 54.
+        let values = plotted_with_a_live_bar(
+            &request_states("lookahead_on"),
+            &hourly_chart(0, 29),
+            bar(29 * 3_600_000, 30.0),
+        );
+        assert_eq!(values[5], Some(54.0));
+        assert_eq!(values[26], Some(37.0));
+        assert_eq!(values[28], Some(37.0));
+        assert_eq!(values[29], Some(9.0), "the live bar after its second tick");
+    }
+
     #[test]
     fn a_request_on_history_is_history_even_for_a_developing_candle() {
         let states = |state: &str| {
