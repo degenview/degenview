@@ -164,6 +164,9 @@ pub struct Session {
     /// The chart variables as of a skipped bar, for the one replayed evaluation that reads them
     /// instead of the current bar's.
     pub(crate) replay_globals: Option<FastMap<String, RuntimeValue>>,
+    /// The market grid of the series a request runs on; None on the chart, whose own is
+    /// `symbol.grid`.
+    pub(crate) request_grid: Option<crate::model::market::bucket::Grid>,
     /// Whether `series_bars` is kept.
     keeps_series_bars: bool,
     /// The chart's bar length in Pine's seconds (a month is 30 days): what `timeframe.in_seconds()`
