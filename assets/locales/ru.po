@@ -19104,7 +19104,7 @@ msgstr[2] "вероятность {symbol} · {count} вариантов"
 
 #: src/ui/kit/timeframe_picker/mod.rs
 msgid "chart and pin"
-msgstr "график и закрепление"
+msgstr "закрепить"
 
 #: src/pine_studio/debug/panel/mod.rs
 msgid "chart bar {bar}"
@@ -19112,7 +19112,7 @@ msgstr "бар графика {bar}"
 
 #: src/ui/kit/timeframe_picker/mod.rs
 msgid "chart it"
-msgstr "на график"
+msgstr "открыть"
 
 #: src/service/update/code_signature.rs
 msgid "checking the signature took too long"
@@ -19333,7 +19333,7 @@ msgstr "мин."
 
 #: src/ui/kit/timeframe_picker/mod.rs
 msgid "move"
-msgstr "переместить"
+msgstr "сдвинуть"
 
 #: src/pine_studio/ai/panel.rs
 msgid "needs a key"
