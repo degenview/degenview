@@ -187,7 +187,7 @@ impl PineStudio {
                 webhook_endpoint_ids,
             }) => {
                 self.actions.push(PineStudioAction::CreateAlert {
-                    chart_id: chart.chart_id,
+                    on: chart.on,
                     instance_id: sheet.instance.id,
                     script_id: sheet.instance.script_id.clone(),
                     script_name: sheet.name.clone(),

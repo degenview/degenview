@@ -916,6 +916,7 @@ mod tests {
             }
             let subscription = PineAlertSubscription {
                 id: 1,
+                workspace_id: Some(1),
                 chart_id: 1,
                 instance_id: None,
                 script_id: None,
@@ -996,6 +997,7 @@ mod tests {
         }
         let subscription = PineAlertSubscription {
             id: 1,
+            workspace_id: Some(1),
             chart_id: 1,
             instance_id: None,
             script_id: None,

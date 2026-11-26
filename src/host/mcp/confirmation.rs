@@ -24,7 +24,7 @@ use crate::mcp::confirm::{
 use crate::mcp::state::McpShared;
 use crate::mcp::types::AlertConditionKind;
 use crate::model::alert::AlertId;
-use crate::model::alert::pine::PineAlertSubscription;
+use crate::model::alert::pine::{ChartKey, PineAlertSubscription};
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
 use crate::model::paper::{PaperOrderChanges, PaperOrderRequest, PaperOrderType};
 use crate::model::watchlist::new_id;
@@ -372,7 +372,15 @@ pub fn remove_pine_instance(
                 "No script instance {instance_id} on chart {chart_id}"
             ))
         })?;
-    super::pine::guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
+    super::pine::guard_armed_alerts(
+        subscriptions,
+        ChartKey {
+            workspace_id: workspace.id(),
+            chart_id,
+        },
+        instance_id,
+        "removing it",
+    )?;
     Ok(Summary::new(
         Operation::RemoveScriptFromChart,
         tr!(

@@ -9,7 +9,7 @@
 //! script again, or a replay that gets through, brings the alert back by itself.
 
 use crate::host::pine::KlineSecurityDataProvider;
-use crate::model::alert::pine::{PineAlertState, PineAlertSubscription, ScriptFailure};
+use crate::model::alert::pine::{ChartKey, PineAlertState, PineAlertSubscription, ScriptFailure};
 use crate::model::chart::synthetic::Construction;
 use crate::model::market::bucket::Grid;
 use crate::model::pine::instance::PineInstance;
@@ -28,7 +28,7 @@ use std::collections::HashMap;
 /// must be rebuilt (without notifying for the history it replays).
 #[derive(PartialEq)]
 struct RunKey {
-    chart_id: u64,
+    on: ChartKey,
     instance_id: Option<u64>,
     symbol_key: String,
     timeframe: String,
@@ -38,6 +38,37 @@ struct RunKey {
     /// chart type or of its construction starts the script over (silently), like any other change
     /// of what it runs on.
     chart: ChartRun,
+}
+
+/// What the alert runtime needs from one open chart: its market, the bars its scripts run over
+/// and the scripts. Those are the market's candles, or the bars the chart type constructs from
+/// them, so a script's alert sees what the chart shows.
+pub struct ChartFeed {
+    pub on: ChartKey,
+    pub symbol_key: String,
+    pub timeframe: String,
+    pub bars: Vec<Kline>,
+    pub run: ChartRun,
+    pub instances: Vec<PineInstance>,
+}
+
+impl ChartFeed {
+    /// The applied indicator `subscription` was armed on, if this chart still has it.
+    fn instance_of(&self, subscription: &PineAlertSubscription) -> Option<&PineInstance> {
+        let id = subscription.instance_id?;
+        self.instances.iter().find(|instance| instance.id == id)
+    }
+
+    /// Whether an alert whose tab is not open belongs here now: the chart of the same id, on the
+    /// alert's market, running the very script it was armed on. Nothing less is taken, so an
+    /// unrelated chart that happens to share the id never claims the alert.
+    fn can_take_over(&self, subscription: &PineAlertSubscription) -> bool {
+        self.on.chart_id == subscription.chart_id
+            && subscription.watches(&self.symbol_key, &self.timeframe)
+            && self.instance_of(subscription).is_some_and(|instance| {
+                crate::store::scripts::hash_source(&instance.source) == subscription.source_hash
+            })
+    }
 }
 
 /// What the chart a script alert runs on feeds it. A price-based chart gives the script its
@@ -147,23 +178,34 @@ impl PineSubscriptionHost {
         &self.subscriptions
     }
 
-    /// Pins active subscriptions to the applied instance that created them. A removed instance
-    /// or changed source becomes silent until explicitly re-armed. Current instance inputs are
-    /// persisted so the independent host never falls back to input defaults.
-    pub fn reconcile_chart(&mut self, chart_id: u64, instances: &[PineInstance], store: &Store) {
+    /// Brings the subscriptions up to date with every open chart.
+    ///
+    /// An alert whose tab is not open moves to a chart that runs its script on its market (a saved
+    /// layout opened in another tab), and otherwise waits; paused alerts too, so they can be
+    /// re-armed there. Active ones are pinned to the applied instance that created them: a removed
+    /// instance or changed source becomes silent until explicitly re-armed, and current instance
+    /// inputs are persisted so the independent host never falls back to input defaults.
+    pub fn reconcile(&mut self, charts: &[ChartFeed], store: &Store) {
         let mut changed = false;
-        for subscription in self
-            .subscriptions
-            .iter_mut()
-            .filter(|subscription| subscription.chart_id == chart_id && subscription.is_active())
-        {
-            let Some(instance_id) = subscription.instance_id else {
-                subscription.state = PineAlertState::ScriptChanged;
+        for subscription in &mut self.subscriptions {
+            let tab_open = charts
+                .iter()
+                .any(|chart| Some(chart.on.workspace_id) == subscription.workspace_id);
+            if !tab_open
+                && let Some(chart) = charts
+                    .iter()
+                    .find(|chart| chart.can_take_over(subscription))
+            {
+                subscription.workspace_id = Some(chart.on.workspace_id);
                 changed = true;
+            }
+            if !subscription.is_active() {
+                continue;
+            }
+            let Some(chart) = charts.iter().find(|chart| subscription.is_on(chart.on)) else {
                 continue;
             };
-            let Some(instance) = instances.iter().find(|instance| instance.id == instance_id)
-            else {
+            let Some(instance) = chart.instance_of(subscription) else {
                 subscription.state = PineAlertState::ScriptChanged;
                 changed = true;
                 continue;
@@ -188,7 +230,7 @@ impl PineSubscriptionHost {
         }
     }
 
-    /// [`Self::run_active_on`] for a time-based chart.
+    /// [`Self::run_active_on`] for a time-based chart on the first tab.
     #[cfg(test)]
     pub fn run_active(
         &mut self,
@@ -199,44 +241,48 @@ impl PineSubscriptionHost {
         instances: &[PineInstance],
         now_ms: i64,
     ) -> Vec<(PineAlertSubscription, AlertEvent)> {
-        self.run_active_on(
-            chart_id,
+        let feed = ChartFeed {
+            on: ChartKey {
+                workspace_id: 1,
+                chart_id,
+            },
+            symbol_key: symbol_key.to_owned(),
+            timeframe: timeframe.to_owned(),
+            bars: bars.to_vec(),
+            run: ChartRun::default(),
+            instances: instances.to_vec(),
+        };
+        self.run_active_on(&feed, now_ms)
+    }
+
+    /// Feeds one chart's bars to every active subscription on it that watches its market,
+    /// returning `(subscription, alert)` pairs for the alerts raised by the new realtime tick or
+    /// close. Each subscription owns one persistent controller, so a forming bar is re-evaluated
+    /// as a tick (`freq_all`, `freq_once_per_bar`) and `freq_once_per_bar_close` waits for the
+    /// real close. The first snapshot, and any rebuild after the market, source or inputs
+    /// changed, replays history silently. A subscription without a stored source is skipped. The
+    /// chart may be price-based: `bars` are the bars the chart's scripts run over, and `run` says
+    /// how they were made.
+    pub fn run_active_on(
+        &mut self,
+        feed: &ChartFeed,
+        now_ms: i64,
+    ) -> Vec<(PineAlertSubscription, AlertEvent)> {
+        let ChartFeed {
+            on,
             symbol_key,
             timeframe,
             bars,
-            &ChartRun::default(),
+            run: chart,
             instances,
-            now_ms,
-        )
-    }
-
-    /// Feeds `bars` to every active subscription that watches `symbol_key`, returning
-    /// `(subscription, alert)` pairs for the alerts raised by the new realtime tick or close.
-    /// Each subscription owns one persistent controller, so a forming bar is re-evaluated as a
-    /// tick (`freq_all`, `freq_once_per_bar`) and `freq_once_per_bar_close` waits for the real
-    /// close. The first snapshot, and any rebuild after the market, source or inputs changed,
-    /// replays history silently. A subscription without a stored source is skipped. The chart
-    /// may be price-based: `bars` are the bars the chart's scripts run over, and `chart` says how
-    /// they were made.
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_active_on(
-        &mut self,
-        chart_id: u64,
-        symbol_key: &str,
-        timeframe: &str,
-        bars: &[Kline],
-        chart: &ChartRun,
-        instances: &[PineInstance],
-        now_ms: i64,
-    ) -> Vec<(PineAlertSubscription, AlertEvent)> {
+        } = feed;
         let symbol = chart.symbol(symbol_key);
         let mut fired = Vec::new();
         self.drop_stopped_runs();
         for subscription in &self.subscriptions {
             if !subscription.is_active()
-                || subscription.chart_id != chart_id
-                || subscription.symbol_key != symbol_key
-                || subscription.timeframe != timeframe
+                || !subscription.is_on(*on)
+                || !subscription.watches(symbol_key, timeframe)
                 || subscription.source.is_empty()
                 || !subscription.instance_id.is_some_and(|instance_id| {
                     instances.iter().any(|instance| {
@@ -249,10 +295,10 @@ impl PineSubscriptionHost {
                 continue;
             }
             let key = RunKey {
-                chart_id,
+                on: *on,
                 instance_id: subscription.instance_id,
-                symbol_key: symbol_key.to_owned(),
-                timeframe: timeframe.to_owned(),
+                symbol_key: symbol_key.clone(),
+                timeframe: timeframe.clone(),
                 source_hash: subscription.source_hash.clone(),
                 inputs: subscription.inputs.clone(),
                 chart: chart.clone(),
@@ -349,6 +395,7 @@ mod tests {
     fn subscription(id: u64, source: &str) -> PineAlertSubscription {
         PineAlertSubscription {
             id,
+            workspace_id: Some(1),
             chart_id: 1,
             instance_id: Some(10),
             script_id: None,
@@ -367,6 +414,31 @@ mod tests {
 
     fn instance(source: &str) -> PineInstance {
         PineInstance::new(10, Some("saved-script".into()), "S", source)
+    }
+
+    /// Chart 1 of a tab, on the alert's market.
+    fn chart(workspace_id: u64, instances: &[PineInstance]) -> ChartFeed {
+        ChartFeed {
+            on: ChartKey {
+                workspace_id,
+                chart_id: 1,
+            },
+            ..feed(&bars(), &ChartRun::default(), instances)
+        }
+    }
+
+    fn feed(bars: &[Kline], run: &ChartRun, instances: &[PineInstance]) -> ChartFeed {
+        ChartFeed {
+            on: ChartKey {
+                workspace_id: 1,
+                chart_id: 1,
+            },
+            symbol_key: "binance:BTCUSDT".into(),
+            timeframe: "1h".into(),
+            bars: bars.to_vec(),
+            run: run.clone(),
+            instances: instances.to_vec(),
+        }
     }
 
     const LIVE_NOW: i64 = 17_000_000;
@@ -463,7 +535,7 @@ mod tests {
             for tick in 0..3 {
                 data[4].close += 1.0;
                 let now = LIVE_NOW + tick;
-                host.reconcile_chart(1, &applied, &store);
+                host.reconcile(&[chart(1, &applied)], &store);
                 assert!(
                     host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, now)
                         .is_empty()
@@ -540,7 +612,7 @@ mod tests {
             "S",
             fixed,
         )];
-        host.reconcile_chart(1, &applied, &store);
+        host.reconcile(&[chart(1, &applied)], &store);
         host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
         data[4].close += 1.0;
         let fired = host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW + 1);
@@ -553,6 +625,74 @@ mod tests {
             store.pine_subscriptions()[0].state,
             PineAlertState::ScriptChanged
         );
+    }
+
+    #[test]
+    fn another_tabs_chart_with_the_same_id_neither_silences_nor_feeds_an_alert() {
+        let source = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)";
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_pine_subscriptions(&[subscription(1, source)])
+            .expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        // The other tab comes first and has nothing applied.
+        let mut charts = [chart(2, &[]), chart(1, &[instance(source)])];
+        host.reconcile(&charts, &store);
+        assert_eq!(store.pine_subscriptions()[0].state, PineAlertState::Active);
+        assert_eq!(store.pine_subscriptions()[0].workspace_id, Some(1));
+
+        // Even running the same script, it is not the alert's chart.
+        charts[0] = chart(2, &[instance(source)]);
+        for feed in &charts {
+            assert!(host.run_active_on(feed, LIVE_NOW).is_empty());
+        }
+        charts[0].bars[4].close += 1.0;
+        assert!(host.run_active_on(&charts[0], LIVE_NOW + 1).is_empty());
+        charts[1].bars[4].close += 1.0;
+        assert_eq!(host.run_active_on(&charts[1], LIVE_NOW + 1).len(), 1);
+
+        // Its own tab losing the indicator is a change, whatever another tab still runs.
+        charts[1] = chart(1, &[]);
+        host.reconcile(&charts, &store);
+        assert_eq!(
+            store.pine_subscriptions()[0].state,
+            PineAlertState::ScriptChanged
+        );
+    }
+
+    #[test]
+    fn an_alert_whose_tab_is_not_open_moves_only_to_a_chart_running_its_script() {
+        let source = "//@version=6\nindicator(\"S\")\nplot(close)";
+        let applied = [instance(source)];
+        // A closed tab, and a row saved before alerts named their tab; paused ones move as well.
+        for (tab, state) in [
+            (Some(9), PineAlertState::Active),
+            (None, PineAlertState::Active),
+            (None, PineAlertState::Paused),
+        ] {
+            let store = Store::open_in_memory().expect("open");
+            let mut orphan = subscription(1, source);
+            orphan.workspace_id = tab;
+            orphan.state = state;
+            store.replace_pine_subscriptions(&[orphan]).expect("write");
+            let mut host = PineSubscriptionHost::load(&store);
+
+            let mut other_market = chart(3, &applied);
+            other_market.symbol_key = "binance:ETHUSDT".into();
+            let mut other_script = instance("plot(open)");
+            other_script.id = 10;
+            host.reconcile(
+                &[chart(2, &[]), other_market, chart(4, &[other_script])],
+                &store,
+            );
+            let waiting = &store.pine_subscriptions()[0];
+            assert_eq!((waiting.workspace_id, waiting.state), (tab, state));
+
+            // The saved layout opened again, in a new tab.
+            host.reconcile(&[chart(2, &[]), chart(5, &applied)], &store);
+            let moved = &store.pine_subscriptions()[0];
+            assert_eq!((moved.workspace_id, moved.state), (Some(5), state));
+        }
     }
 
     #[test]
@@ -579,14 +719,14 @@ mod tests {
         let mut applied = instance(source);
         applied.inputs.insert("len".into(), StoredInput::Int(9));
         let mut host = PineSubscriptionHost::load(&store);
-        host.reconcile_chart(1, &[applied.clone()], &store);
+        host.reconcile(&[chart(1, &[applied.clone()])], &store);
         assert_eq!(
             store.pine_subscriptions()[0].inputs.get("len"),
             Some(&StoredInput::Int(9))
         );
 
         applied.source.push_str("\nplot(open)");
-        host.reconcile_chart(1, &[applied], &store);
+        host.reconcile(&[chart(1, &[applied])], &store);
         assert_eq!(
             store.pine_subscriptions()[0].state,
             PineAlertState::ScriptChanged
@@ -622,25 +762,9 @@ mod tests {
             .collect();
 
         let plain = ChartRun::default();
-        host.run_active_on(
-            1,
-            "binance:BTCUSDT",
-            "1h",
-            &candles,
-            &plain,
-            &applied,
-            LIVE_NOW,
-        );
+        host.run_active_on(&feed(&candles, &plain, &applied), LIVE_NOW);
         candles[4].close += 0.5;
-        let fired = host.run_active_on(
-            1,
-            "binance:BTCUSDT",
-            "1h",
-            &candles,
-            &plain,
-            &applied,
-            LIVE_NOW + 1,
-        );
+        let fired = host.run_active_on(&feed(&candles, &plain, &applied), LIVE_NOW + 1);
         assert_eq!(fired.len(), 1, "a wide candle raises the alert");
 
         // The same chart switched to Renko: bricks are one point tall, so the script's condition
@@ -662,57 +786,25 @@ mod tests {
         let bricks = build_with(construction, &candles, LIVE_NOW + 2).klines();
         assert!(bricks.len() > candles.len());
         assert!(
-            host.run_active_on(
-                1,
-                "binance:BTCUSDT",
-                "1h",
-                &bricks,
-                &chart,
-                &applied,
-                LIVE_NOW + 2
-            )
-            .is_empty()
+            host.run_active_on(&feed(&bricks, &chart, &applied), LIVE_NOW + 2)
+                .is_empty()
         );
         candles[4].close += 2.0;
         let bricks = build_with(construction, &candles, LIVE_NOW + 3).klines();
         assert!(
-            host.run_active_on(
-                1,
-                "binance:BTCUSDT",
-                "1h",
-                &bricks,
-                &chart,
-                &applied,
-                LIVE_NOW + 3
-            )
-            .is_empty(),
+            host.run_active_on(&feed(&bricks, &chart, &applied), LIVE_NOW + 3)
+                .is_empty(),
             "no brick is wide"
         );
         // Back on candles: another silent restart, then the candles' own alerts again.
         assert!(
-            host.run_active_on(
-                1,
-                "binance:BTCUSDT",
-                "1h",
-                &candles,
-                &plain,
-                &applied,
-                LIVE_NOW + 4
-            )
-            .is_empty()
+            host.run_active_on(&feed(&candles, &plain, &applied), LIVE_NOW + 4)
+                .is_empty()
         );
         candles[4].close += 0.5;
         assert_eq!(
-            host.run_active_on(
-                1,
-                "binance:BTCUSDT",
-                "1h",
-                &candles,
-                &plain,
-                &applied,
-                LIVE_NOW + 5
-            )
-            .len(),
+            host.run_active_on(&feed(&candles, &plain, &applied), LIVE_NOW + 5)
+                .len(),
             1
         );
     }

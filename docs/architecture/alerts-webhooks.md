@@ -12,6 +12,12 @@ Settings → webhook_endpoint (SQLite templates)
          → keychain::webhook_secrets (one Keychain secret)
 ```
 
+A script alert watches one applied instance on one chart. Chart ids start over in every tab, so a
+subscription names the tab and the chart (`ChartKey`), and `PineSubscriptionHost::reconcile` reads
+every open chart at once. When the alert's tab is not open (closed, or a row saved before alerts
+named their tab), it moves only to a chart of the same id that runs the same script source on the
+same market, which is what opening its saved layout in another tab gives; otherwise it waits.
+
 `AlertHost` is the in-app price-alert owner: it loads the snapshot, drains `alert_command`, evaluates
 crossings using caller-supplied time, and publishes triggers/unseen state. There is no separate
 login-item agent yet.

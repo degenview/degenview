@@ -440,6 +440,7 @@ fn a_script_with_an_armed_alert_keeps_its_inputs_and_stays_on_the_chart() {
         .unwrap();
     let alert = |state, instance_id, chart_id| PineAlertSubscription {
         id: 55,
+        workspace_id: Some(3),
         chart_id,
         instance_id: Some(instance_id),
         script_id: Some("s1".into()),
@@ -492,6 +493,11 @@ fn a_script_with_an_armed_alert_keeps_its_inputs_and_stays_on_the_chart() {
         alert(PineAlertState::Paused, id, chart_id),
         alert(PineAlertState::ScriptChanged, id, chart_id),
         alert(PineAlertState::Active, id, chart_id + 1),
+        // The chart of the same id on another tab.
+        PineAlertSubscription {
+            workspace_id: Some(2),
+            ..alert(PineAlertState::Active, id, chart_id)
+        },
     ] {
         assert!(
             update_pine_instance(
@@ -513,6 +519,7 @@ fn a_script_with_an_armed_alert_keeps_its_inputs_and_stays_on_the_chart() {
 fn script_alert_subscriptions_are_listed_without_webhooks_or_invented_history() {
     let subscription = PineAlertSubscription {
         id: 1_791_000_000_000_000_001,
+        workspace_id: Some(1),
         chart_id: 2,
         instance_id: Some(4),
         script_id: Some("script-1".into()),
@@ -554,6 +561,7 @@ fn script_alert_subscriptions_are_listed_without_webhooks_or_invented_history() 
 fn an_active_script_alert_that_cannot_run_is_listed_with_why() {
     let alert = |id: u64, source: &str| PineAlertSubscription {
         id,
+        workspace_id: Some(1),
         chart_id: 1,
         instance_id: Some(10),
         script_id: None,

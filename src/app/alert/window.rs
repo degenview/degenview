@@ -11,7 +11,7 @@ use crate::host::pine::subscription::PineSubscriptionHost;
 use crate::host::settings::SettingsHost;
 use crate::i18n::tr;
 use crate::lock::lock;
-use crate::model::alert::pine::PineAlertState;
+use crate::model::alert::pine::{ChartKey, PineAlertState};
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertState,
 };
@@ -43,9 +43,9 @@ struct AlertsWindowState {
     editor: Option<PriceAlertEditorState>,
     /// The Webhooks… sheet open on a script alert, by subscription id.
     script_webhooks: Option<(u64, PineAlertWebhooksState)>,
-    /// `chart_id → (symbol_key, timeframe)` of every open chart, refreshed each frame for the
+    /// `chart → (symbol_key, timeframe)` of every open chart, refreshed each frame for the
     /// script alerts' status.
-    chart_datasets: HashMap<u64, (String, String)>,
+    chart_datasets: HashMap<ChartKey, (String, String)>,
 }
 
 /// Whether the Alerts window is open, and what it keeps across frames. Cheap to clone; its
@@ -80,7 +80,7 @@ impl AlertsWindow {
     }
 
     /// What each open chart shows, for the script alerts' status.
-    pub(super) fn set_chart_datasets(&self, datasets: HashMap<u64, (String, String)>) {
+    pub(super) fn set_chart_datasets(&self, datasets: HashMap<ChartKey, (String, String)>) {
         if let Ok(mut state) = self.state.lock() {
             state.chart_datasets = datasets;
         }
@@ -141,9 +141,9 @@ fn show(ui: &mut egui::Ui, env: &AlertsWindowEnv) {
             .pine_subscriptions_cached()
             .iter()
             .map(|subscription| {
-                let dataset = window
-                    .chart_datasets
-                    .get(&subscription.chart_id)
+                let dataset = subscription
+                    .chart()
+                    .and_then(|chart| window.chart_datasets.get(&chart))
                     .map(|(key, timeframe)| (key.as_str(), timeframe.as_str()));
                 ScriptAlertRow::from_subscription(
                     subscription,

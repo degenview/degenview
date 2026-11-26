@@ -248,7 +248,7 @@ impl PineStudio {
             .map(|store| {
                 let duplicate = store.pine_subscriptions().iter().any(|s| {
                     s.is_active()
-                        && s.chart_id == chart.chart_id
+                        && s.is_on(chart.on)
                         && s.instance_id == Some(instance.id)
                         && s.source_hash == hash
                         && s.symbol_key == chart.symbol_key

@@ -70,6 +70,7 @@ pub(super) mod tests {
     pub(in crate::store) fn subscription(id: u64) -> PineAlertSubscription {
         PineAlertSubscription {
             id,
+            workspace_id: Some(1),
             chart_id: 1,
             instance_id: None,
             script_id: None,

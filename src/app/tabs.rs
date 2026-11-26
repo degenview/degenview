@@ -172,7 +172,7 @@ pub(super) fn show_tab(
                         source,
                     },
                     PineStudioAction::CreateAlert {
-                        chart_id,
+                        on,
                         instance_id,
                         script_id,
                         script_name,
@@ -183,7 +183,7 @@ pub(super) fn show_tab(
                         note,
                         webhook_endpoint_ids,
                     } => AppAction::CreatePineAlert {
-                        chart_id,
+                        on,
                         instance_id,
                         script_id,
                         script_name,

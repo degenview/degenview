@@ -612,6 +612,9 @@ pub struct PineAlertInfo {
     /// been open.
     pub cannot_run: Option<PineAlertFailureInfo>,
     pub note: String,
+    /// The tab holding the chart; with `chart_id` it names the chart. Null for an alert saved
+    /// before alerts named their tab, until its chart is open.
+    pub workspace_id: Option<String>,
     pub chart_id: String,
     pub instance_id: Option<String>,
     pub source_hash: String,

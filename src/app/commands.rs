@@ -203,7 +203,7 @@ impl DegenViewApp {
                     }
                 }
                 AppAction::CreatePineAlert {
-                    chart_id,
+                    on,
                     instance_id,
                     script_id,
                     script_name,
@@ -217,7 +217,8 @@ impl DegenViewApp {
                     let source_hash = hash_source(&source);
                     let subscription = PineAlertSubscription {
                         id: new_id(),
-                        chart_id,
+                        workspace_id: Some(on.workspace_id),
+                        chart_id: on.chart_id,
                         instance_id: Some(instance_id),
                         script_id,
                         script_name,

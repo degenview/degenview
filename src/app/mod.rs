@@ -35,6 +35,7 @@ use crate::host::update::UpdateHost;
 use crate::lock::lock;
 use crate::model::Timeframe;
 use crate::model::alert::AlertState;
+use crate::model::alert::pine::ChartKey;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::native_bridge;
 use crate::pine_studio::PineStudio;
@@ -115,7 +116,7 @@ enum AppAction {
     },
     /// Create a Pine alert subscription on the focused chart (the Pine Studio's "Create Alert").
     CreatePineAlert {
-        chart_id: u64,
+        on: ChartKey,
         instance_id: u64,
         script_id: Option<String>,
         script_name: String,

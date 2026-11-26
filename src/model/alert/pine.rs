@@ -2,8 +2,9 @@
 //! and the rules for when such a request may be created. A port of `PineAlertSubscription` and
 //! the blocker logic of `PineAlertEditor`.
 //!
-//! A subscription is bound to the chart, symbol, timeframe and the exact source that was applied,
-//! so a different script or a chart showing another market never fires it by accident.
+//! A subscription is bound to the chart (its tab and its id there), symbol, timeframe and the
+//! exact source that was applied, so a different script or a chart showing another market never
+//! fires it by accident.
 
 use crate::i18n::tr;
 use crate::model::pine::instance::StoredInput;
@@ -47,9 +48,20 @@ impl ScriptFailure {
     }
 }
 
+/// One chart on one tab. Chart ids start over in every tab, so only the pair names a chart.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ChartKey {
+    pub workspace_id: u64,
+    pub chart_id: u64,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PineAlertSubscription {
     pub id: u64,
+    /// The tab holding the chart. `None` for rows saved before alerts named their tab, until a
+    /// chart running their indicator is open.
+    #[serde(default)]
+    pub workspace_id: Option<u64>,
     pub chart_id: u64,
     /// The applied indicator this alert watches. Two instances of one script, with different
     /// inputs, are separate alerts.
@@ -83,6 +95,18 @@ pub struct PineAlertSubscription {
 impl PineAlertSubscription {
     pub fn is_active(&self) -> bool {
         self.state == PineAlertState::Active
+    }
+
+    /// The chart this alert watches, once it knows its tab.
+    pub fn chart(&self) -> Option<ChartKey> {
+        self.workspace_id.map(|workspace_id| ChartKey {
+            workspace_id,
+            chart_id: self.chart_id,
+        })
+    }
+
+    pub fn is_on(&self, chart: ChartKey) -> bool {
+        self.chart() == Some(chart)
     }
 
     /// Whether this is the market the subscription was created for.
@@ -210,6 +234,7 @@ mod tests {
     fn subscription() -> PineAlertSubscription {
         PineAlertSubscription {
             id: 1,
+            workspace_id: Some(7),
             chart_id: 2,
             instance_id: Some(3),
             script_id: None,
@@ -256,6 +281,7 @@ mod tests {
             "timeframe":"1h","source_hash":"abc","created_at_ms":5}"#;
         let decoded: PineAlertSubscription = serde_json::from_str(json).unwrap();
         assert!(decoded.webhook_endpoint_ids.is_empty());
+        assert_eq!((decoded.workspace_id, decoded.chart()), (None, None));
         assert_eq!(decoded.state, PineAlertState::Active);
         assert_eq!(decoded.note, "");
         assert!(decoded.inputs.is_empty());

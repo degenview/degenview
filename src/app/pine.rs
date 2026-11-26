@@ -82,30 +82,24 @@ impl DegenViewApp {
             if let Ok(content) = tab.content.lock()
                 && let TabContent::Chart(workspace) = &*content
             {
-                for (chart_id, key, timeframe) in workspace.pine_datasets() {
-                    datasets.insert(chart_id, (key, timeframe));
+                for (chart, key, timeframe) in workspace.pine_datasets() {
+                    datasets.insert(chart, (key, timeframe));
                 }
             }
         }
         self.alerts.set_chart_datasets(datasets);
+        let mut feeds = Vec::new();
+        for tab in self.tabs.slots() {
+            if let Ok(content) = tab.content.lock()
+                && let TabContent::Chart(workspace) = &*content
+            {
+                feeds.extend(workspace.charts_candles());
+            }
+        }
         if let Ok(mut host) = self.pine_host.lock() {
-            for tab in self.tabs.slots() {
-                if let Ok(content) = tab.content.lock()
-                    && let TabContent::Chart(workspace) = &*content
-                {
-                    for feed in workspace.charts_candles() {
-                        host.reconcile_chart(feed.chart_id, &feed.instances, &store);
-                        fired.extend(host.run_active_on(
-                            feed.chart_id,
-                            &feed.symbol_key,
-                            &feed.timeframe,
-                            &feed.bars,
-                            &feed.run,
-                            &feed.instances,
-                            now,
-                        ));
-                    }
-                }
+            host.reconcile(&feeds, &store);
+            for feed in &feeds {
+                fired.extend(host.run_active_on(feed, now));
             }
         }
         if !fired.is_empty() {

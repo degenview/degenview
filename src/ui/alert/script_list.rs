@@ -322,6 +322,7 @@ mod tests {
     fn subscription(state: PineAlertState) -> PineAlertSubscription {
         PineAlertSubscription {
             id: 4,
+            workspace_id: Some(1),
             chart_id: 1,
             instance_id: None,
             script_id: None,

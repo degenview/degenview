@@ -31,6 +31,9 @@
   Settings" is an outcome (`OpenWebhookSettings`) the host acts on; the sheet stays open. Pictures:
   `cargo test --lib gallery_of_the_script_alert -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
 
+- A chart id alone names no chart (every tab starts at 1): anything keyed by a chart across tabs
+  takes `model::alert::pine::ChartKey`.
+
 ## Webhooks
 
 - Endpoints are global `store::webhook` documents. URLs and headers are plaintext templates with a
