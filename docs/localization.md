@@ -193,15 +193,15 @@ msgstr[1] "{count} alertas"
   loader reads valid catalogs; deciding that one is valid is `msgfmt`'s, which
   `the_catalogs_and_layouts_are_valid_gettext` runs on every shipped file and on each layout the tests
   use (it needs gettext's tools, which CI's Linux image has).
-- A message the catalog lacks, leaves empty, or marks `fuzzy` shows in English. Nothing breaks while a
-  language is incomplete.
+- A message the catalog lacks, leaves empty, or marks `fuzzy` shows in English. Every shipped
+  catalog translates every message, so a change that adds or rewords one translates it in all of them.
 - Bring a catalog up to date with the source: `msgmerge -U assets/locales/es.po
   assets/locales/messages.pot` (a translation platform such as Weblate does it by itself).
 - `every_catalog_matches_the_messages_in_the_source` fails on a message that is no longer in the
-  source (stale), a `{name}` the source does not pass, a text that uses other values than its English,
-  and a message counted in one place and not in the other. A catalog whose `Plural-Forms` disagrees
-  with CLDR for its language is caught by `the_plural_formulas_translators_write_agree_with_cldr`,
-  once the language's formula is in it.
+  source (stale), a message the catalog gives no translation for, a `{name}` the source does not
+  pass, a text that uses other values than its English, and a message counted in one place and not
+  in the other. A catalog whose `Plural-Forms` disagrees with CLDR for its language is caught by
+  `the_plural_formulas_translators_write_agree_with_cldr`, once the language's formula is in it.
 
 ### Adding a language
 
@@ -212,7 +212,8 @@ verification are in [Translation](agent-guides/translation.md). The steps for th
    catalog). Plural rules and date patterns come from the catalog's header and CLDR; no code per
    language.
 2. `msginit` or the translation platform makes `assets/locales/<tag>.po` from `messages.pot`. Its
-   `Plural-Forms` is the standard GNU one for the language.
+   `Plural-Forms` is the standard GNU one for the language. Translate every message before adding the
+   row: the tests fail on a shipped catalog with a gap.
 3. Add the language's formula to `the_plural_formulas_translators_write_agree_with_cldr`.
 4. **Fonts.** egui draws from the fonts it is given and has no system fallback. Latin, Cyrillic and
    Greek are in the macOS system font and egui's own; Chinese, Japanese, Korean, Thai, Arabic, Hebrew

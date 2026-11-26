@@ -54,7 +54,8 @@ background; never skip one because the code looks self-explanatory.
 
 New or changed user-facing text is written with `tr!` / `tr_n!` / `tr_c!` (`crate::i18n`), never as a
 bare literal in a widget call, and never a sentence assembled from pieces. Existing literals move over
-directory by directory. Rules and the pseudo-locale for checking a screen:
+directory by directory. A new or reworded message is translated in every `assets/locales/*.po` in the
+same change; the tests fail otherwise. Rules and the pseudo-locale for checking a screen:
 [Localization](docs/localization.md).
 
 ## Never blue
