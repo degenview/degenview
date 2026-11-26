@@ -180,3 +180,42 @@ fn reading_again_keeps_what_was_left_out_and_decided() {
     assert_eq!(*kept.status(&symbol("BINANCE:BTCUSDT")), Match::Skipped);
     assert_eq!(*kept.status(&symbol("OKX:ETHUSDT")), Match::Searching);
 }
+
+#[test]
+fn drawings_on_a_market_no_chart_opens_on_are_said_to_be_there() {
+    let mut library = library();
+    let line = fixtures::drawing(
+        "elsewhere",
+        "LineToolTrendLine",
+        "COINBASE:BTCUSD",
+        serde_json::json!({}),
+        &[(0, 1.0), (1, 2.0)],
+    );
+    library.layouts[0]
+        .drawings
+        .push(crate::model::tradingview::drawing::RawDrawing::read("elsewhere", &line).unwrap());
+    let mut mappings = mapped();
+    mappings.found(
+        symbol("COINBASE:BTCUSD"),
+        Match::Exact(market(DataSource::Coinbase, "BTC-USD")),
+    );
+    let layout = plan(
+        &library,
+        &Selection::all(&library),
+        &mappings,
+        &Default::default(),
+        &Taken::default(),
+        &ChartAppearance::default(),
+    )
+    .layouts
+    .remove(0);
+    assert!(
+        layout.left_out.contains(&LeftOut::OtherMarket {
+            source: DataSource::Coinbase,
+            symbol: "BTC-USD".into(),
+            count: 1,
+        }),
+        "{:?}",
+        layout.left_out
+    );
+}

@@ -13,7 +13,7 @@ use crate::model::pine::script_name;
 use crate::model::tradingview::TvSymbol;
 use crate::model::tradingview::placement::Spot;
 use crate::model::watchlist::{MAX_NAME_CHARS, Watchlist, WatchlistInstrument};
-use crate::model::{ChartAppearance, ChartColumn, PersistedChart, Timeframe};
+use crate::model::{ChartAppearance, ChartColumn, DataSource, PersistedChart, Timeframe};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// The prices worked out for [`Selection::spots`]; `None` is a spot that has none.
@@ -234,6 +234,13 @@ pub enum LeftOut {
     PostsUnplaced(usize),
     /// Anchored VWAPs whose percentage bands are off.
     PercentBands(usize),
+    /// Drawings brought over onto a market their chart does not open on: they show once it is
+    /// switched to that market.
+    OtherMarket {
+        source: DataSource,
+        symbol: String,
+        count: usize,
+    },
 }
 
 /// The plan for `selection`. `base` is the look a new chart gets here.

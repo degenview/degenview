@@ -16,8 +16,8 @@ use crate::model::tradingview::library::{Layout, LayoutChart, Library, Study};
 use crate::model::tradingview::placement::Spot;
 use crate::model::tradingview::{TvSymbol, interval};
 use crate::model::{
-    BuiltIn, ChartAppearance, ChartColumn, Drawing, IndicatorConfig, InstrumentId, PersistedChart,
-    Timeframe,
+    BuiltIn, ChartAppearance, ChartColumn, DataSource, Drawing, IndicatorConfig, InstrumentId,
+    PersistedChart, Timeframe,
 };
 use std::collections::BTreeMap;
 
@@ -132,8 +132,7 @@ pub(super) fn plan(
             candle_count: 0,
             viewport: Default::default(),
             // A DEX pair is named by its pair, not the address it is fetched by.
-            title: (market.source == crate::model::DataSource::DexScreener)
-                .then(|| market.name.clone()),
+            title: (market.source == DataSource::DexScreener).then(|| market.name.clone()),
             pm_series: Vec::new(),
             image_url: market.image_url.clone(),
             card: None,
@@ -310,6 +309,8 @@ fn file_drawings(
     let (mut pictures, mut positions, mut cut, mut default_levels) = (0, 0, 0, 0);
     let mut broken = found.unreadable;
     let (mut pinned, mut estimated, mut unplaced, mut percent_bands) = (0, 0, 0, 0);
+    // Filed on a chart that opens on another market, by market.
+    let mut elsewhere: BTreeMap<String, (DataSource, String, usize)> = BTreeMap::new();
     for raw in ordered {
         let Some(market) = mappings.market(&raw.symbol) else {
             *unmapped.entry(&raw.symbol).or_default() += 1;
@@ -329,6 +330,13 @@ fn file_drawings(
         match convert::convert(source, target.next_drawing, ticks.get(&raw.symbol).copied()) {
             Ok(converted) => {
                 let key = InstrumentId::new(market.source, &market.symbol).key();
+                let shown = InstrumentId::new(target.chart.source, &target.chart.symbol).key();
+                if key != shown {
+                    elsewhere
+                        .entry(key.clone())
+                        .or_insert((market.source, market.symbol.clone(), 0))
+                        .2 += 1;
+                }
                 target
                     .drawings
                     .entry(key)
@@ -364,6 +372,15 @@ fn file_drawings(
             .into_iter()
             .map(|(class, count)| LeftOut::DrawingsOfTool {
                 class: class.to_owned(),
+                count,
+            }),
+    );
+    left_out.extend(
+        elsewhere
+            .into_values()
+            .map(|(source, symbol, count)| LeftOut::OtherMarket {
+                source,
+                symbol,
                 count,
             }),
     );

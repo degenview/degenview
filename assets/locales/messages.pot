@@ -19891,6 +19891,16 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/ui/tradingview/words.rs
+msgid ""
+"{count} drawing is on {symbol} ({exchange}): switch the chart to that market "
+"to see it"
+msgid_plural ""
+"{count} drawings are on {symbol} ({exchange}): switch the chart to that market"
+" to see them"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
 msgid "{count} drawing on {symbol}, which has no market"
 msgid_plural "{count} drawings on {symbol}, which has no market"
 msgstr[0] ""

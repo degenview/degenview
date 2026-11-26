@@ -20951,3 +20951,8 @@ msgid "{count} anchored VWAP loses its percentage bands"
 msgid_plural "{count} anchored VWAPs lose their percentage bands"
 msgstr[0] "{count} verankerter VWAP verliert seine prozentualen Bänder"
 msgstr[1] "{count} verankerte VWAPs verlieren ihre prozentualen Bänder"
+
+msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it"
+msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
+msgstr[0] "{count} Zeichnung liegt auf {symbol} ({exchange}): Wechsle den Chart zu diesem Markt, um sie zu sehen"
+msgstr[1] "{count} Zeichnungen liegen auf {symbol} ({exchange}): Wechsle den Chart zu diesem Markt, um sie zu sehen"

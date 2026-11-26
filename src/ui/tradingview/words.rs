@@ -156,6 +156,17 @@ pub fn left_out(entry: &LeftOut) -> String {
             "{count} symbol that doesn\u{2019}t fit in one watchlist",
             "{count} symbols that don\u{2019}t fit in one watchlist"
         ),
+        LeftOut::OtherMarket {
+            source,
+            symbol,
+            count,
+        } => tr_n!(
+            *count,
+            "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it",
+            "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them",
+            symbol = symbol.as_str(),
+            exchange = source.display_name()
+        ),
         LeftOut::Pinned(count) => tr_n!(
             *count,
             "{count} drawing pinned to the screen can\u{2019}t be brought over",
