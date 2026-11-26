@@ -23,8 +23,8 @@ use crate::pine::strategy::StrategyReport;
 use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, block_font_size,
-    box_text_placement, candle_index_for_bar, dash_pattern, extended_line, faded, is_visible,
-    label_font_size, label_layout, polyline_points, rgba, series_index, shape_radius,
+    box_text_placement, candle_index_for_bar, dash_pattern, extended_box, extended_line, faded,
+    is_visible, label_font_size, label_layout, polyline_points, rgba, series_index, shape_radius,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -708,19 +708,11 @@ impl PineLayer<'_> {
 
     pub fn draw_boxes(&self, painter: &Painter) {
         for item in self.pine.boxes.iter().filter(|b| b.is_complete()) {
-            let mut left = self.x_bar(item.left);
-            let mut right = self.x_bar(item.right);
-            if item.extend.extends_left() {
-                left = left.min(right) - self.plot.width() * 2.0;
-            }
-            if item.extend.extends_right() {
-                right = left.max(right) + self.plot.width() * 2.0;
-            }
-            let (top, bottom) = (self.y(item.top), self.y(item.bottom));
-            let rect = Rect::from_min_max(
-                Pos2::new(left.min(right), top.min(bottom)),
-                Pos2::new(left.max(right), top.max(bottom)),
+            let anchored = Rect::from_two_pos(
+                self.point_bar(item.left, item.top),
+                self.point_bar(item.right, item.bottom),
             );
+            let rect = extended_box(anchored, item.extend, self.plot, item.border_width as f32);
             if let Some(fill) = item.background_color {
                 painter.rect_filled(rect, 0.0, rgba(fill));
             }
@@ -742,8 +734,10 @@ impl PineLayer<'_> {
                 );
             }
             if !item.text.is_empty() && is_visible(item.text_color) {
+                // As on TradingView, extending a box does not move its text: it is placed by the
+                // box's own coordinates.
                 let (point, anchor) = box_text_placement(
-                    rect,
+                    anchored,
                     item.text_horizontal_align,
                     item.text_vertical_align,
                     4.0,
@@ -1836,6 +1830,68 @@ mod tests {
         incomplete.lines.push(output.lines[1].clone());
         let layer = self::layer(&incomplete, &candles, &x, &y);
         assert_eq!(shapes_drawn(|painter| layer.draw_lines(painter)), 0);
+    }
+
+    #[test]
+    fn an_extended_box_reaches_the_edge_and_keeps_its_text_by_its_coordinates() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        // The plot is x 0..200; each box lies several plot widths to one side of it.
+        for (left, right, extend) in [(-60, -50, LineExtend::Right), (60, 70, LineExtend::Left)] {
+            let mut output = empty();
+            output.boxes.push(BoxOutput {
+                id: 1,
+                left,
+                top: 150.0,
+                right,
+                bottom: 130.0,
+                border_color: None,
+                border_width: 0,
+                background_color: Some(0x0000_FFFF),
+                border_style: LineStyle::Solid,
+                extend,
+                text: "zone".into(),
+                text_color: 0xFFFF_FFFF,
+                text_size: Size::Small,
+                text_font_family: FontFamily::Default,
+                text_horizontal_align: TextAlign::Center,
+                text_vertical_align: TextAlign::Center,
+                time_anchored: false,
+                force_overlay: false,
+            });
+            let layer = layer(&output, &candles, &x, &y);
+            let shapes = shapes_of(|painter| layer.draw_boxes(painter));
+            let fill = shapes
+                .iter()
+                .find_map(|shape| match shape {
+                    Shape::Rect(rect) => Some(rect.rect),
+                    _ => None,
+                })
+                .expect("the box's fill");
+            let (reaches, anchored_side) = match extend {
+                LineExtend::Right => (
+                    fill.right() >= layer.plot.right(),
+                    fill.left() == x_of(left),
+                ),
+                _ => (
+                    fill.left() <= layer.plot.left(),
+                    fill.right() == x_of(right),
+                ),
+            };
+            assert!(reaches && anchored_side, "{extend:?}: {fill:?}");
+            let text = shapes
+                .iter()
+                .find_map(|shape| match shape {
+                    Shape::Text(text) => Some(text.visual_bounding_rect()),
+                    _ => None,
+                })
+                .expect("the box's text");
+            let middle = (x_of(left) + x_of(right)) / 2.0;
+            assert!(
+                (text.center().x - middle).abs() < 2.0,
+                "{extend:?}: text at {text:?}, not around {middle}"
+            );
+        }
     }
 
     #[test]

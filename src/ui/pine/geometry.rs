@@ -280,6 +280,19 @@ pub fn extended_line(a: Pos2, b: Pos2, extend: LineExtend, rect: Rect) -> (Pos2,
     (left, right)
 }
 
+/// A box as drawn: each side it extends runs to the plot's edge, however far from it the box's
+/// own coordinates are, and `overshoot` past it so that side's border stays out of sight.
+pub fn extended_box(anchored: Rect, extend: LineExtend, plot: Rect, overshoot: f32) -> Rect {
+    let mut drawn = anchored;
+    if extend.extends_left() {
+        drawn.min.x = drawn.min.x.min(plot.min.x - overshoot);
+    }
+    if extend.extends_right() {
+        drawn.max.x = drawn.max.x.max(plot.max.x + overshoot);
+    }
+    drawn
+}
+
 /// The points of a polyline: straight, or with `curved` a Catmull-Rom spline through every point
 /// (flattened to short segments). A closed path wraps around, so the curve is smooth at the joint.
 pub fn polyline_points(points: &[Pos2], curved: bool, closed: bool) -> Vec<Pos2> {
@@ -974,6 +987,24 @@ mod tests {
         assert_eq!(head[1], Pos2::new(6.0, 2.0));
         assert_eq!(head[2], Pos2::new(6.0, -2.0));
         assert_eq!(arrowhead(Pos2::ZERO, Pos2::ZERO, 4.0, 2.0), None);
+    }
+
+    #[test]
+    fn extended_boxes_reach_the_plots_edges_from_any_distance() {
+        let plot = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
+        for x in [-10_000.0, -300.0, 40.0, 300.0, 10_000.0] {
+            let anchored = Rect::from_min_max(Pos2::new(x, 20.0), Pos2::new(x + 10.0, 30.0));
+            let drawn = |extend| extended_box(anchored, extend, plot, 2.0);
+            assert_eq!(drawn(LineExtend::None), anchored);
+            let right = drawn(LineExtend::Right);
+            assert_eq!(right.max.x, anchored.max.x.max(102.0), "from {x}");
+            assert_eq!(right.min, anchored.min);
+            let left = drawn(LineExtend::Left);
+            assert_eq!(left.min.x, anchored.min.x.min(-2.0), "from {x}");
+            assert_eq!(left.max, anchored.max);
+            let both = drawn(LineExtend::Both);
+            assert_eq!((both.min, both.max), (left.min, right.max));
+        }
     }
 
     #[test]
