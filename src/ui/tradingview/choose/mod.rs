@@ -18,7 +18,7 @@ use eframe::egui::{
 pub(super) fn show(ui: &mut Ui, height: f32, content: &Content<'_>, actions: &mut Vec<Action>) {
     let listed = content.selection.symbols(content.library);
     let tally = symbols::tally(content, &listed);
-    // Set by the footer's note, taken up here on the next frame.
+    // Set by the footer's note, taken up here on the next frame: show what is left to match.
     let jump = Id::new(("tradingview-to-matching", content.opening));
     let jumping = ui.data_mut(|data| data.remove_temp::<bool>(jump)).is_some();
     scrolling(ui, height, ("tradingview-choose", content.opening), |ui| {
@@ -27,7 +27,8 @@ pub(super) fn show(ui: &mut Ui, height: f32, content: &Content<'_>, actions: &mu
         missing(ui, content, actions);
         if !listed.is_empty() {
             ui.add_space(24.0);
-            let heading = Rect::from_min_size(ui.cursor().min, vec2(1.0, 1.0));
+            // Room above, so the heading lands clear of the fade at the list's edge.
+            let heading = Rect::from_min_size(ui.cursor().min - vec2(0.0, 28.0), vec2(1.0, 1.0));
             symbols::show(ui, content, &listed, &tally, actions);
             if jumping {
                 ui.scroll_to_rect(heading, Some(Align::TOP));
@@ -130,7 +131,7 @@ fn footer(ui: &mut Ui, content: &Content<'_>, tally: &Tally, jump: Id, actions: 
                 ));
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    status(ui, tally, jump);
+                    status(ui, tally, jump, content.opening);
                 });
             });
         },
@@ -150,7 +151,7 @@ fn footer(ui: &mut Ui, content: &Content<'_>, tally: &Tally, jump: Id, actions: 
 
 /// Where the symbols stand. Those without a market are a way down to them: they are below the
 /// first screenful, and left out unless matched.
-fn status(ui: &mut Ui, tally: &Tally, jump: Id) {
+fn status(ui: &mut Ui, tally: &Tally, jump: Id, opening: u64) {
     let caption = |ui: &mut Ui, text: String| {
         ui.label(kit::text(
             text,
@@ -184,7 +185,10 @@ fn status(ui: &mut Ui, tally: &Tally, jump: Id) {
             )
             .on_hover_cursor(CursorIcon::PointingHand);
         if link.clicked() {
-            ui.data_mut(|data| data.insert_temp(jump, true));
+            ui.data_mut(|data| {
+                data.insert_temp(jump, true);
+                data.insert_temp(symbols::filter(opening), true);
+            });
             ui.ctx().request_repaint();
         }
     } else if tally.matched > 0 {

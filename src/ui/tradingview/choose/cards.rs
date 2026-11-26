@@ -13,6 +13,7 @@ use crate::ui::kit::{self, ticker_icon};
 use crate::ui::theme;
 use crate::ui::tradingview::{Action, Content, Group, words};
 use eframe::egui::{self, Color32, CursorIcon, Id, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
+use std::collections::HashSet;
 
 const CARD_HEIGHT: f32 = 68.0;
 const CARD_GAP: f32 = 8.0;
@@ -389,16 +390,33 @@ fn layout_card(ui: &mut Ui, layout: &TvLayout, mappings: &Mappings, on: bool) ->
     )
 }
 
+/// The first symbol of each asset: one logo says it once, however many pairs name it.
+fn distinct_assets<'a>(symbols: &[&'a TvSymbol], mappings: &Mappings) -> Vec<&'a TvSymbol> {
+    let mut seen = HashSet::new();
+    symbols
+        .iter()
+        .copied()
+        .filter(|symbol| {
+            let asset = match mappings.market(symbol) {
+                Some(market) => market.source.base_asset(&market.symbol).to_string(),
+                None => symbol.ticker().to_owned(),
+            };
+            seen.insert(asset)
+        })
+        .collect()
+}
+
 fn watchlist_card(ui: &mut Ui, list: &TvWatchlist, mappings: &Mappings, on: bool) -> bool {
     let symbols: Vec<&TvSymbol> = list.symbols().collect();
+    let marks = distinct_assets(&symbols, mappings);
     card(
         ui,
         Id::new(("tradingview-watchlist", &list.id)),
         &list.name,
         on,
         |ui, rect| {
-            pictures::logos(ui, rect, symbols.len(), |ui, at, index| {
-                logo(ui, at, symbols[index], mappings);
+            pictures::logos(ui, rect, marks.len(), |ui, at, index| {
+                logo(ui, at, marks[index], mappings);
             });
         },
         |ui, line| {

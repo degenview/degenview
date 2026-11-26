@@ -15,6 +15,11 @@ use eframe::egui::{self, Align, Color32, Id, Layout, Rect, Ui, Vec2, pos2};
 /// Where a symbol row's market starts: TradingView's names run longer than a CSV's tickers.
 const TARGET_LEFT: f32 = 300.0;
 
+/// Where it is kept whether only the rows still to match are listed.
+pub(super) fn filter(opening: u64) -> Id {
+    Id::new(("tradingview-filter", opening))
+}
+
 pub(super) fn tally(content: &Content<'_>, symbols: &[(TvSymbol, Usage)]) -> Tally {
     let mut tally = Tally::default();
     for (symbol, _) in symbols {
@@ -113,7 +118,7 @@ fn toolbar(
     if !filterable && !can_retry {
         return false;
     }
-    let id = Id::new(("tradingview-filter", content.opening));
+    let id = filter(content.opening);
     let mut only_open: bool = ui.data(|data| data.get_temp(id)).unwrap_or(false);
     ui.add_space(10.0);
     ui.horizontal(|ui| {
