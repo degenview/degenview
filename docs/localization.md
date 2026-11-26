@@ -15,9 +15,10 @@ The pieces are the standard ones, so a translator's tools and a new engineer's e
 
 **State.** The runtime, the language setting and Settings ▸ Appearance ▸ Language exist, and the
 shared date helpers (`ui::kit::time_text`, `i18n::datetime`, Settings ▸ Appearance) are translated.
-**Spanish (Spain)** (`assets/locales/es.po`, tag `es`) was the first translation and **Simplified
-Chinese** (`assets/locales/zh.po`, tag `zh`) the second, so the language card shows in
-release builds too; it hides itself whenever only one language is offered. The rest of the
+**Spanish (Spain)** (`assets/locales/es.po`, tag `es`) was the first translation, **Simplified
+Chinese** (`assets/locales/zh.po`, tag `zh`) the second and **German** (`assets/locales/de.po`, tag
+`de`) the third, so the language card shows in release builds too; it hides itself whenever only one
+language is offered. The rest of the
 interface is still English literals; moving it over, directory by directory, is the next step.
 
 ## Writing text
@@ -220,7 +221,7 @@ verification are in [Translation](agent-guides/translation.md). The steps for th
 
 ### Packaging that names languages
 
-Spanish and Simplified Chinese are listed in each of these (the macOS bundle, the Windows installer,
+Spanish, Simplified Chinese and German are listed in each of these (the macOS bundle, the Windows installer,
 the Flatpak metainfo and desktop entry); a language added later is added to each, as follows:
 
 - **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
@@ -289,6 +290,19 @@ characters sit about 0.23 em above Inter's; the font is shifted by the differenc
 fonts' own `ascent - height / 2` (read from their tables, `cjk::baseline_offset`), whichever Chinese
 font the machine has. Han characters a person types or a provider sends (a watchlist name, a
 Chinese market) are drawn only when the interface is Chinese.
+
+### German
+
+`assets/locales/de.po` is standard German, tagged `de` so `de-AT` and `de-CH` reach it through CLDR's
+fallback chain. It addresses the reader with *du*, writes infinitives on buttons and menu items
+("Chart hinzufügen") and the du imperative in hints and empty states, uses „…“ quotes and a space
+before an ellipsis that follows a whole word. German traders' English stays English (Chart,
+Watchlist, Long, Short, Stop-Loss, Take-Profit, Order, Trade, Broker, Replay, Webhook); the macOS
+menu bar takes Apple's names (Ablage, Darstellung, Im Dock ablegen). Vocabulary is kept by reading
+the catalog (Alarm, Zeiteinheit, Kerze, Balken, Preisskala, Haltepunkt, Handelsplatz). A noun keeps
+its capital inside a sentence, which is why a name put into one goes through `i18n::in_sentence`
+instead of `to_lowercase`. It was looked at in a real window on Linux (Fedora, GNOME) only, not on
+macOS or Windows, and has had no native speaker's review.
 
 ## Not done yet
 

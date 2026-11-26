@@ -107,6 +107,7 @@ pub(crate) fn order_row(order: &PaperOrder) -> OrderRow {
         market: order.instrument.symbol.clone(),
         side: side(order.side),
         kind: kind_label(order.kind).to_owned(),
+        market_order: order.kind == PaperOrderType::Market,
         price: order.limit_price.or(order.stop_price).map(dec),
         trigger: order.limit_price.and(order.stop_price).map(dec),
         filled: dec(order.filled_quantity),

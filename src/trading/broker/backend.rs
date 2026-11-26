@@ -257,6 +257,7 @@ fn history_row(order: &LiveOrder, source: Option<crate::model::DataSource>) -> O
         market: order.product.as_str().to_owned(),
         side: order.side,
         kind: rules::type_label(order),
+        market_order: order.order_type == OrderType::Market,
         price: order.average_price.or(order.limit_price),
         trigger: None,
         filled: order.filled_size,
@@ -411,6 +412,7 @@ fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
         market: order.product.as_str().to_owned(),
         side: order.side,
         kind: rules::type_label(order),
+        market_order: order.order_type == OrderType::Market,
         price: order.limit_price.or(order.stop_price),
         trigger: order.limit_price.and(order.stop_price),
         filled: order.filled_size,
@@ -500,6 +502,7 @@ fn pending_row(pending: &PendingView, broker: degenview_brokers::BrokerId) -> Or
         market: draft.product.as_str().to_owned(),
         side: draft.side,
         kind: kind.to_owned(),
+        market_order: matches!(draft.kind, OrderKind::Market { .. }),
         price,
         trigger,
         filled: Decimal::ZERO,
@@ -1088,9 +1091,9 @@ impl TradingBackend for BrokerBackend {
                 let caps = snapshot.capabilities_of(&order.product);
                 let note = match (view.overlay.map(|overlay| overlay.kind), order.status) {
                     (Some(OverlayKind::CancelRequested), _) | (_, OrderStatus::CancelQueued) => {
-                        Some("cancel requested")
+                        Some(tr!("cancel requested"))
                     }
-                    (Some(_), _) | (_, OrderStatus::EditQueued) => Some("edit requested"),
+                    (Some(_), _) | (_, OrderStatus::EditQueued) => Some(tr!("edit requested")),
                     _ => None,
                 };
                 Some(ChartOrder {
@@ -1124,13 +1127,13 @@ impl TradingBackend for BrokerBackend {
 
     fn cancel(&self, order_id: &str) -> Task<CancelResult> {
         let Some(runtime) = self.host.runtime(self.id()) else {
-            return Task::ready(Err("The broker is not connected.".to_owned()));
+            return Task::ready(Err(not_connected_text().to_owned()));
         };
         let pending = runtime.cancel(vec![OrderId::new(order_id)]);
         Task::new(move || {
             pending.poll().map(|answer| match answer {
                 Ok(results) => results.into_iter().next().map_or(
-                    Err("The broker gave no answer for this order.".to_owned()),
+                    Err(tr!("The broker gave no answer for this order.").to_owned()),
                     |result| cancel_text(result.outcome),
                 ),
                 Err(error) => Err(error.to_string()),

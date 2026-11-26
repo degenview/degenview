@@ -16,6 +16,7 @@ pub mod report;
 pub mod sample;
 pub mod sse;
 
+use crate::i18n::tr;
 use crate::service::net::agent::FollowingAgent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -44,7 +45,7 @@ impl ProviderKind {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Anthropic => "Anthropic",
-            Self::Compatible => "OpenAI-compatible",
+            Self::Compatible => tr!("OpenAI-compatible"),
         }
     }
 

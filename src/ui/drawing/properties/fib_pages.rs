@@ -117,13 +117,13 @@ impl DrawingProperties {
             toggle_row(
                 ui,
                 Icon::RectFill,
-                features.second_fill,
+                features.second_fill.text(),
                 tr!("A second background, behind the other set of levels."),
                 &mut fib.second_fill,
             );
         }
         if !features.grid.is_empty() {
-            card::card(ui, Icon::Hash, features.grid, None, |ui| {
+            card::card(ui, Icon::Hash, features.grid.text(), None, |ui| {
                 color_well(ui, tr!("Grid color"), &mut fib.grid.color);
                 card::switch(ui, &mut fib.grid.enabled);
             });
@@ -250,15 +250,15 @@ impl DrawingProperties {
         let lists = features.lists;
         let captions = features.captions;
         if !lists[0].is_empty() {
-            let list = (lists[0], captions[0]);
+            let list = (lists[0].text(), captions[0]);
             edit_list(ui, &mut page, 0, list, &mut fib.levels, false);
         }
         if !lists[1].is_empty() {
-            let list = (lists[1], captions[1]);
+            let list = (lists[1].text(), captions[1]);
             edit_list(ui, &mut page, 1, list, &mut fib.second, false);
         }
         if !lists[2].is_empty() {
-            let list = (lists[2], captions[2]);
+            let list = (lists[2].text(), captions[2]);
             edit_list(ui, &mut page, 2, list, &mut fib.third, features.corners);
         }
         ui.add_space(4.0);

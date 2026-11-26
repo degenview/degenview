@@ -98,8 +98,8 @@ pub struct NoticeText {
 pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) -> NoticeText {
     let order: &LiveOrder = &notice.order;
     let side = match order.side {
-        Side::Buy => tr!("Buy"),
-        Side::Sell => tr!("Sell"),
+        Side::Buy => tr_c!("side", "Buy"),
+        Side::Sell => tr_c!("side", "Sell"),
     };
     let base = spec.map_or("", |s| s.base.as_str());
     let size = match order.size {

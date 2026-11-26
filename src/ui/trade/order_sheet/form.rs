@@ -7,7 +7,7 @@ use eframe::egui::{self, vec2};
 
 use super::state::{SheetState, Stage};
 use super::{open_orders, review, status};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::broker::ticket::{self};
 use crate::trading::backend::TradingBackend;
 use crate::trading::confirm;
@@ -167,7 +167,7 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, context: &FormCont
     let (size_label, size_unit) = if spends {
         (tr!("Spend"), quote_unit)
     } else {
-        (tr!("Amount"), rules.base_asset.as_str())
+        (tr_c!("order size", "Amount"), rules.base_asset.as_str())
     };
     // The most the account could put into this order, as far as it is known.
     let most = if spends {

@@ -2,7 +2,7 @@
 
 use super::ladder::taker_color;
 use super::{BookViewState, MARGIN, size_text, usd};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::depth::{DepthSnapshot, Price, Trade};
 use crate::model::taker_flow::Taker;
 use crate::ui::accessibility;
@@ -90,8 +90,8 @@ impl Columns {
 /// Who took, as the tape writes it.
 fn taker_name(taker: Taker) -> &'static str {
     match taker {
-        Taker::Buy => tr!("Buy"),
-        Taker::Sell => tr!("Sell"),
+        Taker::Buy => tr_c!("side", "Buy"),
+        Taker::Sell => tr_c!("side", "Sell"),
     }
 }
 

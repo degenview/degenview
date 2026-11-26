@@ -6,6 +6,7 @@
 //! lines are worked from the two anchors' own positions (their price and their bar), never from a
 //! fixed 45 degrees, and they move with the chart. Pure: no egui types.
 
+use crate::i18n::{Marked, tr_noop};
 use crate::model::drawings::tool::Tool;
 use crate::model::fib::style::FibLevel;
 use crate::model::fib::{Caption, Features};
@@ -61,15 +62,19 @@ impl GannKind {
             Self::Box => Features {
                 reverse: true,
                 sides: true,
-                grid: "Angles",
+                grid: tr_noop!("Angles"),
                 labels: true,
-                second_fill: "Vertical background",
-                lists: ["Price levels", "Time levels", ""],
+                second_fill: tr_noop!("Vertical background"),
+                lists: [
+                    tr_noop!("Price levels"),
+                    tr_noop!("Time levels"),
+                    Marked::EMPTY,
+                ],
                 ..none
             },
             Self::Fan => Features {
                 labels: true,
-                lists: ["Angles", "", ""],
+                lists: [tr_noop!("Angles"), Marked::EMPTY, Marked::EMPTY],
                 captions: [Caption::Angle, Caption::None, Caption::None],
                 ..none
             },
@@ -78,16 +83,16 @@ impl GannKind {
                 readout: true,
                 scale: true,
                 labels: true,
-                second_fill: "Arcs background",
-                lists: ["Levels", "Fan lines", "Arcs"],
+                second_fill: tr_noop!("Arcs background"),
+                lists: [tr_noop!("Levels"), tr_noop!("Fan lines"), tr_noop!("Arcs")],
                 captions: [Caption::None, Caption::Angle, Caption::Arc],
                 corners: true,
                 ..none
             },
             Self::SquareFixed => Features {
                 reverse: true,
-                second_fill: "Arcs background",
-                lists: ["Levels", "Fan lines", "Arcs"],
+                second_fill: tr_noop!("Arcs background"),
+                lists: [tr_noop!("Levels"), tr_noop!("Fan lines"), tr_noop!("Arcs")],
                 captions: [Caption::None, Caption::Angle, Caption::Arc],
                 corners: true,
                 ..none

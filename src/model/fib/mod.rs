@@ -9,6 +9,7 @@
 pub mod gann;
 pub mod style;
 
+use crate::i18n::{Marked, tr_noop};
 use crate::model::drawings::tool::Tool;
 use crate::model::fib::gann::GannKind;
 use crate::model::pattern::format_ratio;
@@ -63,7 +64,7 @@ pub struct Features {
     /// Labels on the four sides of a fan or box.
     pub sides: bool,
     /// The name of a grid or a set of angle lines with a look of its own; empty for none.
-    pub grid: &'static str,
+    pub grid: Marked,
     pub full_circles: bool,
     pub counterclockwise: bool,
     pub readout: bool,
@@ -75,9 +76,9 @@ pub struct Features {
     /// Arcs that can be centred on either corner.
     pub corners: bool,
     /// The name of a second background (a box's vertical one, a square's arcs'); empty for none.
-    pub second_fill: &'static str,
+    pub second_fill: Marked,
     /// Titles of the level lists the tool has, in order; an empty title is no list.
-    pub lists: [&'static str; 3],
+    pub lists: [Marked; 3],
 }
 
 /// What names a level in the level editor beside its ratio.
@@ -103,7 +104,7 @@ impl Features {
         percent: false,
         align: false,
         sides: false,
-        grid: "",
+        grid: Marked::EMPTY,
         full_circles: false,
         counterclockwise: false,
         readout: false,
@@ -111,8 +112,8 @@ impl Features {
         labels: false,
         captions: [Caption::None; 3],
         corners: false,
-        second_fill: "",
-        lists: ["", "", ""],
+        second_fill: Marked::EMPTY,
+        lists: [Marked::EMPTY, Marked::EMPTY, Marked::EMPTY],
     };
 }
 
@@ -190,7 +191,7 @@ impl FibKind {
                 percent: true,
                 align: true,
                 labels: true,
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
             Self::Extension => Features {
@@ -202,7 +203,7 @@ impl FibKind {
                 percent: true,
                 align: true,
                 labels: true,
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
             Self::Channel => Features {
@@ -211,29 +212,33 @@ impl FibKind {
                 percent: true,
                 align: true,
                 labels: true,
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
             Self::TimeZone | Self::TrendTime => Features {
                 trend_line: true,
                 align: true,
                 labels: true,
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
             Self::SpeedFan => Features {
                 reverse: true,
                 sides: true,
-                grid: "Grid",
+                grid: tr_noop!("Grid"),
                 labels: true,
-                lists: ["Price levels", "Time levels", ""],
+                lists: [
+                    tr_noop!("Price levels"),
+                    tr_noop!("Time levels"),
+                    Marked::EMPTY,
+                ],
                 ..none
             },
             Self::Circles | Self::Wedge => Features {
                 trend_line: true,
                 percent: true,
                 labels: true,
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
             Self::Spiral => Features {
@@ -245,11 +250,11 @@ impl FibKind {
                 percent: true,
                 full_circles: true,
                 labels: true,
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
             Self::Pitchfan => Features {
-                lists: ["Levels", "", ""],
+                lists: [tr_noop!("Levels"), Marked::EMPTY, Marked::EMPTY],
                 ..none
             },
         }

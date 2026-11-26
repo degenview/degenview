@@ -145,6 +145,11 @@ pub fn body(
             },
         );
         ui.add_space(10.0);
+        const BUTTON_GAP: f32 = 6.0;
+        let buttons = SnapshotScale::ALL
+            .iter()
+            .map(|scale| kit::sheet_button_width(ui, scale.label(), true) + BUTTON_GAP)
+            .sum::<f32>();
         card::card_reserving(
             ui,
             Icon::Camera,
@@ -152,9 +157,9 @@ pub fn body(
             Some(tr!(
                 "Images are drawn again at the scale, not enlarged, so text stays sharp."
             )),
-            260.0,
+            buttons + BUTTON_GAP,
             |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.spacing_mut().item_spacing.x = BUTTON_GAP;
                 for scale in SnapshotScale::ALL.into_iter().rev() {
                     let current = scale == input.prefs.scale;
                     if kit::sheet_button(ui, scale.label(), current, true).clicked() && !current {

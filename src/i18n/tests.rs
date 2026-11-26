@@ -744,6 +744,19 @@ fn the_plural_formulas_translators_write_agree_with_cldr() {
     }
 }
 
+// MARK: Names in sentences
+
+#[test]
+fn a_name_inside_a_sentence_keeps_its_capital_only_where_nouns_have_one() {
+    use super::{Locale, in_sentence, with_locale};
+    with_locale(Locale::ENGLISH, || {
+        assert_eq!(in_sentence("Trend line"), "trend line");
+    });
+    with_locale(Locale::from_tag("de").expect("German is offered"), || {
+        assert_eq!(in_sentence("Trendlinie"), "Trendlinie");
+    });
+}
+
 // MARK: Lists
 
 #[test]
@@ -755,6 +768,9 @@ fn a_list_is_joined_the_way_the_language_joins_it() {
         assert_eq!(join_list(&items[..2]), "Mon and Tue");
         assert_eq!(join_list(&items[..1]), "Mon");
         assert_eq!(join_list::<&str>(&[]), "");
+    });
+    with_locale(Locale::from_tag("de").expect("German is offered"), || {
+        assert_eq!(join_list(&items), "Mon, Tue und Wed");
     });
     with_locale(Locale::from_tag("es").expect("Spanish is offered"), || {
         assert_eq!(join_list(&items), "Mon, Tue y Wed");

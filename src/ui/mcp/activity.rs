@@ -5,7 +5,7 @@
 //! the store: the only thing it asks of the host is [`McpAction::ClearActivity`], and only after
 //! the sheet's own "Clear the log?" question has been answered.
 
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::mcp::activity::{
     ACTIVITY_PAGE_SIZE, McpActivityClient, McpActivityFilter, McpActivityRange, McpActivityStatus,
     Paging, clients_in,
@@ -199,7 +199,7 @@ fn status_tone(status: McpActivityStatus) -> Tone {
 fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Tone) {
     match (entry.status(), entry.kind) {
         (Some(status), _) => (status.label(), status_tone(status)),
-        (None, McpAuditKind::Gap) => (tr!("Gap"), Tone::Warning),
+        (None, McpAuditKind::Gap) => (tr_c!("audit log row", "Gap"), Tone::Warning),
         (None, _) => (tr!("Cleared"), Tone::Neutral),
     }
 }

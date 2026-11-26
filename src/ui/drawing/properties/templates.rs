@@ -32,7 +32,7 @@ impl MenuText {
             none: tr!("No saved templates yet"),
             make_default: tr!(
                 "Make this the default {tool}",
-                tool = tool.label().to_lowercase()
+                tool = crate::i18n::in_sentence(tool.label())
             ),
             reset: tr!("Reset to the default style"),
             forget: tr!("Forget my default"),
@@ -119,9 +119,10 @@ impl DrawingProperties {
         let tool = self.tool;
         let text = MenuText::new(tool);
         if kit::menu_item(ui, Icon::Plus, text.save, true, false) {
-            let name = templates
-                .book()
-                .free_name(tool, &tr!("My {tool}", tool = tool.label().to_lowercase()));
+            let name = templates.book().free_name(
+                tool,
+                &tr!("My {tool}", tool = crate::i18n::in_sentence(tool.label())),
+            );
             self.prompt = Some(Prompt {
                 rename: None,
                 name,
@@ -175,7 +176,7 @@ impl DrawingProperties {
                 Ok(()) => self.say(
                     tr!(
                         "New {tool} drawings start with this style",
-                        tool = tool.label().to_lowercase()
+                        tool = crate::i18n::in_sentence(tool.label())
                     ),
                     false,
                 ),

@@ -4,7 +4,7 @@
 
 use super::draft::{Estimate, PreviewResult, TradeDraft};
 use super::model::{MarketRules, OrderClass, VenueKind};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::broker::ticket::{display, price_at};
 
 /// Whether an order must be reviewed before it is sent. Only an order that costs real money is: a
@@ -95,7 +95,7 @@ pub fn lines(
     }
     if let Some(preview) = preview {
         for warning in &preview.warnings {
-            rows.push((tr!("Note").to_owned(), warning.clone()));
+            rows.push((tr_c!("warning row", "Note").to_owned(), warning.clone()));
         }
     }
     rows

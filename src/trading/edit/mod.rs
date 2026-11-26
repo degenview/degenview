@@ -7,7 +7,7 @@
 //! text boxes, the words for every reason the crate reports as a value, and the [`EditView`] the
 //! sheet draws. Nothing here draws or waits.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use std::time::Instant;
 
 use degenview_brokers::edit_session::{
@@ -237,9 +237,9 @@ impl EditSession {
 
 fn side_text(side: Side) -> &'static str {
     if side == Side::Buy {
-        tr!("Buy")
+        tr_c!("side", "Buy")
     } else {
-        tr!("Sell")
+        tr_c!("side", "Sell")
     }
 }
 

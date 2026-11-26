@@ -63,6 +63,7 @@ ShowLanguageDialog=auto
 ; only when the system's is not listed, and otherwise follows it. The app inside does not read the
 ; installer's choice; it follows its own Language setting.
 Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "de"; MessagesFile: "compiler:Languages\German.isl"
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 ; Inno Setup ships no Chinese file, so this one is ours (a translation of its own message list).
 Name: "zh"; MessagesFile: "ChineseSimplified.isl"
