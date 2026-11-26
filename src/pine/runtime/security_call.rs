@@ -200,7 +200,8 @@ impl ChartBar {
                 candle.open_time < self.last_end && self.last_end <= candle_end,
                 self.history_end.is_some_and(|end| {
                     candle_end <= end
-                        && time::bucket::end(self.series_grid, candle_end, interval) > end
+                        && time::bucket::following_end(self.series_grid, candle.open_time, interval)
+                            > end
                 }),
             ),
         };
@@ -3086,6 +3087,25 @@ mod tests {
         seconds: f64,
         live: Option<(Kline, i64)>,
     ) -> Vec<Vec<Option<f64>>> {
+        loaded_as(
+            SymbolInfo::default(),
+            source,
+            provider,
+            chart,
+            seconds,
+            live,
+        )
+    }
+
+    /// [`loaded`] for a chart of `symbol`.
+    fn loaded_as(
+        symbol: SymbolInfo,
+        source: &str,
+        provider: impl SecurityDataProvider + 'static,
+        chart: &[Kline],
+        seconds: f64,
+        live: Option<(Kline, i64)>,
+    ) -> Vec<Vec<Option<f64>>> {
         let body = format!("//@version=6\nindicator(\"T\")\n{source}");
         let program = compiler::compile(&body, Limits::default(), &NoLibraries);
         let mut session = Session::new(
@@ -3093,7 +3113,7 @@ mod tests {
             HashMap::new(),
             Limits::default(),
             None,
-            SymbolInfo::default(),
+            symbol,
             Some(Box::new(provider)),
             None,
         );
@@ -3332,6 +3352,41 @@ mod tests {
             None,
         );
         assert_eq!(plots[0].last(), Some(&Some(3.0)));
+    }
+
+    #[test]
+    fn a_stocks_last_closed_week_is_the_requests_last_confirmed_history_candle() {
+        // A stock's week stops trading at Friday's close, inside its calendar week: the candle after
+        // it is next week's, not the rest of this one (TradingView, probe R3 on AAPL 1D, 2026-11-26:
+        // the earlier completed week reads islastconfirmedhistory on each of its chart bars).
+        const DAY_MS: i64 = 86_400_000;
+        // Daily bars of Mon 9 to Fri 13 Nov 2026 and Mon 16 to Wed 18 Nov.
+        let monday = time::calendar::make(2026, 11, 9, 0, 0, 0, 0).unwrap();
+        let chart: Vec<Kline> = [0, 1, 2, 3, 4, 7, 8, 9]
+            .into_iter()
+            .map(|day| bar(monday + day * DAY_MS, 1.0))
+            .collect();
+        let stock = SymbolInfo {
+            kind: "stock".to_owned(),
+            grid: Grid::UsEquities,
+            ..SymbolInfo::default()
+        };
+        let flags = |bars: usize| -> Vec<f64> {
+            loaded_as(
+                stock.clone(),
+                "plot(request.security(syminfo.tickerid, \"W\", barstate.islastconfirmedhistory ? 1.0 : 0.0, lookahead = barmerge.lookahead_on))",
+                TestProvider::default(),
+                &chart[..bars],
+                86_400.0,
+                None,
+            )[0]
+            .iter()
+            .map(|value| value.unwrap())
+            .collect()
+        };
+        assert_eq!(flags(8), [1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]);
+        // A history that ends on a Friday's close has that week last.
+        assert_eq!(flags(5), [1.0; 5]);
     }
 
     #[test]

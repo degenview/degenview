@@ -94,6 +94,15 @@ pub fn end(grid: Grid, start: i64, seconds: f64) -> i64 {
     }
 }
 
+/// End of the bar after the one that opens at `start`: on a market with closing hours the next bar
+/// does not open where this one ends (`Grid::following_end_ms`).
+pub fn following_end(grid: Grid, start: i64, seconds: f64) -> i64 {
+    match timeframe_of(seconds) {
+        Some(timeframe) => grid.following_end_ms(timeframe, start),
+        None => start + 2 * epoch_grid_ms(seconds),
+    }
+}
+
 /// Where the bar that opens at `open_time` closes (exclusive), for a bar length in seconds: the end of
 /// its bucket. A month, quarter or year is the calendar's, not `seconds` (Pine's nominal 30 days)
 /// long, and a length that does not divide the day is cut at midnight.

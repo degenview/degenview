@@ -423,7 +423,12 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   says another symbol's (`SecurityDataProvider::grid`), and every `time::bucket` helper takes it. A
   4h candle of AAPL ends at 13:30 and at 16:00 New York, so a request closes the chart bar that ends
   there, and a day, week or month ends at the close of its last weekday (`Grid::session_end_ms`),
-  not at the next UTC midnight (TradingView probe A8, 2026-11-25). The differences that remain
+  not at the next UTC midnight (TradingView probe A8, 2026-11-25). A bucket that stops before the
+  next one opens means a candle's successor is not found from where it ends: use
+  `time::bucket::following_end` (the next bucket that can trade, `Grid::following_end_ms`), as
+  `islastconfirmedhistory` does for a folded series. Asking for the bucket at the candle's own end
+  answers with the same week again, and no stock week or month was ever the last confirmed one
+  (AAPL 1D, 2026-11-26: the completed week and month read it). The differences that remain
   (extended hours, early closes, holidays, the `time("D")` of a day) are listed in
   [Market data](market-data.md#timeframes).
   `gaps_on` puts the value on the chart bar that closes the candle (`SecurityRequest::gaps_on`,
