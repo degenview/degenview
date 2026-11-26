@@ -2,6 +2,10 @@
 //! persistent [`ExecutionController`] the chart's latest candles, returning the alerts raised by
 //! realtime ticks and closes. Webhook/notification dispatch is the caller's (the app), which
 //! already owns the webhook + notification services.
+//!
+//! Whether a script still compiles is a fact about this build of the app and the libraries it
+//! imports, not about the subscription, so it is kept here with the run and never stored: an
+//! update that accepts the script again brings the alert back by itself.
 
 use crate::host::pine::KlineSecurityDataProvider;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
@@ -9,6 +13,7 @@ use crate::model::chart::synthetic::Construction;
 use crate::model::market::bucket::Grid;
 use crate::model::pine::instance::PineInstance;
 use crate::model::{Kline, Timeframe};
+use crate::pine::Diagnostic;
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::runtime::execution::ExecutionController;
 use crate::pine::runtime::state::AlertEvent;
@@ -91,8 +96,9 @@ impl ChartRun {
 
 struct Running {
     key: RunKey,
-    /// `None` when the source failed to compile; retried only when the key changes.
-    controller: Option<ExecutionController>,
+    /// The controller, or why the source does not compile: the alert cannot fire then, and its
+    /// status says so. Compiled again when the key changes or the alert is armed anew.
+    controller: Result<ExecutionController, Diagnostic>,
 }
 
 pub struct PineSubscriptionHost {
@@ -111,6 +117,28 @@ impl PineSubscriptionHost {
     /// Re-reads the subscriptions after the store changed (created, paused, deleted …).
     pub fn reload(&mut self, store: &Store) {
         self.subscriptions = store.pine_subscriptions();
+        self.drop_stopped_runs();
+    }
+
+    /// Why a subscription's script cannot run, once its chart has fed it. `None` while it
+    /// compiles, and before its chart has shown the market it watches.
+    pub fn compile_error(&self, subscription_id: u64) -> Option<&Diagnostic> {
+        self.running
+            .get(&subscription_id)?
+            .controller
+            .as_ref()
+            .err()
+    }
+
+    /// Forgets what was built for a subscription that is gone or switched off, so arming it
+    /// again starts from a fresh compile.
+    fn drop_stopped_runs(&mut self) {
+        let subscriptions = &self.subscriptions;
+        self.running.retain(|id, _| {
+            subscriptions
+                .iter()
+                .any(|subscription| subscription.id == *id && subscription.is_active())
+        });
     }
 
     #[cfg(test)]
@@ -202,13 +230,7 @@ impl PineSubscriptionHost {
     ) -> Vec<(PineAlertSubscription, AlertEvent)> {
         let symbol = chart.symbol(symbol_key);
         let mut fired = Vec::new();
-        let live: Vec<u64> = self
-            .subscriptions
-            .iter()
-            .filter(|subscription| subscription.is_active())
-            .map(|subscription| subscription.id)
-            .collect();
-        self.running.retain(|id, _| live.contains(id));
+        self.drop_stopped_runs();
         for subscription in &self.subscriptions {
             if !subscription.is_active()
                 || subscription.chart_id != chart_id
@@ -249,7 +271,6 @@ impl PineSubscriptionHost {
                     Some(Box::new(KlineSecurityDataProvider)),
                     None,
                 )
-                .ok()
                 .map(ExecutionController::with_alert_mode)
                 .map(|controller| match chart.timeframe_seconds {
                     Some(seconds) => controller.with_timeframe_seconds(seconds),
@@ -265,7 +286,7 @@ impl PineSubscriptionHost {
             let Some(controller) = self
                 .running
                 .get_mut(&subscription.id)
-                .and_then(|running| running.controller.as_mut())
+                .and_then(|running| running.controller.as_mut().ok())
             else {
                 continue;
             };
@@ -418,6 +439,119 @@ mod tests {
         assert!(
             host.run_active(1, "binance:ETHUSDT", "1h", &data, &[], LIVE_NOW)
                 .is_empty()
+        );
+    }
+
+    /// Uses a name nothing declares, which no build compiles.
+    const UNCOMPILABLE: &str =
+        "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)\nplot(nope)";
+
+    #[test]
+    fn a_script_that_does_not_compile_says_why_and_stays_armed() {
+        let strategy = "//@version=6\nstrategy(\"S\", calc_on_every_tick = true)\n\
+            alert(\"hi\", alert.freq_all)\nplot(nope)";
+        for source in [UNCOMPILABLE, strategy] {
+            let store = Store::open_in_memory().expect("open");
+            store
+                .replace_pine_subscriptions(&[subscription(1, source)])
+                .expect("write");
+            let mut host = PineSubscriptionHost::load(&store);
+            assert!(
+                host.compile_error(1).is_none(),
+                "nothing has compiled it yet"
+            );
+            let applied = [instance(source)];
+            let mut data = bars();
+            for tick in 0..3 {
+                data[4].close += 1.0;
+                let now = LIVE_NOW + tick;
+                host.reconcile_chart(1, &applied, &store);
+                assert!(
+                    host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, now)
+                        .is_empty()
+                );
+            }
+            let error = host.compile_error(1).expect("a diagnostic");
+            assert!(error.message.contains("nope"), "{}", error.message);
+            assert_eq!(error.range.start.line, 4);
+            // The stored alert is untouched: a build that accepts the script runs it again.
+            assert_eq!(store.pine_subscriptions()[0].state, PineAlertState::Active);
+        }
+    }
+
+    #[test]
+    fn pausing_forgets_a_compile_error_and_arming_again_compiles_anew() {
+        let store = Store::open_in_memory().expect("open");
+        let broken = subscription(1, UNCOMPILABLE);
+        store
+            .replace_pine_subscriptions(std::slice::from_ref(&broken))
+            .expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        let data = bars();
+        let applied = [instance(UNCOMPILABLE)];
+        host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
+        assert!(host.compile_error(1).is_some());
+
+        // An edit that leaves it armed keeps what is known.
+        let mut noted = broken.clone();
+        noted.note = "Breakout".into();
+        store.replace_pine_subscriptions(&[noted]).expect("write");
+        host.reload(&store);
+        assert!(host.compile_error(1).is_some());
+
+        let mut paused = broken.clone();
+        paused.state = PineAlertState::Paused;
+        store.replace_pine_subscriptions(&[paused]).expect("write");
+        host.reload(&store);
+        assert!(host.compile_error(1).is_none());
+
+        store.replace_pine_subscriptions(&[broken]).expect("write");
+        host.reload(&store);
+        host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
+        assert!(host.compile_error(1).is_some());
+    }
+
+    /// The way a user fixes a script: the corrected one goes on the chart as a new instance,
+    /// with a new alert.
+    #[test]
+    fn a_fixed_script_fires_and_the_broken_alert_reads_as_changed() {
+        let fixed = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)";
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_pine_subscriptions(&[subscription(1, UNCOMPILABLE)])
+            .expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        let mut data = bars();
+        let applied = [instance(UNCOMPILABLE)];
+        host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
+        assert!(host.compile_error(1).is_some());
+
+        let mut rearmed = subscription(2, fixed);
+        rearmed.instance_id = Some(11);
+        let mut subscriptions = store.pine_subscriptions();
+        subscriptions.push(rearmed);
+        store
+            .replace_pine_subscriptions(&subscriptions)
+            .expect("write");
+        host.reload(&store);
+        let applied = [PineInstance::new(
+            11,
+            Some("saved-script".into()),
+            "S",
+            fixed,
+        )];
+        host.reconcile_chart(1, &applied, &store);
+        host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
+        data[4].close += 1.0;
+        let fired = host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW + 1);
+
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].0.id, 2);
+        assert!(host.compile_error(2).is_none());
+        assert!(host.compile_error(1).is_none());
+        assert_eq!(
+            store.pine_subscriptions()[0].state,
+            PineAlertState::ScriptChanged
         );
     }
 

@@ -135,17 +135,24 @@ fn show(ui: &mut egui::Ui, env: &AlertsWindowEnv) {
     }
     let mut window = lock(&env.window.state);
     let window = &mut *window;
-    let script_alerts: Vec<ScriptAlertRow> = store
-        .pine_subscriptions_cached()
-        .iter()
-        .map(|subscription| {
-            let dataset = window
-                .chart_datasets
-                .get(&subscription.chart_id)
-                .map(|(key, timeframe)| (key.as_str(), timeframe.as_str()));
-            ScriptAlertRow::from_subscription(subscription, dataset)
-        })
-        .collect();
+    let script_alerts: Vec<ScriptAlertRow> = {
+        let pine = lock(&env.pine_host);
+        store
+            .pine_subscriptions_cached()
+            .iter()
+            .map(|subscription| {
+                let dataset = window
+                    .chart_datasets
+                    .get(&subscription.chart_id)
+                    .map(|(key, timeframe)| (key.as_str(), timeframe.as_str()));
+                ScriptAlertRow::from_subscription(
+                    subscription,
+                    dataset,
+                    pine.compile_error(subscription.id),
+                )
+            })
+            .collect()
+    };
     let muted = store.muted_alerts_cached();
     let sync_enabled = store.sync_enabled();
     let actions = if let Ok(host) = env.alert_host.lock() {
