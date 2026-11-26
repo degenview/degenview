@@ -71,6 +71,8 @@ pub enum Output {
     WatchlistCard(PortfolioCard),
     /// Open Settings on the Alpaca page; the picker stays open.
     OpenAlpacaSettings,
+    /// Open Settings on the Oanda page; the picker stays open.
+    OpenOandaSettings,
 }
 
 /// What the picker was opened for.
@@ -200,8 +202,8 @@ pub struct SymbolPicker {
     /// The user's watchlists, fed by the workspace while the Watchlists tab shows.
     watchlists: Vec<WatchlistGroup>,
     needs_alpaca: bool,
-    /// The Alpaca notice's button was pressed.
-    settings_requested: bool,
+    /// The Settings page a notice's button asked to open.
+    settings_request: Option<SettingsPage>,
 }
 
 impl SymbolPicker {
@@ -234,7 +236,7 @@ impl SymbolPicker {
             select_all: false,
             watchlists: Vec::new(),
             needs_alpaca: false,
-            settings_requested: false,
+            settings_request: None,
         }
     }
 
@@ -408,8 +410,11 @@ impl SymbolPicker {
             select_all(ctx, search_id, &self.query);
             self.select_all = false;
         }
-        if std::mem::take(&mut self.settings_requested) {
-            output = Some(Output::OpenAlpacaSettings);
+        if let Some(page) = std::mem::take(&mut self.settings_request) {
+            output = Some(match page {
+                SettingsPage::Alpaca => Output::OpenAlpacaSettings,
+                SettingsPage::Oanda => Output::OpenOandaSettings,
+            });
         }
         if keys.close || clicked_outside {
             self.close();
@@ -1154,8 +1159,9 @@ impl SymbolPicker {
         env: &Env,
     ) -> Option<(Pick, PickKind)> {
         let mut picked = None;
-        // The Alpaca notice sits at the bottom of the list's own area, under the rows.
-        let notice = self.notice(listing);
+        let lookup = self.lookup();
+        // The provider notice sits at the bottom of the list's own area, under the rows.
+        let notice = self.notice(listing, &lookup);
         let reserved = notice.as_ref().map_or(0.0, |_| NOTICE_HEIGHT + 20.0);
         let content = Rect::from_min_max(area.min, pos2(area.max.x, area.max.y - reserved));
         if let Some(notice) = &notice {
@@ -1164,13 +1170,12 @@ impl SymbolPicker {
                 pos2(area.right() - (PADDING - 6.0) - 8.0, area.bottom() - 14.0),
             );
             if show_notice(ui, card, notice) {
-                self.settings_requested = true;
+                self.settings_request = notice.settings;
             }
         }
         let mut body = ui
             .new_child(egui::UiBuilder::new().max_rect(content.shrink2(vec2(PADDING - 6.0, 6.0))));
         body.set_clip_rect(content);
-        let lookup = self.lookup();
         let empty_query = lookup.is_empty();
         let topics = self.scope == Scope::Predictions && empty_query;
         if rows.items.is_empty() && rows.note.is_none() && !topics {
@@ -1390,11 +1395,11 @@ impl SymbolPicker {
                 Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
                 LoadingIndicator::new().size(40.0),
             );
-        } else if let Some((source, error)) = listing
-            .errors
-            .iter()
-            .find(|(source, _)| *source != DataSource::Alpaca)
-        {
+        } else if let Some((source, error)) = listing.errors.iter().find(|(source, error)| {
+            // A missing key is the notice card's job, not the empty state's: on a broad
+            // search it must not override the ordinary no-results message.
+            *source != DataSource::Alpaca && !matches!(error, ProviderError::MissingKey(_))
+        }) {
             widgets::no_results(
                 ui,
                 &tr!(
@@ -1431,26 +1436,54 @@ impl SymbolPicker {
         }
     }
 
-    /// What the card under the list says, when stocks cannot be searched or opened: Alpaca keys
-    /// are missing (the search said so, or a stock was picked without them) or its search failed.
-    fn notice(&self, listing: &Listing) -> Option<Notice> {
+    /// Whether the current view is about `source` alone: its tab, or a `VENUE:` prefix or the
+    /// pull-down naming it.
+    fn targets(&self, source: DataSource, lookup: &Lookup) -> bool {
+        lookup.venue == Some(source)
+            || matches!(self.scope.venues().as_slice(), [only] if *only == source)
+    }
+
+    /// What the card under the list says, when a searched provider cannot be searched or opened:
+    /// Alpaca keys are missing (the search said so, or a stock was picked without them) or its
+    /// search failed. Oanda's credential prompt shows only where the user is looking at
+    /// Oanda's own venue — the Forex tab or an `OANDA:` prefix; on a broad search a missing
+    /// Oanda login is not the empty state.
+    fn notice(&self, listing: &Listing, lookup: &Lookup) -> Option<Notice> {
+        if self.targets(DataSource::Oanda, lookup)
+            && let Some((_, ProviderError::MissingKey(_))) = listing
+                .errors
+                .iter()
+                .find(|(source, _)| *source == DataSource::Oanda)
+        {
+            return Some(Notice::missing_key(
+                tr!("Set up Oanda to search forex"),
+                tr!("Add your Oanda credentials in Settings to search and chart forex, metals and index CFDs.").to_owned(),
+                SettingsPage::Oanda,
+            ));
+        }
         let failure = listing
             .errors
             .iter()
             .find(|(source, _)| *source == DataSource::Alpaca)
             .map(|(_, error)| error);
         match failure {
-            Some(ProviderError::MissingKey(_)) => {
-                Some(Notice::missing_key(tr!("Stocks need an Alpaca key")))
-            }
+            Some(ProviderError::MissingKey(_)) => Some(Notice::missing_key(
+                tr!("Stocks need an Alpaca key"),
+                tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
+                    .to_owned(),
+                SettingsPage::Alpaca,
+            )),
             Some(error) => Some(Notice {
                 title: tr!("Stocks could not be searched"),
                 detail: error.to_string(),
-                settings: false,
+                settings: None,
             }),
-            None if self.needs_alpaca => {
-                Some(Notice::missing_key(tr!("Set up Alpaca to open a stock")))
-            }
+            None if self.needs_alpaca => Some(Notice::missing_key(
+                tr!("Set up Alpaca to open a stock"),
+                tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
+                    .to_owned(),
+                SettingsPage::Alpaca,
+            )),
             None => None,
         }
     }
@@ -1751,19 +1784,26 @@ const NOTICE_BUTTON_HEIGHT: f32 = 28.0;
 const NOTICE_BUTTON_INSET: f32 = (NOTICE_HEIGHT - NOTICE_BUTTON_HEIGHT) / 2.0;
 
 /// A card under the list: a title, one line of detail and, when Settings can fix it, a button.
+/// Which Settings page a notice's button opens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SettingsPage {
+    Alpaca,
+    Oanda,
+}
+
 struct Notice {
     title: &'static str,
     detail: String,
-    settings: bool,
+    /// The Settings page its button opens; `None` when it has no button.
+    settings: Option<SettingsPage>,
 }
 
 impl Notice {
-    fn missing_key(title: &'static str) -> Self {
+    fn missing_key(title: &'static str, detail: String, page: SettingsPage) -> Self {
         Self {
             title,
-            detail: tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
-                .to_owned(),
-            settings: true,
+            detail,
+            settings: Some(page),
         }
     }
 }
@@ -1799,7 +1839,7 @@ fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
 
     let mut pressed = false;
     let mut right = card.right() - NOTICE_BUTTON_INSET;
-    if notice.settings {
+    if notice.settings.is_some() {
         let label = tr!("Open Settings");
         let button = notice_button_rect(card, kit::sheet_button_width(ui, label, false));
         let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(button));

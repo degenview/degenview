@@ -45,6 +45,7 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
         ]),
         (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
         (Alpaca, _) => Err(ProviderError::MissingKey(Alpaca)),
+        (DataSource::Oanda, _) => Err(ProviderError::MissingKey(DataSource::Oanda)),
         (DataSource::Polymarket, "fed") => Ok(vec![
             chance(DataSource::Polymarket, "Fed decision", "Cut", Some(0.2)),
             chance(DataSource::Polymarket, "Fed decision", "Hold", Some(0.7)),
@@ -477,27 +478,83 @@ fn a_stock_needs_an_alpaca_key_before_it_opens() {
 fn a_missing_alpaca_key_is_a_card_with_a_settings_button_not_a_hint() {
     let mut rig = Rig::new(1100.0, "eth");
     let ctx = rig.screen.ctx.clone();
+    let lookup = rig.picker.lookup();
     let listing = rig.picker.listing(&ctx);
     let notice = rig
         .picker
-        .notice(&listing)
+        .notice(&listing, &lookup)
         .expect("stocks cannot be searched");
     assert_eq!(notice.title, "Stocks need an Alpaca key");
-    assert!(notice.settings);
+    assert_eq!(notice.settings, Some(SettingsPage::Alpaca));
     // Another failure of the stock search has nothing to set up.
     let mut listing = rig.picker.listing(&ctx);
     listing.errors = vec![(
         DataSource::Alpaca,
         ProviderError::from(http::Error::Network("timed out".to_owned())),
     )];
-    let notice = rig.picker.notice(&listing).expect("a failure");
+    let notice = rig.picker.notice(&listing, &lookup).expect("a failure");
     assert_eq!(notice.title, "Stocks could not be searched");
-    assert!(!notice.settings);
+    assert_eq!(notice.settings, None);
     // Nothing to say while stocks are not in the scope.
     rig.picker.set_scope(Scope::Crypto);
     rig.settle();
+    let lookup = rig.picker.lookup();
     let listing = rig.picker.listing(&ctx);
-    assert!(rig.picker.notice(&listing).is_none());
+    assert!(rig.picker.notice(&listing, &lookup).is_none());
+}
+
+#[test]
+fn a_missing_oanda_login_prompts_only_where_oanda_is_the_venue() {
+    // On the broad All tab the missing Oanda login is not the empty state: the ordinary
+    // no-results message stays, naming every venue searched.
+    let mut rig = Rig::new(1100.0, "");
+    rig.type_text("zzz");
+    let shown = texts(&mut rig);
+    assert!(
+        shown.iter().any(|text| text
+            == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca, and Oanda."),
+        "{shown:?}"
+    );
+    assert!(!shown.iter().any(|text| text == "Oanda could not be searched"), "{shown:?}");
+    let ctx = rig.screen.ctx.clone();
+    let lookup = rig.picker.lookup();
+    let listing = rig.picker.listing(&ctx);
+    // The Alpaca card still shows (as it always did on All); no Oanda card does.
+    assert_eq!(
+        rig.picker.notice(&listing, &lookup).and_then(|n| n.settings),
+        Some(SettingsPage::Alpaca),
+        "no Oanda credential card on the All tab"
+    );
+
+    // On the Forex tab the same failure is a card that opens the Oanda settings page.
+    rig.picker.set_scope(Scope::Forex);
+    rig.settle();
+    let ctx = rig.screen.ctx.clone();
+    let lookup = rig.picker.lookup();
+    let listing = rig.picker.listing(&ctx);
+    let notice = rig
+        .picker
+        .notice(&listing, &lookup)
+        .expect("forex cannot be searched");
+    assert_eq!(notice.title, "Set up Oanda to search forex");
+    assert_eq!(notice.settings, Some(SettingsPage::Oanda));
+    let shown = texts(&mut rig);
+    assert!(
+        shown
+            .iter()
+            .any(|text| text == "Nothing matches “zzz”. Searched: Oanda."),
+        "{shown:?}"
+    );
+
+    // An OANDA: prefix on the All tab targets Oanda the same way.
+    let mut rig = Rig::new(1100.0, "");
+    rig.type_text("oanda:zzz");
+    let ctx = rig.screen.ctx.clone();
+    let lookup = rig.picker.lookup();
+    assert_eq!(lookup.venue, Some(DataSource::Oanda));
+    let listing = rig.picker.listing(&ctx);
+    let notice = rig.picker.notice(&listing, &lookup).expect("a notice");
+    assert_eq!(notice.settings, Some(SettingsPage::Oanda));
 }
 
 #[test]

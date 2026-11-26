@@ -118,6 +118,12 @@ impl SettingsHost {
         self.open = true;
     }
 
+    /// Opens Settings on the Oanda page (the symbol picker's "Set up Oanda" notice).
+    pub fn open_oanda(&mut self) {
+        self.state.section = crate::ui::settings::window::SettingsSection::Oanda;
+        self.open = true;
+    }
+
     /// Opens Settings on the Brokers page (the live trading panel's "Open Settings").
     pub fn open_brokers(&mut self) {
         self.state.section = crate::ui::settings::window::SettingsSection::Brokers;
