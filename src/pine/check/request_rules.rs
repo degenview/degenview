@@ -31,9 +31,14 @@
 //! that carries state, and each request's expression is then looked up in it. A collection or
 //! object is changed by a field assignment or a mutating builtin (`array.push`, `m.put`), also
 //! through a function that is handed it or reaches it, and through a plain copy of its name.
-//! `array.from(len, …)` changes nothing, and neither it nor a copy leads back to its arguments.
-//! An element taken into a name of its own (`z = zones.get(0)`, `for z in zones`) is not linked to
-//! its collection: not measured, so let through. Which definition a call picks, and whether `s.size()` is a
+//! `array.from(len, …)` changes nothing, and what `array.from`, `array.copy` or a script's function
+//! gives back leads back to nothing. Nor does `for z in zones`.
+//!
+//! TradingView links more names than this does, so these are let through: a value taken from a
+//! method of a collection (`t = s.copy()`, `z = zones.get(0)`) or picked between two
+//! (`t = cond ? s : u`), changed afterwards, reaches that collection there.
+//!
+//! Which definition a call picks, and whether `s.size()` is a
 //! builtin or the script's method, comes from the type checker. Where it cannot tell, a call
 //! carries state only if every definition of that name does, so a script that may be fine is not
 //! refused.
@@ -1118,7 +1123,8 @@ mod tests {
                 "len = 20\na = array.from(len, strategy.opentrades)\n\
                  x = {REQUEST}ta.sma(close, len))\nplot(array.size(a))"
             ),
-            // Not compiled there. A field of an element: the collection, not every `array.*`.
+            // TradingView rejects this form of field assignment outright; the engine takes it, and
+            // must then taint the collection, not every `array.*`.
             format!(
                 "type Z\n    bool hit\nzones = array.new<Z>()\nif strategy.opentrades > 0\n    \
                  array.get(zones, 0).hit := true\nx = {REQUEST}array.avg(array.from(high, low)))"
@@ -1152,10 +1158,6 @@ mod tests {
                 "{med}a = close - open\nm = 0.0\nif strategy.opentrades > 0\n    \
                  m := med(array.from(a, high))\nx = {REQUEST}a)\nplot(m)"
             ),
-            format!(
-                "{med}s = array.new_float()\nm = 0.0\nif strategy.opentrades > 0\n    \
-                 m := med(s.copy())\nx = {REQUEST}s.size())\nplot(m)"
-            ),
             // On a receiver of unknown type the builtin may be meant.
             format!(
                 "type T\n    float v\nmethod size(T this) => strategy.opentrades\n\
@@ -1165,6 +1167,99 @@ mod tests {
             format!(
                 "s = array.new_float()\nf() =>\n    b = s\n    if strategy.opentrades > 0\n        \
                  b.push(1.0)\n    0\nx = {REQUEST}s.size())"
+            ),
+        ] {
+            assert_compiles(&body);
+        }
+    }
+
+    #[test]
+    fn measured_helpers_maps_and_ternaries_carry_it() {
+        for body in [
+            // A method that changes its object, called under a strategy condition.
+            format!(
+                "type T\n    float v\nmethod reset(T this) =>\n    this.v := 0.0\no = T.new(0.0)\n\
+                 if strategy.opentrades > 0\n    o.reset()\nx = {REQUEST}o.v)"
+            ),
+            // A helper that reads the state anywhere carries it into what it fills.
+            format!(
+                "s = array.new_float()\nfill(v) =>\n    z = strategy.opentrades\n    \
+                 array.push(s, v)\n    z\ny = fill(close)\nx = {REQUEST}s.size())\nplot(y)"
+            ),
+            format!(
+                "fill(array<float> a) =>\n    array.push(a, close)\n    strategy.opentrades\n\
+                 s = array.new_float()\ny = fill(s)\nx = {REQUEST}s.size())\nplot(y)"
+            ),
+            format!(
+                "m = map.new<string, float>()\nm.put(\"a\", strategy.opentrades)\n\
+                 x = {REQUEST}m.size())"
+            ),
+            format!(
+                "m = matrix.new<float>(1, 1, 0.0)\nm.set(0, 0, strategy.opentrades)\n\
+                 x = {REQUEST}m.get(0, 0))"
+            ),
+            // A later condition of a chained ternary counts, unlike one of `else if`.
+            format!("a = close > open ? 1 : strategy.opentrades > 0 ? 2 : 3\nx = {REQUEST}a)"),
+            format!("varip float a = 0.0\na := strategy.opentrades\nx = {REQUEST}a)"),
+            // An object written after it was pushed into the array.
+            format!(
+                "type Z\n    float v\nzones = array.new<Z>()\nz = Z.new(1.0)\nzones.push(z)\n\
+                 z.v := strategy.opentrades\nx = {REQUEST}array.size(zones))"
+            ),
+        ] {
+            assert_refused(&body, "strategy.opentrades");
+        }
+    }
+
+    #[test]
+    fn measured_names_that_lead_back_to_nothing() {
+        let filled = "s = array.new_float()\n";
+        for body in [
+            format!(
+                "{filled}t = array.copy(s)\narray.push(t, strategy.opentrades)\n\
+                 x = {REQUEST}array.size(s))\nplot(array.size(t))"
+            ),
+            format!(
+                "id(array<float> a) => a\n{filled}t = id(s)\nt.push(strategy.opentrades)\n\
+                 x = {REQUEST}s.size())\nplot(t.size())"
+            ),
+            format!(
+                "{filled}n = s.size()\nt = array.new_float(n)\nt.push(strategy.opentrades)\n\
+                 x = {REQUEST}s.size())\nplot(t.size())"
+            ),
+            format!(
+                "type Z\n    float v\nzones = array.new<Z>()\nzones.push(Z.new(0.0))\n\
+                 for z in zones\n    z.v := strategy.opentrades\nx = {REQUEST}zones.get(0).v)"
+            ),
+            // Pushing a value does not taint where it came from.
+            format!(
+                "a = close\nb = a + 1\n{filled}if strategy.opentrades > 0\n    s.push(b)\n\
+                 x = {REQUEST}b)\nplot(s.size())"
+            ),
+            // A function nothing calls changes nothing.
+            format!("{filled}fill() => array.push(s, strategy.opentrades)\nx = {REQUEST}s.size())"),
+        ] {
+            assert_compiles(&body);
+        }
+    }
+
+    /// TradingView refuses each of these; see the module documentation.
+    #[test]
+    fn known_misses_are_let_through() {
+        let filled = "s = array.new_float()\n";
+        let zones = "type Z\n    float v\nzones = array.new<Z>()\n";
+        for body in [
+            format!(
+                "{filled}t = s.copy()\nt.push(strategy.opentrades)\nx = {REQUEST}s.size())\n\
+                 plot(t.size())"
+            ),
+            format!(
+                "{filled}u = array.new_float()\nt = close > open ? s : u\n\
+                 t.push(strategy.opentrades)\nx = {REQUEST}s.size())\nplot(t.size())"
+            ),
+            format!(
+                "{zones}zones.push(Z.new(0.0))\nz = zones.get(0)\nz.v := strategy.opentrades\n\
+                 x = {REQUEST}array.size(zones))"
             ),
         ] {
             assert_compiles(&body);
