@@ -230,3 +230,47 @@ fn a_rewrite_changes_the_files_stamp_and_a_missing_file_has_none() {
     assert!(store.file_stamp("no-such-script").is_none());
     let _ = fs::remove_dir_all(dir);
 }
+
+/// The filesystem decides which spellings are one file: APFS takes a precomposed and a decomposed
+/// accent for the same, whatever their letters compare as. A new script must not replace either.
+#[test]
+fn a_new_script_never_replaces_a_file_spelt_another_way() {
+    let (mut store, root) = temp_store("spellings");
+    let folder = root.join("Scripts");
+    std::fs::create_dir_all(&folder).unwrap();
+    let existing = folder.join("Cafe\u{301}.pine");
+    std::fs::write(&existing, "// mine\n").unwrap();
+    let created = store
+        .create(
+            "Caf\u{e9}",
+            ScriptType::Indicator,
+            Some("// theirs\n"),
+            true,
+        )
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&existing).unwrap(), "// mine\n");
+    assert_eq!(store.all_scripts().unwrap().len(), 2, "{}", created.name);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn claiming_a_name_never_takes_a_file_that_is_there() {
+    let (store, root) = temp_store("claim");
+    let folder = root.join("Scripts");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("Mine.pine"), "// mine\n").unwrap();
+    // Even when the list of names in use does not know of it.
+    assert!(matches!(
+        store.claim("Mine", Default::default(), false),
+        Err(ScriptStoreError::NameConflict)
+    ));
+    assert_eq!(
+        store.claim("Mine", Default::default(), true).unwrap(),
+        "Mine 2"
+    );
+    assert_eq!(
+        std::fs::read_to_string(folder.join("Mine.pine")).unwrap(),
+        "// mine\n"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

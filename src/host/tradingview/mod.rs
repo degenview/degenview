@@ -101,6 +101,9 @@ struct Review {
     placer: Lookup<Spot, Option<f64>>,
     placements: Placements,
     step: Step,
+    /// The names in use and the look of a new chart, as read when the preview was entered; kept
+    /// while it is open, since it is rebuilt with every answer that arrives.
+    surroundings: Option<(Taken, ChartAppearance)>,
     /// Built on entering the preview.
     plan: Option<Plan>,
     /// The "Match…" picker, with the symbol it answers.
@@ -266,6 +269,7 @@ impl TradingViewImport {
             },
             placements: Placements::new(),
             step: Step::Choose,
+            surroundings: None,
             plan: None,
             picking: None,
         }
@@ -290,8 +294,7 @@ impl TradingViewImport {
             .map(|list| list.name.clone())
             .collect();
         let scripts = (self.targets.scripts)()
-            .and_then(|mut library| library.all_scripts().ok())
-            .map(|scripts| scripts.into_iter().map(|script| script.name).collect())
+            .map(|library| library.names_in_use().into_iter().collect())
             .unwrap_or_default();
         (
             Taken {
@@ -304,15 +307,24 @@ impl TradingViewImport {
     }
 
     fn build_plan(&mut self) {
-        let (taken, base) = self.surroundings();
+        let read = match &self.stage {
+            Stage::Review(review) if review.surroundings.is_none() => Some(self.surroundings()),
+            _ => None,
+        };
         if let Stage::Review(review) = &mut self.stage {
+            if let Some(read) = read {
+                review.surroundings = Some(read);
+            }
+            let Some((taken, base)) = &review.surroundings else {
+                return;
+            };
             review.plan = Some(plan::plan(
                 &review.library,
                 &review.selection,
                 &review.mappings,
                 &review.placements,
-                &taken,
-                &base,
+                taken,
+                base,
             ));
         }
     }
@@ -392,6 +404,9 @@ impl TradingViewImport {
             Action::OpenLayout(id) => return Outcome::OpenLayout(id),
             Action::Import => {
                 // Planned again, against the names in use now.
+                if let Stage::Review(review) = &mut self.stage {
+                    review.surroundings = None;
+                }
                 self.build_plan();
                 if let Stage::Review(review) = &self.stage
                     && let Some(plan) = &review.plan
@@ -405,6 +420,7 @@ impl TradingViewImport {
             Action::Preview => {
                 if let Stage::Review(review) = &mut self.stage {
                     review.step = Step::Preview;
+                    review.surroundings = None;
                     review.plan = None;
                 }
                 self.build_plan();

@@ -1001,7 +1001,7 @@ impl ChartWorkspace {
             && !drawing_escape
             && !self.replay.is_choosing_date()
             && !self.context_menu_open()
-            && !self.studio_open()
+            && !self.sheet_over_charts()
         {
             if self.replay.is_selecting_start() {
                 self.replay.cancel_selection();

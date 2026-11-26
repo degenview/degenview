@@ -169,11 +169,7 @@ impl ScriptStore {
         if !disambiguating && self.is_name_taken(&base, None) {
             return Err(ScriptStoreError::NameConflict);
         }
-        let name = if disambiguating {
-            disambiguated(&base, &self.taken_names(None))
-        } else {
-            base
-        };
+        let name = self.claim(&base, self.taken_names(None), disambiguating)?;
         let now = now_ms();
         let id = new_id();
         let script = LocalScript {
@@ -189,7 +185,7 @@ impl ScriptStore {
             is_favorite: false,
             compile_record: None,
         };
-        self.write_file(&id, &script.name, &script.source)?;
+        self.write_claimed(&id, &script.name, &script.source)?;
         self.write_record(&Record::of(&script))?;
         self.metadata.insert(id, script.clone());
         self.save_index()?;
@@ -212,7 +208,7 @@ impl ScriptStore {
             return Err(ScriptStoreError::NameConflict);
         }
         let base = script_name::validate(requested)?;
-        let name = disambiguated(&base, &self.taken_names(None));
+        let name = self.claim(&base, self.taken_names(None), true)?;
         let now = now_ms();
         let script = LocalScript {
             id: id.to_owned(),
@@ -225,7 +221,7 @@ impl ScriptStore {
             is_favorite: favorite,
             compile_record: None,
         };
-        self.write_file(id, &script.name, &script.source)?;
+        self.write_claimed(id, &script.name, &script.source)?;
         self.write_record(&Record::of(&script))?;
         self.metadata.insert(id.to_owned(), script);
         self.save_index()?;
@@ -668,6 +664,45 @@ impl ScriptStore {
         Ok(())
     }
 
+    /// Makes the empty file a new script will be written to, and returns the name it took. The
+    /// filesystem has the last word on which names are one file (APFS takes a precomposed and a
+    /// decomposed accent for the same), so the file is created only if there is none, and with
+    /// `disambiguating` a refused name is numbered further. `taken` are the names known to be in use.
+    fn claim(
+        &self,
+        base: &str,
+        mut taken: HashSet<String>,
+        disambiguating: bool,
+    ) -> Result<String> {
+        loop {
+            let name = if disambiguating {
+                disambiguated(base, &taken)
+            } else {
+                base.to_owned()
+            };
+            let path = self.file_for_name(&name);
+            self.assert_inside_library(&path)?;
+            match fs::File::create_new(&path) {
+                Ok(_) => return Ok(name),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // A name already in `taken` coming back would never end.
+                    if !disambiguating || !taken.insert(name.to_lowercase()) {
+                        return Err(ScriptStoreError::NameConflict);
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
+    /// Writes a new script into the file [`Self::claim`] made for it, which goes again if that
+    /// fails.
+    fn write_claimed(&mut self, id: &str, name: &str, source: &str) -> Result<()> {
+        self.write_file(id, name, source).inspect_err(|_| {
+            let _ = fs::remove_file(self.file_for_name(name));
+        })
+    }
+
     fn rename_file(&mut self, id: &str, name: &str) -> Result<()> {
         let Some(old_name) = self.file_names.get(id).cloned() else {
             return Ok(());
@@ -719,6 +754,12 @@ impl ScriptStore {
     }
 
     // MARK: Names
+
+    /// The names no new script can have, lowercased: those of the files in the library, from the
+    /// folder's listing alone, without reading any of them.
+    pub fn names_in_use(&self) -> HashSet<String> {
+        self.taken_names(None)
+    }
 
     /// Lowercased names in use: catalog scripts plus every file on disk (files not yet in the
     /// catalog still occupy their names).

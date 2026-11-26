@@ -1,6 +1,7 @@
 //! The whole import: a folder read, symbols matched, previewed and written into real stores.
 
 use super::*;
+use crate::model::Timeframe;
 use crate::model::tradingview::fixtures;
 use crate::model::tradingview::parse::{self, Document};
 use crate::model::tradingview::plan::LeftOut;
@@ -478,4 +479,33 @@ fn a_post_without_candles_is_left_out_and_can_be_tried_again() {
     settle(&mut import, &ctx, placed);
     import.act(Action::Preview, &ctx);
     assert_eq!(post_price(&import), Some(150.0));
+}
+
+/// The preview is rebuilt as each price arrives; the names in use are read once for it.
+#[test]
+fn rebuilding_the_preview_does_not_read_the_script_library_again() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let scratch = Scratch::new();
+    let mut targets = targets(&scratch);
+    let opened = Arc::new(AtomicUsize::new(0));
+    let (counter, library) = (Arc::clone(&opened), Arc::clone(&targets.scripts));
+    targets.scripts = Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        library()
+    });
+    let ctx = egui::Context::default();
+    let mut import = open(&targets, data_folder(&scratch), &ctx);
+    settle(&mut import, &ctx, matched);
+    import.act(Action::Preview, &ctx);
+    let once = opened.load(Ordering::SeqCst);
+    assert_eq!(once, 1);
+    for timeframe in [Timeframe::HOUR_1, Timeframe::DAY_1, Timeframe::MINUTE_5] {
+        import.act(Action::SetTimeframe("Ab".into(), timeframe), &ctx);
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            import.show(ui.ctx());
+        });
+        output.textures_delta.clear();
+        assert!(review(&import).plan.is_some(), "rebuilt");
+    }
+    assert_eq!(opened.load(Ordering::SeqCst), once);
 }
