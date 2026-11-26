@@ -176,7 +176,8 @@
   their sides are by position, whichever of `left`/`right` is larger. All measured on TradingView.
   An extended box (`extend.*`) runs to the plot's edge from any distance, with no border on that
   side (`geometry::extended_box`), and its text stays placed by `left`/`right`. TradingView does the
-  same; unexplained there: a box 1,400-1,500 bars back showed its text mid-plot, not copied.
+  same once it has loaded those bars; before that it places the text of a box on older bars within
+  the view, which is not copied (probe by scrolling back first).
   Unmeasured: the text a `plotshape` puts beside a non-label shape (reads the label scale) and the
   size of `plotchar` glyphs (always 12 points).
 - Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
