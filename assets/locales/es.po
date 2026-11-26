@@ -11671,6 +11671,10 @@ msgstr "P&G bruto realizado {amount} antes de comisiones"
 msgid "Realtime"
 msgstr "Tiempo real"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "Reconstruido a partir de sus dibujos"
+
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
 #: src/ui/workspace/empty_state/tabs.rs
@@ -13172,6 +13176,10 @@ msgstr "Seleccionar todo"
 msgid "Select Bar on Chart"
 msgstr "Seleccionar barra en el gráfico"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "Seleccionar todo"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "Selecciona un indicador"
@@ -13183,6 +13191,10 @@ msgstr "Seleccionar barra"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "Seleccionar barra en el gráfico"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "No seleccionar nada"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -18759,6 +18771,10 @@ msgid_plural "{count} named orders on “{account}”"
 msgstr[0] "una orden con nombre en “{account}”"
 msgstr[1] "{count} órdenes con nombre en “{account}”"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "{count} de {total} seleccionados"
+
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
 msgid_plural "{count} open · Unrealized {pnl}"
@@ -20240,6 +20256,21 @@ msgctxt "icon"
 msgid "Scales"
 msgstr "Balanza"
 
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "Elegir"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "Listo"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "Vista previa"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -20819,9 +20850,6 @@ msgstr "Usar mercado"
 
 msgid "What will be added. Nothing of yours is replaced."
 msgstr "Lo que se añadirá. No se sustituye nada tuyo."
-
-msgid "settings not found: rebuilt from its drawings"
-msgstr "sin ajustes: reconstruido a partir de sus dibujos"
 
 msgid "symbol matched"
 msgid_plural "symbols matched"

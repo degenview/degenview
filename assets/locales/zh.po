@@ -11630,6 +11630,10 @@ msgstr "已实现毛盈亏 {amount}（未扣手续费）"
 msgid "Realtime"
 msgstr "实时"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "根据绘图重建"
+
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
 #: src/ui/workspace/empty_state/tabs.rs
@@ -13125,6 +13129,10 @@ msgstr "全选"
 msgid "Select Bar on Chart"
 msgstr "在图表上选择K线"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "全选"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "选择一个指标"
@@ -13136,6 +13144,10 @@ msgstr "选择K线"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "在图表上选择K线"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "全不选"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -18631,6 +18643,10 @@ msgid "{count} named order on “{account}”"
 msgid_plural "{count} named orders on “{account}”"
 msgstr[0] "“{account}”上的 {count} 个指定订单"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "已选 {count}/{total}"
+
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
 msgid_plural "{count} open · Unrealized {pnl}"
@@ -20065,6 +20081,21 @@ msgctxt "icon"
 msgid "Scales"
 msgstr "天平"
 
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "选择"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "完成"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "预览"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -20643,9 +20674,6 @@ msgstr "使用此市场"
 
 msgid "What will be added. Nothing of yours is replaced."
 msgstr "将要添加的内容。不会替换您的任何数据。"
-
-msgid "settings not found: rebuilt from its drawings"
-msgstr "未找到设置：根据绘图重建"
 
 msgid "symbol matched"
 msgid_plural "symbols matched"

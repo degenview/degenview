@@ -335,20 +335,11 @@ fn footer(ui: &mut Ui, content: &Content<'_>, plan: &Plan, actions: &mut Vec<Act
             status_dot(ui, color, text, kit::MEDIUM, theme::text_primary());
         },
         |ui| {
-            if kit::footer_button(
-                ui,
-                tr!("Import"),
-                kit::FooterButton::Primary,
-                anything && !searching,
-                110.0,
-            )
-            .clicked()
-            {
+            let ready = anything && !searching;
+            if kit::neutral_button(ui, tr!("Import"), true, ready, false, 110.0).clicked() {
                 actions.push(Action::Import);
             }
-            if kit::footer_button(ui, tr!("Back"), kit::FooterButton::Secondary, true, 0.0)
-                .clicked()
-            {
+            if kit::neutral_button(ui, tr!("Back"), false, true, false, 90.0).clicked() {
                 actions.push(Action::Back);
             }
         },

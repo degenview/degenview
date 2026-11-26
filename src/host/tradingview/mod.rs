@@ -22,7 +22,7 @@ use crate::service::tradingview::matcher::Search;
 use crate::service::tradingview::{self, Candles, Scan, ScanError, matcher};
 use crate::service::work_queue::{self, Pending};
 use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState, PickerTab};
-use crate::ui::tradingview::{self as sheets, Action, Content, Step, View};
+use crate::ui::tradingview::{self as sheets, Action, Content, Group, Step, View};
 use eframe::egui;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -469,6 +469,7 @@ impl Review {
             Action::ToggleLayout(id) => toggle(&mut self.selection.layouts, id),
             Action::ToggleWatchlist(id) => toggle(&mut self.selection.watchlists, id),
             Action::ToggleScript(id) => toggle(&mut self.selection.scripts, id),
+            Action::SelectAll(group, on) => self.select_all(group, on),
             Action::SetTimeframe(layout, timeframe) => self.set_timeframe(layout, timeframe),
             Action::Match(symbol) => {
                 let title = tr!("Match {symbol}", symbol = symbol.as_str());
@@ -517,6 +518,18 @@ impl Review {
             _ => {}
         }
         self.plan = None;
+    }
+
+    fn select_all(&mut self, group: Group, on: bool) {
+        let mut all = Selection::all(&self.library);
+        if !on {
+            all = Selection::default();
+        }
+        match group {
+            Group::Layouts => self.selection.layouts = all.layouts,
+            Group::Watchlists => self.selection.watchlists = all.watchlists,
+            Group::Scripts => self.selection.scripts = all.scripts,
+        }
     }
 
     fn set_timeframe(&mut self, layout: String, timeframe: Timeframe) {

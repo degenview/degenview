@@ -27,6 +27,13 @@ welcome (`Start::Choose`).
 - It appears unasked, so Enter does nothing until a button is reached with Tab, and a click beside
   it does nothing. Esc declines.
 
+## Choosing
+
+Layouts, watchlists and scripts are cards that are their own switch, each with a picture drawn from
+what it holds (the layout's grid, the list's logos, the script's lines); a kind can be taken or left
+as a whole. Symbol matching follows, with the rows still to match listable on their own. The footer
+says how many that is and leads down to them.
+
 ## Where the data comes from
 
 TradingView keeps charts on its servers and has no export for drawings or layouts. The desktop app

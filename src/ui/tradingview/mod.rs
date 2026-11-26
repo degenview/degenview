@@ -11,14 +11,16 @@ pub mod words;
 #[cfg(test)]
 mod gallery_tests;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::Timeframe;
 use crate::model::tradingview::library::Contents;
 use crate::model::tradingview::plan::{Mappings, Plan, Selection, Summary};
 use crate::model::tradingview::{Library, TvSymbol};
-use crate::ui::chart::picker_kit::{art, widgets};
-use crate::ui::kit::sheet;
-use eframe::egui::{self, Id, Ui, Vec2};
+use crate::ui::kit::scroll::{Beyond, fade_edges};
+use crate::ui::kit::{self, sheet};
+use crate::ui::theme;
+use eframe::egui::{self, Id, Rect, Sense, Ui, Vec2, pos2, vec2};
+use std::cmp::Ordering;
 use std::path::Path;
 
 pub const SIZE: Vec2 = Vec2::new(760.0, 680.0);
@@ -26,6 +28,19 @@ pub const SIZE: Vec2 = Vec2::new(760.0, 680.0);
 const HEADER_PADDING: f32 = 24.0;
 /// Room under the scrolling body for the footer: its hairline, padding and 28 pt buttons.
 const FOOTER_HEIGHT: f32 = 58.0;
+/// The same under the two steps, whose buttons are the large ones beside two lines of words.
+const STEP_FOOTER_HEIGHT: f32 = 62.0;
+/// A step's segment in the header, and the room between them.
+const STEP_WIDTH: f32 = 72.0;
+const STEP_GAP: f32 = 6.0;
+
+/// A kind of thing there is to bring over.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Group {
+    Layouts,
+    Watchlists,
+    Scripts,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
@@ -79,6 +94,8 @@ pub enum Action {
     ToggleLayout(String),
     ToggleWatchlist(String),
     ToggleScript(String),
+    /// Take all of a kind, or none of it.
+    SelectAll(Group, bool),
     SetTimeframe(String, Timeframe),
     Match(TvSymbol),
     Skip(TvSymbol),
@@ -120,14 +137,14 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
     ui.set_height(tall);
     ui.spacing_mut().item_spacing.y = 0.0;
     let top = ui.cursor().top();
-    ui.add_space(HEADER_PADDING);
-    let (title, detail) = headline(view);
-    sheet::inset(ui, |ui| {
-        widgets::header(ui, art::Scene::ChartImport, title, detail);
-    });
-    ui.add_space(16.0);
+    ui.add_space(HEADER_PADDING - 4.0);
+    header(ui, view);
+    let footer = match view {
+        View::Content(_) => STEP_FOOTER_HEIGHT,
+        _ => FOOTER_HEIGHT,
+    };
     // `set_height` made the sheet's own rect SIZE.y tall, so measure from the cursor.
-    let height = tall - (ui.cursor().top() - top) - FOOTER_HEIGHT;
+    let height = tall - (ui.cursor().top() - top) - footer;
     match view {
         // Drawn by `welcome`, never inside this sheet.
         View::Welcome(_) => {}
@@ -139,6 +156,84 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
         },
         View::Done(summary) => result::done(ui, height, summary, actions),
     }
+}
+
+/// The title and what the step is for, with where it stands among the three at the trailing
+/// edge.
+fn header(ui: &mut Ui, view: &View<'_>) {
+    let (title, detail) = headline(view);
+    let current = match view {
+        View::Content(content) if content.step == Step::Preview => Some(1),
+        View::Content(_) | View::Reading => Some(0),
+        View::Done(_) => Some(2),
+        View::Welcome(_) | View::Failed(..) => None,
+    };
+    sheet::inset(ui, |ui| {
+        let steps = [
+            tr_c!("import step", "Choose"),
+            tr_c!("import step", "Preview"),
+            tr_c!("import step", "Done"),
+        ];
+        let across = current.map_or(0.0, |_| STEP_WIDTH * 3.0 + STEP_GAP * 2.0);
+        let room = ui.available_width() - across - 20.0;
+        let title = kit::paragraph(
+            ui,
+            title,
+            kit::size::TITLE2 + 3.0,
+            kit::SEMIBOLD,
+            theme::text_primary(),
+            room,
+        );
+        let detail = kit::paragraph(
+            ui,
+            detail,
+            kit::size::SUBHEADLINE + 1.0,
+            kit::REGULAR,
+            theme::text_secondary(),
+            room,
+        );
+        let words = title.size().y + 4.0 + detail.size().y;
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), words), Sense::hover());
+        let below = row.top() + title.size().y + 4.0;
+        ui.painter().galley(row.min, title, theme::text_primary());
+        ui.painter()
+            .galley(pos2(row.left(), below), detail, theme::text_secondary());
+        let Some(current) = current else {
+            return;
+        };
+        let mut left = row.right() - across;
+        for (index, label) in steps.into_iter().enumerate() {
+            let (color, bar) = match index.cmp(&current) {
+                Ordering::Equal => (theme::text_primary(), theme::text_primary()),
+                Ordering::Less => (theme::text_secondary(), theme::text_tertiary()),
+                Ordering::Greater => (theme::text_tertiary(), theme::separator()),
+            };
+            let text = kit::galley(
+                ui,
+                label,
+                kit::size::CAPTION + 0.5,
+                kit::MEDIUM,
+                color,
+                STEP_WIDTH,
+            );
+            ui.painter().galley(
+                pos2(
+                    left + (STEP_WIDTH - text.size().x) / 2.0,
+                    row.center().y - text.size().y - 1.0,
+                ),
+                text,
+                color,
+            );
+            ui.painter().rect_filled(
+                Rect::from_min_size(pos2(left, row.center().y + 4.0), vec2(STEP_WIDTH, 2.0)),
+                1.0,
+                bar,
+            );
+            left += STEP_WIDTH + STEP_GAP;
+        }
+    });
+    ui.add_space(16.0);
+    ui.separator();
 }
 
 fn headline(view: &View<'_>) -> (&'static str, &'static str) {
@@ -157,15 +252,33 @@ fn headline(view: &View<'_>) -> (&'static str, &'static str) {
 
 /// A scrolling body of `height`, inset like the header.
 fn scrolling(ui: &mut Ui, height: f32, id: (&str, u64), add: impl FnOnce(&mut Ui)) {
-    egui::ScrollArea::vertical()
-        .id_salt(id)
-        .max_height(height)
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            sheet::inset(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                add(ui);
-                ui.add_space(12.0);
+    ui.scope(|ui| {
+        kit::scroll::keep_bars_visible(ui);
+        // As wide as the header, whether or not the bar is there; it sits in the right inset.
+        let width = ui.available_width() - 2.0 * f32::from(sheet::INSET);
+        let shown = egui::ScrollArea::vertical()
+            .id_salt(id)
+            .max_height(height)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin {
+                        left: sheet::INSET,
+                        ..Default::default()
+                    })
+                    .show(ui, |ui| {
+                        ui.set_width(width);
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.add_space(16.0);
+                        add(ui);
+                        ui.add_space(16.0);
+                    });
             });
-        });
+        let beyond = Beyond::of(
+            shown.state.offset.y,
+            shown.content_size.y,
+            shown.inner_rect.height(),
+        );
+        fade_edges(ui.painter(), shown.inner_rect, theme::chrome(), beyond);
+    });
 }

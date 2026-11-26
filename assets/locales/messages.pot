@@ -12572,6 +12572,10 @@ msgstr ""
 msgid "Realtime"
 msgstr ""
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr ""
+
 #: src/pine_studio/preview/market_picker.rs
 #: src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs
@@ -14172,6 +14176,10 @@ msgstr ""
 msgid "Select Bar on Chart"
 msgstr ""
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr ""
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr ""
@@ -14182,6 +14190,10 @@ msgstr ""
 
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
+msgstr ""
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
 msgstr ""
 
 #: src/ui/workspace/snapshot_menu.rs
@@ -19530,10 +19542,6 @@ msgstr ""
 msgid "response exceeds {limit} bytes"
 msgstr ""
 
-#: src/ui/tradingview/words.rs
-msgid "settings not found: rebuilt from its drawings"
-msgstr ""
-
 #: src/host/mcp/confirmation.rs
 msgid "stop"
 msgstr ""
@@ -20243,6 +20251,10 @@ msgid "{count} named order on “{account}”"
 msgid_plural "{count} named orders on “{account}”"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr ""
 
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
@@ -21820,6 +21832,21 @@ msgstr ""
 #: src/model/drawings/style.rs
 msgctxt "icon"
 msgid "Scales"
+msgstr ""
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr ""
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr ""
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
 msgstr ""
 
 #: src/model/indicators/mod.rs

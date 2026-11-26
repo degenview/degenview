@@ -12520,6 +12520,10 @@ msgstr "Реализованный валовой P&L {amount} до комисс
 msgid "Realtime"
 msgstr "Реальное время"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "Восстановлено по рисункам"
+
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
 #: src/ui/workspace/empty_state/tabs.rs
@@ -14105,6 +14109,10 @@ msgstr "Выбрать всё"
 msgid "Select Bar on Chart"
 msgstr "Выбрать свечу на графике"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "Выбрать все"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "Выберите индикатор"
@@ -14116,6 +14124,10 @@ msgstr "Выбрать бар"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "Выбрать свечу на графике"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "Снять все"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -20304,6 +20316,10 @@ msgstr[0] "{count} именованный ордер на «{account}»"
 msgstr[1] "{count} именованных ордера на «{account}»"
 msgstr[2] "{count} именованных ордеров на «{account}»"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "Выбрано: {count} из {total}"
+
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
 msgid_plural "{count} open · Unrealized {pnl}"
@@ -21909,6 +21925,21 @@ msgctxt "icon"
 msgid "Scales"
 msgstr "Шкалы"
 
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "Выбор"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "Готово"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "Просмотр"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -22565,10 +22596,6 @@ msgstr "Использовать рынок"
 #: src/ui/tradingview/mod.rs
 msgid "What will be added. Nothing of yours is replaced."
 msgstr "Что будет добавлено. Ничего из вашего не заменяется."
-
-#: src/ui/tradingview/words.rs
-msgid "settings not found: rebuilt from its drawings"
-msgstr "настройки не найдены: восстановлено по рисункам"
 
 #: src/ui/tradingview/choose.rs
 msgid "symbol matched"

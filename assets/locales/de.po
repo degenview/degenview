@@ -11671,6 +11671,10 @@ msgstr "Realisierte Brutto-G&V {amount} vor Provision"
 msgid "Realtime"
 msgstr "Echtzeit"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "Aus Zeichnungen wiederhergestellt"
+
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
 #: src/ui/workspace/empty_state/tabs.rs
@@ -13172,6 +13176,10 @@ msgstr "Alles auswählen"
 msgid "Select Bar on Chart"
 msgstr "Balken im Chart wählen"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "Alle auswählen"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "Wähle einen Indikator"
@@ -13183,6 +13191,10 @@ msgstr "Balken wählen"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "Balken im Chart wählen"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "Keine auswählen"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -18755,6 +18767,10 @@ msgid_plural "{count} named orders on “{account}”"
 msgstr[0] "{count} angegebene Order im Konto „{account}“"
 msgstr[1] "{count} angegebene Orders im Konto „{account}“"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "{count} von {total} ausgewählt"
+
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
 msgid_plural "{count} open · Unrealized {pnl}"
@@ -20236,6 +20252,21 @@ msgctxt "icon"
 msgid "Scales"
 msgstr "Waage"
 
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "Auswahl"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "Fertig"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "Vorschau"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -20875,10 +20906,6 @@ msgstr "Markt verwenden"
 #: src/ui/tradingview/mod.rs
 msgid "What will be added. Nothing of yours is replaced."
 msgstr "Das wird hinzugefügt. Nichts von dir wird ersetzt."
-
-#: src/ui/tradingview/words.rs
-msgid "settings not found: rebuilt from its drawings"
-msgstr "Einstellungen nicht gefunden: aus den Zeichnungen wiederhergestellt"
 
 #: src/ui/tradingview/choose.rs
 msgid "symbol matched"

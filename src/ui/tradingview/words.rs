@@ -1,10 +1,9 @@
 //! What the TradingView import's sheets say. Pure, so the words are tested without drawing.
 
 use crate::i18n::{tr, tr_n};
-use crate::model::tradingview::library::{Layout, TvWatchlist};
 use crate::model::tradingview::plan::{LeftOut, Unmatched, Usage};
 
-/// The things of a list as one line: `BTCUSDT · 5m · 12 drawings`.
+/// The things of a list as one line: `OKX \u{00B7} 3 drawings`.
 fn dotted(parts: &[String]) -> String {
     parts.join(" \u{00B7} ")
 }
@@ -35,29 +34,6 @@ pub fn scripts(count: usize) -> String {
 
 pub fn lines(count: usize) -> String {
     tr_n!(count, "{count} line", "{count} lines")
-}
-
-/// What a layout holds, under its name.
-pub fn layout_detail(layout: &Layout) -> String {
-    let mut symbols: Vec<&str> = Vec::new();
-    for chart in layout.shown_charts() {
-        if !symbols.contains(&chart.symbol.ticker()) {
-            symbols.push(chart.symbol.ticker());
-        }
-    }
-    let mut parts = vec![
-        symbols.into_iter().take(3).collect::<Vec<_>>().join(", "),
-        charts(layout.shown_charts().count()),
-        drawings(layout.drawings.len()),
-    ];
-    if layout.is_rebuilt() {
-        parts.push(tr!("settings not found: rebuilt from its drawings").to_owned());
-    }
-    dotted(&parts)
-}
-
-pub fn watchlist_detail(list: &TvWatchlist) -> String {
-    markets(list.symbols().count())
 }
 
 /// What uses a symbol.

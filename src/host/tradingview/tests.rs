@@ -258,6 +258,27 @@ fn a_welcome_with_nothing_to_bring_says_why() {
 }
 
 #[test]
+fn a_kind_is_taken_or_left_as_a_whole() {
+    let scratch = Scratch::new();
+    let targets = targets(&scratch);
+    let ctx = egui::Context::default();
+    let mut import = open(&targets, data_folder(&scratch), &ctx);
+    settle(&mut import, &ctx, matched);
+    let all = review(&import).selection.clone();
+    assert!(!all.layouts.is_empty() && !all.scripts.is_empty());
+
+    import.act(Action::SelectAll(Group::Layouts, false), &ctx);
+    assert!(review(&import).selection.layouts.is_empty());
+    assert_eq!(
+        review(&import).selection.scripts,
+        all.scripts,
+        "one kind only"
+    );
+    import.act(Action::SelectAll(Group::Layouts, true), &ctx);
+    assert_eq!(review(&import).selection, all);
+}
+
+#[test]
 fn choices_stand_until_reset_and_closing_writes_nothing() {
     let scratch = Scratch::new();
     let targets = targets(&scratch);
