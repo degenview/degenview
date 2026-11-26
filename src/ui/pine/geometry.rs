@@ -264,36 +264,46 @@ pub fn arrowhead(tip: Pos2, origin: Pos2, length: f32, half_width: f32) -> Optio
 }
 
 /// A line's two points as drawn: `extend.left` runs it on past its first point and `extend.right`
-/// past its second, along the line's own direction, to the plot's edge. So a line written from
-/// right to left swaps the sides, and an upright one runs up or down.
-pub fn extended_line(start: Pos2, end: Pos2, extend: LineExtend, plot: Rect) -> (Pos2, Pos2) {
+/// past its second, along the line's own direction, to where it leaves `bounds`. So a line written
+/// from right to left swaps the sides, and an upright one runs up or down.
+pub fn extended_line(start: Pos2, end: Pos2, extend: LineExtend, bounds: Rect) -> (Pos2, Pos2) {
     let from = if extend.extends_left() {
-        run_out(end, start, plot)
+        run_out(end, start, bounds)
     } else {
         start
     };
     let to = if extend.extends_right() {
-        run_out(start, end, plot)
+        run_out(start, end, bounds)
     } else {
         end
     };
     (from, to)
 }
 
-/// `tip` pushed on, away from `tail`, to the plot's side edge (its top or bottom for an upright
-/// line). A tip already past that edge stays, as does one on its tail, which has no direction.
-fn run_out(tail: Pos2, tip: Pos2, plot: Rect) -> Pos2 {
+/// `tip` pushed on, away from `tail`, to where it leaves `bounds`, by a side or by the top or
+/// bottom. A tip already past that edge stays, as does one on its tail, which has no direction.
+fn run_out(tail: Pos2, tip: Pos2, bounds: Rect) -> Pos2 {
     let step = tip - tail;
-    let (edge, from, along) = if step.x != 0.0 {
-        let edge = if step.x > 0.0 { plot.max.x } else { plot.min.x };
-        (edge, tail.x, step.x)
-    } else if step.y != 0.0 {
-        let edge = if step.y > 0.0 { plot.max.y } else { plot.min.y };
-        (edge, tail.y, step.y)
-    } else {
-        return tip;
+    let reach = |along: f32, from: f32, low: f32, high: f32| {
+        if along > 0.0 {
+            (high - from) / along
+        } else if along < 0.0 {
+            (low - from) / along
+        } else {
+            f32::INFINITY
+        }
     };
-    tail + step * ((edge - from) / along).max(1.0)
+    let times = reach(step.x, tail.x, bounds.min.x, bounds.max.x).min(reach(
+        step.y,
+        tail.y,
+        bounds.min.y,
+        bounds.max.y,
+    ));
+    if times.is_finite() {
+        tail + step * times.max(1.0)
+    } else {
+        tip
+    }
 }
 
 /// The two triangles covering the band between two segments, given as its outline: `a0`, `a1`
@@ -1065,6 +1075,17 @@ mod tests {
         // Written from right to left, "right" still means past the second point.
         assert_eq!(extended_line(b, a, LineExtend::Right, rect), (b, west));
         assert_eq!(extended_line(b, a, LineExtend::Left, rect), (east, a));
+    }
+
+    #[test]
+    fn a_steep_line_ends_where_it_first_leaves() {
+        let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
+        let (low, high) = (Pos2::new(40.0, 60.0), Pos2::new(50.0, 30.0));
+        // Out by the top and the bottom, well short of the sides.
+        assert_eq!(
+            extended_line(low, high, LineExtend::Both, rect),
+            (Pos2::new(40.0 - 40.0 / 3.0, 100.0), Pos2::new(60.0, 0.0))
+        );
     }
 
     #[test]

@@ -777,8 +777,9 @@ impl PineLayer<'_> {
     }
 
     /// The band between a linefill's two lines, under the lines themselves. As on TradingView it
-    /// runs on only to the sides both lines extend, and ends a plot's width past the edge: that
-    /// shows when the lines run opposite ways, as the joins of their ends then cross the view.
+    /// runs on only to the sides both lines extend, and ends where each leaves an area a plot's
+    /// size past every edge: that shows when the lines run opposite ways, as the joins of their
+    /// ends then cross the view.
     pub fn draw_linefills(&self, painter: &Painter) {
         let bounds = self.plot.expand2(self.plot.size());
         for fill in &self.pine.linefills {
@@ -842,8 +843,9 @@ impl PineLayer<'_> {
     pub fn draw_lines(&self, painter: &Painter) {
         for line in self.pine.lines.iter().filter(|l| l.is_complete()) {
             let (start, end) = self.line_ends(line, LineExtend::None, self.plot);
-            let (from, to) = self.line_ends(line, line.extend, self.plot);
             let width = line.width.max(1) as f32;
+            // Past the edge by its width, so an extended end's own cut stays out of sight.
+            let (from, to) = self.line_ends(line, line.extend, self.plot.expand(width));
             let color = rgba(line.color);
             stroke_path(
                 painter,

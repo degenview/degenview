@@ -169,11 +169,11 @@
   `size.huge` `0123` is wider than a narrow box).
   A line's `extend.right` runs past its second point and `extend.left` past its first, so a line
   written right to left swaps sides and an upright one extends up or down. A linefill is the band
-  between the two lines run on only to the sides both extend (`LineExtend::shared`), its extended
-  ends one plot width (height for upright lines) past the edge, which shows when the
-  lines run opposite ways. It is drawn as two triangles that meet where its outline crosses itself
-  (`geometry::band_triangles`). Boxes differ:
-  their sides are by position, whichever of `left`/`right` is larger. All measured on TradingView.
+  between the two lines run on only to the sides both extend (`LineExtend::shared`). Its extended
+  ends lie where each line first leaves the plot enlarged by its own width and height on every
+  side, which shows when the lines run opposite ways. It is drawn as two triangles that meet where
+  its outline crosses itself (`geometry::band_triangles`). Boxes differ: their sides are by
+  position, whichever of `left`/`right` is larger. All measured on TradingView.
   An extended box (`extend.*`) runs to the plot's edge from any distance, with no border on that
   side (`geometry::extended_box`), and its text stays placed by `left`/`right`. TradingView does the
   same once it has loaded those bars; before that it places the text of a box on older bars within
