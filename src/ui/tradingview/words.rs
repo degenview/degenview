@@ -33,6 +33,10 @@ pub fn scripts(count: usize) -> String {
     tr_n!(count, "{count} script", "{count} scripts")
 }
 
+pub fn lines(count: usize) -> String {
+    tr_n!(count, "{count} line", "{count} lines")
+}
+
 /// What a layout holds, under its name.
 pub fn layout_detail(layout: &Layout) -> String {
     let mut symbols: Vec<&str> = Vec::new();

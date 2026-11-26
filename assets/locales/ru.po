@@ -1774,6 +1774,10 @@ msgstr "Ask {price}"
 msgid "Ask {size} ({worth})"
 msgstr "Ask {size} ({worth})"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr "Спрашиваем один раз. Позже: «Импорт из TradingView» в меню макетов."
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr "Запрос отмены у брокера…"
@@ -2342,6 +2346,10 @@ msgstr "На передний план"
 #: src/ui/drawing/layer/menu.rs
 msgid "Bring to front"
 msgstr "На передний план"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
+msgstr "Перенесите свои настройки TradingView"
 
 #: src/model/alert/mod.rs src/model/portfolio/mod.rs
 msgid "British Pound"
@@ -3035,20 +3043,9 @@ msgstr "График {timeframe}"
 msgid "Chart's scale"
 msgstr "Шкала графика"
 
-#: src/ui/tradingview/offer.rs
-msgid "Charts and indicators"
-msgstr "Графики и индикаторы"
-
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "Графики, которые уже используют её, сохранят свой вид."
-
-#: src/ui/tradingview/offer.rs
-msgid "Charts, indicators and {count} drawing"
-msgid_plural "Charts, indicators and {count} drawings"
-msgstr[0] "Графики, индикаторы и {count} рисунок"
-msgstr[1] "Графики, индикаторы и {count} рисунка"
-msgstr[2] "Графики, индикаторы и {count} рисунков"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -4834,6 +4831,10 @@ msgid ""
 msgstr ""
 "DegenView не удалось сохранить открытые вкладки, поэтому они могут не "
 "восстановиться после перезапуска. Попытки продолжаются в фоне."
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
+msgstr "DegenView нашёл их на этом компьютере. Что переносить, решаете вы."
 
 #: src/service/update/install/mod.rs
 msgid ""
@@ -9213,10 +9214,6 @@ msgstr "Статус рынка"
 msgid "Market value unavailable · {error}"
 msgstr "Рыночная стоимость недоступна · {error}"
 
-#: src/ui/tradingview/offer.rs
-msgid "Markets and sections"
-msgstr "Рынки и разделы"
-
 #: src/ui/chart/settings/compare.rs
 msgid ""
 "Markets on the chart's scale are drawn from where the chart starts, so their "
@@ -10611,6 +10608,10 @@ msgstr "На этом графике ничего не соответствуе�
 msgid "Nothing profiled yet"
 msgstr "Пока ничего не профилировалось"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr "Ничего не заменяется"
+
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
 msgstr "Ничего не выбрано"
@@ -11689,10 +11690,6 @@ msgstr "Документация Pine Script"
 msgid "Pine Studio"
 msgstr "Pine Studio"
 
-#: src/ui/tradingview/offer.rs
-msgid "Pine code you wrote or saved"
-msgstr "Код Pine, который вы написали или сохранили"
-
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Pine logs"
@@ -12011,6 +12008,10 @@ msgstr "Предпросмотр"
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
 msgstr "График предпросмотра"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
+msgstr "Сначала просмотр"
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Preview it, then add it to any chart."
@@ -17094,10 +17095,6 @@ msgstr "Брокер не может торговать на этом рынке
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "Это не распознанный экспорт транзакций CoinMarketCap."
 
-#: src/ui/tradingview/offer.rs
-msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
-msgstr "Этот вопрос задаётся один раз. Позже выберите «Импорт из TradingView» в меню макетов."
-
 #: src/ui/settings/pine_studio/mod.rs
 msgid ""
 "This is the editor itself. Click in it, select text or press ⌘F to see more "
@@ -19050,10 +19047,6 @@ msgstr ""
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "Можно хранить не более {max} пользовательских тем."
-
-#: src/ui/tradingview/offer.rs
-msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
-msgstr "Вы выбираете, что перенести, и сначала видите предварительный просмотр. В TradingView ничего не меняется."
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."
@@ -22409,10 +22402,6 @@ msgstr "Импорт завершён"
 msgid "Import from TradingView"
 msgstr "Импорт из TradingView"
 
-#: src/ui/tradingview/offer.rs
-msgid "Import from TradingView?"
-msgstr "Импортировать из TradingView?"
-
 #: src/native_bridge.rs src/ui/workspace/empty_state/mod.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Import from TradingView…"
@@ -22529,10 +22518,6 @@ msgstr[0] "Текст {count} рисунка сокращён"
 msgstr[1] "Текст {count} рисунков сокращён"
 msgstr[2] "Текст {count} рисунков сокращён"
 
-#: src/ui/tradingview/offer.rs
-msgid "The TradingView app on this computer has things you can bring over:"
-msgstr "В приложении TradingView на этом компьютере есть то, что можно перенести:"
-
 #: src/service/tradingview/mod.rs
 msgid "The TradingView app’s data wasn’t found on this computer."
 msgstr "Данные приложения TradingView на этом компьютере не найдены."
@@ -22564,6 +22549,10 @@ msgstr "Эта версия Flatpak не может сама искать дан
 #: src/service/tradingview/mod.rs
 msgid "This folder doesn’t hold TradingView’s data."
 msgstr "В этой папке нет данных TradingView."
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
+msgstr "TradingView без изменений"
 
 #: src/service/tradingview/mod.rs
 msgid "TradingView’s data couldn’t be read: {error}"

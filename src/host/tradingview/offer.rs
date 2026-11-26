@@ -88,7 +88,8 @@ impl ImportOffer {
     /// It counts as made as soon as it is on screen.
     pub fn show(&self, ctx: &egui::Context) -> bool {
         let mut state = lock(&self.state);
-        if let State::Found(found) = *state {
+        if let State::Found(found) = &mut *state {
+            let found = std::mem::take(found);
             // The import may have been opened by hand since the look began.
             *state = if offered(&self.store) {
                 State::Over
@@ -97,10 +98,10 @@ impl ImportOffer {
                 State::Asking(found)
             };
         }
-        let State::Asking(found) = *state else {
+        let State::Asking(found) = &*state else {
             return false;
         };
-        let Some(choice) = sheet::show(ctx, &found) else {
+        let Some(choice) = sheet::show(ctx, found) else {
             return false;
         };
         *state = State::Over;
@@ -113,12 +114,13 @@ mod tests {
     use super::*;
     use crate::store::Store;
 
-    const FOUND: Contents = Contents {
-        layouts: 1,
-        drawings: 2,
-        watchlists: 1,
-        scripts: 0,
-    };
+    fn found() -> Contents {
+        Contents {
+            layouts: vec!["Main".into()],
+            drawings: 2,
+            ..Contents::default()
+        }
+    }
 
     fn store() -> SharedStore {
         Arc::new(Mutex::new(Store::open_in_memory().unwrap()))
@@ -136,17 +138,34 @@ mod tests {
         offer
     }
 
-    /// Draws one frame; the offer's answer, and whether a dialog was on it.
-    fn frame(ctx: &egui::Context, offer: &ImportOffer, key: Option<egui::Key>) -> (bool, bool) {
-        let events = key.map(|key| egui::Event::Key {
+    fn key(key: egui::Key) -> Vec<egui::Event> {
+        vec![egui::Event::Key {
             key,
             physical_key: None,
             pressed: true,
             repeat: false,
             modifiers: egui::Modifiers::NONE,
-        });
+        }]
+    }
+
+    fn click(at: egui::Pos2) -> Vec<egui::Event> {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        vec![egui::Event::PointerMoved(at), button(true), button(false)]
+    }
+
+    /// Draws one frame; the offer's answer, and whether a sheet was on it.
+    fn frame(ctx: &egui::Context, offer: &ImportOffer, events: Vec<egui::Event>) -> (bool, bool) {
         let raw = egui::RawInput {
-            events: events.into_iter().collect(),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events,
             ..Default::default()
         };
         let mut wanted = false;
@@ -161,31 +180,49 @@ mod tests {
     #[test]
     fn what_is_found_is_offered_once() {
         let store = store();
-        let offer = looked(&store, Some(FOUND));
+        let offer = looked(&store, Some(found()));
         let ctx = egui::Context::default();
         assert!(!offered(&store), "nothing was on screen yet");
-        frame(&ctx, &offer, None);
-        let (_, open) = frame(&ctx, &offer, None);
+        frame(&ctx, &offer, Vec::new());
+        let (_, open) = frame(&ctx, &offer, Vec::new());
         assert!(open);
         // Made once it is on screen, even if the app quits before an answer.
         assert!(offered(&store));
         assert!(matches!(
-            *lock(&looked(&store, Some(FOUND)).state),
+            *lock(&looked(&store, Some(found())).state),
             State::Over
         ));
     }
 
+    /// An offer already on screen.
+    fn on_screen(ctx: &egui::Context) -> ImportOffer {
+        let offer = looked(&store(), Some(found()));
+        frame(ctx, &offer, Vec::new());
+        frame(ctx, &offer, Vec::new());
+        offer
+    }
+
     #[test]
-    fn it_stays_until_answered_and_a_stray_enter_is_no_answer() {
-        let offer = looked(&store(), Some(FOUND));
+    fn it_stays_until_answered_not_by_a_stray_enter_or_a_click_beside_it() {
         let ctx = egui::Context::default();
-        frame(&ctx, &offer, None);
-        frame(&ctx, &offer, None);
-        let (wanted, open) = frame(&ctx, &offer, Some(egui::Key::Enter));
+        let offer = on_screen(&ctx);
+        let (wanted, open) = frame(&ctx, &offer, key(egui::Key::Enter));
         assert!(!wanted && open);
-        let (wanted, _) = frame(&ctx, &offer, Some(egui::Key::Escape));
+        let (wanted, open) = frame(&ctx, &offer, click(egui::pos2(5.0, 5.0)));
+        assert!(!wanted && open);
+        let (wanted, _) = frame(&ctx, &offer, key(egui::Key::Escape));
         assert!(!wanted);
-        assert_eq!(frame(&ctx, &offer, None), (false, false));
+        assert_eq!(frame(&ctx, &offer, Vec::new()), (false, false));
+    }
+
+    #[test]
+    fn the_keyboard_can_take_the_offer() {
+        let ctx = egui::Context::default();
+        let offer = on_screen(&ctx);
+        frame(&ctx, &offer, key(egui::Key::Tab));
+        frame(&ctx, &offer, Vec::new());
+        let (wanted, _) = frame(&ctx, &offer, key(egui::Key::Enter));
+        assert!(wanted);
     }
 
     #[test]
@@ -193,7 +230,7 @@ mod tests {
         let store = store();
         let offer = looked(&store, None);
         assert_eq!(
-            frame(&egui::Context::default(), &offer, None),
+            frame(&egui::Context::default(), &offer, Vec::new()),
             (false, false)
         );
         assert!(!offered(&store));
@@ -202,17 +239,17 @@ mod tests {
     #[test]
     fn an_import_opened_by_hand_first_ends_the_offer() {
         let store = store();
-        let offer = looked(&store, Some(FOUND));
+        let offer = looked(&store, Some(found()));
         mark_offered(&store);
         assert_eq!(
-            frame(&egui::Context::default(), &offer, None),
+            frame(&egui::Context::default(), &offer, Vec::new()),
             (false, false)
         );
 
-        let withdrawn = looked(&self::store(), Some(FOUND));
+        let withdrawn = looked(&self::store(), Some(found()));
         withdrawn.withdraw();
         assert_eq!(
-            frame(&egui::Context::default(), &withdrawn, None),
+            frame(&egui::Context::default(), &withdrawn, Vec::new()),
             (false, false)
         );
     }

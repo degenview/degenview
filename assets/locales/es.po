@@ -1633,6 +1633,10 @@ msgstr "Ask {price}"
 msgid "Ask {size} ({worth})"
 msgstr "Ask {size} ({worth})"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr "Solo se pregunta una vez. Más adelante, elige «Importar desde TradingView» en el menú de diseños."
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr "Pidiendo al bróker que cancele…"
@@ -2162,6 +2166,10 @@ msgstr "Traer al frente"
 #: src/ui/drawing/layer/menu.rs
 msgid "Bring to front"
 msgstr "Traer al frente"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
+msgstr "Trae tu configuración de TradingView"
 
 #: src/model/alert/mod.rs src/model/portfolio/mod.rs
 msgid "British Pound"
@@ -2799,19 +2807,9 @@ msgstr "Graficar {timeframe}"
 msgid "Chart's scale"
 msgstr "Escala del gráfico"
 
-#: src/ui/tradingview/offer.rs
-msgid "Charts and indicators"
-msgstr "Gráficos e indicadores"
-
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "Los gráficos que ya la usan conservan su aspecto."
-
-#: src/ui/tradingview/offer.rs
-msgid "Charts, indicators and {count} drawing"
-msgid_plural "Charts, indicators and {count} drawings"
-msgstr[0] "Gráficos, indicadores y {count} dibujo"
-msgstr[1] "Gráficos, indicadores y {count} dibujos"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -4507,6 +4505,10 @@ msgstr "DegenView no encontró ninguna carpeta para la caché, así que no se gu
 #: src/app/window.rs
 msgid "DegenView couldn’t save which tabs are open, so they may not reopen after a restart. It keeps trying in the background."
 msgstr "DegenView no ha podido guardar qué pestañas están abiertas, así que puede que no se reabran tras reiniciar. Sigue intentándolo en segundo plano."
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
+msgstr "DegenView la ha encontrado en este ordenador. Tú eliges qué se importa."
 
 #: src/service/update/install/mod.rs
 msgid "DegenView is missing from {target} and the previous version is in {old}. Move it back, then try the update again."
@@ -7200,10 +7202,6 @@ msgstr "Importar desde CoinMarketCap"
 msgid "Import from CoinMarketCap…"
 msgstr "Importar desde CoinMarketCap…"
 
-#: src/ui/tradingview/offer.rs
-msgid "Import from TradingView?"
-msgstr "¿Importar desde TradingView?"
-
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Import into {name}"
 msgstr "Importar en {name}"
@@ -8558,10 +8556,6 @@ msgstr "Estado del mercado"
 msgid "Market value unavailable · {error}"
 msgstr "Valor de mercado no disponible · {error}"
 
-#: src/ui/tradingview/offer.rs
-msgid "Markets and sections"
-msgstr "Mercados y secciones"
-
 #: src/ui/chart/settings/compare.rs
 msgid "Markets on the chart's scale are drawn from where the chart starts, so their prices only line up as a change. Read them on a relative axis:"
 msgstr "Los mercados en la escala del gráfico se dibujan desde donde empieza el gráfico, así que sus precios solo coinciden como variación. Léelos en un eje relativo:"
@@ -9873,6 +9867,10 @@ msgstr "Nada en este gráfico coincide con el filtro."
 msgid "Nothing profiled yet"
 msgstr "Nada perfilado todavía"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr "No se sustituye nada"
+
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
 msgstr "Nada seleccionado"
@@ -10880,10 +10878,6 @@ msgstr "Documentación de Pine Script"
 msgid "Pine Studio"
 msgstr "Pine Studio"
 
-#: src/ui/tradingview/offer.rs
-msgid "Pine code you wrote or saved"
-msgstr "Código Pine que escribiste o guardaste"
-
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Pine logs"
@@ -11196,6 +11190,10 @@ msgstr "Vista previa"
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
 msgstr "Gráfico de vista previa"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
+msgstr "Primero, vista previa"
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Preview it, then add it to any chart."
@@ -14776,10 +14774,6 @@ msgstr "La clave del Llavero se ha sustituido, pero no se ha podido borrar el es
 msgid "The Stochastic formula applied to RSI."
 msgstr "La fórmula del Estocástico aplicada al RSI."
 
-#: src/ui/tradingview/offer.rs
-msgid "The TradingView app on this computer has things you can bring over:"
-msgstr "La aplicación TradingView de este ordenador tiene cosas que puedes traer:"
-
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr "La cuenta no puede permitirse aquí la orden mínima."
@@ -15890,10 +15884,6 @@ msgstr "Este no es un mercado en el que el bróker pueda operar."
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "No es una exportación de transacciones de CoinMarketCap reconocida."
 
-#: src/ui/tradingview/offer.rs
-msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
-msgstr "Solo se pregunta una vez. Más adelante, elige «Importar desde TradingView» en el menú de diseños."
-
 #: src/ui/settings/pine_studio/mod.rs
 msgid "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme."
 msgstr "Este es el propio editor. Haz clic en él, selecciona texto o pulsa ⌘F para ver más del tema."
@@ -16285,6 +16275,10 @@ msgstr "Comisión de trading ({percent}%)"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Trading settings"
 msgstr "Ajustes de trading"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
+msgstr "TradingView no cambia"
 
 #: src/model/chart/kind.rs
 msgid "Traditional"
@@ -17660,10 +17654,6 @@ msgstr "Aceptaste subir a {hosts}. DegenView vuelve a preguntar para cualquier o
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "Puedes tener como máximo {max} temas personalizados."
-
-#: src/ui/tradingview/offer.rs
-msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
-msgstr "Tú eliges qué se importa y antes ves una vista previa. En TradingView no cambia nada."
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."

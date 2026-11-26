@@ -207,14 +207,11 @@ fn items(ui: &mut Ui, content: &Content<'_>, actions: &mut Vec<Action>) {
     let scripts = library
         .scripts
         .iter()
-        .map(|script| {
-            let lines = script.source.lines().count();
-            Item {
-                title: script.name.clone(),
-                detail: tr_n!(lines, "{count} line", "{count} lines"),
-                on: selection.scripts.contains(&script.id),
-                toggle: Action::ToggleScript(script.id.clone()),
-            }
+        .map(|script| Item {
+            title: script.name.clone(),
+            detail: words::lines(script.source.lines().count()),
+            on: selection.scripts.contains(&script.id),
+            toggle: Action::ToggleScript(script.id.clone()),
         })
         .collect();
     group(ui, tr!("Pine scripts"), scripts, actions);

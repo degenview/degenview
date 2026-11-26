@@ -1732,6 +1732,11 @@ msgstr ""
 msgid "Ask {size} ({worth})"
 msgstr ""
 
+#: src/ui/tradingview/offer/mod.rs
+msgid ""
+"Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr ""
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr ""
@@ -2304,6 +2309,10 @@ msgstr ""
 #: src/ui/chart/settings/compare.rs
 #: src/ui/drawing/layer/menu.rs
 msgid "Bring to front"
+msgstr ""
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
 msgstr ""
 
 #: src/model/alert/mod.rs
@@ -2998,19 +3007,9 @@ msgstr ""
 msgid "Charts"
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
-msgid "Charts and indicators"
-msgstr ""
-
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr ""
-
-#: src/ui/tradingview/offer.rs
-msgid "Charts, indicators and {count} drawing"
-msgid_plural "Charts, indicators and {count} drawings"
-msgstr[0] ""
-msgstr[1] ""
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -4821,6 +4820,10 @@ msgstr ""
 msgid ""
 "DegenView couldn’t save which tabs are open, so they may not reopen after a "
 "restart. It keeps trying in the background."
+msgstr ""
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
 msgstr ""
 
 #: src/service/update/install/mod.rs
@@ -7711,10 +7714,6 @@ msgstr ""
 msgid "Import from TradingView"
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
-msgid "Import from TradingView?"
-msgstr ""
-
 #: src/native_bridge.rs
 #: src/ui/workspace/empty_state/mod.rs
 #: src/ui/workspace/toolbar.rs
@@ -9203,10 +9202,6 @@ msgstr ""
 msgid "Market value unavailable · {error}"
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
-msgid "Markets and sections"
-msgstr ""
-
 #: src/ui/chart/settings/compare.rs
 msgid ""
 "Markets on the chart's scale are drawn from where the chart starts, so their "
@@ -10616,6 +10611,10 @@ msgstr ""
 msgid "Nothing profiled yet"
 msgstr ""
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr ""
+
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
 msgstr ""
@@ -11719,10 +11718,6 @@ msgstr ""
 msgid "Pine Studio"
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
-msgid "Pine code you wrote or saved"
-msgstr ""
-
 #: src/model/chart/context/mod.rs
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -12055,6 +12050,10 @@ msgstr ""
 
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
+msgstr ""
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
 msgstr ""
 
 #: src/pine_studio/library/empty_library.rs
@@ -15884,10 +15883,6 @@ msgstr ""
 msgid "The Stochastic formula applied to RSI."
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
-msgid "The TradingView app on this computer has things you can bring over:"
-msgstr ""
-
 #: src/service/tradingview/mod.rs
 msgid "The TradingView app’s data wasn’t found on this computer."
 msgstr ""
@@ -17119,12 +17114,6 @@ msgstr ""
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
-msgid ""
-"This is only asked once. Later, choose Import from TradingView in the layout "
-"menu."
-msgstr ""
-
 #: src/ui/settings/pine_studio/mod.rs
 msgid ""
 "This is the editor itself. Click in it, select text or press ⌘F to see more "
@@ -17567,6 +17556,10 @@ msgstr ""
 
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Trading settings"
+msgstr ""
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
 msgstr ""
 
 #: src/service/tradingview/mod.rs
@@ -19032,12 +19025,6 @@ msgstr ""
 
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
-msgstr ""
-
-#: src/ui/tradingview/offer.rs
-msgid ""
-"You choose what comes over and see a preview first. Nothing in TradingView "
-"changes."
 msgstr ""
 
 #: src/pine_studio/library/disk_banner.rs

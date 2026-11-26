@@ -1619,6 +1619,10 @@ msgstr "卖价 {price}"
 msgid "Ask {size} ({worth})"
 msgstr "卖价挂单 {size}（{worth}）"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr "此提示只出现一次。以后可在布局菜单中选择“从 TradingView 导入”。"
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr "正在请求券商取消…"
@@ -2144,6 +2148,10 @@ msgstr "置于顶层"
 #: src/ui/drawing/layer/menu.rs
 msgid "Bring to front"
 msgstr "置于顶层"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
+msgstr "把您的 TradingView 内容带过来"
 
 #: src/model/alert/mod.rs src/model/portfolio/mod.rs
 msgid "British Pound"
@@ -2774,18 +2782,9 @@ msgstr "应用 {timeframe}"
 msgid "Chart's scale"
 msgstr "图表刻度"
 
-#: src/ui/tradingview/offer.rs
-msgid "Charts and indicators"
-msgstr "图表和指标"
-
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "已使用它的图表保持原有外观。"
-
-#: src/ui/tradingview/offer.rs
-msgid "Charts, indicators and {count} drawing"
-msgid_plural "Charts, indicators and {count} drawings"
-msgstr[0] "图表、指标和 {count} 个绘图"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -4474,6 +4473,10 @@ msgstr "DegenView 找不到可用于缓存的文件夹，因此两次启动之�
 #: src/app/window.rs
 msgid "DegenView couldn’t save which tabs are open, so they may not reopen after a restart. It keeps trying in the background."
 msgstr "DegenView 无法保存当前打开的标签页，重新启动后它们可能不会重新打开。DegenView 会在后台继续尝试。"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
+msgstr "DegenView 在此电脑上找到了它。导入内容由您选择。"
 
 #: src/service/update/install/mod.rs
 msgid "DegenView is missing from {target} and the previous version is in {old}. Move it back, then try the update again."
@@ -7165,10 +7168,6 @@ msgstr "从 CoinMarketCap 导入"
 msgid "Import from CoinMarketCap…"
 msgstr "从 CoinMarketCap 导入…"
 
-#: src/ui/tradingview/offer.rs
-msgid "Import from TradingView?"
-msgstr "从 TradingView 导入？"
-
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Import into {name}"
 msgstr "导入到 {name}"
@@ -8521,10 +8520,6 @@ msgstr "市场状态"
 msgid "Market value unavailable · {error}"
 msgstr "市值不可用 · {error}"
 
-#: src/ui/tradingview/offer.rs
-msgid "Markets and sections"
-msgstr "市场和分组"
-
 #: src/ui/chart/settings/compare.rs
 msgid "Markets on the chart's scale are drawn from where the chart starts, so their prices only line up as a change. Read them on a relative axis:"
 msgstr "使用图表刻度的市场从图表起点开始绘制，因此价格只能按涨跌幅对齐。在相对刻度上查看："
@@ -9836,6 +9831,10 @@ msgstr "图表上没有符合筛选条件的内容。"
 msgid "Nothing profiled yet"
 msgstr "尚无分析结果"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr "不替换任何内容"
+
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
 msgstr "未选择任何内容"
@@ -10842,10 +10841,6 @@ msgstr "Pine Script 文档"
 msgid "Pine Studio"
 msgstr "Pine Studio"
 
-#: src/ui/tradingview/offer.rs
-msgid "Pine code you wrote or saved"
-msgstr "您编写或保存的 Pine 代码"
-
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Pine logs"
@@ -11157,6 +11152,10 @@ msgstr "预览"
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
 msgstr "预览图表"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
+msgstr "先预览"
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Preview it, then add it to any chart."
@@ -14724,10 +14723,6 @@ msgstr "钥匙串密钥已替换，但无法清除已保存的 MCP 状态。请�
 msgid "The Stochastic formula applied to RSI."
 msgstr "把随机指标公式应用于 RSI。"
 
-#: src/ui/tradingview/offer.rs
-msgid "The TradingView app on this computer has things you can bring over:"
-msgstr "此电脑上的 TradingView 应用中有以下内容可以导入："
-
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr "账户资金不足以下最小订单。"
@@ -15841,10 +15836,6 @@ msgstr "这不是该券商可交易的市场。"
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "这不是可识别的 CoinMarketCap 交易导出文件。"
 
-#: src/ui/tradingview/offer.rs
-msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
-msgstr "此提示只出现一次。以后可在布局菜单中选择“从 TradingView 导入”。"
-
 #: src/ui/settings/pine_studio/mod.rs
 msgid "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme."
 msgstr "这就是编辑器本身。在其中点击、选择文本或按 ⌘F，可查看主题的更多效果。"
@@ -16234,6 +16225,10 @@ msgstr "手续费（{percent}%）"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Trading settings"
 msgstr "交易设置"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
+msgstr "TradingView 保持原样"
 
 #: src/model/chart/kind.rs
 msgid "Traditional"
@@ -17604,10 +17599,6 @@ msgstr "你已同意上传到 {hosts}。对于其他任何主机，DegenView 会
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "最多可保留 {max} 个自定义主题。"
-
-#: src/ui/tradingview/offer.rs
-msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
-msgstr "导入内容由您选择，并会先显示预览。TradingView 中的内容不会有任何改动。"
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."

@@ -18,27 +18,35 @@ impl Library {
     }
 
     pub fn contents(&self) -> Contents {
+        let layouts = &self.layouts;
+        let watchlists = &self.watchlists;
+        let scripts = &self.scripts;
         Contents {
-            layouts: self.layouts.len(),
-            drawings: self
-                .layouts
+            layouts: layouts.iter().map(Layout::display_name).collect(),
+            drawings: layouts.iter().map(|layout| layout.drawings.len()).sum(),
+            watchlists: watchlists.iter().map(|list| list.name.clone()).collect(),
+            markets: watchlists.iter().map(|list| list.symbols().count()).sum(),
+            scripts: scripts.iter().map(|script| script.name.clone()).collect(),
+            lines: scripts
                 .iter()
-                .map(|layout| layout.drawings.len())
+                .map(|script| script.source.lines().count())
                 .sum(),
-            watchlists: self.watchlists.len(),
-            scripts: self.scripts.len(),
         }
     }
 }
 
-/// How much of each kind a library holds.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// What a library holds, in outline: each kind's names and how much is in them.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Contents {
-    pub layouts: usize,
+    pub layouts: Vec<String>,
     /// Over all layouts.
     pub drawings: usize,
-    pub watchlists: usize,
-    pub scripts: usize,
+    pub watchlists: Vec<String>,
+    /// Over all watchlists.
+    pub markets: usize,
+    pub scripts: Vec<String>,
+    /// Over all scripts.
+    pub lines: usize,
 }
 
 /// A saved chart layout.
