@@ -1279,6 +1279,10 @@ msgid "Altcoin Market Cap"
 msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
+msgid "Altcoin Season"
+msgstr ""
+
+#: src/ui/chart/cmc_gauge.rs
 msgid "Altcoin Season  100"
 msgstr ""
 
@@ -2085,6 +2089,10 @@ msgstr ""
 
 #: src/model/portfolio/mod.rs
 msgid "Bitcoin"
+msgstr ""
+
+#: src/ui/chart/cmc_gauge.rs
+msgid "Bitcoin Season"
 msgstr ""
 
 #: src/ui/chart/picker_kit/suggestions.rs

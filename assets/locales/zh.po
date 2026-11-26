@@ -1205,6 +1205,10 @@ msgid "Altcoin Market Cap"
 msgstr "山寨币市值"
 
 #: src/ui/chart/cmc_gauge.rs
+msgid "Altcoin Season"
+msgstr "山寨币季"
+
+#: src/ui/chart/cmc_gauge.rs
 msgid "Altcoin Season  100"
 msgstr "山寨币季  100"
 
@@ -1954,6 +1958,10 @@ msgstr "Binance 每个市场每秒最多推送最新的一笔爆仓，Bybit 仅�
 #: src/model/portfolio/mod.rs
 msgid "Bitcoin"
 msgstr "比特币"
+
+#: src/ui/chart/cmc_gauge.rs
+msgid "Bitcoin Season"
+msgstr "比特币季"
 
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Bitcoin price"

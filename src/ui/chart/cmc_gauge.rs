@@ -3,7 +3,7 @@
 
 use crate::i18n::tr;
 use crate::model::market::cmc;
-use crate::service::market::cmc::LatestReading;
+use crate::service::market::cmc::{Classification, LatestReading};
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{
@@ -33,14 +33,14 @@ pub fn paint(
         tr!(
             "CMC Altcoin Season Index, {value} out of 100, {classification}.",
             value = reading.value as i64,
-            classification = reading.classification
+            classification = classification_name(&reading.classification)
         )
     } else {
         fear_greed(ui, painter, rect, reading);
         tr!(
             "CMC Crypto Fear and Greed Index, {value} out of 100, {classification}.",
             value = reading.value as i64,
-            classification = reading.classification
+            classification = classification_name(&reading.classification)
         )
     }
 }
@@ -102,12 +102,26 @@ fn zone_index(value: f64) -> usize {
 
 /// The name of the zone `value` falls in.
 fn zone_name(value: f64) -> &'static str {
-    match zone_index(value) {
-        0 => tr!("Extreme Fear"),
-        1 => tr!("Fear"),
-        2 => tr!("Neutral"),
-        3 => tr!("Greed"),
-        _ => tr!("Extreme Greed"),
+    const NAMED: [Classification; 5] = [
+        Classification::ExtremeFear,
+        Classification::Fear,
+        Classification::Neutral,
+        Classification::Greed,
+        Classification::ExtremeGreed,
+    ];
+    classification_name(&NAMED[zone_index(value)])
+}
+
+fn classification_name(classification: &Classification) -> &str {
+    match classification {
+        Classification::ExtremeFear => tr!("Extreme Fear"),
+        Classification::Fear => tr!("Fear"),
+        Classification::Neutral => tr!("Neutral"),
+        Classification::Greed => tr!("Greed"),
+        Classification::ExtremeGreed => tr!("Extreme Greed"),
+        Classification::BitcoinSeason => tr!("Bitcoin Season"),
+        Classification::AltcoinSeason => tr!("Altcoin Season"),
+        Classification::Unlisted(word) => word,
     }
 }
 
@@ -178,7 +192,7 @@ fn hero(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
     );
     let label = kit::galley(
         ui,
-        &reading.classification,
+        classification_name(&reading.classification),
         if compact { 14.0 } else { 17.0 },
         SEMIBOLD,
         accent,
@@ -522,7 +536,7 @@ fn altcoin(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
 
     let label = kit::galley(
         ui,
-        &reading.classification,
+        classification_name(&reading.classification),
         if very_compact {
             12.0
         } else if compact {
@@ -747,7 +761,7 @@ mod tests {
     fn reading(history: usize) -> LatestReading {
         LatestReading {
             value: 56.0,
-            classification: "Greed".to_owned(),
+            classification: Classification::Greed,
             yearly_high: None,
             yearly_low: None,
             altcoin_market_cap: None,
@@ -792,6 +806,15 @@ mod tests {
         assert_eq!(zone_name(50.0), "Neutral");
         assert_eq!(zone_name(60.0), "Greed");
         assert_eq!(zone_name(100.0), "Extreme Greed");
+    }
+
+    #[test]
+    fn a_reading_is_named_in_the_interface_language() {
+        crate::i18n::with_locale(crate::i18n::Locale::PSEUDO, || {
+            for classification in [Classification::ExtremeFear, Classification::AltcoinSeason] {
+                assert!(classification_name(&classification).starts_with('['));
+            }
+        });
     }
 
     #[test]

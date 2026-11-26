@@ -1215,6 +1215,10 @@ msgid "Altcoin Market Cap"
 msgstr "Altcoin-Marktkap."
 
 #: src/ui/chart/cmc_gauge.rs
+msgid "Altcoin Season"
+msgstr "Altcoin-Season"
+
+#: src/ui/chart/cmc_gauge.rs
 msgid "Altcoin Season  100"
 msgstr "Altcoin-Season  100"
 
@@ -1973,6 +1977,10 @@ msgstr "Binance sendet pro Sekunde höchstens die neueste Liquidation jedes Mark
 #: src/model/portfolio/mod.rs
 msgid "Bitcoin"
 msgstr "Bitcoin"
+
+#: src/ui/chart/cmc_gauge.rs
+msgid "Bitcoin Season"
+msgstr "Bitcoin-Season"
 
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Bitcoin price"
