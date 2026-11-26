@@ -6,8 +6,9 @@
 //! "request.*()" functions.` (CE10059). Measured on a 5-minute BTCUSDT chart, Pine v6:
 //!
 //! - What is refused: every `strategy.*` variable, the `strategy.closedtrades.*()` and
-//!   `strategy.opentrades.*()` functions, `strategy.convert_to_account()` and
-//!   `strategy.default_entry_qty()`; the constants (`strategy.long`, `strategy.short`) are not.
+//!   `strategy.opentrades.*()` functions, `strategy.convert_to_account()`,
+//!   `strategy.convert_to_symbol()` and `strategy.default_entry_qty()`; the constants
+//!   (`strategy.long`, `strategy.short`) are not.
 //! - Where: anywhere in the `expression` argument (`strategy.equity * 2`, `strategy.equity[1]`,
 //!   either arm of a ternary, named or positional); in a function the expression calls, however
 //!   deep (`f()` whose body, or the body of a function it calls, reads one); and in the value of a
@@ -312,6 +313,7 @@ mod tests {
             ),
             ("strategy.opentrades.size(0)", "strategy.opentrades.*()"),
             ("strategy.convert_to_account(close)", "strategy.convert.*()"),
+            ("strategy.convert_to_symbol(close)", "strategy.convert.*()"),
             (
                 "strategy.default_entry_qty(close)",
                 "strategy.default_entry_qty",
