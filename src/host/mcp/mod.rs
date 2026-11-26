@@ -20,7 +20,6 @@ pub mod snapshot;
 pub mod watchlist;
 
 use crate::clock::now_ms;
-use crate::i18n::tr;
 use crate::mcp::bridge::{self, BridgeClient, BridgeInbox, McpError, Request};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::transport::auth::{generate_token, verifier_hex};
@@ -243,11 +242,7 @@ impl McpHost {
         clients: &[McpClient],
         stored: Option<&str>,
     ) -> Result<(), String> {
-        let changed = || {
-            tr!(
-                "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off."
-            )
-        };
+        let changed = || crate::platform::mcp_seal_mismatch();
 
         let Some(keys) = &self.keys else {
             return Ok(());
@@ -268,15 +263,16 @@ impl McpHost {
             (KeyState::Missing, None) => match keys.create() {
                 Ok(key) => (key, true),
                 Err(error) => {
-                    self.notice = Some(tr!(
-                        "MCP credentials cannot be protected against edits to the database on this Mac ({error})",
-                        error = error.0
-                    ));
+                    self.notice = Some(crate::platform::mcp_seal_not_created(error.0));
                     return Ok(());
                 }
             },
-            (KeyState::Missing, Some(_)) => return Err(tr!("The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off.").into()),
-            (KeyState::Unreadable, _) => return Err(tr!("The Keychain key that protects the saved MCP credentials could not be read, so the server stays off. Restart DegenView to try again.").into()),
+            (KeyState::Missing, Some(_)) => {
+                return Err(crate::platform::mcp_seal_key_missing().into());
+            }
+            (KeyState::Unreadable, _) => {
+                return Err(crate::platform::mcp_seal_key_unreadable().into());
+            }
         };
         if write_seal {
             let sealed = seal::seal(&key.0, settings, global, clients);
@@ -327,10 +323,9 @@ impl McpHost {
         if let Some(keys) = &self.keys
             && let Err(error) = keys.rotate()
         {
-            self.notice = Some(format!(
-                "Could not replace the Keychain key, so nothing was changed ({}). Delete the “{}” item in Keychain Access or your keyring, then restart DegenView.",
+            self.notice = Some(crate::platform::mcp_seal_key_not_replaced(
                 error.0,
-                SealKeyStore::SERVICE
+                SealKeyStore::SERVICE,
             ));
             return;
         }
@@ -341,10 +336,7 @@ impl McpHost {
             .map(|store| store.clear_mcp_state())
             .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
         if cleared.is_err() {
-            self.notice = Some(
-                "The Keychain key was replaced but the saved MCP state could not be cleared. Choose Reset MCP Access again."
-                    .into(),
-            );
+            self.notice = Some(crate::platform::mcp_state_not_cleared().into());
             return;
         }
         self.fresh_token = None;

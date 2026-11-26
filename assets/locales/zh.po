@@ -2166,6 +2166,11 @@ msgstr "由市场的K线重新构建自己的K线。脚本和指标基于这些K
 msgid "Built in: JetBrains Mono. Or any monospaced font installed on this Mac."
 msgstr "内置：JetBrains Mono，也可使用本机上安装的任何等宽字体。"
 
+#: src/platform.rs
+msgid ""
+"Built in: JetBrains Mono. Or any monospaced font installed on this computer."
+msgstr "内置：JetBrains Mono，也可使用本机上安装的任何等宽字体。"
+
 #: src/ui/chart/indicator_picker/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/chart/settings/templates/mod.rs src/ui/settings/pine_studio/mod.rs
 msgid "Built-in"
@@ -3815,6 +3820,24 @@ msgstr "无法移除密钥：{error}"
 msgid "Could not remove the keys: {error}"
 msgstr "无法移除密钥：{error}"
 
+#: src/platform.rs
+msgid ""
+"Could not replace the Keychain key, so nothing was changed ({error}). Delete "
+"the “{item}” item in Keychain Access, then restart DegenView."
+msgstr "无法替换钥匙串密钥，因此未做任何改动（{error}）。请在“钥匙串访问”中删除“{item}”项目，然后重新启动 DegenView。"
+
+#: src/platform.rs
+msgid ""
+"Could not replace the key in Windows Credential Manager, so nothing was "
+"changed ({error}). Delete the “{item}” item there, then restart DegenView."
+msgstr "无法替换 Windows 凭据管理器中的密钥，因此未做任何改动（{error}）。请在其中删除“{item}”项目，然后重新启动 DegenView。"
+
+#: src/platform.rs
+msgid ""
+"Could not replace the key in secure storage, so nothing was changed ({error})."
+" Delete the “{item}” item in your keyring, then restart DegenView."
+msgstr "无法替换安全存储中的密钥，因此未做任何改动（{error}）。请在密钥环中删除“{item}”项目，然后重新启动 DegenView。"
+
 #: src/host/sync/mod.rs
 msgid "Could not save changes from iCloud: {error}"
 msgstr "无法保存来自 iCloud 的更改：{error}"
@@ -4110,6 +4133,13 @@ msgstr "凭据"
 
 #: src/ui/settings/brokers.rs
 msgid "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade."
+msgstr "凭据存放在系统的安全存储中，绝不会离开本机。它们不会同步，任何脚本、提醒或其他程序都无法用它们来交易。"
+
+#: src/platform.rs
+msgid ""
+"Credentials are stored in your system's secure storage and never leave this "
+"computer. They are not synced, and no script, alert or other program can use "
+"them to trade."
 msgstr "凭据存放在系统的安全存储中，绝不会离开本机。它们不会同步，任何脚本、提醒或其他程序都无法用它们来交易。"
 
 #: src/model/cursor/mod.rs
@@ -4745,12 +4775,30 @@ msgstr "已断开连接"
 msgid "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}"
 msgstr "已断开连接，但密钥未能从本机移除，DegenView 启动时会再次连接。到钥匙串中移除它，或重试：{error}"
 
+#: src/platform.rs
+msgid ""
+"Disconnected, but the key could NOT be removed from this computer and will "
+"connect again when DegenView starts. Remove it in Windows Credential Manager, "
+"or try again: {error}"
+msgstr "已断开连接，但密钥未能从本机移除，DegenView 启动时会再次连接。到 Windows 凭据管理器中移除它，或重试：{error}"
+
+#: src/platform.rs
+msgid ""
+"Disconnected, but the key could NOT be removed from this computer and will "
+"connect again when DegenView starts. Remove it in your keyring, or try again: "
+"{error}"
+msgstr "已断开连接，但密钥未能从本机移除，DegenView 启动时会再次连接。到密钥环中移除它，或重试：{error}"
+
 #: src/ui/settings/brokers.rs
 msgid "Disconnected."
 msgstr "已断开连接。"
 
 #: src/ui/settings/brokers.rs
 msgid "Disconnected. The key was removed from this Mac."
+msgstr "已断开连接。密钥已从本机移除。"
+
+#: src/platform.rs
+msgid "Disconnected. The key was removed from this computer."
 msgstr "已断开连接。密钥已从本机移除。"
 
 #: src/ui/chart/indicator_picker/sections.rs
@@ -5102,6 +5150,12 @@ msgstr "每次运行都短于时钟能分辨的时长（{resolution}），因此
 msgid "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced."
 msgstr "每个脚本与助手的对话都保存在本机，重启后仍然保留。这些对话绝不会同步。"
 
+#: src/platform.rs
+msgid ""
+"Each script's conversation with the assistant is kept on this computer so it "
+"is there after a restart. It is never synced."
+msgstr "每个脚本与助手的对话都保存在本机，重启后仍然保留。这些对话绝不会同步。"
+
 #: src/pine_studio/drawer/trades.rs
 msgid "Each trade is listed here once the strategy closes it."
 msgstr "策略每平掉一笔交易，就会列在这里。"
@@ -5423,6 +5477,10 @@ msgstr "在下方输入它的上传地址。如果主机需要访问令牌，也
 
 #: src/ui/settings/mcp/security.rs
 msgid "Enter the address of this Mac to listen on"
+msgstr "输入本机要监听的地址"
+
+#: src/platform.rs
+msgid "Enter the address of this computer to listen on"
 msgstr "输入本机要监听的地址"
 
 #: src/model/chart/snapshot/mod.rs
@@ -5928,6 +5986,10 @@ msgstr "填充颜色"
 
 #: src/ui/settings/mcp/security.rs
 msgid "Fill in this Mac's address on the local network"
+msgstr "填入本机在局域网中的地址"
+
+#: src/platform.rs
+msgid "Fill in this computer's address on the local network"
 msgstr "填入本机在局域网中的地址"
 
 #: src/ui/settings/window.rs
@@ -7625,8 +7687,20 @@ msgstr "左肩"
 msgid "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control."
 msgstr "允许本机上的 AI 助手和自动化工具在你控制的权限下查看 DegenView。"
 
+#: src/platform.rs
+msgid ""
+"Let AI assistants and automation on this computer inspect DegenView, with "
+"permissions you control."
+msgstr "允许本机上的 AI 助手和自动化工具在你控制的权限下查看 DegenView。"
+
 #: src/ui/settings/mcp/server.rs
 msgid "Lets AI assistants and automation on this Mac inspect DegenView, within the permissions below. Off until you turn it on."
+msgstr "允许本机上的 AI 助手和自动化工具在下方权限范围内查看 DegenView。开启前保持关闭。"
+
+#: src/platform.rs
+msgid ""
+"Lets AI assistants and automation on this computer inspect DegenView, within "
+"the permissions below. Off until you turn it on."
 msgstr "允许本机上的 AI 助手和自动化工具在下方权限范围内查看 DegenView。开启前保持关闭。"
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -8216,6 +8290,12 @@ msgstr "MCP 服务器"
 #: src/host/mcp/mod.rs
 msgid "MCP credentials cannot be protected against edits to the database on this Mac ({error})"
 msgstr "无法保护 MCP 凭据免遭这台 Mac 上数据库的改动（{error}）"
+
+#: src/platform.rs
+msgid ""
+"MCP credentials cannot be protected against edits to the database on this "
+"computer ({error})"
+msgstr "无法保护 MCP 凭据免遭这台电脑 上数据库的改动（{error}）"
 
 #: src/service/watchlist_quotes/provider.rs
 msgid "MEXC refused the request (HTTP 403): it is not available in every country"
@@ -9819,6 +9899,10 @@ msgstr "关闭时，仅在选中仓位时显示。"
 msgid "Off: this credential works from this Mac only."
 msgstr "关闭：此凭据仅限本机使用。"
 
+#: src/platform.rs
+msgid "Off: this credential works from this computer only."
+msgstr "关闭：此凭据仅限本机使用。"
+
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Offset point"
 msgstr "偏移点"
@@ -10109,6 +10193,12 @@ msgstr "兼容 OpenAI"
 
 #: src/ui/settings/ai.rs
 msgid "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
+msgstr "适用于 OpenRouter、Ollama、LM Studio 等。使用 https://，本机上的服务器可用 http://。"
+
+#: src/platform.rs
+msgid ""
+"OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a "
+"server on this computer."
 msgstr "适用于 OpenRouter、Ollama、LM Studio 等。使用 https://，本机上的服务器可用 http://。"
 
 #: src/model/editor_theme/roles.rs
@@ -14389,6 +14479,11 @@ msgstr "这不是网址。"
 msgid "That is this Mac's own address. Turn the switch off to listen here only"
 msgstr "这是本机自己的地址。关闭开关即可仅在本机监听"
 
+#: src/platform.rs
+msgid ""
+"That is this computer's own address. Turn the switch off to listen here only"
+msgstr "这是本机自己的地址。关闭开关即可仅在本机监听"
+
 #: src/model/chart/context/mod.rs
 msgid "That item is gone, so nothing was changed."
 msgstr "该项目已不存在，未做任何更改。"
@@ -14484,6 +14579,12 @@ msgstr "无法读取保护已保存 MCP 凭据的钥匙串密钥，因此服务�
 #: src/host/mcp/mod.rs
 msgid "The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off."
 msgstr "保护已保存 MCP 凭据的钥匙串密钥已丢失，这些凭据不再可信。服务器保持关闭。"
+
+#: src/platform.rs
+msgid ""
+"The Keychain key was replaced but the saved MCP state could not be cleared. "
+"Choose Reset MCP Access again."
+msgstr "钥匙串密钥已替换，但无法清除已保存的 MCP 状态。请再次选择“重置 MCP 访问权限”。"
 
 #: src/model/pine/bundled/mod.rs
 msgid "The Stochastic formula applied to RSI."
@@ -14847,6 +14948,24 @@ msgid "The key could not be saved for later ({error}). It works until you quit D
 msgstr "密钥无法保存供以后使用（{error}）。在你退出 DegenView 之前仍然有效。"
 
 #: src/platform.rs
+msgid ""
+"The key in secure storage that protects the saved MCP credentials could not be"
+" read, so the server stays off. Restart DegenView to try again."
+msgstr "无法读取安全存储中保护已保存 MCP 凭据的密钥，因此服务器保持关闭。重新启动 DegenView 后可重试。"
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage that protects the saved MCP credentials is missing, "
+"so they cannot be trusted. The server stays off."
+msgstr "安全存储中保护已保存 MCP 凭据的密钥已丢失，这些凭据不再可信。服务器保持关闭。"
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage was replaced but the saved MCP state could not be "
+"cleared. Choose Reset MCP Access again."
+msgstr "安全存储中的密钥已替换，但无法清除已保存的 MCP 状态。请再次选择“重置 MCP 访问权限”。"
+
+#: src/platform.rs
 msgid "The key stays in Windows Credential Manager on this computer."
 msgstr "密钥保留在这台电脑的 Windows 凭据管理器中。"
 
@@ -14936,6 +15055,10 @@ msgstr "模型列表加载意外中断。"
 
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/mcp/security.rs
 msgid "The most a credential with remote access can do, even on this Mac."
+msgstr "具有远程访问权限的凭据所能执行的最大范围，即使在本机上也一样。"
+
+#: src/platform.rs
+msgid "The most a credential with remote access can do, even on this computer."
 msgstr "具有远程访问权限的凭据所能执行的最大范围，即使在本机上也一样。"
 
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/mcp/security.rs
@@ -15129,6 +15252,12 @@ msgstr "同样的价格，按这个图表呈现的方式书写。"
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "The same size, different candles."
 msgstr "大小相同，K线不同。"
+
+#: src/platform.rs
+msgid ""
+"The saved MCP credentials do not match the seal kept in secure storage, so "
+"they were changed outside DegenView. The server stays off."
+msgstr "已保存的 MCP 凭据与安全存储中保存的校验标记不符，说明它们在 DegenView 之外被改动过。服务器保持关闭。"
 
 #: src/host/mcp/mod.rs
 msgid "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off."
@@ -15635,6 +15764,13 @@ msgstr "此正式版本缺少 iCloud 环境设置。"
 
 #: src/ui/settings/brokers.rs
 msgid "This removes the key from this Mac and stops the connection. Orders already placed stay live at the broker. It does not revoke the key: to do that, delete it in the broker's own settings."
+msgstr "这会从本机移除密钥并停止连接。已提交的订单仍在券商处有效。它不会吊销密钥：要吊销，在券商自己的设置中删除它。"
+
+#: src/platform.rs
+msgid ""
+"This removes the key from this computer and stops the connection. Orders "
+"already placed stay live at the broker. It does not revoke the key: to do "
+"that, delete it in the broker's own settings."
 msgstr "这会从本机移除密钥并停止连接。已提交的订单仍在券商处有效。它不会吊销密钥：要吊销，在券商自己的设置中删除它。"
 
 #: src/ui/alert/center.rs
@@ -16467,6 +16603,14 @@ msgstr "使用默认值"
 msgid "Use from other machines"
 msgstr "允许从其他设备使用"
 
+#: src/platform.rs
+msgid "Use https://, or http:// only for a server on this Mac."
+msgstr "请使用 https://；仅本机上的服务器可用 http://。"
+
+#: src/platform.rs
+msgid "Use https://, or http:// only for a server on this computer."
+msgstr "请使用 https://；仅本机上的服务器可用 http://。"
+
 #: src/ui/settings/sync.rs
 msgid "Use iCloud's Data"
 msgstr "使用 iCloud 的数据"
@@ -17051,9 +17195,21 @@ msgstr "图表标签页显示的内容。布局名称和价格跟随该标签页
 msgid "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained."
 msgstr "已连接的客户端请求 DegenView 执行的操作，最新的在前。仅保存在这台 Mac 上，只记录 ID 和结果，不含请求的具体内容。"
 
+#: src/platform.rs
+msgid ""
+"What connected clients asked DegenView to do, newest first. Kept on this "
+"computer only, and holds ids and results, never what a request contained."
+msgstr "已连接的客户端请求 DegenView 执行的操作，最新的在前。仅保存在这台电脑 上，只记录 ID 和结果，不含请求的具体内容。"
+
 #: src/ui/mcp/activity.rs
 msgid "What connected clients asked DegenView to do. Kept on this Mac only; it holds ids and results, never what a request contained."
 msgstr "已连接的客户端请求 DegenView 执行的操作。仅保存在这台 Mac 上，只记录 ID 和结果，不含请求的具体内容。"
+
+#: src/platform.rs
+msgid ""
+"What connected clients asked DegenView to do. Kept on this computer only; it "
+"holds ids and results, never what a request contained."
+msgstr "已连接的客户端请求 DegenView 执行的操作。仅保存在这台电脑 上，只记录 ID 和结果，不含请求的具体内容。"
 
 #: src/pine_studio/ai/panel.rs
 msgid "What could go wrong with this logic?"
@@ -19516,6 +19672,12 @@ msgstr "“{name}”已在此自选列表中。"
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "“{name}” is not installed on this Mac, so the default is used until it is."
+msgstr "本机未安装“{name}”，安装之前使用默认字体。"
+
+#: src/platform.rs
+msgid ""
+"“{name}” is not installed on this computer, so the default is used until "
+"it is."
 msgstr "本机未安装“{name}”，安装之前使用默认字体。"
 
 #: src/ui/webhook/editor.rs

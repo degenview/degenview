@@ -476,9 +476,7 @@ pub fn preview(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
     section(
         ui,
         tr!("Recent activity"),
-        Some(tr!(
-            "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained."
-        )),
+        Some(crate::platform::mcp_recent_activity_hint()),
         |ui| {
             if input.entries.is_empty() {
                 card(ui, |ui| {
@@ -556,9 +554,7 @@ pub fn sheet(
                 ui,
                 Icon::List,
                 tr!("Activity log"),
-                tr!(
-                    "What connected clients asked DegenView to do. Kept on this Mac only; it holds ids and results, never what a request contained."
-                ),
+                crate::platform::mcp_activity_log_hint(),
                 theme::text_secondary(),
             );
         });

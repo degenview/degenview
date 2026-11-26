@@ -543,14 +543,9 @@ pub fn show(
         }
         SettingsSection::Mcp => {
             let mut mcp_actions = Vec::new();
-            page_shell(
-                &mut page,
-                section,
-                tr!(
-                    "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control."
-                ),
-                |ui| mcp::body(ui, &mut state.mcp, &input.mcp, &mut mcp_actions),
-            );
+            page_shell(&mut page, section, crate::platform::mcp_page_hint(), |ui| {
+                mcp::body(ui, &mut state.mcp, &input.mcp, &mut mcp_actions)
+            });
             actions.extend(mcp_actions.into_iter().map(SettingsAction::Mcp));
         }
         SettingsSection::Snapshots => {
