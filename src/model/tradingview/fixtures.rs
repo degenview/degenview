@@ -61,7 +61,7 @@ fn main_series(symbol: &str, interval: &str) -> Value {
 pub fn layout_page(layout: &str, at_ms: i64) -> Fetched {
     let content = json!({
         "name": "Majors",
-        "layout": "2v",
+        "layout": "2h",
         "charts": [
             {"panes": [{"sources": [
                 main_series("BINANCE:BTCUSDT", "5"),

@@ -51,8 +51,9 @@ const TOOLS: &[(&str, Tool)] = &[
     ("LineToolFlatBottom", Tool::FlatChannel),
     ("LineToolDisjointAngle", Tool::DisjointChannel),
     ("LineToolPitchfork", Tool::Pitchfork),
-    ("LineToolSchiffPitchfork", Tool::SchiffPitchfork),
-    ("LineToolSchiffPitchfork2", Tool::ModifiedSchiffPitchfork),
+    // TradingView numbers these the other way round than their names suggest.
+    ("LineToolSchiffPitchfork2", Tool::SchiffPitchfork),
+    ("LineToolSchiffPitchfork", Tool::ModifiedSchiffPitchfork),
     ("LineToolInsidePitchfork", Tool::InsidePitchfork),
     ("LineToolFibRetracement", Tool::FibRetracement),
     ("LineToolTrendBasedFibExtension", Tool::FibExtension),
@@ -90,6 +91,8 @@ const TOOLS: &[(&str, Tool)] = &[
     ("LineToolPriceNote", Tool::PriceNote),
     ("LineToolCallout", Tool::Callout),
     ("LineToolComment", Tool::Comment),
+    // The older name of the comment bubble.
+    ("LineToolBalloon", Tool::Comment),
     ("LineToolPriceLabel", Tool::PriceLabel),
     ("LineToolSignpost", Tool::Signpost),
     ("LineToolFlagMark", Tool::FlagMark),
@@ -119,6 +122,8 @@ const TOOLS: &[(&str, Tool)] = &[
         Tool::FixedRangeVolumeProfile,
     ),
     ("LineToolAnchoredVolumeProfile", Tool::AnchoredVolumeProfile),
+    // The older name of the fixed range profile.
+    ("LineToolVbPFixed", Tool::FixedRangeVolumeProfile),
     ("LineToolPriceRange", Tool::PriceRange),
     ("LineToolDateRange", Tool::DateRange),
     ("LineToolDateAndPriceRange", Tool::DateAndPriceRange),

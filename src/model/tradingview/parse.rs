@@ -3,7 +3,8 @@
 //! that does not have the expected shape contributes nothing rather than failing the rest.
 
 use super::drawing::RawDrawing;
-use super::library::{Grid, Layout, LayoutChart, Library, Script, Study, TvWatchlist, WatchRow};
+use super::grid::Grid;
+use super::library::{Layout, LayoutChart, Library, Script, Study, TvWatchlist, WatchRow};
 use super::{TvSymbol, interval};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -132,7 +133,7 @@ fn layout(id: String, build: LayoutBuild) -> Option<Layout> {
         Some(page) => (Some(page.name), page.grid, page.charts),
         None => {
             let charts = charts_from_drawings(&drawings);
-            (None, grid_of_count(charts.len()), charts)
+            (None, Grid::square(charts.len()), charts)
         }
     };
     (!charts.is_empty()).then_some(Layout {
@@ -177,44 +178,6 @@ fn charts_from_drawings(drawings: &[RawDrawing]) -> Vec<LayoutChart> {
         .collect()
 }
 
-/// The grid a layout code names (`s`, `2h`, `3s`, `4`, `8`…), with how many charts it shows.
-fn grid(code: &str, stored: usize) -> Grid {
-    let count: usize = match code {
-        "s" => 1,
-        _ => code
-            .chars()
-            .take_while(char::is_ascii_digit)
-            .collect::<String>()
-            .parse()
-            .unwrap_or(stored),
-    };
-    // `h` is a split into rows (one above the other); `v` into columns, side by side.
-    let suffix = code.trim_start_matches(|c: char| c.is_ascii_digit());
-    let count = count.clamp(1, stored.max(1));
-    match suffix {
-        "h" => Grid {
-            columns: 1,
-            rows: count,
-        },
-        "v" => Grid {
-            columns: count,
-            rows: 1,
-        },
-        _ => grid_of_count(count),
-    }
-}
-
-fn grid_of_count(count: usize) -> Grid {
-    if count <= 1 {
-        return Grid::SINGLE;
-    }
-    let columns = (count as f64).sqrt().ceil() as usize;
-    Grid {
-        columns,
-        rows: count.div_ceil(columns),
-    }
-}
-
 /// The layout id assigned to `initData.uid`; empty on a chart that was never saved.
 fn embedded_id(html: &str) -> Option<String> {
     let after = &html[html.find("initData.uid")? + "initData.uid".len()..];
@@ -251,12 +214,11 @@ fn page(html: &str) -> Option<Page> {
     if charts.is_empty() {
         return None;
     }
-    let grid = grid(
-        content.get("layout").and_then(Value::as_str).unwrap_or("s"),
-        charts.len(),
-    );
+    let code = content.get("layout").and_then(Value::as_str).unwrap_or("s");
+    let grid = Grid::of(code, charts.len());
+    // A chart is shown when the grid has a place for it.
     for (index, chart) in charts.iter_mut().enumerate() {
-        chart.shown = index < grid.cells();
+        chart.shown = grid.columns.iter().any(|column| column.contains(&index));
     }
     Some(Page { name, grid, charts })
 }
@@ -477,13 +439,7 @@ mod tests {
         let found = library(fixtures::documents());
         let layout = &found.layouts[0];
         assert_eq!(layout.name.as_deref(), Some("Majors"));
-        assert_eq!(
-            layout.grid,
-            Grid {
-                columns: 2,
-                rows: 1
-            }
-        );
+        assert_eq!(layout.grid.columns, [[0], [1]], "side by side");
         assert_eq!(layout.charts.len(), 3, "the hidden third chart is kept");
         assert_eq!(layout.shown_charts().count(), 2);
         let first = &layout.charts[0];
@@ -561,32 +517,5 @@ mod tests {
             }),
         ]);
         assert!(found.is_empty());
-    }
-
-    #[test]
-    fn a_split_code_names_its_direction() {
-        assert_eq!(
-            grid("2h", 2),
-            Grid {
-                columns: 1,
-                rows: 2
-            }
-        );
-        assert_eq!(
-            grid("2v", 2),
-            Grid {
-                columns: 2,
-                rows: 1
-            }
-        );
-        assert_eq!(grid("s", 4), Grid::SINGLE);
-        assert_eq!(
-            grid("4", 4),
-            Grid {
-                columns: 2,
-                rows: 2
-            }
-        );
-        assert_eq!(grid("8", 3).cells(), 4, "never more than are stored");
     }
 }

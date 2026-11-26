@@ -20415,8 +20415,8 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/ui/tradingview/words.rs
-msgid "{count} {tool} drawing: DegenView has no such tool"
-msgid_plural "{count} {tool} drawings: DegenView has no such tool"
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
 msgstr[0] ""
 msgstr[1] ""
 

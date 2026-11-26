@@ -27,7 +27,7 @@ const NATIVE: [(&str, BuiltIn); 3] = [
 ];
 
 /// TradingView's built-in indicators DegenView ships as Pine.
-const BUNDLED: [(&str, &str); 18] = [
+const BUNDLED: [(&str, &str); 19] = [
     ("RSI", "rsi"),
     ("MACD", "macd"),
     ("ATR", "atr"),
@@ -35,7 +35,8 @@ const BUNDLED: [(&str, &str); 18] = [
     ("StochasticRSI", "stochastic-rsi"),
     ("CCI", "cci"),
     ("VWAP", "vwap"),
-    ("OnBalanceVolume", "obv"),
+    ("OBV", "obv"),
+    ("AROON", "aroon"),
     ("MF", "money-flow-index"),
     ("WilliamR", "williams-r"),
     ("IchimokuCloud", "ichimoku-cloud"),
@@ -43,8 +44,8 @@ const BUNDLED: [(&str, &str); 18] = [
     ("DM", "adx-dmi"),
     ("AwesomeOscillator", "awesome-oscillator"),
     ("CMF", "chaikin-money-flow"),
-    ("DonchianChannels", "donchian-channels"),
-    ("KeltnerChannels", "keltner-channels"),
+    ("DONCH", "donchian-channels"),
+    ("KLTNR", "keltner-channels"),
     ("WilliamsFractal", "williams-fractals"),
 ];
 
@@ -91,13 +92,15 @@ pub(super) fn plan(
     let mut left_out = Vec::new();
     let mut own_scripts = Vec::new();
     let mut building: Vec<Building> = Vec::new();
+    // The chart id given to the chart at each place of TradingView's list.
+    let mut places: BTreeMap<usize, u64> = BTreeMap::new();
     let mut timeframes: Vec<Timeframe> = Vec::new();
 
     let hidden = found.charts.iter().filter(|chart| !chart.shown).count();
     if hidden > 0 {
         left_out.push(LeftOut::HiddenCharts(hidden));
     }
-    for source in found.shown_charts() {
+    for (place, source) in found.charts.iter().enumerate().filter(|(_, c)| c.shown) {
         let Some(market) = mappings.market(&source.symbol) else {
             left_out.push(LeftOut::Chart(source.symbol.clone()));
             continue;
@@ -147,6 +150,7 @@ pub(super) fn plan(
             }
         }
         indicators(source, &mut chart, library, &mut own_scripts, &mut left_out);
+        places.insert(place, id);
         building.push(Building {
             chart,
             symbol: source.symbol.clone(),
@@ -179,16 +183,19 @@ pub(super) fn plan(
         timeframes.clear();
     }
 
-    // The grid's columns, filled row by row as TradingView numbers its charts.
-    let columns = found.grid.columns.clamp(1, count.max(1));
-    let mut grid: Vec<Vec<u64>> = vec![Vec::new(); columns];
-    for (index, chart) in charts.iter().enumerate() {
-        grid[index % columns].push(chart.id);
-    }
-    let columns = grid
-        .into_iter()
+    // TradingView's columns, without the places of charts that were left out.
+    let columns = found
+        .grid
+        .columns
+        .iter()
+        .map(|column| {
+            column
+                .iter()
+                .filter_map(|place| places.get(place).copied())
+                .collect::<Vec<_>>()
+        })
+        .filter(|ids| !ids.is_empty())
         .enumerate()
-        .filter(|(_, ids)| !ids.is_empty())
         .map(|(index, ids)| ChartColumn::new(count as u64 + index as u64 + 1, ids))
         .collect();
 

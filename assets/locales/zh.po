@@ -20650,9 +20650,9 @@ msgid "{count} symbol without a market"
 msgid_plural "{count} symbols without a market"
 msgstr[0] "{count} 个没有对应市场的代码"
 
-msgid "{count} {tool} drawing: DegenView has no such tool"
-msgid_plural "{count} {tool} drawings: DegenView has no such tool"
-msgstr[0] "{count} 个 {tool} 绘图：DegenView 没有此工具"
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
+msgstr[0] "{count} 个 {tool} 绘图无法导入"
 
 msgid "{name} is added with its default settings"
 msgstr "{name} 以默认设置添加"

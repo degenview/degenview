@@ -149,3 +149,12 @@ fn a_choice_stands_over_the_search_until_reset() {
     mappings.reset(&btc);
     assert!(mappings.market(&btc).is_some());
 }
+
+#[test]
+fn a_chart_left_out_leaves_no_hole_in_the_grid() {
+    let mut mappings = mapped();
+    mappings.skip(&symbol("BINANCE:BTCUSDT"));
+    let layout = built(&mappings).layouts.remove(0);
+    assert_eq!(layout.columns.len(), 1);
+    assert_eq!(layout.columns[0].chart_ids, [layout.charts[0].id]);
+}

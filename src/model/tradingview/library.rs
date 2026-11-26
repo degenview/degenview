@@ -2,6 +2,7 @@
 
 use super::TvSymbol;
 use super::drawing::RawDrawing;
+use super::grid::Grid;
 
 /// Everything found, newest first within each list.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -83,24 +84,6 @@ pub struct Study {
     pub name: String,
     /// Its `length` input, when it has one.
     pub length: Option<u32>,
-}
-
-/// How the shown charts are arranged.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Grid {
-    pub columns: usize,
-    pub rows: usize,
-}
-
-impl Grid {
-    pub const SINGLE: Self = Self {
-        columns: 1,
-        rows: 1,
-    };
-
-    pub fn cells(self) -> usize {
-        self.columns * self.rows
-    }
 }
 
 /// A watchlist: its markets under their section titles, in order.

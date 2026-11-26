@@ -54,6 +54,8 @@ most of its drawings were made on.
   base **and quote** on another (badge "Other exchange"). Only an exact name matches; derivatives are
   never mapped. The user can change or skip any symbol, like the CoinMarketCap import
   (`ui::kit::matching` draws both).
+- **Grids** (`model::tradingview::grid`): the web app's own arrangement table; `h` is side by side,
+  `v` stacked. DegenView grids are columns, so a chart spanning columns sits in the first.
 - **Layouts** become saved layouts. A DegenView layout has one timeframe, TradingView one per chart:
   the first chart's is used and the preview offers the others. Charts TradingView keeps but its grid
   hides are not imported.
@@ -80,12 +82,20 @@ Everything left out is listed per item in the preview (`LeftOut`).
 Verified on real data: macOS (31 of 32 cached drawings; the one left out is an emoji) and Windows 11
 ARM64 with the MSIX app 3.5.1 signed in.
 
-**Inferred, not verified** — check against a real account before trusting:
+Verified against the web app's own code (3.5.1, from the cached bundles): drawing class names (its
+tool registry; note `schiff_pitchfork` is `LineToolSchiffPitchfork2` and the *modified* one is
+`LineToolSchiffPitchfork`), series style numbers, the grid arrangement table, built-in indicator ids,
+and the Fibonacci level layout `[coeff, color, visible, text]`. To check a later version, search the
+cached `static.tradingview.com` scripts for `["LineTool…",async`, `"2h":["h",0,1]` and
+`@tv-basicstudies`.
 
-- Class names of tools never seen in real data. Seen: TrendLine, Brush, Highlighter, RiskRewardLong,
-  AnchoredVWAP, Text, TextNote, Note, PriceLabel, Table, Tweet, Emoji. The others follow
-  TradingView's Charting Library names.
-- Grid codes: `h` read as stacked rows, `v` as columns side by side.
-- Chart style numbers above 1, and indicator ids other than `Volume` and `Overlay`.
-- Fibonacci level fields.
-- Linux: the folders and the snap app (amd64 only).
+**Not verified** — check against a real drawing before trusting:
+
+- How each tool's stored points and settings map, for tools never seen in real data. Seen:
+  TrendLine, Brush, Highlighter, RiskRewardLong, AnchoredVWAP, Text, TextNote, Note, PriceLabel,
+  Table, Tweet, Emoji. TradingView's Basic plan saves one layout, so no scratch layout could be
+  made to draw the rest in.
+- Left out: ellipse (stored shape unknown), arrow marks left and right, bars pattern, ghost feed,
+  images, emoji, icons, stickers, and text or notes pinned to the screen.
+- Linux: the folder (`~/.config/TradingView`) and cache format were seen on an unpacked snap run
+  under FEX; the app could not connect there, so no real Linux data has been read.

@@ -104,8 +104,8 @@ pub fn left_out(entry: &LeftOut) -> String {
         ),
         LeftOut::DrawingsOfTool { class, count } => tr_n!(
             *count,
-            "{count} {tool} drawing: DegenView has no such tool",
-            "{count} {tool} drawings: DegenView has no such tool",
+            "{count} {tool} drawing can\u{2019}t be brought over",
+            "{count} {tool} drawings can\u{2019}t be brought over",
             tool = class.as_str()
         ),
         LeftOut::Pictures(count) => tr_n!(
@@ -170,7 +170,7 @@ mod tests {
                 class: "Emoji".into(),
                 count: 1
             }),
-            "1 Emoji drawing: DegenView has no such tool"
+            "1 Emoji drawing can\u{2019}t be brought over"
         );
     }
 

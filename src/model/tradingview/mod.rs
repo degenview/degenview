@@ -12,6 +12,7 @@
 pub mod color;
 pub mod convert;
 pub mod drawing;
+pub mod grid;
 pub mod interval;
 pub mod library;
 pub mod parse;

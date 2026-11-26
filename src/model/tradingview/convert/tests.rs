@@ -188,3 +188,16 @@ fn every_listed_class_names_one_tool_and_builds_from_its_points() {
         assert_eq!(tool_of(class), Some(*tool));
     }
 }
+
+/// The classes behind TradingView's own tool names, as its web app registers them.
+#[test]
+fn the_schiff_pitchforks_are_the_ones_tradingview_means() {
+    assert_eq!(
+        tool_of("LineToolSchiffPitchfork2"),
+        Some(Tool::SchiffPitchfork)
+    );
+    assert_eq!(
+        tool_of("LineToolSchiffPitchfork"),
+        Some(Tool::ModifiedSchiffPitchfork)
+    );
+}
