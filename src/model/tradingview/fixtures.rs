@@ -92,9 +92,9 @@ fn script_version(version: &str, at_ms: i64) -> Fetched {
             id: "USER;abc".into(),
             json: json!({
                 "scriptName": "",
-                "scriptTitle": "Zigzag draft",
+                "scriptTitle": "Bands draft",
                 "version": version,
-                "source": "//@version=6\nindicator(\"Zigzag\")\nplot(close)\n",
+                "source": "//@version=6\nindicator(\"Bands\")\nplot(close)\n",
             })
             .to_string(),
         },
@@ -141,7 +141,7 @@ pub fn documents() -> Vec<Fetched> {
         Fetched {
             at_ms: 60,
             document: Document::SavedScripts {
-                json: json!([{"scriptIdPart": "USER;abc", "scriptName": "My zigzag"}]).to_string(),
+                json: json!([{"scriptIdPart": "USER;abc", "scriptName": "My bands"}]).to_string(),
             },
         },
     ]

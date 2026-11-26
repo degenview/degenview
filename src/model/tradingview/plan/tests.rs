@@ -102,7 +102,7 @@ fn names_in_use_are_never_taken_over() {
     let taken = Taken {
         layouts: vec!["majors".into()],
         watchlists: vec!["Coins".into(), "Coins 2".into()],
-        scripts: vec!["My zigzag".into()],
+        scripts: vec!["My bands".into()],
     };
     let plan = plan(
         &library,
@@ -113,7 +113,7 @@ fn names_in_use_are_never_taken_over() {
     );
     assert_eq!(plan.layouts[0].name, "Majors 2");
     assert_eq!(plan.watchlists[0].list.name, "Coins 3");
-    assert_eq!(plan.scripts[0].name, "My zigzag 2");
+    assert_eq!(plan.scripts[0].name, "My bands 2");
 }
 
 #[test]

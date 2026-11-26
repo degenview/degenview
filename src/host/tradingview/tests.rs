@@ -148,7 +148,7 @@ fn a_folder_is_read_matched_previewed_and_imported() {
     let lists = targets.watchlist.lock().unwrap().lists().to_vec();
     assert!(lists.iter().any(|list| list.name == "Coins"));
     let mut library = (targets.scripts)().unwrap();
-    assert_eq!(library.all_scripts().unwrap()[0].name, "My zigzag");
+    assert_eq!(library.all_scripts().unwrap()[0].name, "My bands");
 }
 
 #[test]

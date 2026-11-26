@@ -543,7 +543,7 @@ mod tests {
     fn the_newest_version_of_a_script_wins_and_takes_its_saved_name() {
         let found = library(fixtures::documents());
         assert_eq!(found.scripts.len(), 1);
-        assert_eq!(found.scripts[0].name, "My zigzag");
+        assert_eq!(found.scripts[0].name, "My bands");
         assert_eq!(found.scripts[0].version, "12.0");
     }
 
