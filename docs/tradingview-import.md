@@ -57,7 +57,9 @@ most of its drawings were made on.
   user made changed or reset (`ui::kit::matching` draws these rows and the CoinMarketCap import's).
   Nothing is dropped for being unreadable: every stored chart keeps its grid place.
 - **Grids** (`model::tradingview::grid`): the web app's own arrangement table; `h` is side by side,
-  `v` stacked. DegenView grids are columns, so a chart spanning columns sits in the first.
+  `v` stacked. DegenView grids are columns, so a chart spanning columns sits in the first, and its
+  cards are one height in every column: a chart TradingView draws full height beside two stacked ones
+  is half height here.
 - **Layouts** become saved layouts. A DegenView layout has one timeframe, TradingView one per chart:
   the first chart's is used and the preview offers the others. Charts TradingView keeps but its grid
   hides are not imported.
