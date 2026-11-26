@@ -97,7 +97,14 @@ and the Fibonacci level layout `[coeff, color, visible, text]`. To check a later
 cached `static.tradingview.com` scripts for `["LineTool…",async`, `"2h":["h",0,1]` and
 `@tv-basicstudies`.
 
+Verified with a made-up data folder: a whole import on Linux (Fedora, aarch64, a bare X server),
+including picking the folder in the `zenity` panel `rfd` falls back to without a portal. Also: sync
+accepts everything an import writes (a test holds it), and mutation fuzzing of the cache readers,
+document parsers and drawing conversion found no panic.
+
 **Not verified** — check against a real drawing before trusting:
+
+- Picking a folder through the XDG portal or the macOS panel.
 
 - How each tool's stored points and settings map, for tools never seen in real data. Seen:
   TrendLine, Brush, Highlighter, RiskRewardLong, AnchoredVWAP, Text, TextNote, Note, PriceLabel,
