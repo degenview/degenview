@@ -16,15 +16,16 @@ use crate::model::Kline;
 use crate::model::chart::look::drawn_extremes;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, FontFamily, LabelOutput, LabelStyle, MarkerLocation, MarkerOutput, MarkerShape,
-    PlotOutput, PlotStyle, Size, TableOutput, YLocation,
+    DISPLAY_PANE, FontFamily, LabelOutput, LabelStyle, LineExtend, LineOutput, MarkerLocation,
+    MarkerOutput, MarkerShape, PlotOutput, PlotStyle, Size, TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
 use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
 use crate::ui::pine::geometry::{
-    self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, block_font_size,
-    box_text_placement, candle_index_for_bar, dash_pattern, extended_box, extended_line, faded,
-    is_visible, label_font_size, label_layout, polyline_points, rgba, series_index, shape_radius,
+    self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, band_triangles,
+    block_font_size, box_text_placement, candle_index_for_bar, dash_pattern, extended_box,
+    extended_line, faded, is_visible, label_font_size, label_layout, polyline_points, rgba,
+    series_index, shape_radius,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
@@ -139,6 +140,14 @@ fn quad(mesh: &mut Mesh, corners: [Pos2; 4], colors: [Color32; 4]) {
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
+/// One filled triangle.
+fn triangle(mesh: &mut Mesh, corners: [Pos2; 3], color: Color32) {
+    let base = mesh.vertices.len() as u32;
+    mesh.vertices
+        .extend(corners.map(|corner| vertex(corner, color)));
+    mesh.indices.extend([base, base + 1, base + 2]);
+}
+
 /// A polygon filled as a fan from its centroid.
 fn fan(mesh: &mut Mesh, points: &[Pos2], color: Color32) {
     if points.len() < 3 {
@@ -233,6 +242,16 @@ impl PineLayer<'_> {
 
     fn point_bar(&self, bar: i64, price: f64) -> Pos2 {
         Pos2::new(self.x_bar(bar), self.y(price))
+    }
+
+    /// A line's two points on screen, run on to the plot's edges as `extend` says.
+    fn line_ends(&self, line: &LineOutput, extend: LineExtend) -> (Pos2, Pos2) {
+        extended_line(
+            self.point_bar(line.x1, line.y1),
+            self.point_bar(line.x2, line.y2),
+            extend,
+            self.plot,
+        )
     }
 
     /// `barcolor()` for the candle at `index`, if the script set one.
@@ -757,7 +776,8 @@ impl PineLayer<'_> {
         }
     }
 
-    /// The quadrilateral between a linefill's two lines, under the lines themselves.
+    /// The band between a linefill's two lines, under the lines themselves. As on TradingView it
+    /// runs on only to the sides both lines extend.
     pub fn draw_linefills(&self, painter: &Painter) {
         for fill in &self.pine.linefills {
             let (Some(first), Some(second)) = (
@@ -769,12 +789,13 @@ impl PineLayer<'_> {
             if !first.is_complete() || !second.is_complete() {
                 continue;
             }
-            let a = self.point_bar(first.x1, first.y1);
-            let b = self.point_bar(first.x2, first.y2);
-            let c = self.point_bar(second.x1, second.y1);
-            let d = self.point_bar(second.x2, second.y2);
+            let shared = first.extend.shared(second.extend);
+            let (a0, a1) = self.line_ends(first, shared);
+            let (b0, b1) = self.line_ends(second, shared);
             let mut mesh = Mesh::default();
-            quad(&mut mesh, [a, b, d, c], [rgba(fill.color); 4]);
+            for corners in band_triangles([a0, a1, b1, b0]) {
+                triangle(&mut mesh, corners, rgba(fill.color));
+            }
             paint_mesh(painter, mesh);
         }
     }
@@ -818,9 +839,8 @@ impl PineLayer<'_> {
 
     pub fn draw_lines(&self, painter: &Painter) {
         for line in self.pine.lines.iter().filter(|l| l.is_complete()) {
-            let start = self.point_bar(line.x1, line.y1);
-            let end = self.point_bar(line.x2, line.y2);
-            let (from, to) = extended_line(start, end, line.extend, self.plot);
+            let (start, end) = self.line_ends(line, LineExtend::None);
+            let (from, to) = self.line_ends(line, line.extend);
             let width = line.width.max(1) as f32;
             let color = rgba(line.color);
             stroke_path(
@@ -1565,8 +1585,8 @@ mod tests {
     use super::*;
     use crate::pine::outputs::{
         BoxOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput, LabelStyle, LineExtend,
-        LineOutput, LineStyle, MarkerKind, MarkerOutput, Size, TableCell, TablePosition, TextAlign,
-        YLocation,
+        LineOutput, LineStyle, LinefillOutput, MarkerKind, MarkerOutput, Size, TableCell,
+        TablePosition, TextAlign, YLocation,
     };
 
     fn candles(count: usize) -> Vec<Kline> {
@@ -1830,6 +1850,54 @@ mod tests {
         incomplete.lines.push(output.lines[1].clone());
         let layer = self::layer(&incomplete, &candles, &x, &y);
         assert_eq!(shapes_drawn(|painter| layer.draw_lines(painter)), 0);
+    }
+
+    #[test]
+    fn a_linefill_runs_on_only_where_both_its_lines_do() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        // Both lines run from x 50 to 90 on a plot spanning 0..200.
+        let line = |id, price, extend| LineOutput {
+            id,
+            x1: 2,
+            y1: price,
+            x2: 4,
+            y2: price,
+            color: 0,
+            width: 1,
+            style: LineStyle::Solid,
+            extend,
+            time_anchored: false,
+            force_overlay: false,
+        };
+        for (first, second, reach) in [
+            (LineExtend::None, LineExtend::None, (50.0, 90.0)),
+            (LineExtend::Right, LineExtend::None, (50.0, 90.0)),
+            (LineExtend::Left, LineExtend::Right, (50.0, 90.0)),
+            (LineExtend::Right, LineExtend::Right, (50.0, 200.0)),
+            (LineExtend::Left, LineExtend::Both, (0.0, 90.0)),
+            (LineExtend::Both, LineExtend::Both, (0.0, 200.0)),
+        ] {
+            let mut output = empty();
+            output.lines = vec![line(1, 150.0, first), line(2, 130.0, second)];
+            output.linefills.push(LinefillOutput {
+                id: 3,
+                line1: 1,
+                line2: 2,
+                color: 0x0000_FFFF,
+            });
+            let layer = layer(&output, &candles, &x, &y);
+            let shapes = shapes_of(|painter| layer.draw_linefills(painter));
+            let [Shape::Mesh(mesh)] = shapes.as_slice() else {
+                panic!("one mesh, not {shapes:?}");
+            };
+            let bounds = mesh.calc_bounds();
+            assert_eq!(
+                (bounds.left(), bounds.right()),
+                reach,
+                "{first:?} with {second:?}"
+            );
+        }
     }
 
     #[test]
