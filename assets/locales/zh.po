@@ -2,6 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: DegenView\n"
 "Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: 2026-11-26 00:00+0000\n"
 "Last-Translator: DegenView\n"
 "Language-Team: Chinese (Simplified)\n"
 "Language: zh\n"
@@ -499,6 +500,10 @@ msgstr "已接受"
 msgid "Access"
 msgstr "访问权限"
 
+#: src/ui/settings/api_keys.rs
+msgid "Access Token"
+msgstr "访问令牌"
+
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Access token (optional)"
 msgstr "访问令牌（可选）"
@@ -507,6 +512,10 @@ msgstr "访问令牌（可选）"
 #: src/ui/drawing/properties/tests.rs src/ui/settings/brokers.rs
 msgid "Account"
 msgstr "账户"
+
+#: src/ui/settings/api_keys.rs
+msgid "Account ID"
+msgstr "账户 ID"
 
 #: src/ui/paper/account_sheet.rs
 msgid "Account name"
@@ -769,6 +778,10 @@ msgstr "将指标添加到图表。"
 msgid "Add the secret value that {token} stands for."
 msgstr "添加 {token} 所代表的密钥值。"
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "在设置中添加此服务商的 API 密钥，即可查看其报价"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr "创建提醒前，先把这个脚本添加到当前图表。"
@@ -833,6 +846,16 @@ msgstr "在设置中添加你的 Alpaca API 密钥。"
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "在设置 ▸ 快照中添加 ImgBB API 密钥后即可分享。"
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid ""
+"Add your Oanda credentials in Settings to search and chart forex, metals and "
+"index CFDs."
+msgstr "在设置中添加 Oanda 凭据，即可搜索外汇、金属和指数差价合约并绘制图表。"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "在设置中添加 Oanda 凭据，即可查看 Oanda 报价"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
@@ -3436,6 +3459,10 @@ msgid "Connect Alpaca to chart US stocks and ETFs in DegenView."
 msgstr "连接 Alpaca，在 DegenView 中查看美股和 ETF 图表。"
 
 #: src/ui/settings/window.rs
+msgid "Connect Oanda to chart forex, metals and index CFDs in DegenView."
+msgstr "连接 Oanda，在 DegenView 中查看外汇、金属和指数差价合约的图表。"
+
+#: src/ui/settings/window.rs
 msgid "Connect a broker to trade for real from your charts. Paper trading is separate."
 msgstr "连接券商，直接在图表上进行实盘交易。模拟交易另行设置。"
 
@@ -3694,6 +3721,11 @@ msgstr "复制回复"
 msgid "Copy style"
 msgstr "复制样式"
 
+#: src/ui/settings/api_keys.rs
+msgid ""
+"Copy the account ID and the token here. Oanda only shows the token once."
+msgstr "将账户 ID 和令牌复制到这里。Oanda 只显示一次令牌。"
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr "复制结果"
@@ -3811,6 +3843,10 @@ msgstr "无法读取 {path}：{error}"
 #: src/service/keychain/secret_service.rs
 msgid "Could not remove it from the keyring: {reason}"
 msgstr "无法从密钥环中移除：{reason}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Could not remove the credentials: {error}"
+msgstr "无法移除凭据：{error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not remove the key: {error}"
@@ -4000,7 +4036,7 @@ msgstr "用下标计零"
 
 #: src/model/chart/context/mod.rs src/ui/chart/settings/canvas.rs
 msgid "Countdown to bar close"
-msgstr ""
+msgstr "当前K线收盘倒计时"
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Counterclockwise"
@@ -4099,6 +4135,10 @@ msgstr "创建自选列表"
 msgid "Create a watchlist from the menu above."
 msgstr "从上方菜单创建一个自选列表。"
 
+#: src/ui/settings/api_keys.rs
+msgid "Create an Oanda account."
+msgstr "创建 Oanda 账户。"
+
 #: src/ui/paper/header.rs
 msgid "Create one to practise trading with simulated money."
 msgstr "创建一个账户，用模拟资金练习交易。"
@@ -4141,6 +4181,14 @@ msgid ""
 "computer. They are not synced, and no script, alert or other program can use "
 "them to trade."
 msgstr "凭据存放在系统的安全存储中，绝不会离开本机。它们不会同步，任何脚本、提醒或其他程序都无法用它们来交易。"
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials removed. Oanda charts need them to load."
+msgstr "凭据已移除。加载 Oanda 图表需要这些凭据。"
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials saved"
+msgstr "凭据已保存"
 
 #: src/model/cursor/mod.rs
 msgid "Cross"
@@ -6269,6 +6317,10 @@ msgstr "仅在前台计算"
 msgid "Foreground only"
 msgstr "仅前台运行"
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Forex"
+msgstr "外汇"
+
 #: src/ui/settings/snapshots.rs
 msgid "Forget"
 msgstr "忘记"
@@ -6400,6 +6452,10 @@ msgstr "获取 ImgBB API 密钥"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Getting ready"
 msgstr "准备中"
+
+#: src/ui/settings/api_keys.rs
+msgid "Getting your credentials"
+msgstr "获取凭据"
 
 #: src/ui/settings/api_keys.rs
 msgid "Getting your keys"
@@ -7117,6 +7173,11 @@ msgstr[0] "已导入“{name}”。文件中有 {count} 个值无法使用，已
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "导入…"
+
+#: src/ui/settings/api_keys.rs
+msgid ""
+"In Account Management, open Personal Access Tokens and generate a token."
+msgstr "在账户管理中打开个人访问令牌页面，然后生成令牌。"
 
 #: src/ui/watchlist/sidebar/detail.rs
 msgid "In lists"
@@ -9869,6 +9930,18 @@ msgstr "OHLC 数值"
 msgid "OK"
 msgstr "确定"
 
+#: src/service/market/error.rs
+msgid "Oanda error: {error}"
+msgstr "Oanda 错误：{error}"
+
+#: src/model/watchlist/text.rs
+msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
+msgstr "Oanda 品种使用 BASE_QUOTE 格式，例如 EUR_USD"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Oanda refused your access token. Check it in Settings"
+msgstr "Oanda 拒绝了你的访问令牌。在设置中检查令牌"
+
 #: src/model/chart/context/mod.rs src/ui/chart/object_tree/mod.rs
 msgid "Object tree"
 msgstr "对象树"
@@ -10072,6 +10145,10 @@ msgid "Open"
 msgstr "打开"
 
 #: src/ui/chart/symbol_picker/detail.rs
+msgid "Open 24/5"
+msgstr "每周 5 天全天开放"
+
+#: src/ui/chart/symbol_picker/detail.rs
 msgid "Open 24/7"
 msgstr "24/7 开放"
 
@@ -10170,6 +10247,10 @@ msgstr "打开 Alpaca 控制台"
 #: src/ui/settings/broker_words.rs
 msgid "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
 msgstr "打开 Coinbase Developer Platform（portal.cdp.coinbase.com）并登录。"
+
+#: src/ui/settings/api_keys.rs
+msgid "Open the Oanda API documentation"
+msgstr "打开 Oanda API 文档"
 
 #: src/ui/settings/about.rs
 msgid "Open the release page on GitHub"
@@ -11655,6 +11736,10 @@ msgstr "移除断点"
 #: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
 msgstr "移除图表"
+
+#: src/ui/settings/api_keys.rs
+msgid "Remove Credentials"
+msgstr "移除凭据"
 
 #: src/pine_studio/library/script_actions.rs
 msgid "Remove Favorite"
@@ -13226,9 +13311,21 @@ msgstr "设置步骤"
 msgid "Set up Alpaca to open a stock"
 msgstr "设置 Alpaca 以打开股票"
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Set up Oanda to search forex"
+msgstr "配置 Oanda 以搜索外汇"
+
+#: src/service/market/error.rs
+msgid "Set up this provider's API key in Settings first."
+msgstr "先在设置中配置此服务商的 API 密钥。"
+
 #: src/service/market/error.rs
 msgid "Set up your Alpaca API key before using stock charts."
 msgstr "使用股票图表前，先设置你的 Alpaca API 密钥。"
+
+#: src/service/market/error.rs
+msgid "Set up your Oanda account in Settings before using Oanda charts."
+msgstr "使用 Oanda 图表前，先在设置中配置 Oanda 账户。"
 
 #: src/app/window.rs src/ui/chart/card/overlay_card.rs
 #: src/ui/drawing/layer/menu.rs src/ui/window/tab_bar/mod.rs
@@ -14983,7 +15080,7 @@ msgstr "上次自动保存写入失败。选择“保存布局”。"
 
 #: src/ui/chart/settings/canvas.rs
 msgid "The last price's tag shows the price alone."
-msgstr ""
+msgstr "最新价标签仅显示价格。"
 
 #: src/model/pine/bundled/mod.rs
 msgid "The least-squares line of recent closes with deviation bands."
@@ -15412,8 +15509,11 @@ msgid "The test stopped unexpectedly."
 msgstr "测试意外中断。"
 
 #: src/ui/chart/settings/canvas.rs
-msgid "The time left in the forming bar, under the last price. Not shown on Renko, Kagi, Line Break, Point & Figure and Range charts, in a replay, or for markets without clock-cut bars."
-msgstr ""
+msgid ""
+"The time left in the forming bar, under the last price. Not shown on Renko, "
+"Kagi, Line Break, Point & Figure and Range charts, in a replay, or for "
+"markets without clock-cut bars."
+msgstr "在最新价下方显示当前K线收盘前的剩余时间。砖形图、卡吉图、新价线、点数图和区间图不显示倒计时，回放期间或市场没有按时间收盘的K线时也不显示。"
 
 #: src/ui/chart/symbol_picker/predictions/trending.rs
 msgid "The trending list stopped loading."
@@ -15642,7 +15742,7 @@ msgstr "这个图表无法保存为图片。"
 
 #: src/model/chart/context/mod.rs
 msgid "This chart has no bars that close on a clock"
-msgstr ""
+msgstr "此图表没有按时间收盘的K线"
 
 #: src/model/broker/chart.rs
 msgid "This chart has no market to trade."
@@ -16377,6 +16477,10 @@ msgstr "MEXC 返回了意外的响应"
 #: src/service/watchlist_quotes/provider.rs
 msgid "Unexpected OKX response"
 msgstr "OKX 返回了意外的响应"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Oanda response"
+msgstr "Oanda 返回了意外响应"
 
 #: src/model/broker/ticket.rs src/ui/settings/window.rs
 msgid "Unknown"

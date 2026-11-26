@@ -300,7 +300,9 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
                     .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
             });
             if !valid {
-                return Err(tr!("Oanda instruments are written BASE_QUOTE, like EUR_USD").to_owned());
+                return Err(
+                    tr!("Oanda instruments are written BASE_QUOTE, like EUR_USD").to_owned(),
+                );
             }
             Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
         }

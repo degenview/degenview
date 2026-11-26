@@ -503,6 +503,10 @@ msgstr "Angenommen"
 msgid "Access"
 msgstr "Zugriff"
 
+#: src/ui/settings/api_keys.rs
+msgid "Access Token"
+msgstr "Zugriffstoken"
+
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Access token (optional)"
 msgstr "Zugriffstoken (optional)"
@@ -511,6 +515,10 @@ msgstr "Zugriffstoken (optional)"
 #: src/ui/drawing/properties/tests.rs src/ui/settings/brokers.rs
 msgid "Account"
 msgstr "Konto"
+
+#: src/ui/settings/api_keys.rs
+msgid "Account ID"
+msgstr "Konto-ID"
 
 #: src/ui/paper/account_sheet.rs
 msgid "Account name"
@@ -773,6 +781,10 @@ msgstr "Füge den Indikator zum Chart hinzu."
 msgid "Add the secret value that {token} stands for."
 msgstr "Gib den Secret-Wert ein, für den {token} steht."
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "Trage den API-Schlüssel dieses Anbieters in den Einstellungen ein, um seine Kurse zu sehen"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr "Füge dieses Skript zum fokussierten Chart hinzu, bevor du einen Alarm erstellst."
@@ -837,6 +849,16 @@ msgstr "Hinterlege deine Alpaca-API-Schlüssel in den Einstellungen."
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Hinterlege zum Teilen deinen ImgBB-API-Schlüssel unter Einstellungen ▸ Snapshots."
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid ""
+"Add your Oanda credentials in Settings to search and chart forex, metals and "
+"index CFDs."
+msgstr "Trage deine Oanda-Zugangsdaten in den Einstellungen ein, um Devisen, Metalle und Index-CFDs zu suchen und im Chart anzuzeigen."
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "Trage deine Oanda-Zugangsdaten in den Einstellungen ein, um Oanda-Kurse zu sehen"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
@@ -3466,6 +3488,10 @@ msgid "Connect Alpaca to chart US stocks and ETFs in DegenView."
 msgstr "Verbinde Alpaca, um US-Aktien und ETFs in DegenView als Chart anzuzeigen."
 
 #: src/ui/settings/window.rs
+msgid "Connect Oanda to chart forex, metals and index CFDs in DegenView."
+msgstr "Verbinde Oanda, um Devisen, Metalle und Index-CFDs in DegenView im Chart anzuzeigen."
+
+#: src/ui/settings/window.rs
 msgid "Connect a broker to trade for real from your charts. Paper trading is separate."
 msgstr "Verbinde einen Broker, um aus deinen Charts mit echtem Geld zu handeln. Paper-Trading ist davon getrennt."
 
@@ -3726,6 +3752,11 @@ msgstr "Antwort kopieren"
 msgid "Copy style"
 msgstr "Stil kopieren"
 
+#: src/ui/settings/api_keys.rs
+msgid ""
+"Copy the account ID and the token here. Oanda only shows the token once."
+msgstr "Kopiere die Konto-ID und das Token hierher. Oanda zeigt das Token nur einmal an."
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr "Antwort kopieren"
@@ -3843,6 +3874,10 @@ msgstr "{path} konnte nicht gelesen werden: {error}"
 #: src/service/keychain/secret_service.rs
 msgid "Could not remove it from the keyring: {reason}"
 msgstr "Konnte nicht aus dem Schlüsselbund entfernt werden: {reason}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Could not remove the credentials: {error}"
+msgstr "Die Zugangsdaten konnten nicht entfernt werden: {error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not remove the key: {error}"
@@ -4131,6 +4166,10 @@ msgstr "Watchlist erstellen"
 msgid "Create a watchlist from the menu above."
 msgstr "Erstelle über das Menü oben eine Watchlist."
 
+#: src/ui/settings/api_keys.rs
+msgid "Create an Oanda account."
+msgstr "Erstelle ein Oanda-Konto."
+
 #: src/ui/paper/header.rs
 msgid "Create one to practise trading with simulated money."
 msgstr "Erstelle eines, um das Trading mit simuliertem Geld zu üben."
@@ -4173,6 +4212,14 @@ msgid ""
 "computer. They are not synced, and no script, alert or other program can use "
 "them to trade."
 msgstr "Die Zugangsdaten liegen im sicheren Speicher deines Systems und verlassen diesen Computer nie. Sie werden nicht synchronisiert, und kein Skript, Alarm oder anderes Programm kann damit handeln."
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials removed. Oanda charts need them to load."
+msgstr "Zugangsdaten entfernt. Zum Laden von Oanda-Charts sind sie erforderlich."
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials saved"
+msgstr "Zugangsdaten gespeichert"
 
 #: src/model/cursor/mod.rs
 msgid "Cross"
@@ -6304,6 +6351,10 @@ msgstr "Prüfung nur im Vordergrund"
 msgid "Foreground only"
 msgstr "Nur im Vordergrund"
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Forex"
+msgstr "Devisen"
+
 #: src/ui/settings/snapshots.rs
 msgid "Forget"
 msgstr "Vergessen"
@@ -6435,6 +6486,10 @@ msgstr "ImgBB-API-Schlüssel holen"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Getting ready"
 msgstr "Wird vorbereitet"
+
+#: src/ui/settings/api_keys.rs
+msgid "Getting your credentials"
+msgstr "Zugangsdaten abrufen"
 
 #: src/ui/settings/api_keys.rs
 msgid "Getting your keys"
@@ -7154,6 +7209,11 @@ msgstr[1] "„{name}“ importiert. {count} Werte in der Datei waren nicht verwe
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "Importieren …"
+
+#: src/ui/settings/api_keys.rs
+msgid ""
+"In Account Management, open Personal Access Tokens and generate a token."
+msgstr "Öffne in der Kontoverwaltung den Bereich für persönliche Zugriffstoken und erstelle ein Token."
 
 #: src/ui/watchlist/sidebar/detail.rs
 msgid "In lists"
@@ -9906,6 +9966,18 @@ msgstr "OHLC-Werte"
 msgid "OK"
 msgstr "OK"
 
+#: src/service/market/error.rs
+msgid "Oanda error: {error}"
+msgstr "Oanda-Fehler: {error}"
+
+#: src/model/watchlist/text.rs
+msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
+msgstr "Oanda-Instrumente folgen dem Format BASE_QUOTE, zum Beispiel EUR_USD"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Oanda refused your access token. Check it in Settings"
+msgstr "Oanda hat dein Zugriffstoken abgelehnt. Überprüfe es in den Einstellungen"
+
 #: src/model/chart/context/mod.rs src/ui/chart/object_tree/mod.rs
 msgid "Object tree"
 msgstr "Objektbaum"
@@ -10109,6 +10181,10 @@ msgid "Open"
 msgstr "Öffnen"
 
 #: src/ui/chart/symbol_picker/detail.rs
+msgid "Open 24/5"
+msgstr "24/5 geöffnet"
+
+#: src/ui/chart/symbol_picker/detail.rs
 msgid "Open 24/7"
 msgstr "24/7 geöffnet"
 
@@ -10207,6 +10283,10 @@ msgstr "Alpaca-Dashboard öffnen"
 #: src/ui/settings/broker_words.rs
 msgid "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
 msgstr "Öffne die Coinbase Developer Platform (portal.cdp.coinbase.com) und melde dich an."
+
+#: src/ui/settings/api_keys.rs
+msgid "Open the Oanda API documentation"
+msgstr "Oanda-API-Dokumentation öffnen"
 
 #: src/ui/settings/about.rs
 msgid "Open the release page on GitHub"
@@ -11697,6 +11777,10 @@ msgstr "Haltepunkt entfernen"
 #: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
 msgstr "Chart entfernen"
+
+#: src/ui/settings/api_keys.rs
+msgid "Remove Credentials"
+msgstr "Zugangsdaten entfernen"
 
 #: src/pine_studio/library/script_actions.rs
 msgid "Remove Favorite"
@@ -13274,9 +13358,21 @@ msgstr "Einrichtung"
 msgid "Set up Alpaca to open a stock"
 msgstr "Richte Alpaca ein, um eine Aktie zu öffnen"
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Set up Oanda to search forex"
+msgstr "Oanda für die Devisensuche einrichten"
+
+#: src/service/market/error.rs
+msgid "Set up this provider's API key in Settings first."
+msgstr "Trage zuerst den API-Schlüssel dieses Anbieters in den Einstellungen ein."
+
 #: src/service/market/error.rs
 msgid "Set up your Alpaca API key before using stock charts."
 msgstr "Richte deinen Alpaca-API-Schlüssel ein, bevor du Aktien-Charts verwendest."
+
+#: src/service/market/error.rs
+msgid "Set up your Oanda account in Settings before using Oanda charts."
+msgstr "Richte dein Oanda-Konto in den Einstellungen ein, bevor du Oanda-Charts verwendest."
 
 #: src/app/window.rs src/ui/chart/card/overlay_card.rs
 #: src/ui/drawing/layer/menu.rs src/ui/window/tab_bar/mod.rs
@@ -16431,6 +16527,10 @@ msgstr "Unerwartete Antwort von MEXC"
 #: src/service/watchlist_quotes/provider.rs
 msgid "Unexpected OKX response"
 msgstr "Unerwartete Antwort von OKX"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Oanda response"
+msgstr "Unerwartete Antwort von Oanda"
 
 #: src/model/broker/ticket.rs src/ui/settings/window.rs
 msgid "Unknown"

@@ -902,6 +902,12 @@ msgstr ""
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr ""
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid ""
+"Add your Oanda credentials in Settings to search and chart forex, metals and "
+"index CFDs."
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr ""
@@ -10598,6 +10604,10 @@ msgstr ""
 msgid "Oanda error: {error}"
 msgstr ""
 
+#: src/model/watchlist/text.rs
+msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
+msgstr ""
+
 #: src/service/watchlist_quotes/provider.rs
 msgid "Oanda refused your access token. Check it in Settings"
 msgstr ""
@@ -14197,6 +14207,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Set up Alpaca to open a stock"
+msgstr ""
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Set up Oanda to search forex"
 msgstr ""
 
 #: src/service/market/error.rs
