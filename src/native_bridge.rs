@@ -150,7 +150,7 @@ mod menu_titles {
             "openPineStudio:" => tr!("Pine Studio").to_string(),
             "openPortfolio:" => tr!("Portfolio").to_string(),
             // Window.
-            "performMiniaturize:" => tr!("Minimize").to_string(),
+            "performMiniaturize:" => tr_c!("menu bar", "Minimize").to_string(),
             "moveTabToNewWindow:" => tr!("Move Tab to New Window").to_string(),
             "mergeAllWindows:" => tr!("Merge All Windows").to_string(),
             "selectNextTab:" => tr!("Show Next Tab").to_string(),

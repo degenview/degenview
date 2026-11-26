@@ -20,7 +20,7 @@ use eframe::egui::{
     pos2, vec2,
 };
 
-/// The room the section needs inside the menu; the menu is made at least this wide.
+/// The section's usual width inside the menu; [`width`] is what it needs in the language in use.
 pub const WIDTH: f32 = 332.0;
 /// Space between the section's edge and its cards.
 const PAD: f32 = 12.0;
@@ -32,6 +32,10 @@ const GAP: f32 = 8.0;
 /// Distance between the centres of two swatches, and their drawn size.
 const PITCH: f32 = 21.0;
 const SWATCH: f32 = 14.0;
+/// The nine swatches in a row, edge to edge.
+const SWATCH_RUN: f32 = PITCH * 8.0 + SWATCH;
+/// Space inside the Link Color card, and the least between its label and the swatches.
+const CARD_PAD: f32 = 12.0;
 const SWITCH: egui::Vec2 = vec2(32.0, 18.0);
 const PICTURE: f32 = 78.0;
 
@@ -133,6 +137,24 @@ impl Row {
             Self::DateRange => toggles.date_range = on,
         }
     }
+}
+
+/// How wide the section is: its usual width, or what the Link Color card needs for its label to
+/// stand clear of the swatches. The menu is made at least this wide.
+pub fn width(ui: &Ui) -> f32 {
+    let label = color_label(ui, f32::INFINITY).size().x;
+    WIDTH.max(2.0 * PAD + 3.0 * CARD_PAD + label + SWATCH_RUN)
+}
+
+fn color_label(ui: &Ui, max_width: f32) -> std::sync::Arc<egui::Galley> {
+    kit::galley(
+        ui,
+        tr!("Link Color"),
+        size::BODY,
+        REGULAR,
+        theme::text_primary(),
+        max_width,
+    )
 }
 
 /// Draws the section for a tab tagged `color`, whose group has `toggles`. Returns the change when
@@ -251,22 +273,17 @@ fn color_card(ui: &mut Ui, width: f32, current: Option<LinkColor>) -> Option<Opt
         theme::card_fill(false),
         Stroke::new(1.0, theme::card_border(false)),
     );
-    let label = kit::galley(
-        ui,
-        tr!("Link Color"),
-        size::BODY,
-        REGULAR,
-        theme::text_primary(),
-        card.width() / 2.0,
-    );
+    let label = color_label(ui, card.width() - SWATCH_RUN - 3.0 * CARD_PAD);
     ui.painter().galley(
-        pos2(card.left() + 12.0, card.center().y - label.size().y / 2.0),
+        pos2(
+            card.left() + CARD_PAD,
+            card.center().y - label.size().y / 2.0,
+        ),
         label,
         theme::text_primary(),
     );
     let mut picked = None;
-    let run = PITCH * 8.0 + SWATCH;
-    let first = card.right() - 12.0 - run + SWATCH / 2.0;
+    let first = card.right() - CARD_PAD - SWATCH_RUN + SWATCH / 2.0;
     for (index, color) in LinkColor::ALL.into_iter().enumerate() {
         let center = pos2(first + index as f32 * PITCH, card.center().y);
         let hit = Rect::from_center_size(center, vec2(PITCH - 1.0, PITCH - 1.0));

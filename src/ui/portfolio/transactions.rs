@@ -3,7 +3,7 @@
 //! Rows come from the unprojected ledger (so Edit opens exactly what was entered); the price
 //! and fee shown are the reporting-currency projection of the same transaction.
 
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::DataSource;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
@@ -117,8 +117,8 @@ impl TransactionRow {
 pub fn type_name(kind: PortfolioTransactionType) -> &'static str {
     use PortfolioTransactionType::*;
     match kind {
-        Buy => tr!("Buy"),
-        Sell => tr!("Sell"),
+        Buy => tr_c!("side", "Buy"),
+        Sell => tr_c!("side", "Sell"),
         TransferIn => tr!("Transfer In"),
         TransferOut => tr!("Transfer Out"),
         Reward => tr!("Reward"),

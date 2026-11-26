@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use degenview_brokers::{Decimal, OrderId, Side};
 use eframe::egui::{self, Color32, Id};
 
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::broker::ticket::{self as rules};
 use crate::trading::backend::TradingBackend;
 use crate::trading::broker::commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
@@ -177,9 +177,9 @@ fn side_color(side: Side) -> Color32 {
 
 fn side_word(side: Side) -> &'static str {
     if side == Side::Buy {
-        tr!("Buy")
+        tr_c!("side", "Buy")
     } else {
-        tr!("Sell")
+        tr_c!("side", "Sell")
     }
 }
 

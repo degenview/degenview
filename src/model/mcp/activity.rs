@@ -5,7 +5,7 @@
 //! [`AUDIT_LOG_LIMIT`](crate::model::mcp::AUDIT_LOG_LIMIT) rows, so filtering them all on every
 //! frame costs microseconds and needs no query, no cache and no store access.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -61,14 +61,14 @@ impl McpActivityStatus {
     /// The word on a row's tag and in the filter.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Done => tr!("Done"),
+            Self::Done => tr_c!("MCP call", "Done"),
             Self::Failed => tr!("Failed"),
             Self::Denied => tr!("Denied"),
             Self::Held => tr!("Held"),
             Self::Approved => tr!("Approved"),
             Self::Declined => tr!("Declined"),
             Self::Expired => tr!("Expired"),
-            Self::Cancelled => tr!("Cancelled"),
+            Self::Cancelled => tr_c!("MCP call", "Cancelled"),
             Self::RateLimited => tr!("Limited"),
         }
     }

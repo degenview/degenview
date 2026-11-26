@@ -1214,6 +1214,10 @@ msgid "Altcoin Market Cap"
 msgstr "Capitalización de altcoins"
 
 #: src/ui/chart/cmc_gauge.rs
+msgid "Altcoin Season"
+msgstr "Temporada de altcoins"
+
+#: src/ui/chart/cmc_gauge.rs
 msgid "Altcoin Season  100"
 msgstr "Temporada de altcoins  100"
 
@@ -1241,7 +1245,7 @@ msgstr "Siempre visible"
 msgid "Ambiguous Section"
 msgstr "Sección ambigua"
 
-#: src/ui/drawing/properties/forecast_pages.rs src/ui/trade/order_sheet/form.rs
+#: src/ui/drawing/properties/forecast_pages.rs
 msgid "Amount"
 msgstr "Importe"
 
@@ -1300,6 +1304,10 @@ msgstr "Perfil de volumen anclado"
 #: src/ui/drawing/properties/style.rs
 msgid "Angle"
 msgstr "Ángulo"
+
+#: src/model/fib/gann.rs
+msgid "Angles"
+msgstr "Ángulos"
 
 #: src/ui/settings/sync.rs
 msgid "Another Mac deleted it. Everything on this Mac is still here."
@@ -1500,6 +1508,14 @@ msgstr "Arco"
 #: src/ui/portfolio/sheets.rs
 msgid "Archived"
 msgstr "Archivada"
+
+#: src/model/fib/gann.rs
+msgid "Arcs"
+msgstr "Arcos"
+
+#: src/model/fib/gann.rs
+msgid "Arcs background"
+msgstr "Fondo de los arcos"
 
 #: src/model/chart/kind.rs
 msgid "Area"
@@ -1961,6 +1977,10 @@ msgstr "Binance envía como máximo la última liquidación de cada mercado por 
 msgid "Bitcoin"
 msgstr "Bitcoin"
 
+#: src/ui/chart/cmc_gauge.rs
+msgid "Bitcoin Season"
+msgstr "Temporada de Bitcoin"
+
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Bitcoin price"
 msgstr "Precio de Bitcoin"
@@ -2205,11 +2225,7 @@ msgstr "Giro alcista"
 msgid "Buttons"
 msgstr "Botones"
 
-#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
-#: src/trading/edit/mod.rs src/ui/broker/panel.rs
-#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
-#: src/ui/portfolio/transactions.rs src/ui/trade/fields.rs
-#: src/ui/trade/order_sheet/open_orders.rs
+#: src/ui/trade/fields.rs
 msgid "Buy"
 msgstr "Comprar"
 
@@ -2485,7 +2501,7 @@ msgid_plural "Canceled {done} of {total} orders. {error} (and {count} more)"
 msgstr[0] "Se cancelaron {done} de {total} órdenes. {error} (y {count} más)"
 msgstr[1] "Se cancelaron {done} de {total} órdenes. {error} (y {count} más)"
 
-#: src/model/broker/ticket.rs src/model/mcp/activity.rs src/ui/broker/panel.rs
+#: src/model/broker/ticket.rs src/ui/broker/panel.rs
 msgid "Cancelled"
 msgstr "Cancelada"
 
@@ -2742,6 +2758,10 @@ msgid "Chart {count} choice"
 msgid_plural "Chart {count} choices"
 msgstr[0] "Mostrar {count} opción en gráfico"
 msgstr[1] "Mostrar {count} opciones en gráfico"
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "Chart {timeframe}"
+msgstr "Graficar {timeframe}"
 
 #: src/ui/chart/card/overlay_card.rs src/ui/chart/settings/overlay.rs
 msgid "Chart's scale"
@@ -3986,6 +4006,10 @@ msgstr "No se ha podido guardar “{layout}”: {error}"
 msgid "Count the zeros"
 msgstr "Contar los ceros"
 
+#: src/model/chart/context/mod.rs src/ui/chart/settings/canvas.rs
+msgid "Countdown to bar close"
+msgstr "Cuenta atrás al cierre de la barra"
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Counterclockwise"
 msgstr "En sentido antihorario"
@@ -4812,11 +4836,11 @@ msgstr "No detenerse en esta barra"
 msgid "Donchian Channels"
 msgstr "Canales de Donchian"
 
-#: src/model/mcp/activity.rs src/ui/chart/indicator_picker/mod.rs
-#: src/ui/chart/settings/mod.rs src/ui/chart/settings/templates/mod.rs
-#: src/ui/mcp/activity.rs src/ui/portfolio/asset_detail.rs
-#: src/ui/portfolio/sheets.rs src/ui/settings/mcp/credentials.rs
-#: src/ui/settings/mcp/permissions_sheet.rs src/ui/watchlist/sidebar/modals.rs
+#: src/ui/chart/indicator_picker/mod.rs src/ui/chart/settings/mod.rs
+#: src/ui/chart/settings/templates/mod.rs src/ui/mcp/activity.rs
+#: src/ui/portfolio/asset_detail.rs src/ui/portfolio/sheets.rs
+#: src/ui/settings/mcp/credentials.rs src/ui/settings/mcp/permissions_sheet.rs
+#: src/ui/watchlist/sidebar/modals.rs
 msgid "Done"
 msgstr "Hecho"
 
@@ -5761,6 +5785,10 @@ msgstr "Cae {percent}"
 msgid "Families"
 msgstr "Familias"
 
+#: src/model/fib/gann.rs
+msgid "Fan lines"
+msgstr "Líneas del abanico"
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Far"
 msgstr "Lejos"
@@ -6293,7 +6321,7 @@ msgstr "Cuadrado de Gann"
 msgid "Gann square fixed"
 msgstr "Cuadrado de Gann fijo"
 
-#: src/ui/chart/session_stats_view/mod.rs src/ui/mcp/activity.rs
+#: src/ui/chart/session_stats_view/mod.rs
 msgid "Gap"
 msgstr "Gap"
 
@@ -6417,6 +6445,10 @@ msgstr "Codicia"
 #: src/model/tab/link/mod.rs src/model/watchlist/mod.rs
 msgid "Green"
 msgstr "Verde"
+
+#: src/model/fib/mod.rs
+msgid "Grid"
+msgstr "Cuadrícula"
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Grid color"
@@ -7645,6 +7677,7 @@ msgstr "Color del nivel"
 msgid "Level {ratio}"
 msgstr "Nivel {ratio}"
 
+#: src/model/fib/gann.rs src/model/fib/mod.rs
 #: src/ui/drawing/properties/fib_pages.rs src/ui/drawing/properties/mod.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Levels"
@@ -8521,10 +8554,6 @@ msgstr "Punto central"
 #: src/model/pine/bundled/mod.rs
 msgid "Midline averages and a projected cloud that frames the trend."
 msgstr "Medias de la línea central y una nube proyectada que enmarca la tendencia."
-
-#: src/native_bridge.rs src/ui/window/chrome.rs
-msgid "Minimize"
-msgstr "Minimizar"
 
 #: src/model/paper/ticket.rs
 msgid "Minimum is {minimum}."
@@ -9580,7 +9609,7 @@ msgstr "Aún sin usar. Elige dónde va con Usar secreto."
 msgid "Not watching here"
 msgstr "No se vigila aquí"
 
-#: src/model/drawings/tool.rs src/trading/confirm.rs
+#: src/model/drawings/tool.rs
 msgid "Note"
 msgstr "Nota"
 
@@ -9784,28 +9813,6 @@ msgstr "Columnas O"
 #: src/model/pine/bundled/mod.rs
 msgid "OBV"
 msgstr "OBV"
-
-#: src/model/chart/context/mod.rs src/ui/chart/settings/canvas.rs
-msgid "Countdown to bar close"
-msgstr "Cuenta atrás al cierre de la barra"
-
-#: src/ui/chart/settings/canvas.rs
-msgid "The last price's tag shows the price alone."
-msgstr "La etiqueta del último precio muestra solo el precio."
-
-#: src/ui/chart/settings/canvas.rs
-msgid ""
-"The time left in the forming bar, under the last price. Not shown on Renko, "
-"Kagi, Line Break, Point & Figure and Range charts, in a replay, or for "
-"markets without clock-cut bars."
-msgstr ""
-"El tiempo que le queda a la barra en formación, bajo el último precio. No se "
-"muestra en gráficos Renko, Kagi, Line Break, Point & Figure y Range, en una "
-"repetición ni en mercados sin barras cortadas por reloj."
-
-#: src/model/chart/context/mod.rs
-msgid "This chart has no bars that close on a clock"
-msgstr "Este gráfico no tiene barras que cierren a una hora fija"
 
 #: src/ui/chart/settings/canvas.rs
 msgid "OHLC values"
@@ -10131,6 +10138,10 @@ msgstr "Abrir {layout}"
 #: src/ui/chart/settings/canvas.rs
 msgid "Open, high, low and close under the crosshair, with volume where the market has it."
 msgstr "Apertura, máximo, mínimo y cierre bajo la cruz, con volumen si el mercado lo tiene."
+
+#: src/service/llm/mod.rs
+msgid "OpenAI-compatible"
+msgstr "Compatible con OpenAI"
 
 #: src/ui/settings/ai.rs
 msgid "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
@@ -11045,6 +11056,10 @@ msgstr "Etiquetas de precio"
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Price level"
 msgstr "Nivel de precio"
+
+#: src/model/fib/gann.rs src/model/fib/mod.rs
+msgid "Price levels"
+msgstr "Niveles de precio"
 
 #: src/model/drawings/tool.rs
 msgid "Price note"
@@ -12666,7 +12681,7 @@ msgstr "Escala de {name}"
 msgid "Scale text"
 msgstr "Texto de escala"
 
-#: src/model/drawings/style.rs src/ui/chart/settings/canvas.rs
+#: src/ui/chart/settings/canvas.rs
 msgid "Scales"
 msgstr "Escalas"
 
@@ -12998,11 +13013,7 @@ msgstr "Selección"
 msgid "Self-signed for this address. A client must trust exactly this certificate: compare the fingerprint, never click through a warning."
 msgstr "Autofirmado para esta dirección. Un cliente debe confiar exactamente en este certificado: compara la huella y no ignores nunca una advertencia."
 
-#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
-#: src/trading/edit/mod.rs src/ui/broker/panel.rs
-#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
-#: src/ui/portfolio/transactions.rs src/ui/trade/fields.rs
-#: src/ui/trade/order_sheet/open_orders.rs
+#: src/ui/trade/fields.rs
 msgid "Sell"
 msgstr "Vender"
 
@@ -13606,7 +13617,7 @@ msgstr "Capturas"
 msgid "Snowman"
 msgstr "Muñeco de nieve"
 
-#: src/model/chart/canvas/mod.rs src/model/chart/kind.rs
+#: src/model/chart/kind.rs
 msgid "Solid"
 msgstr "Sólido"
 
@@ -14326,8 +14337,7 @@ msgstr "Nombre de la plantilla"
 msgid "Templates"
 msgstr "Plantillas"
 
-#: src/ui/settings/provider_card.rs src/ui/trade/connect_list.rs
-#: src/ui/webhook/settings.rs
+#: src/ui/settings/provider_card.rs src/ui/webhook/settings.rs
 msgid "Test"
 msgstr "Probar"
 
@@ -14619,6 +14629,10 @@ msgstr "El bróker no ha podido previsualizar este cambio ({error}). No se puede
 msgid "The broker does not know this order any more."
 msgstr "El bróker ya no conoce esta orden."
 
+#: src/trading/broker/backend.rs
+msgid "The broker gave no answer for this order."
+msgstr "El bróker no ha respondido sobre esta orden."
+
 #: src/ui/broker/panel.rs
 msgid "The broker is asked to cancel. An order can still fill before the cancel reaches it, and it stays listed until the broker confirms."
 msgstr "Se pide al bróker que cancele. Una orden aún puede ejecutarse antes de que le llegue la cancelación y sigue en la lista hasta que el bróker lo confirme."
@@ -14898,6 +14912,10 @@ msgstr "La clave permanece en el almacenamiento seguro de este ordenador."
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
 msgstr "No se ha podido escribir el último autoguardado. Elige Guardar diseño."
+
+#: src/ui/chart/settings/canvas.rs
+msgid "The last price's tag shows the price alone."
+msgstr "La etiqueta del último precio muestra solo el precio."
 
 #: src/model/pine/bundled/mod.rs
 msgid "The least-squares line of recent closes with deviation bands."
@@ -15315,6 +15333,10 @@ msgstr "La tabla se queda aquí por mucho que se desplace el gráfico."
 msgid "The test stopped unexpectedly."
 msgstr "La prueba se ha detenido inesperadamente."
 
+#: src/ui/chart/settings/canvas.rs
+msgid "The time left in the forming bar, under the last price. Not shown on Renko, Kagi, Line Break, Point & Figure and Range charts, in a replay, or for markets without clock-cut bars."
+msgstr "El tiempo que le queda a la barra en formación, bajo el último precio. No se muestra en gráficos Renko, Kagi, Line Break, Point & Figure y Range, en una repetición ni en mercados sin barras cortadas por reloj."
+
 #: src/ui/chart/symbol_picker/predictions/trending.rs
 msgid "The trending list stopped loading."
 msgstr "La lista de tendencias ha dejado de cargarse."
@@ -15539,6 +15561,10 @@ msgstr "Esto modifica la orden en el bróker. Un precio nuevo puede hacerte perd
 #: src/ui/chart/card/snapshot.rs
 msgid "This chart cannot be saved as an image."
 msgstr "Este gráfico no se puede guardar como imagen."
+
+#: src/model/chart/context/mod.rs
+msgid "This chart has no bars that close on a clock"
+msgstr "Este gráfico no tiene barras que cierren a una hora fija"
 
 #: src/model/broker/chart.rs
 msgid "This chart has no market to trade."
@@ -15786,6 +15812,10 @@ msgstr "Vigencia"
 #: src/ui/drawing/properties/style.rs
 msgid "Time label"
 msgstr "Etiqueta de hora"
+
+#: src/model/fib/gann.rs src/model/fib/mod.rs
+msgid "Time levels"
+msgstr "Niveles de tiempo"
 
 #: src/ui/replay/bar.rs
 msgid "Time of the replay cursor, in your time zone"
@@ -16703,6 +16733,10 @@ msgstr "Versión {version} - {date}"
 msgid "Vertical"
 msgstr "Vertical"
 
+#: src/model/fib/gann.rs
+msgid "Vertical background"
+msgstr "Fondo vertical"
+
 #: src/ui/chart/settings/canvas.rs
 msgid "Vertical grid lines"
 msgstr "Líneas verticales de la cuadrícula"
@@ -17478,6 +17512,10 @@ msgstr "bajista"
 msgid "bullish"
 msgstr "alcista"
 
+#: src/trading/broker/backend.rs src/ui/broker/chart_trading.rs
+msgid "cancel requested"
+msgstr "cancelación solicitada"
+
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "chance"
 msgstr "probabilidad"
@@ -17539,6 +17577,10 @@ msgstr "p. ej., Inversión a largo plazo"
 #: src/pine_studio/debug/panel/lists.rs
 msgid "e.g. bar_index > 100 and close > open"
 msgstr "p. ej. bar_index > 100 and close > open"
+
+#: src/trading/broker/backend.rs
+msgid "edit requested"
+msgstr "modificación solicitada"
 
 #: src/model/session_stats/mod.rs
 msgid "every day"
@@ -18705,7 +18747,7 @@ msgstr "HISTORIAL {days}D"
 msgid "{days}d"
 msgstr "{days}d"
 
-#: src/ui/drawing/render.rs
+#: src/model/chart/countdown/mod.rs src/ui/drawing/render.rs
 msgid "{days}d {hours}h"
 msgstr "{days}d {hours}h"
 
@@ -19720,6 +19762,16 @@ msgstr "✓ Aceptado"
 msgid "✕ Rejected"
 msgstr "✕ Rechazado"
 
+#: src/model/mcp/activity.rs
+msgctxt "MCP call"
+msgid "Cancelled"
+msgstr "Cancelada"
+
+#: src/model/mcp/activity.rs
+msgctxt "MCP call"
+msgid "Done"
+msgstr "Hecho"
+
 #: src/model/chart/object_tree.rs
 msgctxt "a numbered drawing, such as Trend Line 3"
 msgid "{name} {number}"
@@ -19729,6 +19781,16 @@ msgstr "{name} {number}"
 msgctxt "a post on X"
 msgid "Post"
 msgstr "Publicación"
+
+#: src/ui/mcp/activity.rs
+msgctxt "audit log row"
+msgid "Gap"
+msgstr "Hueco"
+
+#: src/model/chart/canvas/mod.rs
+msgctxt "background"
+msgid "Solid"
+msgstr "Sólido"
 
 #: src/model/paper/format.rs
 msgctxt "badge"
@@ -19860,6 +19922,11 @@ msgctxt "hit count field"
 msgid "n"
 msgstr "n"
 
+#: src/model/drawings/style.rs
+msgctxt "icon"
+msgid "Scales"
+msgstr "Balanza"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -19899,6 +19966,11 @@ msgstr "Archivo"
 msgctxt "menu bar"
 msgid "Help"
 msgstr "Ayuda"
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "Minimize"
+msgstr "Minimizar"
 
 #: src/native_bridge.rs
 msgctxt "menu bar"
@@ -19980,6 +20052,11 @@ msgstr "COMPRA"
 msgctxt "order side in a sentence"
 msgid "SELL"
 msgstr "VENTA"
+
+#: src/ui/trade/order_sheet/form.rs
+msgctxt "order size"
+msgid "Amount"
+msgstr "Cantidad"
 
 #: src/trading/paper/backend.rs
 msgctxt "order status"
@@ -20193,6 +20270,22 @@ msgctxt "select changes"
 msgid "None"
 msgstr "Ninguno"
 
+#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
+#: src/trading/edit/mod.rs src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs src/ui/trade/order_sheet/open_orders.rs
+msgctxt "side"
+msgid "Buy"
+msgstr "Compra"
+
+#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
+#: src/trading/edit/mod.rs src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs src/ui/trade/order_sheet/open_orders.rs
+msgctxt "side"
+msgid "Sell"
+msgstr "Venta"
+
 #: src/ui/watchlist/rows.rs
 msgctxt "sparkline column"
 msgid "1M"
@@ -20203,7 +20296,7 @@ msgctxt "stop button"
 msgid "Stop"
 msgstr "Detener"
 
-#: src/ui/settings/brokers.rs
+#: src/ui/settings/brokers.rs src/ui/trade/connect_list.rs
 msgctxt "test environment badge"
 msgid "Test"
 msgstr "Prueba"
@@ -20239,6 +20332,11 @@ msgctxt "venue kind"
 msgid "Test"
 msgstr "Prueba"
 
+#: src/trading/confirm.rs
+msgctxt "warning row"
+msgid "Note"
+msgstr "Aviso"
+
 #: src/ui/watchlist/sidebar/header.rs src/ui/watchlist/sidebar/menus.rs
 msgctxt "watchlist columns"
 msgid "Columns"
@@ -20268,3 +20366,8 @@ msgstr "hora"
 msgctxt "what the image shows"
 msgid "Area"
 msgstr "Área"
+
+#: src/ui/window/chrome.rs
+msgctxt "window button"
+msgid "Minimize"
+msgstr "Minimizar"

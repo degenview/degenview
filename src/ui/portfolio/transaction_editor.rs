@@ -393,13 +393,13 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
         &[
             TabItem {
                 value: Category::Buy,
-                title: tr!("Buy"),
+                title: tr_c!("side", "Buy"),
                 icon: Icon::Plus,
                 count: 0,
             },
             TabItem {
                 value: Category::Sell,
-                title: tr!("Sell"),
+                title: tr_c!("side", "Sell"),
                 icon: Icon::ArrowDown,
                 count: 0,
             },

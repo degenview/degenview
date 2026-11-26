@@ -207,3 +207,19 @@ fn gallery_of_the_tab_linking() {
         }
     }
 }
+
+#[test]
+fn a_long_link_colour_label_widens_the_menu_instead_of_running_under_the_swatches() {
+    let german = crate::i18n::Locale::from_tag("de").expect("German is offered");
+    crate::i18n::with_locale(german, || {
+        let mut screen = Screen::new(SCREEN);
+        let mut measured = (0.0, 0.0);
+        screen.run(Vec::new(), |ui| {
+            measured = (width(ui), color_label(ui, f32::INFINITY).size().x);
+        });
+        let (section, label) = measured;
+        assert!(section > WIDTH, "{section}");
+        let room = section - 2.0 * PAD - 3.0 * CARD_PAD - SWATCH_RUN;
+        assert!(room >= label, "{room} < {label}");
+    });
+}

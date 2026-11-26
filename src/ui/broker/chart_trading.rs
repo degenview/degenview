@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(pill.text, "BUY 0.5 @ 100.00");
         assert!(pill.close_label.contains("live buy order"));
         let mut asked = line();
-        asked.note = Some("cancel requested");
+        asked.note = Some(tr!("cancel requested"));
         assert!(
             line_pill(&asked, "100.00")
                 .text

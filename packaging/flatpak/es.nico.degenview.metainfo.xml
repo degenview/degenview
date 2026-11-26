@@ -3,6 +3,7 @@
   <id>es.nico.degenview</id>
   <name>DegenView</name>
   <summary>Market dashboard with a local Pine Script engine</summary>
+  <summary xml:lang="de">Markt-Dashboard mit lokaler Pine-Script-Engine</summary>
   <summary xml:lang="es">Panel de mercados con un motor local de Pine Script</summary>
   <summary xml:lang="zh_CN">内置本地 Pine Script 引擎的行情看板</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -15,6 +16,10 @@
       DegenView watches crypto, stocks, prediction markets and CoinMarketCap indices in
       customizable, linked charts.
     </p>
+    <p xml:lang="de">
+      DegenView verfolgt Kryptowährungen, Aktien, Prognosemärkte und CoinMarketCap-Indizes in
+      anpassbaren, miteinander verknüpften Charts.
+    </p>
     <p xml:lang="es">
       DegenView sigue criptomonedas, acciones, mercados de predicción e índices de CoinMarketCap en
       gráficos personalizables y enlazados entre sí.
@@ -26,6 +31,10 @@
       Its headline feature is a Pine Script v6 engine that runs on your own machine: write
       TradingView-style indicators and strategies and keep every line of source on your device.
     </p>
+    <p xml:lang="de">
+      Das Herzstück ist eine Pine-Script-v6-Engine, die auf deinem eigenen Rechner läuft: Schreibe
+      Indikatoren und Strategien im Stil von TradingView und behalte jede Zeile Quellcode auf deinem Gerät.
+    </p>
     <p xml:lang="es">
       Su función estrella es un motor de Pine Script v6 que se ejecuta en tu propio ordenador: escribe
       indicadores y estrategias al estilo de TradingView y conserva todo el código fuente en tu dispositivo.
@@ -35,15 +44,19 @@
     </p>
     <ul>
       <li>Crypto from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko and DEX pairs, US stocks through Alpaca</li>
+      <li xml:lang="de">Kryptowährungen von Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko und DEX-Paaren sowie US-Aktien über Alpaca</li>
       <li xml:lang="es">Criptomonedas de Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko y pares DEX, y acciones de EE. UU. a través de Alpaca</li>
       <li xml:lang="zh_CN">来自 Binance、Coinbase、OKX、Kraken、Bybit、Gate.io、MEXC、CoinGecko 的加密货币和 DEX 交易对，以及通过 Alpaca 提供的美股</li>
       <li>Polymarket and Kalshi events charted as probabilities</li>
+      <li xml:lang="de">Ereignisse von Polymarket und Kalshi als Wahrscheinlichkeiten im Chart</li>
       <li xml:lang="es">Eventos de Polymarket y Kalshi representados como probabilidades</li>
       <li xml:lang="zh_CN">以概率图表呈现的 Polymarket 和 Kalshi 事件</li>
       <li>Drawing tools, price alerts with webhooks, and portfolio tracking</li>
+      <li xml:lang="de">Zeichenwerkzeuge, Preisalarme mit Webhooks und Portfolio-Verfolgung</li>
       <li xml:lang="es">Herramientas de dibujo, alertas de precio con webhooks y seguimiento de carteras</li>
       <li xml:lang="zh_CN">绘图工具、支持 Webhook 的价格提醒和投资组合追踪</li>
       <li>An optional local MCP server so AI assistants can inspect and drive the app</li>
+      <li xml:lang="de">Ein optionaler lokaler MCP-Server, mit dem KI-Assistenten die App einsehen und steuern können</li>
       <li xml:lang="es">Un servidor MCP local opcional para que los asistentes de IA puedan inspeccionar y manejar la aplicación</li>
       <li xml:lang="zh_CN">可选的本地 MCP 服务器，让 AI 助手可以查看并操作应用</li>
     </ul>
@@ -54,6 +67,7 @@
   <screenshots>
     <screenshot type="default">
       <caption>A candlestick chart with volume, RSI, EMA, a Pine overlay and a MACD pane</caption>
+      <caption xml:lang="de">Ein Kerzenchart mit Volumen, RSI, EMA, einem Pine-Overlay und einem MACD-Bereich</caption>
       <caption xml:lang="es">Un gráfico de velas con volumen, RSI, EMA, una superposición de Pine y un panel de MACD</caption>
       <caption xml:lang="zh_CN">带成交量、RSI、EMA、Pine 叠加指标和 MACD 窗格的蜡烛图</caption>
       <image>https://raw.githubusercontent.com/degenview/degenview/main/assets/screenshots/hero.png</image>

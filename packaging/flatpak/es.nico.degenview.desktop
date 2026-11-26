@@ -2,6 +2,7 @@
 Type=Application
 Name=DegenView
 Comment=Market dashboard with a local Pine Script engine
+Comment[de]=Markt-Dashboard mit lokaler Pine-Script-Engine
 Comment[es]=Panel de mercados con un motor local de Pine Script
 Comment[zh_CN]=内置本地 Pine Script 引擎的行情看板
 Exec=degenview

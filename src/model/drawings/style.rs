@@ -5,7 +5,7 @@
 //! Colours are straight `[r, g, b, a]` bytes where the alpha is the opacity (as in the chart
 //! canvas), and every struct decodes from an older or partial row through `#[serde(default)]`.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::chart::kind::{LineDash, PriceSource, Rgba};
 use crate::model::fib::style::FibStyle;
 use crate::model::forecast::style::{
@@ -367,7 +367,7 @@ impl Emoji {
             Self::WhiteFlag => tr!("White flag"),
             Self::Skull => tr!("Skull"),
             Self::Radiation => tr!("Radiation"),
-            Self::Scales => tr!("Scales"),
+            Self::Scales => tr_c!("icon", "Scales"),
             Self::Crown => tr!("Crown"),
             Self::Dollar => tr!("Dollar"),
             Self::Euro => tr!("Euro"),

@@ -49,6 +49,16 @@ pub use locale::{Locale, resolve};
 pub use preference::Preference;
 pub use template::fill;
 
+/// A name put inside a sentence ("Make this the default {tool}"): in lower case, except in a
+/// language that capitalises its nouns.
+pub fn in_sentence(name: &str) -> String {
+    if current().capitalizes_nouns() {
+        name.to_owned()
+    } else {
+        name.to_lowercase()
+    }
+}
+
 /// The text of a message in the language in use, `context` being `""` when it has none.
 pub fn translate(context: &'static str, key: &'static str) -> &'static str {
     let locale = current();
@@ -63,7 +73,7 @@ pub fn translate(context: &'static str, key: &'static str) -> &'static str {
 /// English text written where a macro cannot run (a `static` table) and translated where it is
 /// used: gettext's `N_()`. Made with `tr_noop!`, so the text is in the catalogs, and read with
 /// [`Marked::text`], so it is in the language of the frame that draws it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Marked(&'static str);
 
 impl Marked {
@@ -73,6 +83,11 @@ impl Marked {
     #[doc(hidden)]
     pub const fn new(text: &'static str) -> Self {
         Self(text)
+    }
+
+    /// Whether there is no text to show.
+    pub fn is_empty(self) -> bool {
+        self.0.is_empty()
     }
 
     /// The text in the language in use.

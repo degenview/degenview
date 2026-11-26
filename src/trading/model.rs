@@ -319,6 +319,8 @@ pub struct OrderRow {
     pub market: String,
     pub side: Side,
     pub kind: String,
+    /// Whether it takes the market's price, so an unfilled one has no `price` of its own.
+    pub market_order: bool,
     /// The limit price, or the stop's when that is all the order has.
     pub price: Option<Decimal>,
     /// The price that sets a stop order off, when the order has both a trigger and a limit.

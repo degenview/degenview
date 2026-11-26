@@ -16,7 +16,7 @@
 //! visible window, the margin transform, the pane split) lives here so it is tested without a
 //! window.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::pine::instance::PaneLayout;
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ impl BackgroundMode {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Solid => tr!("Solid"),
+            Self::Solid => tr_c!("background", "Solid"),
             Self::Gradient => tr!("Gradient"),
         }
     }

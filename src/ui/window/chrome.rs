@@ -4,7 +4,7 @@
 //! strip draws minimize / maximize / close at its right end (`trailing_inset`) and, where the
 //! window system does not provide resize borders, [`edge_at`] finds the edge under the pointer.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CursorIcon, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2, ViewportBuilder, pos2,
@@ -155,7 +155,11 @@ pub fn window_controls(ui: &mut Ui, strip: Rect, maximized: bool) -> Option<Cont
     let mut clicked = None;
     let painter = ui.painter().clone();
     let controls = [
-        (Control::Minimize, "minimize", tr!("Minimize")),
+        (
+            Control::Minimize,
+            "minimize",
+            tr_c!("window button", "Minimize"),
+        ),
         (
             Control::ToggleMaximize,
             "maximize",

@@ -1279,6 +1279,10 @@ msgid "Altcoin Market Cap"
 msgstr ""
 
 #: src/ui/chart/cmc_gauge.rs
+msgid "Altcoin Season"
+msgstr ""
+
+#: src/ui/chart/cmc_gauge.rs
 msgid "Altcoin Season  100"
 msgstr ""
 
@@ -1307,7 +1311,6 @@ msgid "Ambiguous Section"
 msgstr ""
 
 #: src/ui/drawing/properties/forecast_pages.rs
-#: src/ui/trade/order_sheet/form.rs
 msgid "Amount"
 msgstr ""
 
@@ -1367,6 +1370,10 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Angle"
+msgstr ""
+
+#: src/model/fib/gann.rs
+msgid "Angles"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -1577,6 +1584,14 @@ msgstr ""
 
 #: src/ui/portfolio/sheets.rs
 msgid "Archived"
+msgstr ""
+
+#: src/model/fib/gann.rs
+msgid "Arcs"
+msgstr ""
+
+#: src/model/fib/gann.rs
+msgid "Arcs background"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -2076,6 +2091,10 @@ msgstr ""
 msgid "Bitcoin"
 msgstr ""
 
+#: src/ui/chart/cmc_gauge.rs
+msgid "Bitcoin Season"
+msgstr ""
+
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Bitcoin price"
 msgstr ""
@@ -2343,16 +2362,7 @@ msgstr ""
 msgid "Buttons"
 msgstr ""
 
-#: src/model/broker/ticket.rs
-#: src/model/paper/format.rs
-#: src/trading/draft.rs
-#: src/trading/edit/mod.rs
-#: src/ui/broker/panel.rs
-#: src/ui/market_flow/book/tape.rs
-#: src/ui/portfolio/transaction_editor.rs
-#: src/ui/portfolio/transactions.rs
 #: src/ui/trade/fields.rs
-#: src/ui/trade/order_sheet/open_orders.rs
 msgid "Buy"
 msgstr ""
 
@@ -2650,7 +2660,6 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/model/broker/ticket.rs
-#: src/model/mcp/activity.rs
 #: src/ui/broker/panel.rs
 msgid "Cancelled"
 msgstr ""
@@ -2926,6 +2935,10 @@ msgid "Chart {count} choice"
 msgid_plural "Chart {count} choices"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "Chart {timeframe}"
+msgstr ""
 
 #: src/ui/chart/card/overlay_card.rs
 #: src/ui/chart/settings/overlay.rs
@@ -5126,7 +5139,6 @@ msgstr ""
 msgid "Donchian Channels"
 msgstr ""
 
-#: src/model/mcp/activity.rs
 #: src/ui/chart/indicator_picker/mod.rs
 #: src/ui/chart/settings/mod.rs
 #: src/ui/chart/settings/templates/mod.rs
@@ -6144,6 +6156,10 @@ msgstr ""
 msgid "Families"
 msgstr ""
 
+#: src/model/fib/gann.rs
+msgid "Fan lines"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Far"
 msgstr ""
@@ -6709,7 +6725,6 @@ msgid "Gann square fixed"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/mod.rs
-#: src/ui/mcp/activity.rs
 msgid "Gap"
 msgstr ""
 
@@ -6847,6 +6862,10 @@ msgstr ""
 #: src/model/tab/link/mod.rs
 #: src/model/watchlist/mod.rs
 msgid "Green"
+msgstr ""
+
+#: src/model/fib/mod.rs
+msgid "Grid"
 msgstr ""
 
 #: src/ui/drawing/properties/fib_pages.rs
@@ -8169,6 +8188,8 @@ msgstr ""
 msgid "Level {ratio}"
 msgstr ""
 
+#: src/model/fib/gann.rs
+#: src/model/fib/mod.rs
 #: src/ui/drawing/properties/fib_pages.rs
 #: src/ui/drawing/properties/mod.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -9104,11 +9125,6 @@ msgstr ""
 
 #: src/model/pine/bundled/mod.rs
 msgid "Midline averages and a projected cloud that frames the trend."
-msgstr ""
-
-#: src/native_bridge.rs
-#: src/ui/window/chrome.rs
-msgid "Minimize"
 msgstr ""
 
 #: src/model/paper/ticket.rs
@@ -10213,7 +10229,6 @@ msgid "Not watching here"
 msgstr ""
 
 #: src/model/drawings/tool.rs
-#: src/trading/confirm.rs
 msgid "Note"
 msgstr ""
 
@@ -10796,6 +10811,10 @@ msgstr ""
 msgid ""
 "Open, high, low and close under the crosshair, with volume where the market "
 "has it."
+msgstr ""
+
+#: src/service/llm/mod.rs
+msgid "OpenAI-compatible"
 msgstr ""
 
 #: src/ui/settings/ai.rs
@@ -11758,6 +11777,11 @@ msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Price level"
+msgstr ""
+
+#: src/model/fib/gann.rs
+#: src/model/fib/mod.rs
+msgid "Price levels"
 msgstr ""
 
 #: src/model/drawings/tool.rs
@@ -13485,7 +13509,6 @@ msgstr ""
 msgid "Scale text"
 msgstr ""
 
-#: src/model/drawings/style.rs
 #: src/ui/chart/settings/canvas.rs
 msgid "Scales"
 msgstr ""
@@ -13831,16 +13854,7 @@ msgid ""
 "compare the fingerprint, never click through a warning."
 msgstr ""
 
-#: src/model/broker/ticket.rs
-#: src/model/paper/format.rs
-#: src/trading/draft.rs
-#: src/trading/edit/mod.rs
-#: src/ui/broker/panel.rs
-#: src/ui/market_flow/book/tape.rs
-#: src/ui/portfolio/transaction_editor.rs
-#: src/ui/portfolio/transactions.rs
 #: src/ui/trade/fields.rs
-#: src/ui/trade/order_sheet/open_orders.rs
 msgid "Sell"
 msgstr ""
 
@@ -14490,7 +14504,6 @@ msgstr ""
 msgid "Snowman"
 msgstr ""
 
-#: src/model/chart/canvas/mod.rs
 #: src/model/chart/kind.rs
 msgid "Solid"
 msgstr ""
@@ -15244,7 +15257,6 @@ msgid "Templates"
 msgstr ""
 
 #: src/ui/settings/provider_card.rs
-#: src/ui/trade/connect_list.rs
 #: src/ui/webhook/settings.rs
 msgid "Test"
 msgstr ""
@@ -15559,6 +15571,10 @@ msgstr ""
 
 #: src/trading/broker/backend.rs
 msgid "The broker does not know this order any more."
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "The broker gave no answer for this order."
 msgstr ""
 
 #: src/ui/broker/panel.rs
@@ -16857,6 +16873,11 @@ msgstr ""
 msgid "Time label"
 msgstr ""
 
+#: src/model/fib/gann.rs
+#: src/model/fib/mod.rs
+msgid "Time levels"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Time of the replay cursor, in your time zone"
 msgstr ""
@@ -17818,6 +17839,10 @@ msgstr ""
 msgid "Vertical"
 msgstr ""
 
+#: src/model/fib/gann.rs
+msgid "Vertical background"
+msgstr ""
+
 #: src/ui/chart/settings/canvas.rs
 msgid "Vertical grid lines"
 msgstr ""
@@ -18646,6 +18671,11 @@ msgstr ""
 msgid "bullish"
 msgstr ""
 
+#: src/trading/broker/backend.rs
+#: src/ui/broker/chart_trading.rs
+msgid "cancel requested"
+msgstr ""
+
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "chance"
 msgstr ""
@@ -18706,6 +18736,10 @@ msgstr ""
 
 #: src/pine_studio/debug/panel/lists.rs
 msgid "e.g. bar_index > 100 and close > open"
+msgstr ""
+
+#: src/trading/broker/backend.rs
+msgid "edit requested"
 msgstr ""
 
 #: src/model/session_stats/mod.rs
@@ -20963,6 +20997,16 @@ msgstr ""
 msgid "✕ Rejected"
 msgstr ""
 
+#: src/model/mcp/activity.rs
+msgctxt "MCP call"
+msgid "Cancelled"
+msgstr ""
+
+#: src/model/mcp/activity.rs
+msgctxt "MCP call"
+msgid "Done"
+msgstr ""
+
 #: src/model/chart/object_tree.rs
 msgctxt "a numbered drawing, such as Trend Line 3"
 msgid "{name} {number}"
@@ -20971,6 +21015,16 @@ msgstr ""
 #: src/model/annotation/link_card.rs
 msgctxt "a post on X"
 msgid "Post"
+msgstr ""
+
+#: src/ui/mcp/activity.rs
+msgctxt "audit log row"
+msgid "Gap"
+msgstr ""
+
+#: src/model/chart/canvas/mod.rs
+msgctxt "background"
+msgid "Solid"
 msgstr ""
 
 #: src/model/paper/format.rs
@@ -21103,6 +21157,11 @@ msgctxt "hit count field"
 msgid "n"
 msgstr ""
 
+#: src/model/drawings/style.rs
+msgctxt "icon"
+msgid "Scales"
+msgstr ""
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -21141,6 +21200,11 @@ msgstr ""
 #: src/native_bridge.rs
 msgctxt "menu bar"
 msgid "Help"
+msgstr ""
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
+msgid "Minimize"
 msgstr ""
 
 #: src/native_bridge.rs
@@ -21224,6 +21288,11 @@ msgstr ""
 #: src/model/paper/note.rs
 msgctxt "order side in a sentence"
 msgid "SELL"
+msgstr ""
+
+#: src/ui/trade/order_sheet/form.rs
+msgctxt "order size"
+msgid "Amount"
 msgstr ""
 
 #: src/trading/paper/backend.rs
@@ -21447,6 +21516,32 @@ msgctxt "select changes"
 msgid "None"
 msgstr ""
 
+#: src/model/broker/ticket.rs
+#: src/model/paper/format.rs
+#: src/trading/draft.rs
+#: src/trading/edit/mod.rs
+#: src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+#: src/ui/trade/order_sheet/open_orders.rs
+msgctxt "side"
+msgid "Buy"
+msgstr ""
+
+#: src/model/broker/ticket.rs
+#: src/model/paper/format.rs
+#: src/trading/draft.rs
+#: src/trading/edit/mod.rs
+#: src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs
+#: src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs
+#: src/ui/trade/order_sheet/open_orders.rs
+msgctxt "side"
+msgid "Sell"
+msgstr ""
+
 #: src/ui/watchlist/rows.rs
 msgctxt "sparkline column"
 msgid "1M"
@@ -21458,6 +21553,7 @@ msgid "Stop"
 msgstr ""
 
 #: src/ui/settings/brokers.rs
+#: src/ui/trade/connect_list.rs
 msgctxt "test environment badge"
 msgid "Test"
 msgstr ""
@@ -21494,6 +21590,11 @@ msgctxt "venue kind"
 msgid "Test"
 msgstr ""
 
+#: src/trading/confirm.rs
+msgctxt "warning row"
+msgid "Note"
+msgstr ""
+
 #: src/ui/watchlist/sidebar/header.rs
 #: src/ui/watchlist/sidebar/menus.rs
 msgctxt "watchlist columns"
@@ -21523,4 +21624,9 @@ msgstr ""
 #: src/ui/snapshot_studio/window/toolbar.rs
 msgctxt "what the image shows"
 msgid "Area"
+msgstr ""
+
+#: src/ui/window/chrome.rs
+msgctxt "window button"
+msgid "Minimize"
 msgstr ""
