@@ -717,12 +717,11 @@ fn every_emoji_a_signpost_offers_is_one_the_apps_fonts_can_draw() {
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(Default::default(), |_| {});
     output.textures_delta.clear();
-    let font = egui::FontId::proportional(14.0);
     let mut seen = std::collections::HashSet::new();
     for emoji in Emoji::ALL {
         assert!(seen.insert(emoji.glyph()), "{emoji:?} repeats a glyph");
         assert!(
-            ctx.fonts_mut(|fonts| emoji.glyph().chars().all(|c| fonts.has_glyph(&font, c))),
+            crate::ui::theme::covers(&ctx, &egui::FontFamily::Proportional, emoji.glyph()),
             "{emoji:?} has no glyph in the bundled fonts"
         );
         assert!(!emoji.label().is_empty());

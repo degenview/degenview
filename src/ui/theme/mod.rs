@@ -1,6 +1,10 @@
 mod cjk;
 #[cfg(test)]
+mod coverage;
+#[cfg(test)]
 mod fonts_tests;
+#[cfg(test)]
+pub(crate) use coverage::covers;
 
 use eframe::egui::{self, Color32};
 use serde::{Deserialize, Serialize};

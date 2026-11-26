@@ -297,20 +297,12 @@ fn what_the_bundled_font_lacks_falls_back_to_the_rest_of_the_chain() {
 #[test]
 fn every_language_s_own_name_draws_whatever_the_interface_language() {
     let ctx = context();
-    ctx.run_ui(egui::RawInput::default(), |ui| {
-        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-            let font = egui::FontId::new(14.0, family);
-            for locale in Locale::all() {
-                let name = locale.native_name();
-                assert!(
-                    ui.fonts_mut(|fonts| fonts.has_glyphs(&font, name)),
-                    "{name} in {font:?}"
-                );
-            }
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        for locale in Locale::all() {
+            let name = locale.native_name();
+            assert!(theme::covers(&ctx, &family, name), "{name} in {family:?}");
         }
-    })
-    .textures_delta
-    .clear();
+    }
 }
 
 /// At 1x egui's grid-fitting makes Inter a pixel taller (and heavier) than the font draws, which
