@@ -22327,3 +22327,353 @@ msgstr "Область"
 msgctxt "window button"
 msgid "Minimize"
 msgstr "Свернуть"
+
+#: src/ui/tradingview/words.rs
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "Тип графика, который DegenView не рисует: используется ваш обычный"
+
+#: src/ui/tradingview/words.rs
+msgid "A formula, not a single market"
+msgstr "Формула, а не отдельный рынок"
+
+#: src/ui/tradingview/choose.rs
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "Символу с биржи, которой нет в DegenView, подбирается та же пара на другой бирже. Любое сопоставление можно изменить или пропустить."
+
+#: src/ui/tradingview/result.rs
+msgid "Added to DegenView"
+msgstr "Добавлено в DegenView"
+
+#: src/ui/tradingview/preview.rs
+msgid "Charts"
+msgstr "Графики"
+
+#: src/ui/tradingview/choose.rs src/ui/tradingview/result.rs
+msgid "Choose Folder…"
+msgstr "Выбрать папку…"
+
+#: src/host/tradingview/mod.rs
+msgid "Choose TradingView’s data folder"
+msgstr "Выберите папку данных TradingView"
+
+#: src/service/tradingview/mod.rs
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "Выберите папку данных TradingView: обычно это snap/tradingview/current/.config/TradingView или .config/TradingView в домашней папке. Нажмите Ctrl+H, чтобы увидеть скрытые папки."
+
+#: src/ui/tradingview/words.rs
+msgid "Couldn’t reach the exchanges"
+msgstr "Не удалось связаться с биржами"
+
+#: src/ui/tradingview/mod.rs
+msgid "From the TradingView app."
+msgstr "Из приложения TradingView."
+
+#: src/ui/tradingview/mod.rs
+msgid "Import Complete"
+msgstr "Импорт завершён"
+
+#: src/ui/tradingview/mod.rs
+msgid "Import from TradingView"
+msgstr "Импорт из TradingView"
+
+#: src/native_bridge.rs src/ui/workspace/empty_state/mod.rs
+#: src/ui/workspace/toolbar.rs
+msgid "Import from TradingView…"
+msgstr "Импорт из TradingView…"
+
+#: src/ui/tradingview/result.rs
+msgid "Imported layouts are in the toolbar’s layout menu."
+msgstr "Импортированные макеты находятся в меню макетов на панели инструментов."
+
+#: src/service/tradingview/mod.rs
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "Установите настольное приложение TradingView, войдите в аккаунт и откройте макеты и списки наблюдения, которые хотите перенести."
+
+#: src/ui/tradingview/preview.rs
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "У его графиков были разные интервалы. У макета DegenView он один:"
+
+#: src/ui/tradingview/mod.rs
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "Макеты, рисунки, списки наблюдения и скрипты, загруженные приложением TradingView."
+
+#: src/ui/tradingview/choose.rs
+msgid "Left out of the import"
+msgstr "Не вошло в импорт"
+
+#: src/ui/tradingview/preview.rs
+msgid "Looking up markets and prices…"
+msgstr "Поиск рынков и цен…"
+
+#: src/ui/tradingview/choose.rs
+msgid "Match symbols to markets"
+msgstr "Сопоставьте символы с рынками"
+
+#: src/ui/tradingview/words.rs
+msgid "No exchange here lists it"
+msgstr "Ни на одной из доступных бирж он не торгуется"
+
+#: src/service/tradingview/mod.rs
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "Макеты, списки наблюдения и скрипты не найдены. Сначала откройте их в TradingView, затем повторите попытку."
+
+#: src/ui/tradingview/words.rs
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "Ни одному из его графиков не сопоставлен рынок, поэтому он не импортируется"
+
+#: src/ui/tradingview/words.rs
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr "Ни одному из его символов не сопоставлен рынок, поэтому он не импортируется"
+
+#: src/ui/tradingview/words.rs
+msgid "Not found on any exchange"
+msgstr "Не найден ни на одной бирже"
+
+#: src/ui/tradingview/result.rs
+msgid "Nothing Was Added"
+msgstr "Ничего не добавлено"
+
+#: src/ui/tradingview/result.rs
+msgid "Nothing to Import Yet"
+msgstr "Пока нечего импортировать"
+
+#: src/ui/tradingview/choose.rs
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "Здесь только то, что приложение TradingView недавно открывало на этом компьютере. Чего-то не хватает? Откройте это там и обновите список."
+
+#: src/ui/tradingview/result.rs
+msgid "Open Layout"
+msgstr "Открыть макет"
+
+#: src/ui/tradingview/choose.rs
+msgid "Other exchange"
+msgstr "Другая биржа"
+
+#: src/ui/tradingview/words.rs
+msgid "Perpetuals and futures aren’t available"
+msgstr "Бессрочные контракты и фьючерсы недоступны"
+
+#: src/host/tradingview/mod.rs
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "Выберите рынок, который заменит этот символ TradingView."
+
+#: src/ui/tradingview/choose.rs src/ui/tradingview/preview.rs
+msgid "Pine scripts"
+msgstr "Скрипты Pine"
+
+#: src/ui/tradingview/result.rs
+msgid "Reading TradingView’s data…"
+msgstr "Чтение данных TradingView…"
+
+#: src/ui/tradingview/choose.rs
+msgid "Reload"
+msgstr "Обновить"
+
+#: src/host/tradingview/apply.rs
+msgid "Saved layouts"
+msgstr "Сохранённые макеты"
+
+#: src/ui/tradingview/choose.rs
+msgid "Search Again"
+msgstr "Искать снова"
+
+#: src/ui/tradingview/result.rs
+msgid "Some things couldn’t be added"
+msgstr "Кое-что не удалось добавить"
+
+#: src/ui/tradingview/words.rs
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "Для акций нужен ключ Alpaca (в настройках)"
+
+#: src/ui/tradingview/words.rs
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "Текст {count} рисунка сокращён"
+msgstr[1] "Текст {count} рисунков сокращён"
+msgstr[2] "Текст {count} рисунков сокращён"
+
+#: src/service/tradingview/mod.rs
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "Данные приложения TradingView на этом компьютере не найдены."
+
+#: src/ui/tradingview/words.rs
+msgid "The comparison with {symbol}: it has no market"
+msgstr "Сравнение с {symbol}: ему не сопоставлен рынок"
+
+#: src/host/tradingview/apply.rs
+msgid "The script library couldn’t be opened."
+msgstr "Не удалось открыть библиотеку скриптов."
+
+#: src/ui/tradingview/words.rs
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "Интервал {interval} здесь не является таймфреймом"
+
+#: src/ui/tradingview/words.rs
+msgid "The {name} indicator"
+msgstr "Индикатор {name}"
+
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "График {symbol}: его символу не сопоставлен рынок"
+
+#: src/service/tradingview/mod.rs
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "Эта версия Flatpak не может сама искать данные TradingView."
+
+#: src/service/tradingview/mod.rs
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "В этой папке нет данных TradingView."
+
+#: src/service/tradingview/mod.rs
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "Не удалось прочитать данные TradingView: {error}"
+
+#: src/host/tradingview/mod.rs
+msgid "Use Market"
+msgstr "Использовать рынок"
+
+#: src/ui/tradingview/mod.rs
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "Что будет добавлено. Ничего из вашего не заменяется."
+
+#: src/ui/tradingview/words.rs
+msgid "settings not found: rebuilt from its drawings"
+msgstr "настройки не найдены: восстановлено по рисункам"
+
+#: src/ui/tradingview/choose.rs
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "символ сопоставлен"
+msgstr[1] "символа сопоставлено"
+msgstr[2] "символов сопоставлено"
+
+#: src/host/tradingview/mod.rs
+msgid "the read stopped unexpectedly"
+msgstr "чтение неожиданно прервалось"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} рисунок Фибоначчи или Ганна использует уровни DegenView"
+msgstr[1] "{count} рисунка Фибоначчи или Ганна используют уровни DegenView"
+msgstr[2] "{count} рисунков Фибоначчи или Ганна используют уровни DegenView"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} привязанный VWAP теряет процентные полосы"
+msgstr[1] "{count} привязанных VWAP теряют процентные полосы"
+msgstr[2] "{count} привязанных VWAP теряют процентные полосы"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} график"
+msgstr[1] "{count} графика"
+msgstr[2] "{count} графиков"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} график, который TradingView хранит, но не показывает"
+msgstr[1] "{count} графика, которые TradingView хранит, но не показывает"
+msgstr[2] "{count} графиков, которые TradingView хранит, но не показывает"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it"
+msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
+msgstr[0] "{count} рисунок находится на {symbol} ({exchange}): переключите график на этот рынок, чтобы увидеть его"
+msgstr[1] "{count} рисунка находятся на {symbol} ({exchange}): переключите график на этот рынок, чтобы увидеть их"
+msgstr[2] "{count} рисунков находятся на {symbol} ({exchange}): переключите график на этот рынок, чтобы увидеть их"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{count} рисунок на {symbol}, которому не сопоставлен рынок"
+msgstr[1] "{count} рисунка на {symbol}, которому не сопоставлен рынок"
+msgstr[2] "{count} рисунков на {symbol}, которому не сопоставлен рынок"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} закреплённый на экране рисунок нельзя перенести"
+msgstr[1] "{count} закреплённых на экране рисунка нельзя перенести"
+msgstr[2] "{count} закреплённых на экране рисунков нельзя перенести"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} рисунок не удалось прочитать"
+msgstr[1] "{count} рисунка не удалось прочитать"
+msgstr[2] "{count} рисунков не удалось прочитать"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} изображение: TradingView хранит его онлайн"
+msgstr[1] "{count} изображения: TradingView хранит их онлайн"
+msgstr[2] "{count} изображений: TradingView хранит их онлайн"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} позиция с неизвестным шагом цены"
+msgstr[1] "{count} позиции с неизвестным шагом цены"
+msgstr[2] "{count} позиций с неизвестным шагом цены"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} пост размещается на примерной высоте"
+msgstr[1] "{count} поста размещаются на примерной высоте"
+msgstr[2] "{count} постов размещаются на примерной высоте"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} пост ещё размещается"
+msgstr[1] "{count} поста ещё размещаются"
+msgstr[2] "{count} постов ещё размещаются"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} пост, место которого на графике не удалось определить"
+msgstr[1] "{count} поста, место которых на графике не удалось определить"
+msgstr[2] "{count} постов, место которых на графике не удалось определить"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} символ не помещается в один список наблюдения"
+msgstr[1] "{count} символа не помещаются в один список наблюдения"
+msgstr[2] "{count} символов не помещаются в один список наблюдения"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} символ совпадает по рынку с другим"
+msgstr[1] "{count} символа совпадают по рынку с другими"
+msgstr[2] "{count} символов совпадают по рынку с другими"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} символ без рынка"
+msgstr[1] "{count} символа без рынка"
+msgstr[2] "{count} символов без рынка"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
+msgstr[0] "{count} рисунок «{tool}» нельзя перенести"
+msgstr[1] "{count} рисунка «{tool}» нельзя перенести"
+msgstr[2] "{count} рисунков «{tool}» нельзя перенести"
+
+#: src/ui/tradingview/words.rs
+msgid "{name} is added with its default settings"
+msgstr "{name} добавляется с настройками по умолчанию"
+
+#: src/host/tradingview/apply.rs
+msgid "{name}: {error}"
+msgstr "{name}: {error}"
