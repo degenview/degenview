@@ -43,6 +43,7 @@ fn built(mappings: &Mappings) -> Plan {
         &library,
         &Selection::all(&library),
         mappings,
+        &Default::default(),
         &Taken::default(),
         &ChartAppearance::default(),
     )
@@ -108,6 +109,7 @@ fn names_in_use_are_never_taken_over() {
         &library,
         &Selection::all(&library),
         &mapped(),
+        &Default::default(),
         &taken,
         &ChartAppearance::default(),
     );

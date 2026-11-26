@@ -19751,6 +19751,12 @@ msgstr[1] ""
 msgid "{count} already in the list"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/trading/broker/backend.rs
 #: src/ui/portfolio/cards/allocation.rs
 #: src/ui/portfolio/cmc_import.rs
@@ -19887,6 +19893,12 @@ msgstr[1] ""
 #: src/ui/tradingview/words.rs
 msgid "{count} drawing on {symbol}, which has no market"
 msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -20232,6 +20244,18 @@ msgstr[1] ""
 #: src/ui/tradingview/words.rs
 msgid "{count} position whose price step is unknown"
 msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
 msgstr[0] ""
 msgstr[1] ""
 

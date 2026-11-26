@@ -3,7 +3,7 @@
 //! DegenView by chart and market: a market's drawings go to the first chart that shows it, and
 //! those of a market no chart shows to the first chart, where switching to that market finds them.
 
-use super::{LeftOut, Mappings, PlannedLayout};
+use super::{LeftOut, Mappings, Placements, PlannedLayout};
 use crate::model::chart::kind::ChartType;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
@@ -13,6 +13,7 @@ use crate::model::pine::instance::PineInstance;
 use crate::model::tradingview::convert::{self, Unsupported};
 use crate::model::tradingview::drawing::RawDrawing;
 use crate::model::tradingview::library::{Layout, LayoutChart, Library, Study};
+use crate::model::tradingview::placement::Spot;
 use crate::model::tradingview::{TvSymbol, interval};
 use crate::model::{
     BuiltIn, ChartAppearance, ChartColumn, Drawing, IndicatorConfig, InstrumentId, PersistedChart,
@@ -82,6 +83,7 @@ pub(super) fn plan(
     found: &Layout,
     chosen: Option<Timeframe>,
     mappings: &Mappings,
+    placements: &Placements,
     ticks: &BTreeMap<&TvSymbol, f64>,
     library: &Library,
     base: &ChartAppearance,
@@ -160,7 +162,14 @@ pub(super) fn plan(
         left_out.push(LeftOut::NoChart);
         0
     } else {
-        file_drawings(found, mappings, ticks, &mut building, &mut left_out)
+        file_drawings(
+            found,
+            mappings,
+            placements,
+            ticks,
+            &mut building,
+            &mut left_out,
+        )
     };
 
     let count = building.len();
@@ -287,6 +296,7 @@ fn own_script<'a>(
 fn file_drawings(
     found: &Layout,
     mappings: &Mappings,
+    placements: &Placements,
     ticks: &BTreeMap<&TvSymbol, f64>,
     building: &mut [Building],
     left_out: &mut Vec<LeftOut>,
@@ -299,6 +309,7 @@ fn file_drawings(
     let mut tools: BTreeMap<&str, usize> = BTreeMap::new();
     let (mut pictures, mut positions, mut cut, mut default_levels) = (0, 0, 0, 0);
     let mut broken = found.unreadable;
+    let (mut pinned, mut estimated, mut unplaced, mut percent_bands) = (0, 0, 0, 0);
     for raw in ordered {
         let Some(market) = mappings.market(&raw.symbol) else {
             *unmapped.entry(&raw.symbol).or_default() += 1;
@@ -309,7 +320,13 @@ fn file_drawings(
             .position(|chart| chart.symbol == raw.symbol)
             .unwrap_or(0);
         let target = &mut building[index];
-        match convert::convert(raw, target.next_drawing, ticks.get(&raw.symbol).copied()) {
+        // A drawing beside a bar is given the price worked out for it.
+        let placed = Spot::of(raw, market)
+            .and_then(|spot| placements.get(&spot).copied().flatten())
+            .map(|price| raw.at_price(price));
+        let guessed = placed.is_some();
+        let source = placed.as_ref().unwrap_or(raw);
+        match convert::convert(source, target.next_drawing, ticks.get(&raw.symbol).copied()) {
             Ok(converted) => {
                 let key = InstrumentId::new(market.source, &market.symbol).key();
                 target
@@ -321,6 +338,8 @@ fn file_drawings(
                 filed += 1;
                 cut += usize::from(converted.cut_text);
                 default_levels += usize::from(converted.default_levels);
+                percent_bands += usize::from(converted.percent_bands);
+                estimated += usize::from(guessed);
             }
             Err(Unsupported::Tool) => {
                 *tools.entry(convert::class_label(&raw.tool)).or_default() += 1;
@@ -328,6 +347,8 @@ fn file_drawings(
             Err(Unsupported::Picture) => pictures += 1,
             Err(Unsupported::PriceStep) => positions += 1,
             Err(Unsupported::Points) => broken += 1,
+            Err(Unsupported::Pinned) => pinned += 1,
+            Err(Unsupported::Unplaced) => unplaced += 1,
         }
     }
     left_out.extend(
@@ -352,6 +373,10 @@ fn file_drawings(
         (broken, LeftOut::BrokenDrawings(broken)),
         (cut, LeftOut::CutText(cut)),
         (default_levels, LeftOut::DefaultLevels(default_levels)),
+        (pinned, LeftOut::Pinned(pinned)),
+        (estimated, LeftOut::PostsEstimated(estimated)),
+        (unplaced, LeftOut::PostsUnplaced(unplaced)),
+        (percent_bands, LeftOut::PercentBands(percent_bands)),
     ] {
         if count > 0 {
             left_out.push(entry);

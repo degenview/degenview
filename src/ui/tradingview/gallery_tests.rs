@@ -77,6 +77,7 @@ fn tradingview_gallery() {
         &library,
         &selection,
         &mappings,
+        &Default::default(),
         &Taken::default(),
         &Default::default(),
     );
@@ -94,6 +95,7 @@ fn tradingview_gallery() {
             library: &library,
             selection: &selection,
             mappings: &mappings,
+            placing: false,
             step,
             plan: (step == Step::Preview).then_some(&built),
         })
@@ -116,6 +118,7 @@ fn tradingview_gallery() {
             },
             selection: &nothing,
             mappings: &mappings,
+            placing: false,
             step: Step::Choose,
             plan: None,
         }),

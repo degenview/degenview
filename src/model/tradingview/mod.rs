@@ -16,6 +16,7 @@ pub mod grid;
 pub mod interval;
 pub mod library;
 pub mod parse;
+pub mod placement;
 pub mod plan;
 pub mod symbol;
 

@@ -20652,3 +20652,302 @@ msgstr "Ausschnitt"
 msgctxt "window button"
 msgid "Minimize"
 msgstr "Minimieren"
+
+#: src/ui/tradingview/words.rs
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "Ein Charttyp, den DegenView nicht darstellt: Dein üblicher wird verwendet"
+
+#: src/ui/tradingview/words.rs
+msgid "A formula, not a single market"
+msgstr "Eine Formel, kein einzelner Markt"
+
+#: src/ui/tradingview/choose.rs
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "Ein Symbol von einer Börse, die DegenView nicht hat, wird demselben Paar an einer anderen zugeordnet. Du kannst jedes ändern oder überspringen."
+
+#: src/ui/tradingview/result.rs
+msgid "Added to DegenView"
+msgstr "Zu DegenView hinzugefügt"
+
+#: src/ui/tradingview/preview.rs
+msgid "Charts"
+msgstr "Charts"
+
+#: src/ui/tradingview/choose.rs src/ui/tradingview/result.rs
+msgid "Choose Folder…"
+msgstr "Ordner wählen …"
+
+#: src/host/tradingview/mod.rs
+msgid "Choose TradingView’s data folder"
+msgstr "Datenordner von TradingView wählen"
+
+#: src/ui/tradingview/words.rs
+msgid "Couldn’t reach the exchanges"
+msgstr "Die Börsen waren nicht erreichbar"
+
+#: src/ui/tradingview/mod.rs
+msgid "From the TradingView app."
+msgstr "Aus der TradingView-App."
+
+#: src/ui/tradingview/mod.rs
+msgid "Import Complete"
+msgstr "Import abgeschlossen"
+
+#: src/ui/tradingview/mod.rs
+msgid "Import from TradingView"
+msgstr "Aus TradingView importieren"
+
+#: src/native_bridge.rs src/ui/workspace/empty_state/mod.rs
+#: src/ui/workspace/toolbar.rs
+msgid "Import from TradingView…"
+msgstr "Aus TradingView importieren …"
+
+#: src/ui/tradingview/result.rs
+msgid "Imported layouts are in the toolbar’s layout menu."
+msgstr "Importierte Layouts findest du im Layout-Menü der Symbolleiste."
+
+#: src/ui/tradingview/result.rs
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "Installiere die Desktop-App von TradingView, melde dich an und öffne die Layouts und Watchlists, die du übernehmen willst."
+
+#: src/ui/tradingview/preview.rs
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "Die Charts hatten verschiedene Intervalle. Ein DegenView-Layout hat nur eines:"
+
+#: src/ui/tradingview/mod.rs
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "Layouts, Zeichnungen, Watchlists und Skripte, die die TradingView-App geladen hat."
+
+#: src/ui/tradingview/choose.rs
+msgid "Left out of the import"
+msgstr "Vom Import ausgenommen"
+
+#: src/ui/tradingview/choose.rs
+msgid "Match symbols to markets"
+msgstr "Symbole Märkten zuordnen"
+
+#: src/ui/tradingview/words.rs
+msgid "No exchange here lists it"
+msgstr "Keine verfügbare Börse listet es"
+
+#: src/service/tradingview/mod.rs
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "Keine Layouts, Watchlists oder Skripte gefunden. Öffne sie zuerst in TradingView und versuche es dann erneut."
+
+#: src/ui/tradingview/words.rs
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "Keinem der Charts ist ein Markt zugeordnet, daher wird das Layout nicht importiert"
+
+#: src/ui/tradingview/words.rs
+msgid "Not found on any exchange"
+msgstr "An keiner Börse gefunden"
+
+#: src/ui/tradingview/result.rs
+msgid "Nothing Was Added"
+msgstr "Nichts hinzugefügt"
+
+#: src/ui/tradingview/result.rs
+msgid "Nothing to Import Yet"
+msgstr "Noch nichts zu importieren"
+
+#: src/ui/tradingview/choose.rs
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "Hier erscheint nur, was die TradingView-App auf diesem Computer kürzlich geöffnet hat. Fehlt etwas? Öffne es dort und lade dann neu."
+
+#: src/ui/tradingview/result.rs
+msgid "Open Layout"
+msgstr "Layout öffnen"
+
+#: src/ui/tradingview/choose.rs
+msgid "Other exchange"
+msgstr "Andere Börse"
+
+#: src/ui/tradingview/words.rs
+msgid "Perpetuals and futures aren’t available"
+msgstr "Perpetuals und Futures sind nicht verfügbar"
+
+#: src/host/tradingview/mod.rs
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "Wähle den Markt, der dieses TradingView-Symbol ersetzt."
+
+#: src/ui/tradingview/choose.rs src/ui/tradingview/preview.rs
+msgid "Pine scripts"
+msgstr "Pine-Skripte"
+
+#: src/ui/tradingview/result.rs
+msgid "Reading TradingView’s data…"
+msgstr "Daten von TradingView werden gelesen …"
+
+#: src/ui/tradingview/choose.rs
+msgid "Reload"
+msgstr "Neu laden"
+
+#: src/host/tradingview/apply.rs
+msgid "Saved layouts"
+msgstr "Gespeicherte Layouts"
+
+#: src/ui/tradingview/choose.rs
+msgid "Search Again"
+msgstr "Erneut suchen"
+
+#: src/ui/tradingview/result.rs
+msgid "Some things couldn’t be added"
+msgstr "Manches konnte nicht hinzugefügt werden"
+
+#: src/ui/tradingview/words.rs
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "Aktien benötigen einen Alpaca-Schlüssel (Einstellungen)"
+
+#: src/ui/tradingview/words.rs
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "Text von {count} Zeichnung wird gekürzt"
+msgstr[1] "Text von {count} Zeichnungen wird gekürzt"
+
+#: src/service/tradingview/mod.rs
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "Die Daten der TradingView-App wurden auf diesem Computer nicht gefunden."
+
+#: src/ui/tradingview/words.rs
+msgid "The comparison with {symbol}: it has no market"
+msgstr "Der Vergleich mit {symbol}: Ihm ist kein Markt zugeordnet"
+
+#: src/host/tradingview/apply.rs
+msgid "The script library couldn’t be opened."
+msgstr "Die Skriptbibliothek konnte nicht geöffnet werden."
+
+#: src/ui/tradingview/words.rs
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "Das Intervall {interval} ist hier keine Zeiteinheit"
+
+#: src/ui/tradingview/words.rs
+msgid "The {name} indicator"
+msgstr "Der Indikator {name}"
+
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "Der Chart {symbol}: Seinem Symbol ist kein Markt zugeordnet"
+
+#: src/service/tradingview/mod.rs
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "Dieser Ordner enthält keine Daten von TradingView."
+
+#: src/service/tradingview/mod.rs
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "Die Daten von TradingView konnten nicht gelesen werden: {error}"
+
+#: src/host/tradingview/mod.rs
+msgid "Use Market"
+msgstr "Markt verwenden"
+
+#: src/ui/tradingview/mod.rs
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "Das wird hinzugefügt. Nichts von dir wird ersetzt."
+
+#: src/ui/tradingview/words.rs
+msgid "settings not found: rebuilt from its drawings"
+msgstr "Einstellungen nicht gefunden: aus den Zeichnungen wiederhergestellt"
+
+#: src/ui/tradingview/choose.rs
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "Symbol zugeordnet"
+msgstr[1] "Symbole zugeordnet"
+
+#: src/host/tradingview/mod.rs
+msgid "the read stopped unexpectedly"
+msgstr "das Lesen wurde unerwartet abgebrochen"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} Fibonacci- oder Gann-Zeichnung verwendet die Level von DegenView"
+msgstr[1] "{count} Fibonacci- oder Gann-Zeichnungen verwenden die Level von DegenView"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} Chart"
+msgstr[1] "{count} Charts"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} Chart, den TradingView speichert, aber nicht anzeigt"
+msgstr[1] "{count} Charts, die TradingView speichert, aber nicht anzeigt"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{count} Zeichnung auf {symbol}, dem kein Markt zugeordnet ist"
+msgstr[1] "{count} Zeichnungen auf {symbol}, dem kein Markt zugeordnet ist"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} Zeichnung, die nicht gelesen werden konnte"
+msgstr[1] "{count} Zeichnungen, die nicht gelesen werden konnten"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} Bild: TradingView speichert es online"
+msgstr[1] "{count} Bilder: TradingView speichert sie online"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} Position mit unbekannter Preisschrittweite"
+msgstr[1] "{count} Positionen mit unbekannter Preisschrittweite"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} Symbol, das nicht mehr in eine Watchlist passt"
+msgstr[1] "{count} Symbole, die nicht mehr in eine Watchlist passen"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} Symbol, das derselbe Markt wie ein anderes ist"
+msgstr[1] "{count} Symbole, die derselbe Markt wie andere sind"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} Symbol ohne Markt"
+msgstr[1] "{count} Symbole ohne Markt"
+
+#: src/ui/tradingview/words.rs
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
+msgstr[0] "{count} Zeichnung ({tool}) kann nicht übernommen werden"
+msgstr[1] "{count} Zeichnungen ({tool}) können nicht übernommen werden"
+
+#: src/ui/tradingview/words.rs
+msgid "{name} is added with its default settings"
+msgstr "{name} wird mit den Standardeinstellungen hinzugefügt"
+
+#: src/host/tradingview/apply.rs
+msgid "{name}: {error}"
+msgstr "{name}: {error}"
+
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} an den Bildschirm geheftete Zeichnung kann nicht übernommen werden"
+msgstr[1] "{count} an den Bildschirm geheftete Zeichnungen können nicht übernommen werden"
+
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} Beitrag wird in geschätzter Höhe platziert"
+msgstr[1] "{count} Beiträge werden in geschätzter Höhe platziert"
+
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} Beitrag, dessen Platz im Chart nicht ermittelt werden konnte"
+msgstr[1] "{count} Beiträge, deren Platz im Chart nicht ermittelt werden konnte"
+
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} verankerter VWAP verliert seine prozentualen Bänder"
+msgstr[1] "{count} verankerte VWAPs verlieren ihre prozentualen Bänder"

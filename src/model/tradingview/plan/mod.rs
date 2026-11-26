@@ -11,9 +11,13 @@ pub use mapping::{Mappings, Market, Match, Unmatched, Usage};
 use super::library::{Library, WatchRow};
 use crate::model::pine::script_name;
 use crate::model::tradingview::TvSymbol;
+use crate::model::tradingview::placement::Spot;
 use crate::model::watchlist::{MAX_NAME_CHARS, Watchlist, WatchlistInstrument};
 use crate::model::{ChartAppearance, ChartColumn, PersistedChart, Timeframe};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+/// The prices worked out for [`Selection::spots`]; `None` is a spot that has none.
+pub type Placements = HashMap<Spot, Option<f64>>;
 
 /// What to bring over.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -65,6 +69,17 @@ impl Selection {
 
     /// Every market the chosen layouts and watchlists name, with what uses it, in the order they
     /// are met.
+    /// The places the chosen layouts' drawings need worked out, now that markets are known.
+    pub fn spots(&self, library: &Library, mappings: &Mappings) -> Vec<Spot> {
+        library
+            .layouts
+            .iter()
+            .filter(|layout| self.layouts.contains(&layout.id))
+            .flat_map(|layout| &layout.drawings)
+            .filter_map(|raw| Spot::of(raw, mappings.market(&raw.symbol)?))
+            .collect()
+    }
+
     pub fn symbols(&self, library: &Library) -> Vec<(TvSymbol, Usage)> {
         let mut order: Vec<TvSymbol> = Vec::new();
         let mut usage: BTreeMap<TvSymbol, Usage> = BTreeMap::new();
@@ -211,6 +226,14 @@ pub enum LeftOut {
     ListFull(usize),
     /// Fibonacci or Gann drawings brought over with DegenView's levels.
     DefaultLevels(usize),
+    /// Drawings pinned to a place on the screen.
+    Pinned(usize),
+    /// Posts brought over at a height worked out from the candles around them.
+    PostsEstimated(usize),
+    /// Posts whose height could not be worked out.
+    PostsUnplaced(usize),
+    /// Anchored VWAPs whose percentage bands are off.
+    PercentBands(usize),
 }
 
 /// The plan for `selection`. `base` is the look a new chart gets here.
@@ -218,6 +241,7 @@ pub fn plan(
     library: &Library,
     selection: &Selection,
     mappings: &Mappings,
+    placements: &Placements,
     taken: &Taken,
     base: &ChartAppearance,
 ) -> Plan {
@@ -251,6 +275,7 @@ pub fn plan(
                 found,
                 selection.timeframes.get(&found.id).copied(),
                 mappings,
+                placements,
                 &ticks,
                 library,
                 base,

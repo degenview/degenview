@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::model::tradingview::fixtures;
-use crate::model::tradingview::parse::Document;
+use crate::model::tradingview::parse::{self, Document};
+use crate::model::tradingview::plan::LeftOut;
 use crate::service::SearchResult;
 use crate::service::tradingview::cache::testing::{self, Fake, Scratch};
 use crate::store::scripts::ScriptStore;
@@ -13,8 +14,12 @@ use std::time::{Duration, Instant};
 
 /// A data folder holding the fixtures' documents.
 fn data_folder(scratch: &Scratch) -> PathBuf {
+    folder_of(scratch, fixtures::documents())
+}
+
+fn folder_of(scratch: &Scratch, documents: Vec<parse::Fetched>) -> PathBuf {
     let folder = scratch.path().join("TradingView");
-    let entries: Vec<(String, String)> = fixtures::documents()
+    let entries: Vec<(String, String)> = documents
         .into_iter()
         .enumerate()
         .map(|(index, fetched)| match fetched.document {
@@ -75,6 +80,26 @@ fn search() -> Arc<Search> {
     })
 }
 
+/// A day of candles whose bar at the post's time runs from 90 to 110, in a range of 80 to 180.
+fn candles() -> Arc<Candles> {
+    Arc::new(|spot| {
+        let bar = |offset: i64, low: f64, high: f64| crate::model::Kline {
+            open_time: spot.time_ms + offset * spot.timeframe.nominal_ms(),
+            close_time: spot.time_ms + (offset + 1) * spot.timeframe.nominal_ms() - 1,
+            open: low,
+            high,
+            low,
+            close: high,
+            volume: 1.0,
+        };
+        Some(vec![
+            bar(-1, 80.0, 100.0),
+            bar(0, 90.0, 110.0),
+            bar(1, 120.0, 180.0),
+        ])
+    })
+}
+
 fn targets(scratch: &Scratch) -> Targets {
     let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().expect("open")));
     let watchlist = Arc::new(Mutex::new(WatchlistStore::new(store.clone())));
@@ -88,7 +113,11 @@ fn targets(scratch: &Scratch) -> Targets {
 }
 
 fn open(targets: &Targets, folder: PathBuf, ctx: &egui::Context) -> TradingViewImport {
-    TradingViewImport::with_search(targets.clone(), search(), Some(folder), ctx)
+    let providers = Providers {
+        search: search(),
+        candles: candles(),
+    };
+    TradingViewImport::with_providers(targets.clone(), providers, Some(folder), ctx)
 }
 
 /// Polls until `done`, as frames would.
@@ -251,7 +280,6 @@ fn a_name_taken_after_the_preview_is_still_not_taken_over() {
 fn everything_imported_is_accepted_by_sync() {
     use crate::model::tradingview::drawing::RawDrawing;
     use crate::model::tradingview::library::WatchRow;
-    use crate::model::tradingview::parse;
     use crate::model::tradingview::plan::{self, Mappings, Market, Selection, Taken};
     use crate::sync::record::validate::{Verdict, validate};
     use crate::sync::record::{RecordName, SCHEMA_VERSION, SyncRecord, project};
@@ -310,6 +338,7 @@ fn everything_imported_is_accepted_by_sync() {
         &library,
         &selection,
         &mappings,
+        &Default::default(),
         &Taken::default(),
         &Default::default(),
     );
@@ -356,4 +385,95 @@ fn everything_imported_is_accepted_by_sync() {
     let mut scripts = (targets.scripts)().unwrap();
     let script = scripts.all_scripts().unwrap().remove(0);
     assert!(script.name.chars().count() <= 200 && !script.name.contains(['/', ':', '\\']));
+}
+
+/// The fixtures with a post beside the 90–110 bar.
+fn with_a_post() -> Vec<parse::Fetched> {
+    let mut post = fixtures::drawing(
+        "post",
+        "LineToolTweet",
+        "BINANCE:BTCUSDT",
+        serde_json::json!({"position": 50.0}),
+        &[(0, 7.0)],
+    );
+    post["state"]["tweetData"] =
+        serde_json::json!({"tweetUrl": "https://x.com/someone/status/1234567890123456789"});
+    let mut documents = fixtures::documents();
+    documents.push(fixtures::sources("Ab", 70, &[post]));
+    documents
+}
+
+fn placed(stage: &Stage) -> bool {
+    matched(stage)
+        && matches!(stage, Stage::Review(review)
+            if review.selection.spots(&review.library, &review.mappings)
+                .iter()
+                .all(|spot| review.placements.contains_key(spot)))
+}
+
+fn post_price(import: &TradingViewImport) -> Option<f64> {
+    use crate::model::drawings::Geometry;
+    let plan = review(import).plan.as_ref()?;
+    plan.layouts[0].charts.iter().find_map(|chart| {
+        let key = crate::model::InstrumentId::new(chart.source, &chart.symbol).key();
+        chart
+            .drawings
+            .get(&key)
+            .iter()
+            .find_map(|drawing| match drawing {
+                crate::model::Drawing::Shape {
+                    geometry: Geometry::Card { anchor, .. },
+                    ..
+                } => Some(anchor.price),
+                _ => None,
+            })
+    })
+}
+
+#[test]
+fn a_post_is_put_beside_its_bar_from_the_markets_candles() {
+    let scratch = Scratch::new();
+    let targets = targets(&scratch);
+    let ctx = egui::Context::default();
+    let mut import = open(&targets, folder_of(&scratch, with_a_post()), &ctx);
+    settle(&mut import, &ctx, placed);
+    import.act(Action::Preview, &ctx);
+    // Half way from the high, 110, to the top of the room, 190.
+    assert_eq!(post_price(&import), Some(150.0));
+    let left_out = &review(&import).plan.as_ref().unwrap().layouts[0].left_out;
+    assert!(
+        left_out.contains(&LeftOut::PostsEstimated(1)),
+        "{left_out:?}"
+    );
+}
+
+#[test]
+fn a_post_without_candles_is_left_out_and_can_be_tried_again() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let scratch = Scratch::new();
+    let targets = targets(&scratch);
+    let ctx = egui::Context::default();
+    let online = Arc::new(AtomicBool::new(false));
+    let (flag, working) = (Arc::clone(&online), candles());
+    let providers = Providers {
+        search: search(),
+        candles: Arc::new(move |spot| flag.load(Ordering::SeqCst).then(|| working(spot)).flatten()),
+    };
+    let folder = folder_of(&scratch, with_a_post());
+    let mut import = TradingViewImport::with_providers(targets, providers, Some(folder), &ctx);
+    settle(&mut import, &ctx, placed);
+    import.act(Action::Preview, &ctx);
+    assert_eq!(post_price(&import), None);
+    let left_out = &review(&import).plan.as_ref().unwrap().layouts[0].left_out;
+    assert!(
+        left_out.contains(&LeftOut::PostsUnplaced(1)),
+        "{left_out:?}"
+    );
+
+    online.store(true, Ordering::SeqCst);
+    import.act(Action::Back, &ctx);
+    import.act(Action::Retry, &ctx);
+    settle(&mut import, &ctx, placed);
+    import.act(Action::Preview, &ctx);
+    assert_eq!(post_price(&import), Some(150.0));
 }

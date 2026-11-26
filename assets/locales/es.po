@@ -20862,3 +20862,28 @@ msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
 msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
 msgstr[0] "{count} dibujo de Fibonacci o Gann usa los niveles de DegenView"
 msgstr[1] "{count} dibujos de Fibonacci o Gann usan los niveles de DegenView"
+
+#: src/ui/window/chrome.rs
+msgctxt "window button"
+msgid "Minimize"
+msgstr "Minimizar"
+
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} dibujo fijado a la pantalla no se puede traer"
+msgstr[1] "{count} dibujos fijados a la pantalla no se pueden traer"
+
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} publicación se coloca a una altura estimada"
+msgstr[1] "{count} publicaciones se colocan a una altura estimada"
+
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} publicación cuyo lugar en el gráfico no se pudo calcular"
+msgstr[1] "{count} publicaciones cuyo lugar en el gráfico no se pudo calcular"
+
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} VWAP anclado pierde sus bandas porcentuales"
+msgstr[1] "{count} VWAP anclados pierden sus bandas porcentuales"

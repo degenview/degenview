@@ -20674,3 +20674,24 @@ msgstr[0] "{count} 个超出单个自选列表容量的代码"
 msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
 msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
 msgstr[0] "{count} 个斐波那契或江恩绘图使用 DegenView 的水平"
+
+#: src/ui/window/chrome.rs
+msgctxt "window button"
+msgid "Minimize"
+msgstr "最小化"
+
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} 个固定在屏幕上的绘图无法导入"
+
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} 条帖子按估算的高度放置"
+
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} 条帖子无法确定在图表上的位置"
+
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} 个锚定 VWAP 失去百分比通道"

@@ -18,6 +18,9 @@ pub struct RawDrawing {
     pub z: f64,
     /// An X post's address, on a post drawing.
     pub post_url: Option<String>,
+    /// Whether the points' prices are places on the chart. A post's is not: TradingView sets it
+    /// beside its bar by the zoom of the moment, and what it stores there means nothing.
+    priced: bool,
 }
 
 /// One placement point: a bar's open time in epoch seconds, plus `offset` bars of `interval` for a
@@ -89,7 +92,29 @@ impl RawDrawing {
             interval,
             z: state.get("zorder").and_then(Value::as_f64).unwrap_or(0.0),
             post_url,
+            priced: tool != "LineToolTweet",
         })
+    }
+
+    pub fn is_priced(&self) -> bool {
+        self.priced
+    }
+
+    /// For a drawing without a price: how far from its bar it sits, as a percentage of the room
+    /// between the bar and the edge of the chart, above the high when positive and below the low
+    /// when negative.
+    pub fn beside_bar(&self) -> Option<f64> {
+        (!self.priced).then(|| self.number("position").unwrap_or(0.0).clamp(-100.0, 100.0))
+    }
+
+    /// The drawing with its points at `price`.
+    pub fn at_price(&self, price: f64) -> Self {
+        let mut placed = self.clone();
+        for point in &mut placed.points {
+            point.price = price;
+        }
+        placed.priced = true;
+        placed
     }
 
     pub fn str(&self, key: &str) -> Option<&str> {

@@ -8,18 +8,22 @@ mod apply;
 pub use apply::Targets;
 
 use crate::i18n::tr;
-use crate::model::tradingview::plan::{self, Mappings, Match, Plan, Selection, Summary, Taken};
+use crate::model::tradingview::placement::Spot;
+use crate::model::tradingview::plan::{
+    self, Mappings, Match, Placements, Plan, Selection, Summary, Taken,
+};
 use crate::model::tradingview::{Library, TvSymbol};
 use crate::model::watchlist::new_id;
 use crate::model::{ChartAppearance, DataSource, Timeframe};
 use crate::service::system::file_dialog;
 use crate::service::tradingview::matcher::Search;
-use crate::service::tradingview::{self, Scan, ScanError, matcher};
+use crate::service::tradingview::{self, Candles, Scan, ScanError, matcher};
 use crate::service::work_queue::{self, Pending};
 use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState, PickerTab};
 use crate::ui::tradingview::{self as sheets, Action, Content, Step, View};
 use eframe::egui;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -27,22 +31,26 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 /// Reading the app's data.
 type Read = Pending<Result<Scan, ScanError>>;
 
-/// The thread that matches symbols, one at a time. Dropping it ends the thread after the symbol it
-/// is on.
-struct Resolver {
-    requests: Sender<TvSymbol>,
-    answers: Receiver<(TvSymbol, Match)>,
-    asked: HashSet<TvSymbol>,
+/// A thread that answers questions one at a time, each asked once. Dropping it ends the thread
+/// after the question it is on.
+struct Lookup<Q, A> {
+    requests: Sender<Q>,
+    answers: Receiver<(Q, A)>,
+    asked: HashSet<Q>,
 }
 
-impl Resolver {
-    fn start(search: Arc<Search>, ctx: egui::Context) -> Self {
-        let (requests, wanted) = channel::<TvSymbol>();
+impl<Q, A> Lookup<Q, A>
+where
+    Q: Clone + Eq + Hash + Send + 'static,
+    A: Send + 'static,
+{
+    fn start(answer: impl Fn(&Q) -> A + Send + 'static, ctx: egui::Context) -> Self {
+        let (requests, wanted) = channel::<Q>();
         let (answered, answers) = channel();
         std::thread::spawn(move || {
-            for symbol in wanted {
-                let result = matcher::resolve(&symbol, &*search);
-                if answered.send((symbol, result)).is_err() {
+            for question in wanted {
+                let result = answer(&question);
+                if answered.send((question, result)).is_err() {
                     break;
                 }
                 ctx.request_repaint();
@@ -55,21 +63,28 @@ impl Resolver {
         }
     }
 
-    fn ask(&mut self, symbols: impl IntoIterator<Item = TvSymbol>) {
-        for symbol in symbols {
-            if self.asked.insert(symbol.clone()) {
+    fn ask(&mut self, questions: impl IntoIterator<Item = Q>) {
+        for question in questions {
+            if self.asked.insert(question.clone()) {
                 // The thread only ends when this is dropped.
-                let _ = self.requests.send(symbol);
+                let _ = self.requests.send(question);
             }
         }
     }
 
-    /// Forgets the symbols that could not be matched, so that they are asked again.
-    fn forget(&mut self, symbols: &[TvSymbol]) {
-        for symbol in symbols {
-            self.asked.remove(symbol);
+    /// Forgets questions whose answer did not help, so that they are asked again.
+    fn forget(&mut self, questions: &[Q]) {
+        for question in questions {
+            self.asked.remove(question);
         }
     }
+}
+
+/// Where the import looks things up.
+#[derive(Clone)]
+pub struct Providers {
+    pub search: Arc<Search>,
+    pub candles: Arc<Candles>,
 }
 
 /// What is being chosen and previewed.
@@ -80,7 +95,11 @@ struct Review {
     library: Library,
     selection: Selection,
     mappings: Mappings,
-    resolver: Resolver,
+    /// Matches symbols to markets.
+    resolver: Lookup<TvSymbol, Match>,
+    /// Finds the price of drawings that sit beside a bar.
+    placer: Lookup<Spot, Option<f64>>,
+    placements: Placements,
     step: Step,
     /// Built on entering the preview.
     plan: Option<Plan>,
@@ -107,7 +126,7 @@ pub enum Outcome {
 
 pub struct TradingViewImport {
     targets: Targets,
-    search: Arc<Search>,
+    providers: Providers,
     stage: Stage,
     /// The folder the person chose; `None` reads where the app keeps its data.
     chosen: Option<PathBuf>,
@@ -124,18 +143,22 @@ pub struct TradingViewImport {
 impl TradingViewImport {
     /// Opens the import and starts reading the app's data.
     pub fn open(targets: Targets, ctx: &egui::Context) -> Self {
-        Self::with_search(targets, Arc::new(crate::service::search), None, ctx)
+        let providers = Providers {
+            search: Arc::new(crate::service::search),
+            candles: Arc::new(tradingview::candles_around),
+        };
+        Self::with_providers(targets, providers, None, ctx)
     }
 
-    pub fn with_search(
+    pub fn with_providers(
         targets: Targets,
-        search: Arc<Search>,
+        providers: Providers,
         folder: Option<PathBuf>,
         ctx: &egui::Context,
     ) -> Self {
         Self {
             targets,
-            search,
+            providers,
             stage: read(folder.clone(), ctx),
             chosen: folder,
             folder_panel: None,
@@ -199,6 +222,12 @@ impl TradingViewImport {
                 review
                     .resolver
                     .ask(wanted.into_iter().map(|(symbol, _)| symbol));
+                while let Ok((spot, price)) = review.placer.answers.try_recv() {
+                    review.placements.insert(spot, price);
+                    review.plan = None;
+                }
+                let spots = review.selection.spots(&review.library, &review.mappings);
+                review.placer.ask(spots);
             }
             Stage::Reading(_) | Stage::Failed(_) | Stage::Done(_) => {}
         }
@@ -218,7 +247,21 @@ impl TradingViewImport {
             folder: scan.folder,
             library: scan.library,
             mappings,
-            resolver: Resolver::start(Arc::clone(&self.search), ctx.clone()),
+            resolver: {
+                let search = Arc::clone(&self.providers.search);
+                Lookup::start(
+                    move |symbol| matcher::resolve(symbol, &*search),
+                    ctx.clone(),
+                )
+            },
+            placer: {
+                let candles = Arc::clone(&self.providers.candles);
+                Lookup::start(
+                    move |spot: &Spot| candles(spot).and_then(|candles| spot.price(&candles)),
+                    ctx.clone(),
+                )
+            },
+            placements: Placements::new(),
             step: Step::Choose,
             plan: None,
             picking: None,
@@ -264,6 +307,7 @@ impl TradingViewImport {
                 &review.library,
                 &review.selection,
                 &review.mappings,
+                &review.placements,
                 &taken,
                 &base,
             ));
@@ -315,6 +359,11 @@ impl TradingViewImport {
                 library: &review.library,
                 selection: &review.selection,
                 mappings: &review.mappings,
+                placing: review
+                    .selection
+                    .spots(&review.library, &review.mappings)
+                    .iter()
+                    .any(|spot| !review.placements.contains_key(spot)),
                 step: review.step,
                 plan: review.plan.as_ref(),
             }),
@@ -413,6 +462,16 @@ impl Review {
                     self.mappings.found(symbol.clone(), Match::Searching);
                 }
                 self.resolver.forget(&failed);
+                let unplaced: Vec<Spot> = self
+                    .placements
+                    .iter()
+                    .filter(|(_, price)| price.is_none())
+                    .map(|(spot, _)| spot.clone())
+                    .collect();
+                for spot in &unplaced {
+                    self.placements.remove(spot);
+                }
+                self.placer.forget(&unplaced);
             }
             _ => {}
         }

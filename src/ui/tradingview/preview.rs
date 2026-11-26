@@ -310,13 +310,14 @@ fn watchlist_card(ui: &mut Ui, list: &PlannedWatchlist) {
 fn footer(ui: &mut Ui, content: &Content<'_>, plan: &Plan, actions: &mut Vec<Action>) {
     let [layouts, _, _, watchlists, scripts] = counts(plan);
     let anything = layouts + watchlists + scripts > 0;
-    let searching = content
-        .selection
-        .symbols(content.library)
-        .iter()
-        .any(|(symbol, _)| {
-            !content.mappings.has_answer(symbol) && !content.mappings.is_decided(symbol)
-        });
+    let searching = content.placing
+        || content
+            .selection
+            .symbols(content.library)
+            .iter()
+            .any(|(symbol, _)| {
+                !content.mappings.has_answer(symbol) && !content.mappings.is_decided(symbol)
+            });
     sheet::footer_split(
         ui,
         |ui| {

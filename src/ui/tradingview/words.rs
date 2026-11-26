@@ -156,6 +156,26 @@ pub fn left_out(entry: &LeftOut) -> String {
             "{count} symbol that doesn\u{2019}t fit in one watchlist",
             "{count} symbols that don\u{2019}t fit in one watchlist"
         ),
+        LeftOut::Pinned(count) => tr_n!(
+            *count,
+            "{count} drawing pinned to the screen can\u{2019}t be brought over",
+            "{count} drawings pinned to the screen can\u{2019}t be brought over"
+        ),
+        LeftOut::PostsEstimated(count) => tr_n!(
+            *count,
+            "{count} post is placed at an estimated height",
+            "{count} posts are placed at an estimated height"
+        ),
+        LeftOut::PostsUnplaced(count) => tr_n!(
+            *count,
+            "{count} post whose place on the chart couldn\u{2019}t be worked out",
+            "{count} posts whose place on the chart couldn\u{2019}t be worked out"
+        ),
+        LeftOut::PercentBands(count) => tr_n!(
+            *count,
+            "{count} anchored VWAP loses its percentage bands",
+            "{count} anchored VWAPs lose their percentage bands"
+        ),
         LeftOut::DefaultLevels(count) => tr_n!(
             *count,
             "{count} Fibonacci or Gann drawing uses DegenView\u{2019}s levels",

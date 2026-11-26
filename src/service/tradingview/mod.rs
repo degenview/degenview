@@ -11,6 +11,7 @@ pub mod matcher;
 use crate::i18n::tr;
 use crate::model::tradingview::Library;
 use crate::model::tradingview::parse::{self, Document, Fetched};
+use crate::model::tradingview::placement::{Spot, WINDOW};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +33,23 @@ fn unreadable(error: &std::io::Error) -> String {
         "TradingView’s data couldn’t be read: {error}",
         error = error
     )
+}
+
+/// How the candles around a spot are got; `None` when they could not be.
+pub type Candles = dyn Fn(&Spot) -> Option<Vec<crate::model::Kline>> + Send + Sync;
+
+/// The candles around `spot`, from its market's own provider.
+pub fn candles_around(spot: &Spot) -> Option<Vec<crate::model::Kline>> {
+    let (start_ms, end_ms) = spot.range_ms();
+    crate::service::fetch_klines_range(
+        spot.source,
+        &spot.symbol,
+        spot.timeframe,
+        start_ms,
+        end_ms,
+        2 * WINDOW as usize + 1,
+    )
+    .ok()
 }
 
 /// What was found, and where.

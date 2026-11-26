@@ -1,5 +1,6 @@
 use super::*;
-use crate::model::drawings::style::VisibilityRow;
+use crate::model::chart::kind::PriceSource;
+use crate::model::drawings::style::{HorizontalAlign, StatsPosition, VerticalAlign, VisibilityRow};
 use crate::model::tradingview::fixtures::{self, T0, drawing};
 use serde_json::{Value, json};
 
@@ -249,4 +250,148 @@ fn the_schiff_pitchforks_are_the_ones_tradingview_means() {
         tool_of("LineToolSchiffPitchfork"),
         Some(Tool::ModifiedSchiffPitchfork)
     );
+}
+
+#[test]
+fn a_pinned_drawing_is_left_out_since_its_points_are_not_where_it_is() {
+    for tool in ["LineToolText", "LineToolNote", "LineToolTable"] {
+        let source = drawing("p", tool, "X:Y", json!({"anchored": true}), &[(0, 1.0)]);
+        assert_eq!(
+            convert(&raw(&source), 1, None),
+            Err(Unsupported::Pinned),
+            "{tool}"
+        );
+    }
+}
+
+#[test]
+fn a_post_takes_a_price_before_it_converts() {
+    let mut source = drawing(
+        "t",
+        "LineToolTweet",
+        "X:Y",
+        json!({"position": 40.0}),
+        &[(0, 7.0)],
+    );
+    source["state"]["tweetData"] =
+        json!({"tweetUrl": "https://x.com/someone/status/1234567890123456789"});
+    let post = raw(&source);
+    assert_eq!(post.beside_bar(), Some(40.0));
+    assert_eq!(convert(&post, 1, None), Err(Unsupported::Unplaced));
+    let converted = convert(&post.at_price(150.0), 1, None).unwrap();
+    let (Geometry::Card { anchor, .. }, ..) = shape(&converted.drawing) else {
+        panic!("{:?}", converted.drawing);
+    };
+    assert_eq!(anchor.price, 150.0, "the stored 7 means nothing");
+}
+
+#[test]
+fn a_lines_words_keep_the_side_of_the_line_they_were_on() {
+    for (stored, expected) in [
+        ("bottom", VerticalAlign::Top),
+        ("middle", VerticalAlign::Middle),
+        ("top", VerticalAlign::Bottom),
+    ] {
+        let source = drawing(
+            "l",
+            "LineToolTrendLine",
+            "X:Y",
+            json!({"vertLabelsAlign": stored, "horzLabelsAlign": "left", "text": "here"}),
+            &[(0, 1.0), (1, 2.0)],
+        );
+        let converted = convert(&raw(&source), 1, None).unwrap();
+        let (_, style, _) = shape(&converted.drawing);
+        assert_eq!(style.text.valign, expected, "{stored}");
+        assert_eq!(style.text.align, HorizontalAlign::Left);
+    }
+}
+
+#[test]
+fn a_lines_measurements_are_the_ones_shown() {
+    let source = drawing(
+        "l",
+        "LineToolTrendLine",
+        "X:Y",
+        json!({
+            "showPriceRange": true, "showPercentPriceRange": true, "showBarsRange": false,
+            "showDateTimeRange": true, "showDistance": false, "showAngle": true,
+            "alwaysShowStats": true, "statsPosition": 0,
+        }),
+        &[(0, 1.0), (1, 2.0)],
+    );
+    let converted = convert(&raw(&source), 1, None).unwrap();
+    let stats = shape(&converted.drawing).1.stats;
+    assert!(stats.price_range && stats.percent && stats.time && stats.angle && stats.always_show);
+    assert!(!stats.bars && !stats.distance);
+    assert_eq!(stats.position, StatsPosition::Left);
+}
+
+#[test]
+fn an_anchored_vwap_keeps_its_source_bands_and_colours() {
+    let source = drawing(
+        "v",
+        "LineToolAnchoredVWAP",
+        "X:Y",
+        json!({
+            "inputs": {
+                "source": "ohlc4", "Bands Calculation Mode": "Standard Deviation",
+                "calculate_stDev": false, "calculate_stDev_2": true, "bands_multiplier_2": 2.5,
+            },
+            "styles": {
+                "VWAP": {"color": "#ff0000", "linewidth": 3},
+                "UpperBand_2": {"color": "#00ff00"},
+            },
+            "areaBackground": {"fillBackground": false},
+        }),
+        &[(0, 1.0)],
+    );
+    let converted = convert(&raw(&source), 1, None).unwrap();
+    assert!(!converted.percent_bands);
+    let style = shape(&converted.drawing).1;
+    assert_eq!(style.stroke.color, [255, 0, 0, 255]);
+    assert_eq!(style.stroke.width, 3.0);
+    assert_eq!(style.vwap.source, PriceSource::Ohlc4);
+    assert!(!style.vwap.bands[0].enabled && style.vwap.bands[1].enabled);
+    assert_eq!(style.vwap.bands[1].multiplier, 2.5);
+    assert_eq!(style.vwap.bands[1].color, [0, 255, 0, 255]);
+    assert!(!style.vwap.fill);
+}
+
+#[test]
+fn percentage_bands_are_off_and_said_to_be() {
+    let source = drawing(
+        "v",
+        "LineToolAnchoredVWAP",
+        "X:Y",
+        json!({"inputs": {"Bands Calculation Mode": "Percentage", "calculate_stDev": true}}),
+        &[(0, 1.0)],
+    );
+    let converted = convert(&raw(&source), 1, None).unwrap();
+    assert!(converted.percent_bands);
+    assert!(!shape(&converted.drawing).1.vwap.bands[0].enabled);
+}
+
+#[test]
+fn a_tables_alignment_and_a_labels_weight_carry_over() {
+    let table = drawing(
+        "t",
+        "LineToolTable",
+        "X:Y",
+        json!({"horzAlign": "right", "cells": [["a"]]}),
+        &[(0, 1.0)],
+    );
+    let converted = convert(&raw(&table), 1, None).unwrap();
+    assert_eq!(
+        shape(&converted.drawing).1.text.align,
+        HorizontalAlign::Right
+    );
+    let label = drawing(
+        "p",
+        "LineToolPriceLabel",
+        "X:Y",
+        json!({"fontWeight": "normal"}),
+        &[(0, 1.0)],
+    );
+    let converted = convert(&raw(&label), 1, None).unwrap();
+    assert!(!shape(&converted.drawing).1.text.bold);
 }

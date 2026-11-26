@@ -40,6 +40,8 @@ pub struct Content<'a> {
     pub library: &'a Library,
     pub selection: &'a Selection,
     pub mappings: &'a Mappings,
+    /// Whether drawings are still being given their place.
+    pub placing: bool,
     pub step: Step,
     /// Present on the preview.
     pub plan: Option<&'a Plan>,
