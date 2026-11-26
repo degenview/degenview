@@ -20844,3 +20844,21 @@ msgstr "{name} se añade con sus ajustes predeterminados"
 
 msgid "{name}: {error}"
 msgstr "{name}: {error}"
+
+msgid "A formula, not a single market"
+msgstr "Una fórmula, no un único mercado"
+
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} símbolo que es el mismo mercado que otro"
+msgstr[1] "{count} símbolos que son el mismo mercado que otros"
+
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} símbolo que no cabe en una lista de seguimiento"
+msgstr[1] "{count} símbolos que no caben en una lista de seguimiento"
+
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} dibujo de Fibonacci o Gann usa los niveles de DegenView"
+msgstr[1] "{count} dibujos de Fibonacci o Gann usan los niveles de DegenView"

@@ -479,6 +479,7 @@ fn token_row(
             ticker,
             detail,
             badge: auto.then(|| (tr!("Auto-matched"), theme::text_secondary())),
+            other: RowAction::Reset,
         },
         TokenStatus::Skipped => RowState::Skipped {
             note: tr!("Won\u{2019}t be imported"),

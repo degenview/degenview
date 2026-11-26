@@ -90,7 +90,6 @@ struct Review {
 
 enum Stage {
     Reading(Read),
-    ChoosingFolder(Pending<Option<PathBuf>>),
     Failed(String),
     Review(Box<Review>),
     Done(Summary),
@@ -110,6 +109,14 @@ pub struct TradingViewImport {
     targets: Targets,
     search: Arc<Search>,
     stage: Stage,
+    /// The folder the person chose; `None` reads where the app keeps its data.
+    chosen: Option<PathBuf>,
+    /// The folder panel, while it is open. The sheet under it stays as it was.
+    folder_panel: Option<Pending<Option<PathBuf>>>,
+    /// What was chosen and decided before the data was read again.
+    carried: Option<(Library, Selection, Mappings)>,
+    /// Something was written and the tab has not been told yet.
+    wrote: bool,
     /// An import added scripts and the tab has not been told yet.
     added_scripts: bool,
 }
@@ -129,7 +136,11 @@ impl TradingViewImport {
         Self {
             targets,
             search,
-            stage: read(folder, ctx),
+            stage: read(folder.clone(), ctx),
+            chosen: folder,
+            folder_panel: None,
+            carried: None,
+            wrote: false,
             added_scripts: false,
         }
     }
@@ -139,28 +150,46 @@ impl TradingViewImport {
         std::mem::take(&mut self.added_scripts)
     }
 
+    /// Whether anything was written since this was last asked.
+    pub fn take_wrote(&mut self) -> bool {
+        std::mem::take(&mut self.wrote)
+    }
+
+    /// Reads the data again, keeping what was chosen so far.
+    fn reread(&mut self, ctx: &egui::Context) {
+        if let Stage::Review(review) =
+            std::mem::replace(&mut self.stage, read(self.chosen.clone(), ctx))
+        {
+            self.carried = Some((review.library, review.selection, review.mappings));
+        }
+    }
+
     /// Takes in what finished since the last frame.
     pub fn poll(&mut self, ctx: &egui::Context) {
-        match &mut self.stage {
-            Stage::Reading(job) => {
-                let lost = || {
-                    Err(ScanError::Unreadable(std::io::Error::other(tr!(
-                        "the read stopped unexpectedly"
-                    ))))
-                };
-                let Some(result) = job.poll_or(lost) else {
-                    return;
-                };
+        if let Some(panel) = &mut self.folder_panel
+            && let Some(answer) = panel.poll_or(|| None)
+        {
+            self.folder_panel = None;
+            // A cancelled panel changes nothing.
+            if let Some(folder) = answer {
+                self.chosen = Some(folder);
+                self.reread(ctx);
+            }
+        }
+        if let Stage::Reading(job) = &mut self.stage {
+            let lost = || {
+                Err(ScanError::Unreadable(std::io::Error::other(tr!(
+                    "the read stopped unexpectedly"
+                ))))
+            };
+            if let Some(result) = job.poll_or(lost) {
                 self.stage = match result {
                     Ok(scan) => Stage::Review(Box::new(self.review(scan, ctx))),
                     Err(error) => Stage::Failed(error.to_string()),
                 };
             }
-            Stage::ChoosingFolder(job) => {
-                if let Some(folder) = job.poll_or(|| None) {
-                    self.stage = read(folder, ctx);
-                }
-            }
+        }
+        match &mut self.stage {
             Stage::Review(review) => {
                 while let Ok((symbol, result)) = review.resolver.answers.try_recv() {
                     review.mappings.found(symbol, result);
@@ -171,17 +200,24 @@ impl TradingViewImport {
                     .resolver
                     .ask(wanted.into_iter().map(|(symbol, _)| symbol));
             }
-            Stage::Failed(_) | Stage::Done(_) => {}
+            Stage::Reading(_) | Stage::Failed(_) | Stage::Done(_) => {}
         }
     }
 
-    fn review(&self, scan: Scan, ctx: &egui::Context) -> Review {
+    fn review(&mut self, scan: Scan, ctx: &egui::Context) -> Review {
+        let (selection, mappings) = match self.carried.take() {
+            Some((before, selection, mappings)) => (
+                selection.carried_to(&before, &scan.library),
+                mappings.decisions(),
+            ),
+            None => (Selection::all(&scan.library), Mappings::default()),
+        };
         Review {
             opening: new_id(),
-            selection: Selection::all(&scan.library),
+            selection,
             folder: scan.folder,
             library: scan.library,
-            mappings: Mappings::default(),
+            mappings,
             resolver: Resolver::start(Arc::clone(&self.search), ctx.clone()),
             step: Step::Choose,
             plan: None,
@@ -271,7 +307,7 @@ impl TradingViewImport {
 
     fn view(&self) -> View<'_> {
         match &self.stage {
-            Stage::Reading(_) | Stage::ChoosingFolder(_) => View::Reading,
+            Stage::Reading(_) => View::Reading,
             Stage::Failed(message) => View::Failed(message),
             Stage::Review(review) => View::Content(Content {
                 opening: review.opening,
@@ -291,27 +327,24 @@ impl TradingViewImport {
             return Outcome::Closed;
         }
         match action {
-            Action::ChooseFolder => {
-                let job = work_queue::SNAPSHOTS.start(Some(ctx), || {
+            Action::ChooseFolder if self.folder_panel.is_none() => {
+                self.folder_panel = Some(work_queue::SNAPSHOTS.start(Some(ctx), || {
                     file_dialog::choose_folder(tr!("Choose TradingView’s data folder"))
                         .ok()
                         .flatten()
-                });
-                self.stage = Stage::ChoosingFolder(job);
+                }));
             }
-            Action::Reload => {
-                let folder = match &self.stage {
-                    Stage::Review(review) => Some(review.folder.clone()),
-                    _ => None,
-                };
-                self.stage = read(folder, ctx);
-            }
+            Action::ChooseFolder => {}
+            Action::Reload => self.reread(ctx),
             Action::OpenLayout(id) => return Outcome::OpenLayout(id),
             Action::Import => {
+                // Planned again, against the names in use now.
+                self.build_plan();
                 if let Stage::Review(review) = &self.stage
                     && let Some(plan) = &review.plan
                 {
                     let summary = apply::apply(plan, &self.targets);
+                    self.wrote = true;
                     self.added_scripts = summary.scripts > 0;
                     self.stage = Stage::Done(summary);
                 }
@@ -353,11 +386,13 @@ impl Review {
                 let query = symbol
                     .pair()
                     .map_or_else(|| symbol.ticker(), |(base, _)| base);
+                // A TradingView symbol is never a prediction market.
                 let mut picker = AssetPickerState::new(
                     &title,
                     tr!("Pick the market that stands in for this TradingView symbol."),
                     tr!("Use Market"),
                 )
+                .with_tabs(&[PickerTab::Crypto, PickerTab::Stocks])
                 .with_query(query);
                 if symbol.source() == Some(DataSource::Alpaca) {
                     picker.select_tab(PickerTab::Stocks);

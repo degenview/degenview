@@ -84,6 +84,9 @@ pub(super) fn failed(ui: &mut Ui, height: f32, message: &str, actions: &mut Vec<
     sheet::footer_split(
         ui,
         |ui| {
+            if !crate::platform::has_file_dialogs() {
+                return;
+            }
             choose = kit::footer_button(
                 ui,
                 tr!("Choose Folder\u{2026}"),

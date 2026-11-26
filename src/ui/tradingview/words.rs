@@ -77,6 +77,7 @@ pub fn unmatched(why: Unmatched) -> &'static str {
         Unmatched::Derivative => tr!("Perpetuals and futures aren\u{2019}t available"),
         Unmatched::Venue => tr!("No exchange here lists it"),
         Unmatched::NotFound => tr!("Not found on any exchange"),
+        Unmatched::Expression => tr!("A formula, not a single market"),
         Unmatched::NeedsKey => tr!("Stocks need an Alpaca key (Settings)"),
         Unmatched::Unreachable => tr!("Couldn\u{2019}t reach the exchanges"),
     }
@@ -145,6 +146,21 @@ pub fn left_out(entry: &LeftOut) -> String {
             "The {interval} interval isn\u{2019}t a timeframe here",
             interval = interval.as_str()
         ),
+        LeftOut::SameMarket(count) => tr_n!(
+            *count,
+            "{count} symbol that is the same market as another",
+            "{count} symbols that are the same market as others"
+        ),
+        LeftOut::ListFull(count) => tr_n!(
+            *count,
+            "{count} symbol that doesn\u{2019}t fit in one watchlist",
+            "{count} symbols that don\u{2019}t fit in one watchlist"
+        ),
+        LeftOut::DefaultLevels(count) => tr_n!(
+            *count,
+            "{count} Fibonacci or Gann drawing uses DegenView\u{2019}s levels",
+            "{count} Fibonacci or Gann drawings use DegenView\u{2019}s levels"
+        ),
         LeftOut::Markets(count) => tr_n!(
             *count,
             "{count} symbol without a market",
@@ -160,7 +176,7 @@ mod tests {
 
     #[test]
     fn left_out_things_read_as_sentences() {
-        let symbol = TvSymbol::parse("A:B").unwrap();
+        let symbol = TvSymbol::read("A:B").unwrap();
         assert_eq!(
             left_out(&LeftOut::DrawingsOfMarket { symbol, count: 2 }),
             "2 drawings on A:B, which has no market"

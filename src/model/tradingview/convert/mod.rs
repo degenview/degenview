@@ -6,11 +6,13 @@ use super::color::{self, with_transparency};
 use super::drawing::RawDrawing;
 use crate::model::annotation::image_content::Content;
 use crate::model::annotation::link_card::{Link, LinkCard};
-use crate::model::annotation::table::TableData;
+use crate::model::annotation::table::{
+    COLUMN_WIDTH_RANGE, MAX_CELL_CHARS, MAX_COLUMNS, MAX_ROWS, ROW_HEIGHT_RANGE, TableData,
+};
 use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::Geometry;
 use crate::model::drawings::style::{DrawingStyle, LineEnd, Visibility, VisibilityRow};
-use crate::model::fib::style::{FibLevel, Levels};
+use crate::model::fib::style::{FibLevel, FibStyle, Levels};
 use crate::model::{Anchor, Drawing, Tool};
 use serde_json::Value;
 
@@ -31,11 +33,14 @@ pub enum Unsupported {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Converted {
     pub drawing: Drawing,
-    /// Text was longer than a DegenView drawing holds.
+    /// Text, or a table, was bigger than a DegenView drawing holds.
     pub cut_text: bool,
+    /// A Fibonacci or Gann drawing whose levels are DegenView's, not TradingView's.
+    pub default_levels: bool,
 }
 
-/// TradingView's class name to the DegenView tool.
+/// TradingView's class name to the DegenView tool. Its Signpost and Three drives are not here:
+/// how their stored points make ours is not known.
 const TOOLS: &[(&str, Tool)] = &[
     ("LineToolTrendLine", Tool::TrendLine),
     ("LineToolRay", Tool::Ray),
@@ -94,7 +99,6 @@ const TOOLS: &[(&str, Tool)] = &[
     // The older name of the comment bubble.
     ("LineToolBalloon", Tool::Comment),
     ("LineToolPriceLabel", Tool::PriceLabel),
-    ("LineToolSignpost", Tool::Signpost),
     ("LineToolFlagMark", Tool::FlagMark),
     ("LineToolTable", Tool::Table),
     ("LineToolTweet", Tool::Post),
@@ -103,7 +107,6 @@ const TOOLS: &[(&str, Tool)] = &[
     ("LineToolHeadAndShoulders", Tool::HeadAndShoulders),
     ("LineToolABCD", Tool::AbcdPattern),
     ("LineToolTrianglePattern", Tool::TrianglePattern),
-    ("LineToolThreeDrivers", Tool::ThreeDrivesPattern),
     ("LineToolElliottImpulse", Tool::ElliottImpulse),
     ("LineToolElliottCorrection", Tool::ElliottCorrection),
     ("LineToolElliottTriangle", Tool::ElliottTriangle),
@@ -157,17 +160,27 @@ pub fn convert(raw: &RawDrawing, id: u64, tick: Option<f64>) -> Result<Converted
         })
         .collect();
     let first = *anchors.first().ok_or(Unsupported::Points)?;
+    let mut cut_table = false;
     let drawing = match tool {
         Tool::Post => post(raw, id, first, style)?,
-        Tool::Table => Drawing::from_geometry(id, Geometry::Table(table(raw, first)), style)
-            .ok_or(Unsupported::Points)?,
+        Tool::Table => {
+            let (table, cut) = table(raw, first);
+            cut_table = cut;
+            Drawing::from_geometry(id, Geometry::Table(table), style).ok_or(Unsupported::Points)?
+        }
         Tool::LongPosition | Tool::ShortPosition => {
             let anchors = position(raw, tool, &anchors, tick)?;
             Drawing::build(tool, id, &anchors, style).ok_or(Unsupported::Points)?
         }
         _ => Drawing::build(tool, id, &anchors, style).ok_or(Unsupported::Points)?,
     };
-    Ok(finish(raw, drawing))
+    let mut converted = finish(raw, drawing);
+    converted.cut_text |= cut_table;
+    // A retracement's and an extension's levels are read; the others' are stored in ways not
+    // known here.
+    converted.default_levels = FibStyle::for_tool(tool).is_some()
+        && !matches!(tool, Tool::FibRetracement | Tool::FibExtension);
+    Ok(converted)
 }
 
 /// The switches every drawing has, and its words.
@@ -199,7 +212,11 @@ fn finish(raw: &RawDrawing, mut drawing: Drawing) -> Converted {
         }
         Drawing::Ruler { .. } | Drawing::Unreadable(_) => {}
     }
-    Converted { drawing, cut_text }
+    Converted {
+        drawing,
+        cut_text,
+        default_levels: false,
+    }
 }
 
 fn visibility(raw: &RawDrawing) -> Visibility {
@@ -306,6 +323,12 @@ fn style(raw: &RawDrawing, tool: Tool) -> DrawingStyle {
     }
     if let Some(italic) = raw.flag("italic") {
         style.text.italic = italic;
+    }
+    if let Some(wrap) = raw.flag("wordWrap") {
+        style.wrap = wrap;
+        if let Some(width) = raw.number("wordWrapWidth") {
+            style.box_width = width as f32;
+        }
     }
     if let Some(color) = colour(raw, &["borderColor"]) {
         style.border.color = color;
@@ -471,45 +494,55 @@ fn position(
     ])
 }
 
-fn table(raw: &RawDrawing, at: Anchor) -> TableData {
+/// The table within a DegenView table's limits, and whether anything did not fit.
+fn table(raw: &RawDrawing, at: Anchor) -> (TableData, bool) {
     let mut table = TableData::new(at);
-    let rows: Vec<Vec<&str>> = raw
+    let mut cut = false;
+    let stored: &[Value] = raw
         .props
         .get("cells")
         .and_then(Value::as_array)
-        .map(|rows| {
-            rows.iter()
-                .map(|row| {
-                    row.as_array()
-                        .map(|cells| cells.iter().map(|c| c.as_str().unwrap_or("")).collect())
-                        .unwrap_or_default()
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
-    if columns > 0 {
-        let sizes = |key: &str, count: usize, fallback: f32| -> Vec<f32> {
-            let own = raw.props.get(key).and_then(Value::as_array);
-            (0..count)
-                .map(|index| {
-                    own.and_then(|sizes| sizes.get(index))
-                        .and_then(Value::as_f64)
-                        .filter(|size| *size > 0.0)
-                        .map_or(fallback, |size| size as f32)
-                })
-                .collect()
-        };
-        table.columns = sizes("columnWidths", columns, table.columns[0]);
-        table.rows = sizes("rowHeights", rows.len(), table.rows[0]);
-        table.cells = vec![String::new(); columns * rows.len()];
-        for (row, cells) in rows.iter().enumerate() {
-            for (column, text) in cells.iter().enumerate() {
-                table.set_cell(row, column, text);
-            }
+        .map_or(&[], Vec::as_slice);
+    let cells_of = |row: &Value| row.as_array().map_or(0, Vec::len);
+    let widest = stored
+        .iter()
+        .take(MAX_ROWS)
+        .map(cells_of)
+        .max()
+        .unwrap_or(0);
+    if widest == 0 {
+        return (table, cut);
+    }
+    let (rows, columns) = (stored.len().min(MAX_ROWS), widest.min(MAX_COLUMNS));
+    cut |= stored.len() > MAX_ROWS || widest > MAX_COLUMNS;
+    let sizes = |key: &str, count: usize, fallback: f32, (low, high): (f32, f32)| -> Vec<f32> {
+        let own = raw.props.get(key).and_then(Value::as_array);
+        (0..count)
+            .map(|index| {
+                own.and_then(|sizes| sizes.get(index))
+                    .and_then(Value::as_f64)
+                    .filter(|size| *size > 0.0)
+                    .map_or(fallback, |size| (size as f32).clamp(low, high))
+            })
+            .collect()
+    };
+    table.columns = sizes(
+        "columnWidths",
+        columns,
+        table.columns[0],
+        COLUMN_WIDTH_RANGE,
+    );
+    table.rows = sizes("rowHeights", rows, table.rows[0], ROW_HEIGHT_RANGE);
+    table.cells = vec![String::new(); columns * rows];
+    for (row, cells) in stored.iter().take(rows).enumerate() {
+        let cells = cells.as_array().map_or(&[][..], Vec::as_slice);
+        for (column, text) in cells.iter().take(columns).enumerate() {
+            let text = text.as_str().unwrap_or("");
+            cut |= text.chars().count() > MAX_CELL_CHARS;
+            table.set_cell(row, column, text);
         }
     }
-    table
+    (table, cut)
 }
 
 fn post(

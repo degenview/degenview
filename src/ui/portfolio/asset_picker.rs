@@ -89,6 +89,8 @@ pub struct AssetPickerState {
     pub subtitle: String,
     pub action_label: String,
     pub tab: PickerTab,
+    /// The sections offered.
+    tabs: &'static [PickerTab],
     /// The prediction-market provider the Predictions section searches.
     pub provider: DataSource,
     pub query: String,
@@ -130,6 +132,7 @@ impl AssetPickerState {
             subtitle: subtitle.to_owned(),
             action_label: action_label.to_owned(),
             tab: PickerTab::Crypto,
+            tabs: &PickerTab::ALL,
             provider: DataSource::Polymarket,
             query: String::new(),
             selected: None,
@@ -144,6 +147,12 @@ impl AssetPickerState {
             recents_loaded: false,
             recents_dirty: false,
         }
+    }
+
+    /// Offers only `tabs`, for a caller that cannot use what the others find.
+    pub fn with_tabs(mut self, tabs: &'static [PickerTab]) -> Self {
+        self.tabs = tabs;
+        self
     }
 
     /// Opens on a search already typed, for a caller that knows what is being looked for.
@@ -390,7 +399,11 @@ fn show_body(
 ) {
     widgets::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
-    let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
+    let items: Vec<_> = state
+        .tabs
+        .iter()
+        .map(|&tab| (tab, tab.title(), tab.icon()))
+        .collect();
     if let Some(tab) = kit::icon_tabs::icon_tabs(ui, &items, state.tab) {
         state.select_tab(tab);
         state.focus = true;

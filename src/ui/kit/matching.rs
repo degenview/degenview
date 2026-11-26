@@ -354,6 +354,8 @@ pub enum RowState<'a> {
         detail: &'a str,
         /// How it was matched, and its colour.
         badge: Option<(&'a str, Color32)>,
+        /// The second action beside Change: [`RowAction::Reset`] or [`RowAction::Skip`].
+        other: RowAction,
     },
     Skipped {
         note: &'a str,
@@ -417,7 +419,8 @@ pub fn row(
         kit::size::CAPTION + 0.5,
         kit::REGULAR,
         secondary,
-        name_room,
+        // A caption may run a little further than the name, as the CoinMarketCap rows did.
+        name_room + 20.0,
     );
     let stack = name.size().y + 2.0 + caption.size().y;
     let top = middle - stack / 2.0;
@@ -442,13 +445,16 @@ pub fn row(
     // The actions, from the trailing edge in.
     let buttons: &[(RowAction, &str, ButtonStyle)] = match row.state {
         RowState::Searching(_) => &[],
-        RowState::Matched { .. } => &[
+        RowState::Matched { other, .. } => &[
             (
                 RowAction::Match,
                 tr!("Change\u{2026}"),
                 ButtonStyle::Bordered,
             ),
-            (RowAction::Reset, tr!("Reset"), ButtonStyle::Quiet),
+            match other {
+                RowAction::Skip => (RowAction::Skip, tr!("Skip"), ButtonStyle::Quiet),
+                _ => (RowAction::Reset, tr!("Reset"), ButtonStyle::Quiet),
+            },
         ],
         RowState::Skipped { .. } => &[
             (
@@ -521,6 +527,7 @@ pub fn row(
             ticker,
             detail,
             badge,
+            ..
         } => {
             let logo = Rect::from_center_size(pos2(target + 11.0, middle), Vec2::splat(22.0));
             source_logo::paint(ui, *source, logo);

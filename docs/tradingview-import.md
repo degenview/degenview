@@ -51,9 +51,11 @@ most of its drawings were made on.
 ## How it maps
 
 - **Symbols** (`service::tradingview::matcher`): the same market on its own exchange, else the same
-  base **and quote** on another (badge "Other exchange"). Only an exact name matches; derivatives are
-  never mapped. The user can change or skip any symbol, like the CoinMarketCap import
-  (`ui::kit::matching` draws both).
+  base **and quote** on another (badge "Other exchange"). Only an exact name matches; derivatives and
+  formulas are never mapped. An exchange that does not answer is not replaced by another: the symbol
+  stays unmatched, with Search Again. A match the search made can be changed or skipped, one the
+  user made changed or reset (`ui::kit::matching` draws these rows and the CoinMarketCap import's).
+  Nothing is dropped for being unreadable: every stored chart keeps its grid place.
 - **Grids** (`model::tradingview::grid`): the web app's own arrangement table; `h` is side by side,
   `v` stacked. DegenView grids are columns, so a chart spanning columns sits in the first.
 - **Layouts** become saved layouts. A DegenView layout has one timeframe, TradingView one per chart:
@@ -66,7 +68,11 @@ most of its drawings were made on.
 - **Positions** store distances in price steps. The step comes from a chart's `pricescale`; without
   one the distance follows from the drawing's own risk figures `(accountSize − amountStop) / qty`;
   otherwise the position is left out.
-- **Indicators**: Volume, EMA and Bollinger are native; others map to bundled Pine ones or to the
+- **Order**: cached responses are applied by the response time stored with each, so a newer delta
+  deletes what an older one added.
+- **Choices** survive Reload and Choose Folder. Choose Folder shows only where the app has file
+  panels (`platform::has_file_dialogs`: not Windows).
+- **Indicators**: Volume, one EMA at a length the app offers, and Bollinger are native; others map to bundled Pine ones or to the
   user's own script, with default settings.
 - **Nothing is replaced.** A taken name gets a number.
 
@@ -95,7 +101,9 @@ cached `static.tradingview.com` scripts for `["LineTool…",async`, `"2h":["h",0
   TrendLine, Brush, Highlighter, RiskRewardLong, AnchoredVWAP, Text, TextNote, Note, PriceLabel,
   Table, Tweet, Emoji. TradingView's Basic plan saves one layout, so no scratch layout could be
   made to draw the rest in.
-- Left out: ellipse (stored shape unknown), arrow marks left and right, bars pattern, ghost feed,
-  images, emoji, icons, stickers, and text or notes pinned to the screen.
+- Left out: ellipse, signpost and Three drives (stored shape unknown), arrow marks left and right,
+  bars pattern, ghost feed, images, emoji, icons, stickers, and text or notes pinned to the screen.
+- Fibonacci and Gann levels other than the retracement's and extension's are DegenView's own; the
+  preview says so.
 - Linux: the folder (`~/.config/TradingView`) and cache format were seen on an unpacked snap run
   under FEX; the app could not connect there, so no real Linux data has been read.

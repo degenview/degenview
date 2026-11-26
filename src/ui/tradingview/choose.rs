@@ -51,9 +51,11 @@ fn note(ui: &mut Ui, content: &Content<'_>, actions: &mut Vec<Action>) {
         ui.spacing_mut().item_spacing.x = 8.0;
         let choose = tr!("Choose Folder\u{2026}");
         let reload = tr!("Reload");
-        let buttons = kit::push_button_width(ui, None, choose)
-            + kit::push_button_width(ui, None, reload)
-            + 24.0;
+        let panels = crate::platform::has_file_dialogs();
+        let mut buttons = kit::push_button_width(ui, None, reload) + 16.0;
+        if panels {
+            buttons += kit::push_button_width(ui, None, choose) + 8.0;
+        }
         ui.allocate_ui_with_layout(
             vec2((ui.available_width() - buttons).max(200.0), 0.0),
             Layout::top_down(Align::Min),
@@ -70,7 +72,7 @@ fn note(ui: &mut Ui, content: &Content<'_>, actions: &mut Vec<Action>) {
             },
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if kit::push_button(ui, None, choose, true).clicked() {
+            if panels && kit::push_button(ui, None, choose, true).clicked() {
                 actions.push(Action::ChooseFolder);
             }
             if kit::push_button(ui, None, reload, true)
@@ -286,6 +288,12 @@ fn symbol_row(
                     Match::Exact(_) => Some((tr!("Auto-matched"), theme::text_secondary())),
                     Match::Substitute(_) => Some((tr!("Other exchange"), theme::REPLAY)),
                     _ => None,
+                },
+                // The person's own pick is taken back; the search's can only be left out.
+                other: if matches!(status, Match::Chosen(_)) {
+                    RowAction::Reset
+                } else {
+                    RowAction::Skip
                 },
             }
         }

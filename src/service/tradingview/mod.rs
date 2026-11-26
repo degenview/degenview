@@ -49,11 +49,19 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
     };
     let mut documents = Vec::new();
     let mut used = None;
+    // One folder that cannot be read does not lose what the others hold.
+    let mut failed = None;
     for folder in folders {
         let Some(dir) = locate::cache_in(&folder) else {
             continue;
         };
-        let responses = cache::read(&dir, &|url| route(url).is_some())?;
+        let responses = match cache::read(&dir, &|url| route(url).is_some()) {
+            Ok(responses) => responses,
+            Err(error) => {
+                failed = Some(error);
+                continue;
+            }
+        };
         documents.extend(responses.into_iter().filter_map(|response| {
             let document = document(&response.url, response.body)?;
             Some(Fetched {
@@ -63,11 +71,13 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
         }));
         used.get_or_insert(folder);
     }
-    let folder = used.ok_or(if chosen.is_some() {
-        ScanError::NotACache
-    } else {
-        ScanError::NotInstalled
-    })?;
+    let Some(folder) = used else {
+        return Err(match failed {
+            Some(error) => error.into(),
+            None if chosen.is_some() => ScanError::NotACache,
+            None => ScanError::NotInstalled,
+        });
+    };
     let library = parse::library(documents);
     if library.is_empty() {
         return Err(ScanError::NothingFound);

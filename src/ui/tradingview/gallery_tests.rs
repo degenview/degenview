@@ -59,7 +59,7 @@ fn tradingview_gallery() {
     let library = parse::library(fixtures::documents());
     let selection = plan::Selection::all(&library);
     let mut mappings = plan::Mappings::default();
-    let symbol = |text: &str| TvSymbol::parse(text).unwrap();
+    let symbol = |text: &str| TvSymbol::read(text).unwrap();
     mappings.found(
         symbol("BINANCE:BTCUSDT"),
         Match::Exact(market(DataSource::Binance, "BTCUSDT")),

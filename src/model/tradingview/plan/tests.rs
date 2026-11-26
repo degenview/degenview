@@ -16,7 +16,7 @@ fn market(source: DataSource, symbol: &str) -> Market {
 }
 
 fn symbol(text: &str) -> TvSymbol {
-    TvSymbol::parse(text).unwrap()
+    TvSymbol::read(text).unwrap()
 }
 
 fn mapped() -> Mappings {
@@ -157,4 +157,24 @@ fn a_chart_left_out_leaves_no_hole_in_the_grid() {
     let layout = built(&mappings).layouts.remove(0);
     assert_eq!(layout.columns.len(), 1);
     assert_eq!(layout.columns[0].chart_ids, [layout.charts[0].id]);
+}
+
+#[test]
+fn reading_again_keeps_what_was_left_out_and_decided() {
+    let before = library();
+    let mut selection = Selection::all(&before);
+    selection.scripts.clear();
+    let mut after = before.clone();
+    let mut new_list = after.watchlists[0].clone();
+    new_list.id = "99".into();
+    after.watchlists.push(new_list);
+    let carried = selection.carried_to(&before, &after);
+    assert!(carried.scripts.is_empty());
+    assert!(carried.watchlists.contains("99"));
+
+    let mut mappings = mapped();
+    mappings.skip(&symbol("BINANCE:BTCUSDT"));
+    let kept = mappings.decisions();
+    assert_eq!(*kept.status(&symbol("BINANCE:BTCUSDT")), Match::Skipped);
+    assert_eq!(*kept.status(&symbol("OKX:ETHUSDT")), Match::Searching);
 }

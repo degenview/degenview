@@ -181,7 +181,7 @@ fn choices_stand_until_reset_and_closing_writes_nothing() {
     let ctx = egui::Context::default();
     let mut import = open(&targets, data_folder(&scratch), &ctx);
     settle(&mut import, &ctx, matched);
-    let btc = TvSymbol::parse("BINANCE:BTCUSDT").unwrap();
+    let btc = TvSymbol::read("BINANCE:BTCUSDT").unwrap();
     import.act(Action::Skip(btc.clone()), &ctx);
     import.act(Action::ToggleScript("USER;abc".into()), &ctx);
     assert_eq!(*review(&import).mappings.status(&btc), Match::Skipped);
@@ -198,4 +198,49 @@ fn a_folder_with_nothing_in_it_says_so() {
     let ctx = egui::Context::default();
     let mut import = open(&targets(&scratch), scratch.path().to_owned(), &ctx);
     settle(&mut import, &ctx, |stage| matches!(stage, Stage::Failed(_)));
+}
+
+#[test]
+fn reading_again_keeps_the_choices_made() {
+    let scratch = Scratch::new();
+    let ctx = egui::Context::default();
+    let mut import = open(&targets(&scratch), data_folder(&scratch), &ctx);
+    settle(&mut import, &ctx, matched);
+    let btc = TvSymbol::read("BINANCE:BTCUSDT").unwrap();
+    import.act(Action::Skip(btc.clone()), &ctx);
+    import.act(Action::ToggleScript("USER;abc".into()), &ctx);
+
+    import.act(Action::Reload, &ctx);
+    assert!(matches!(import.stage, Stage::Reading(_)));
+    settle(&mut import, &ctx, matched);
+    assert_eq!(*review(&import).mappings.status(&btc), Match::Skipped);
+    assert!(review(&import).selection.scripts.is_empty());
+    // The same folder again, not the app's default.
+    assert!(review(&import).folder.ends_with("TradingView"));
+}
+
+#[test]
+fn a_name_taken_after_the_preview_is_still_not_taken_over() {
+    let scratch = Scratch::new();
+    let targets = targets(&scratch);
+    let ctx = egui::Context::default();
+    let folder = data_folder(&scratch);
+    let mut first = open(&targets, folder.clone(), &ctx);
+    let mut second = open(&targets, folder, &ctx);
+    for import in [&mut first, &mut second] {
+        settle(import, &ctx, matched);
+        import.act(Action::Preview, &ctx);
+    }
+    first.act(Action::Import, &ctx);
+    second.act(Action::Import, &ctx);
+    let names: Vec<String> = targets
+        .store
+        .lock()
+        .unwrap()
+        .saved_views()
+        .into_iter()
+        .map(|view| view.name)
+        .collect();
+    assert_eq!(names, ["Majors", "Majors 2"]);
+    assert!(first.take_wrote() && !first.take_wrote());
 }

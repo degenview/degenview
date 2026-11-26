@@ -20659,3 +20659,18 @@ msgstr "{name} 以默认设置添加"
 
 msgid "{name}: {error}"
 msgstr "{name}：{error}"
+
+msgid "A formula, not a single market"
+msgstr "公式，而非单一市场"
+
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} 个与其他代码属于同一市场的代码"
+
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} 个超出单个自选列表容量的代码"
+
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} 个斐波那契或江恩绘图使用 DegenView 的水平"

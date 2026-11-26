@@ -48,6 +48,13 @@ fn brotli_and_zstd_bodies_decompress() {
     ];
     assert_eq!(encoding::decode(Some("br"), &brotli).unwrap(), b"hello");
     assert_eq!(encoding::decode(Some("zstd"), &zstd).unwrap(), b"hello");
+    // Two frames with a skippable one between them.
+    let skipped = [0x50, 0x2a, 0x4d, 0x18, 0x02, 0x00, 0x00, 0x00, 0xaa, 0xbb];
+    let several = [&zstd[..], &skipped, &zstd].concat();
+    assert_eq!(
+        encoding::decode(Some("zstd"), &several).unwrap(),
+        b"hellohello"
+    );
 }
 
 #[test]

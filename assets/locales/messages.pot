@@ -268,6 +268,10 @@ msgstr ""
 msgid "A faint market name behind the candles. Off."
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "A formula, not a single market"
+msgstr ""
+
 #: src/model/pine/bundled/mod.rs
 msgid ""
 "A fractal is a bar whose high (or low) is the highest (lowest) of the bars "
@@ -19717,6 +19721,12 @@ msgid_plural "{count} CSV errors require attention"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/tradingview/words.rs
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/settings/sync.rs
 msgid "{count} Pine script"
 msgid_plural "{count} Pine scripts"
@@ -20303,6 +20313,18 @@ msgstr[1] ""
 #: src/pine_studio/ai/panel.rs
 msgid "{count} step"
 msgid_plural "{count} steps"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
 msgstr[0] ""
 msgstr[1] ""
 

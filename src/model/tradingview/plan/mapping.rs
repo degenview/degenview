@@ -24,6 +24,8 @@ pub enum Unmatched {
     /// No provider has the exchange, and the pair was not found elsewhere.
     Venue,
     NotFound,
+    /// A formula, or something else that is not one market.
+    Expression,
     /// A stock, with no Alpaca key to search with.
     NeedsKey,
     /// The providers could not be asked.
@@ -102,6 +104,14 @@ impl Mappings {
     /// Takes the person's choice back.
     pub fn reset(&mut self, symbol: &TvSymbol) {
         self.decided.remove(symbol);
+    }
+
+    /// A fresh set that keeps what the person decided, for the same data read again.
+    pub fn decisions(&self) -> Self {
+        Self {
+            found: BTreeMap::new(),
+            decided: self.decided.clone(),
+        }
     }
 
     pub fn is_decided(&self, symbol: &TvSymbol) -> bool {

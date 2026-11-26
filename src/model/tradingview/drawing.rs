@@ -51,7 +51,7 @@ impl RawDrawing {
             .get("symbol")
             .or_else(|| props.get("symbol"))
             .and_then(Value::as_str)
-            .and_then(TvSymbol::parse)?;
+            .and_then(TvSymbol::read)?;
         let interval = props
             .get("interval")
             .and_then(Value::as_str)

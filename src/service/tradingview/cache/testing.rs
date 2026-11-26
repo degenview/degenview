@@ -59,13 +59,25 @@ impl<'a> Fake<'a> {
         }
     }
 
-    fn headers(&self) -> Vec<u8> {
-        let mut headers = format!("\0\0\0\0HTTP/1.1 {} OK\0", self.status);
+    /// The header record as Chromium pickles it, received `number` seconds into 2025.
+    fn headers(&self, number: usize) -> Vec<u8> {
+        let received = 13_380_163_200_000_000_i64 + number as i64 * 1_000_000;
+        let mut lines = format!("HTTP/1.1 {} OK\0", self.status);
         if let Some(coding) = self.coding {
-            headers.push_str(&format!("Content-Encoding: {coding}\0"));
+            lines.push_str(&format!("Content-Encoding: {coding}\0"));
         }
-        headers.push('\0');
-        headers.into_bytes()
+        lines.push('\0');
+        // Flags with the second flags word, both times, then the lines.
+        let mut record = Vec::new();
+        record.extend((1u32 << 31 | 3).to_le_bytes());
+        record.extend(0u32.to_le_bytes());
+        record.extend(received.to_le_bytes());
+        record.extend(received.to_le_bytes());
+        record.extend((lines.len() as u32).to_le_bytes());
+        record.extend(lines.into_bytes());
+        let mut pickle = (record.len() as u32).to_le_bytes().to_vec();
+        pickle.extend(record);
+        pickle
     }
 }
 
@@ -82,7 +94,7 @@ pub fn simple(dir: &Path, entries: &[Fake]) {
     std::fs::create_dir_all(dir.join("index-dir")).unwrap();
     for (number, fake) in entries.iter().enumerate() {
         let key = format!("1/0/{}", fake.url);
-        let headers = fake.headers();
+        let headers = fake.headers(number);
         let mut file = 0xfcfb_6d1b_a772_5c30_u64.to_le_bytes().to_vec();
         file.extend(5u32.to_le_bytes());
         file.extend((key.len() as u32).to_le_bytes());
@@ -93,17 +105,7 @@ pub fn simple(dir: &Path, entries: &[Fake]) {
         file.extend(&headers);
         file.extend([0u8; 32]);
         file.extend(end_record(3, headers.len()));
-        let path = dir.join(format!("{number:016x}_0"));
-        std::fs::write(&path, file).unwrap();
-        // Entries are received one after another: later ones are newer.
-        let received =
-            std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_750_000_000 + number as u64);
-        std::fs::File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_modified(received)
-            .unwrap();
+        std::fs::write(dir.join(format!("{number:016x}_0")), file).unwrap();
     }
 }
 
@@ -121,7 +123,7 @@ pub fn blockfile(dir: &Path, entries: &[Fake]) {
     };
     for (number, fake) in entries.iter().enumerate() {
         let key = format!("1/0/{}", fake.url);
-        let headers = fake.headers();
+        let headers = fake.headers(number);
         let mut record = [0u8; 256];
         let mut put = |at: usize, value: u32| {
             record[at..at + 4].copy_from_slice(&value.to_le_bytes());
@@ -135,9 +137,6 @@ pub fn blockfile(dir: &Path, entries: &[Fake]) {
         if long {
             put(36, external(key.as_bytes()));
         }
-        // 2025-01-01 in microseconds since 1601, a second later for each entry.
-        let received = 13_380_163_200_000_000_i64 + number as i64 * 1_000_000;
-        record[24..32].copy_from_slice(&received.to_le_bytes());
         if !long {
             record[96..96 + key.len()].copy_from_slice(key.as_bytes());
         }

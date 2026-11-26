@@ -7,6 +7,7 @@ use super::{LeftOut, Mappings, PlannedLayout};
 use crate::model::chart::kind::ChartType;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
+use crate::model::indicators::EMA_PERIODS;
 use crate::model::pine::bundled;
 use crate::model::pine::instance::PineInstance;
 use crate::model::tradingview::convert::{self, Unsupported};
@@ -20,11 +21,7 @@ use crate::model::{
 use std::collections::BTreeMap;
 
 /// TradingView's built-in indicators DegenView draws natively.
-const NATIVE: [(&str, BuiltIn); 3] = [
-    ("Volume", BuiltIn::Volume),
-    ("MAExp", BuiltIn::Ema),
-    ("BB", BuiltIn::Bollinger),
-];
+const NATIVE: [(&str, BuiltIn); 2] = [("Volume", BuiltIn::Volume), ("BB", BuiltIn::Bollinger)];
 
 /// TradingView's built-in indicators DegenView ships as Pine.
 const BUNDLED: [(&str, &str); 19] = [
@@ -232,13 +229,19 @@ fn indicators(
         let (kind, package) = study.id.split_once('@').unwrap_or((&study.id, ""));
         let built_in = package == "tv-basicstudies";
         let instance_id = chart.pine_instances.len() as u64 + 1;
-        if built_in && let Some((_, native)) = NATIVE.iter().find(|(id, _)| *id == kind) {
+        // The native EMA is one line, at one of a few lengths.
+        if built_in && kind == "MAExp" {
+            // TradingView's default length, when the study does not say.
+            let length = study.length.map_or(9, |length| length as usize);
+            if chart.indicators.show_ema || !EMA_PERIODS.contains(&length) {
+                left_out.push(LeftOut::Indicator(format!("EMA {length}")));
+            } else {
+                BuiltIn::Ema.set_applied(&mut chart.indicators, true);
+                chart.indicators.ema_period = length;
+            }
+        } else if built_in && let Some((_, native)) = NATIVE.iter().find(|(id, _)| *id == kind) {
             native.set_applied(&mut chart.indicators, true);
-            if *native == BuiltIn::Ema {
-                if let Some(length) = study.length.filter(|length| *length > 0) {
-                    chart.indicators.ema_period = length as usize;
-                }
-            } else if *native == BuiltIn::Bollinger && study.length.is_some_and(|l| l != 20) {
+            if *native == BuiltIn::Bollinger && study.length.is_some_and(|l| l != 20) {
                 left_out.push(LeftOut::IndicatorSettings(study.name.clone()));
             }
         } else if built_in
@@ -294,7 +297,8 @@ fn file_drawings(
     let mut filed = 0;
     let mut unmapped: BTreeMap<&TvSymbol, usize> = BTreeMap::new();
     let mut tools: BTreeMap<&str, usize> = BTreeMap::new();
-    let (mut pictures, mut positions, mut broken, mut cut) = (0, 0, 0, 0);
+    let (mut pictures, mut positions, mut cut, mut default_levels) = (0, 0, 0, 0);
+    let mut broken = found.unreadable;
     for raw in ordered {
         let Some(market) = mappings.market(&raw.symbol) else {
             *unmapped.entry(&raw.symbol).or_default() += 1;
@@ -316,6 +320,7 @@ fn file_drawings(
                 target.next_drawing += 1;
                 filed += 1;
                 cut += usize::from(converted.cut_text);
+                default_levels += usize::from(converted.default_levels);
             }
             Err(Unsupported::Tool) => {
                 *tools.entry(convert::class_label(&raw.tool)).or_default() += 1;
@@ -346,6 +351,7 @@ fn file_drawings(
         (positions, LeftOut::PositionsWithoutPriceStep(positions)),
         (broken, LeftOut::BrokenDrawings(broken)),
         (cut, LeftOut::CutText(cut)),
+        (default_levels, LeftOut::DefaultLevels(default_levels)),
     ] {
         if count > 0 {
             left_out.push(entry);

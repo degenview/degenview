@@ -22,6 +22,11 @@ impl ChartWorkspace {
         ctx.request_repaint();
     }
 
+    /// Whether a sheet that takes the whole keyboard is over the charts.
+    pub(super) fn sheet_over_charts(&self) -> bool {
+        self.studio_open() || self.tradingview.is_some()
+    }
+
     pub(super) fn show_tradingview_import(
         &mut self,
         ctx: &egui::Context,
@@ -31,6 +36,10 @@ impl ChartWorkspace {
             return;
         };
         let outcome = import.show(ctx);
+        if import.take_wrote() {
+            // The new-tab page keeps what it read: make it read the layouts again.
+            self.empty_page.data = None;
+        }
         if import.take_added_scripts() {
             actions.push(WorkspaceAction::ScriptsImported);
         }

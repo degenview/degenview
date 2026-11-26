@@ -25,6 +25,9 @@ pub type Search =
 
 /// Resolves `tv` through `search`.
 pub fn resolve(tv: &TvSymbol, search: &Search) -> Match {
+    if tv.is_expression() {
+        return Match::Unmatched(Unmatched::Expression);
+    }
     if tv.is_derivative() {
         return Match::Unmatched(Unmatched::Derivative);
     }
@@ -48,7 +51,9 @@ pub fn resolve(tv: &TvSymbol, search: &Search) -> Match {
         match exact(*source, name) {
             Ok(Some(market)) => return Match::Exact(market),
             Err(ProviderError::MissingKey) => return Match::Unmatched(Unmatched::NeedsKey),
-            Ok(None) | Err(_) => {}
+            // Not knowing is not a reason to take another exchange's market: search again.
+            Err(_) => return Match::Unmatched(Unmatched::Unreachable),
+            Ok(None) => {}
         }
     }
     // A stock's ticker is not a pair, whatever it ends in.
@@ -108,7 +113,7 @@ mod tests {
     }
 
     fn resolve_text(text: &str) -> Match {
-        resolve(&TvSymbol::parse(text).unwrap(), &catalog)
+        resolve(&TvSymbol::read(text).unwrap(), &catalog)
     }
 
     #[test]
@@ -147,15 +152,27 @@ mod tests {
     }
 
     #[test]
+    fn an_exchange_that_does_not_answer_is_not_replaced() {
+        let binance_down = |source: DataSource, query: &str| match source {
+            DataSource::Binance => Err(ProviderError::Other("timeout".into())),
+            _ => Ok(vec![hit(source, query)]),
+        };
+        assert_eq!(
+            resolve(&TvSymbol::read("BINANCE:BTCUSDT").unwrap(), &binance_down),
+            Match::Unmatched(Unmatched::Unreachable)
+        );
+    }
+
+    #[test]
     fn a_missing_key_and_a_dead_network_are_said() {
         let no_key = |_: DataSource, _: &str| Err(ProviderError::MissingKey);
         assert_eq!(
-            resolve(&TvSymbol::parse("NASDAQ:AAPL").unwrap(), &no_key),
+            resolve(&TvSymbol::read("NASDAQ:AAPL").unwrap(), &no_key),
             Match::Unmatched(Unmatched::NeedsKey)
         );
         let down = |_: DataSource, _: &str| Err(ProviderError::Other("timeout".into()));
         assert_eq!(
-            resolve(&TvSymbol::parse("BINANCE:BTCUSDT").unwrap(), &down),
+            resolve(&TvSymbol::read("BINANCE:BTCUSDT").unwrap(), &down),
             Match::Unmatched(Unmatched::Unreachable)
         );
     }

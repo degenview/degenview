@@ -38,11 +38,21 @@ struct ScriptBuild {
     newest: Option<((u32, u32), Script)>,
 }
 
+/// What a delta says of one drawing.
+enum Change {
+    Drawn(Box<RawDrawing>),
+    Unreadable,
+    Deleted,
+}
+
+/// A rebuilt layout shows at most this many markets; the rest keep their drawings under a chart.
+const MAX_REBUILT_CHARTS: usize = 4;
+
 #[derive(Default)]
 struct LayoutBuild {
     page: Option<Page>,
-    /// Drawing id to its newest state; `None` once deleted.
-    drawings: BTreeMap<String, Option<RawDrawing>>,
+    /// Drawing id to its newest state.
+    drawings: BTreeMap<String, Change>,
     seen_at_ms: i64,
 }
 
@@ -128,7 +138,15 @@ pub fn library(mut documents: Vec<Fetched>) -> Library {
 }
 
 fn layout(id: String, build: LayoutBuild) -> Option<Layout> {
-    let drawings: Vec<RawDrawing> = build.drawings.into_values().flatten().collect();
+    let mut drawings = Vec::new();
+    let mut unreadable = 0;
+    for change in build.drawings.into_values() {
+        match change {
+            Change::Drawn(drawing) => drawings.push(*drawing),
+            Change::Unreadable => unreadable += 1,
+            Change::Deleted => {}
+        }
+    }
     let (name, grid, charts) = match build.page {
         Some(page) => (Some(page.name), page.grid, page.charts),
         None => {
@@ -142,19 +160,29 @@ fn layout(id: String, build: LayoutBuild) -> Option<Layout> {
         grid,
         charts,
         drawings,
+        unreadable,
         seen_at_ms: build.seen_at_ms,
     })
 }
 
-/// One chart per market drawn on, at the interval most of its drawings were made on.
+/// A chart for each of the markets drawn on most, at the interval most of its drawings were made
+/// on.
 fn charts_from_drawings(drawings: &[RawDrawing]) -> Vec<LayoutChart> {
-    let mut markets: Vec<TvSymbol> = Vec::new();
+    let mut markets: Vec<(TvSymbol, usize)> = Vec::new();
     for drawing in drawings {
-        super::library::push_unique(&mut markets, &drawing.symbol);
+        match markets
+            .iter_mut()
+            .find(|(symbol, _)| *symbol == drawing.symbol)
+        {
+            Some((_, count)) => *count += 1,
+            None => markets.push((drawing.symbol.clone(), 1)),
+        }
     }
+    markets.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     markets
         .into_iter()
-        .map(|symbol| {
+        .take(MAX_REBUILT_CHARTS)
+        .map(|(symbol, _)| {
             let mut intervals: BTreeMap<&str, usize> = BTreeMap::new();
             for drawing in drawings.iter().filter(|drawing| drawing.symbol == symbol) {
                 if interval::timeframe(&drawing.interval).is_some() {
@@ -209,7 +237,8 @@ fn page(html: &str) -> Option<Page> {
         .get("charts")?
         .as_array()?
         .iter()
-        .filter_map(chart)
+        // Every stored chart keeps its place: the grid counts them by it.
+        .map(chart)
         .collect();
     if charts.is_empty() {
         return None;
@@ -223,11 +252,12 @@ fn page(html: &str) -> Option<Page> {
     Some(Page { name, grid, charts })
 }
 
-fn chart(chart: &Value) -> Option<LayoutChart> {
+fn chart(chart: &Value) -> LayoutChart {
     let sources = chart
-        .get("panes")?
-        .as_array()?
-        .iter()
+        .get("panes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
         .filter_map(|pane| pane.get("sources")?.as_array())
         .flatten();
     let mut main = None;
@@ -251,7 +281,7 @@ fn chart(chart: &Value) -> Option<LayoutChart> {
             let symbol = inputs
                 .and_then(|inputs| inputs.get("symbol"))
                 .and_then(Value::as_str)
-                .and_then(TvSymbol::parse);
+                .and_then(TvSymbol::read);
             if let Some(symbol) = symbol {
                 super::library::push_unique(&mut overlays, &symbol);
             }
@@ -263,29 +293,31 @@ fn chart(chart: &Value) -> Option<LayoutChart> {
             studies.push(Study { id, name, length });
         }
     }
-    let main = main?;
-    let state = main.get("state")?;
-    let symbol = TvSymbol::parse(state.get("symbol")?.as_str()?)?;
+    let state = main.and_then(|main| main.get("state"));
+    let text = |key: &str| {
+        state
+            .and_then(|state| state.get(key))
+            .and_then(Value::as_str)
+    };
     let number = |key: &str| {
-        main.get("formattingDeps")
+        main.and_then(|main| main.get("formattingDeps"))
             .and_then(|deps| deps.get(key))
             .and_then(Value::as_f64)
             .filter(|value| *value > 0.0)
     };
-    let tick = number("pricescale").map(|scale| number("minmov").unwrap_or(1.0) / scale);
-    Some(LayoutChart {
-        symbol,
-        interval: state
-            .get("interval")
-            .and_then(Value::as_str)
-            .unwrap_or("D")
-            .to_owned(),
-        style: state.get("style").and_then(Value::as_i64),
+    LayoutChart {
+        symbol: text("symbol")
+            .and_then(TvSymbol::read)
+            .unwrap_or_else(TvSymbol::unknown),
+        interval: text("interval").unwrap_or("D").to_owned(),
+        style: state
+            .and_then(|state| state.get("style"))
+            .and_then(Value::as_i64),
         overlays,
         studies,
-        tick,
+        tick: number("pricescale").map(|scale| number("minmov").unwrap_or(1.0) / scale),
         shown: true,
-    })
+    }
 }
 
 /// A study's id without its version, and a name to show.
@@ -316,7 +348,7 @@ fn study_identity(source: &Value) -> Option<(String, String)> {
 }
 
 /// The drawing changes of a sources response.
-fn sources(json: &str) -> Vec<(String, Option<RawDrawing>)> {
+fn sources(json: &str) -> Vec<(String, Change)> {
     let Ok(body) = serde_json::from_str::<Value>(json) else {
         return Vec::new();
     };
@@ -331,11 +363,29 @@ fn sources(json: &str) -> Vec<(String, Option<RawDrawing>)> {
     };
     sources
         .iter()
-        .filter_map(|(id, source)| match source {
-            Value::Null => Some((id.clone(), None)),
-            source => RawDrawing::read(id, source).map(|drawing| (id.clone(), Some(drawing))),
+        .filter_map(|(id, source)| {
+            let change = match source {
+                Value::Null => Change::Deleted,
+                // A newer state replaces the older one even when it cannot be read: the older
+                // one is no longer what the drawing looks like.
+                source => match RawDrawing::read(id, source) {
+                    Some(drawing) => Change::Drawn(Box::new(drawing)),
+                    None if is_drawing(source) => Change::Unreadable,
+                    None => return None,
+                },
+            };
+            Some((id.clone(), change))
         })
         .collect()
+}
+
+/// Whether a source is a drawing, readable or not (a study kept among them is not).
+fn is_drawing(source: &Value) -> bool {
+    source
+        .get("state")
+        .and_then(|state| state.get("type"))
+        .and_then(Value::as_str)
+        .is_some_and(|kind| kind.starts_with("LineTool"))
 }
 
 fn watchlists_of(json: &str) -> Vec<TvWatchlist> {
@@ -369,7 +419,7 @@ fn watchlist(list: &Value) -> Option<TvWatchlist> {
                     .trim_matches(|c: char| c.is_whitespace() || c == '\u{2064}')
                     .to_owned(),
             )),
-            None => TvSymbol::parse(text)
+            None => TvSymbol::read(text)
                 .filter(|symbol| seen.insert(symbol.clone()))
                 .map(WatchRow::Market),
         })
@@ -517,5 +567,59 @@ mod tests {
             }),
         ]);
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn a_chart_that_cannot_be_a_market_keeps_its_place_in_the_grid() {
+        let html = r#"initData.uid = "Cd"; initData.content = {"name": "S", "layout": "2h",
+            "charts": [
+              {"panes": [{"sources": [{"type": "MainSeries",
+                  "state": {"symbol": "BINANCE:BTCUSDT/BINANCE:ETHUSDT"}}]}]},
+              {"panes": [{"sources": [{"type": "MainSeries", "state": {"symbol": "NASDAQ:AAPL"}}]}]},
+              {"panes": [{"sources": [{"type": "MainSeries", "state": {"symbol": "NASDAQ:MSFT"}}]}]}
+            ]};"#;
+        let found = library(vec![Fetched {
+            at_ms: 1,
+            document: Document::LayoutPage { html: html.into() },
+        }]);
+        let shown: Vec<bool> = found.layouts[0].charts.iter().map(|c| c.shown).collect();
+        assert_eq!(shown, [true, true, false]);
+        assert!(found.layouts[0].charts[0].symbol.is_expression());
+    }
+
+    #[test]
+    fn a_newer_state_that_cannot_be_read_replaces_the_older_one_and_is_counted() {
+        let mut broken = fixtures::trend_line("a");
+        broken["state"]["points"] = serde_json::json!([{"price": 1.0}]);
+        let found = library(vec![
+            fixtures::sources(
+                "Ab",
+                1,
+                &[fixtures::trend_line("a"), fixtures::trend_line("b")],
+            ),
+            fixtures::sources("Ab", 2, &[broken]),
+        ]);
+        let layout = &found.layouts[0];
+        assert_eq!((layout.drawings.len(), layout.unreadable), (1, 1));
+    }
+
+    #[test]
+    fn a_rebuilt_layout_shows_only_the_markets_drawn_on_most() {
+        let drawings: Vec<serde_json::Value> = (0..9)
+            .map(|index| {
+                fixtures::drawing(
+                    &format!("d{index}"),
+                    "LineToolHorzLine",
+                    &format!("X:M{}USD", index.min(7)),
+                    serde_json::json!({}),
+                    &[(0, 1.0)],
+                )
+            })
+            .collect();
+        let found = library(vec![fixtures::sources("Ab", 1, &drawings)]);
+        let layout = &found.layouts[0];
+        assert_eq!(layout.charts.len(), 4);
+        assert_eq!(layout.charts[0].symbol.as_str(), "X:M7USD", "two drawings");
+        assert_eq!(layout.drawings.len(), 9, "none is lost");
     }
 }

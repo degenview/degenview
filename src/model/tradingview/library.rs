@@ -29,6 +29,8 @@ pub struct Layout {
     /// Every chart the layout stores, the shown ones first. Never empty.
     pub charts: Vec<LayoutChart>,
     pub drawings: Vec<RawDrawing>,
+    /// Drawings whose newest state could not be read.
+    pub unreadable: usize,
     /// When TradingView last fetched any of it, in epoch milliseconds.
     pub seen_at_ms: i64,
 }

@@ -2,11 +2,10 @@
 //! key, the body (stream 1), an end record, the response headers (stream 0), optionally the key's
 //! SHA-256, and a second end record. See Chromium's `simple_entry_format.h`.
 
-use super::{MAX_ENTRY_BYTES, Response, body_of, url_of};
+use super::{MAX_ENTRY_BYTES, Response, body_of, received_ms, url_of};
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
-use std::time::UNIX_EPOCH;
 
 const HEADER_MAGIC: u64 = 0xfcfb_6d1b_a772_5c30;
 const END_MAGIC: u64 = 0xf4fa_6f45_970d_41d8;
@@ -65,16 +64,10 @@ fn read_entry(path: &Path, wanted: &dyn Fn(&str) -> bool) -> Option<Response> {
     let mut rest = Vec::new();
     file.read_to_end(&mut rest).ok()?;
     let (headers, body) = streams(&rest)?;
-    let at_ms = metadata
-        .modified()
-        .ok()?
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_millis();
     Some(Response {
         body: body_of(headers, body)?,
         url,
-        at_ms: i64::try_from(at_ms).ok()?,
+        at_ms: received_ms(headers)?,
     })
 }
 

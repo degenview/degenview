@@ -7,19 +7,32 @@ use crate::model::market::source::{split_binance_pair, split_mexc_pair};
 use crate::model::market::venue;
 use std::fmt;
 
-/// A market as TradingView names it, upper-cased: `COINBASE:BTCUSD`.
+/// What a chart, drawing or watchlist row names, upper-cased: usually `COINBASE:BTCUSD`. Anything
+/// is kept, so that a formula or a name without an exchange holds its place and is reported.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TvSymbol(String);
 
 impl TvSymbol {
-    /// `None` for text that is not `EXCHANGE:TICKER` (a formula such as `A/B`, a bare ticker).
-    pub fn parse(text: &str) -> Option<Self> {
+    /// `None` only for blank text.
+    pub fn read(text: &str) -> Option<Self> {
         let text = text.trim();
-        let (exchange, ticker) = text.split_once(':')?;
-        let plain = |part: &str| {
-            !part.is_empty() && !part.contains([':', '+', '*', '(', ')', ' ', '|', ','])
-        };
-        (plain(exchange) && plain(ticker)).then(|| Self(text.to_uppercase()))
+        (!text.is_empty()).then(|| Self(text.to_uppercase()))
+    }
+
+    /// A chart whose symbol could not be read at all.
+    pub fn unknown() -> Self {
+        Self("?".to_owned())
+    }
+
+    /// A formula over markets (`A:B/C:D`, `1/FX:EURUSD`) or something else that is not one market.
+    pub fn is_expression(&self) -> bool {
+        self.0 == "?"
+            || self
+                .ticker()
+                .contains([':', '+', '*', '(', ')', ' ', '|', ',', '{', '='])
+            || self
+                .exchange()
+                .contains(['+', '*', '(', ')', ' ', '/', '{', '='])
     }
 
     pub fn as_str(&self) -> &str {
@@ -61,6 +74,9 @@ impl TvSymbol {
     /// exchange: Kraken's `XBTUSD` is XBT in dollars, not XB in TrueUSD, which only exchanges
     /// that list that coin are read with.
     pub fn pair(&self) -> Option<(&str, &str)> {
+        if self.is_expression() {
+            return None;
+        }
         let ticker = self.ticker();
         let split = match self.source() {
             Some(DataSource::Binance | DataSource::Bybit) => split_binance_pair(ticker),
@@ -141,7 +157,7 @@ mod tests {
     use super::*;
 
     fn symbol(text: &str) -> TvSymbol {
-        TvSymbol::parse(text).expect(text)
+        TvSymbol::read(text).expect(text)
     }
 
     #[test]
@@ -175,16 +191,24 @@ mod tests {
     }
 
     #[test]
-    fn formulas_and_bare_tickers_are_not_markets() {
+    fn formulas_are_kept_and_known_for_what_they_are() {
         for text in [
-            "BTCUSD",
             "BINANCE:BTCUSDT/BINANCE:ETHUSDT",
             "A:B+C",
-            ":X",
-            "X:",
+            "1/FX:EURUSD",
+            "={\"symbol\":\"A:B\"}",
         ] {
-            assert_eq!(TvSymbol::parse(text), None, "{text}");
+            assert!(symbol(text).is_expression(), "{text}");
         }
+        for text in [
+            "BINANCE:BTCUSDT",
+            "KRAKEN:XBT/USD",
+            "CRYPTOCAP:BTC.D",
+            "BTCUSD",
+        ] {
+            assert!(!symbol(text).is_expression(), "{text}");
+        }
+        assert_eq!(TvSymbol::read("  "), None);
     }
 
     #[test]

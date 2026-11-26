@@ -93,7 +93,9 @@ pub fn show(ctx: &egui::Context, view: &View<'_>) -> Vec<Action> {
 
 /// The sheet's inside, also what the gallery draws.
 pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
-    ui.set_height(SIZE.y);
+    // The whole sheet, footer included, stays inside a small window.
+    let tall = SIZE.y.min(ui.ctx().content_rect().height() - 40.0);
+    ui.set_height(tall);
     ui.spacing_mut().item_spacing.y = 0.0;
     let top = ui.cursor().top();
     ui.add_space(HEADER_PADDING);
@@ -103,7 +105,7 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
     });
     ui.add_space(16.0);
     // `set_height` made the sheet's own rect SIZE.y tall, so measure from the cursor.
-    let height = SIZE.y - (ui.cursor().top() - top) - FOOTER_HEIGHT;
+    let height = tall - (ui.cursor().top() - top) - FOOTER_HEIGHT;
     match view {
         View::Reading => result::reading(ui, height, actions),
         View::Failed(message) => result::failed(ui, height, message, actions),

@@ -50,6 +50,22 @@ fn url_of(key: &str) -> Option<&str> {
     Some(&last[start..])
 }
 
+/// Microseconds from 1601, Chromium's epoch, to 1970.
+const EPOCH_OFFSET_US: i64 = 11_644_473_600_000_000;
+/// The bit of the header record's flags that says a second flags word follows.
+const HAS_EXTRA_FLAGS: u32 = 1 << 31;
+
+/// When the response was received, from the head of its stored headers: a length, flags (and
+/// maybe more), then the request and response times. A refreshed response is written into the
+/// entry it had, so neither the entry's creation nor the file's time is dependably this.
+fn received_ms(headers: &[u8]) -> Option<i64> {
+    let flags = u32::from_le_bytes(headers.get(4..8)?.try_into().ok()?);
+    let at = if flags & HAS_EXTRA_FLAGS != 0 { 20 } else { 16 };
+    let micros = i64::from_le_bytes(headers.get(at..at + 8)?.try_into().ok()?);
+    // Anything before 1970 is not a time.
+    (micros > EPOCH_OFFSET_US).then(|| (micros - EPOCH_OFFSET_US) / 1_000)
+}
+
 /// The body of a response from its stored headers and bytes; `None` unless it succeeded and
 /// could be decompressed.
 fn body_of(headers: &[u8], body: &[u8]) -> Option<Vec<u8>> {

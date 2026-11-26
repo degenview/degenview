@@ -180,13 +180,62 @@ fn a_table_keeps_its_cells() {
     assert_eq!(table.cell(2, 1), "f");
 }
 
+/// Points that make a shape for any tool: each later in time, at its own price.
+fn points_for(count: usize) -> Vec<(i64, f64)> {
+    (0..count)
+        .map(|index| {
+            let step = index as f64;
+            (
+                index as i64 * 3,
+                100.0 + step * 7.0 + (step * 1.7).sin() * 11.0,
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn every_listed_class_names_one_tool_and_builds_from_its_points() {
+    use crate::model::drawings::tool::Placement;
     let mut seen = std::collections::HashSet::new();
     for (class, tool) in TOOLS {
         assert!(seen.insert(class), "{class} twice");
         assert_eq!(tool_of(class), Some(*tool));
+        // These take their own settings beside the points, and have tests of their own.
+        if matches!(tool, Tool::Post | Tool::LongPosition | Tool::ShortPosition) {
+            continue;
+        }
+        let count = match tool.spec().placement {
+            Placement::Points(count) => usize::from(count),
+            Placement::Single => 1,
+            _ => 3,
+        };
+        let source = drawing("d", class, "A:B", json!({}), &points_for(count));
+        let converted = convert(&raw(&source), 1, None);
+        assert!(
+            converted.is_ok(),
+            "{class} from {count} points: {converted:?}"
+        );
     }
+}
+
+#[test]
+fn a_table_past_the_limits_is_cut_to_them_and_said_to_be() {
+    let wide: Vec<String> = (0..40).map(|n| n.to_string()).collect();
+    let cells: Vec<&Vec<String>> = std::iter::repeat_n(&wide, 100).collect();
+    let source = drawing(
+        "t",
+        "LineToolTable",
+        "A:B",
+        json!({"cells": cells, "columnWidths": [1, 9000], "rowHeights": [0, 2]}),
+        &[(0, 1.0)],
+    );
+    let converted = convert(&raw(&source), 1, None).unwrap();
+    assert!(converted.cut_text);
+    let (Geometry::Table(table), ..) = shape(&converted.drawing) else {
+        panic!();
+    };
+    assert!(table.is_valid());
+    assert_eq!((table.row_count(), table.column_count()), (30, 12));
 }
 
 /// The classes behind TradingView's own tool names, as its web app registers them.

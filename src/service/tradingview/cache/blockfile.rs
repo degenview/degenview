@@ -3,7 +3,7 @@
 //! `f_xxxxxx`. See Chromium's `blockfile/disk_format.h`. The app keeps these files open and
 //! writes to them; they are only read here, and anything half-written is passed over.
 
-use super::{MAX_ENTRY_BYTES, Response, body_of, url_of};
+use super::{MAX_ENTRY_BYTES, Response, body_of, received_ms, url_of};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
@@ -17,8 +17,6 @@ const BLOCK_HEADER_BYTES: usize = 8_192;
 const ENTRY_KEY_AT: usize = 96;
 /// An entry that is neither evicted nor doomed.
 const ENTRY_NORMAL: i32 = 0;
-/// Microseconds from 1601, Chromium's epoch, to 1970.
-const EPOCH_OFFSET_US: i64 = 11_644_473_600_000_000;
 /// The longest chain of one hash bucket followed.
 const MAX_CHAIN: usize = 1_024;
 
@@ -89,7 +87,6 @@ impl Cache {
 struct Entry {
     next: Address,
     key: String,
-    created_us: i64,
     live: bool,
     headers: (Address, usize),
     body: (Address, usize),
@@ -100,7 +97,6 @@ fn entry(cache: &mut Cache, address: Address) -> Option<Entry> {
     let word = |at: usize| -> Option<u32> {
         Some(u32::from_le_bytes(record.get(at..at + 4)?.try_into().ok()?))
     };
-    let created_us = i64::from_le_bytes(record.get(24..32)?.try_into().ok()?);
     let key_length = word(32)? as usize;
     let long_key = Address(word(36)?);
     let key = if long_key.is_set() {
@@ -113,7 +109,6 @@ fn entry(cache: &mut Cache, address: Address) -> Option<Entry> {
     Some(Entry {
         next: Address(word(4)?),
         key: String::from_utf8_lossy(&key).into_owned(),
-        created_us,
         live: word(20)? as i32 == ENTRY_NORMAL,
         // Stream 0 is the response headers, stream 1 the body.
         headers: (Address(word(56)?), word(40)? as usize),
@@ -157,14 +152,16 @@ pub fn read(dir: &Path, wanted: &dyn Fn(&str) -> bool) -> io::Result<Vec<Respons
             let Some(url) = url_of(&entry.key).filter(|url| entry.live && wanted(url)) else {
                 continue;
             };
-            let body = cache
+            let read = cache
                 .data(entry.headers.0, entry.headers.1)
                 .zip(cache.data(entry.body.0, entry.body.1))
-                .and_then(|(headers, body)| body_of(&headers, &body));
-            if let Some(body) = body {
+                .and_then(|(headers, body)| {
+                    Some((received_ms(&headers)?, body_of(&headers, &body)?))
+                });
+            if let Some((at_ms, body)) = read {
                 found.push(Response {
                     url: url.to_owned(),
-                    at_ms: (entry.created_us - EPOCH_OFFSET_US) / 1_000,
+                    at_ms,
                     body,
                 });
             }

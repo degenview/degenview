@@ -40,6 +40,29 @@ impl Selection {
         self.layouts.is_empty() && self.watchlists.is_empty() && self.scripts.is_empty()
     }
 
+    /// The choice for a library read again: what was left out of `before` stays out, and what is
+    /// new comes in.
+    pub fn carried_to(&self, before: &Library, after: &Library) -> Self {
+        let mut next = Self::all(after);
+        for layout in &before.layouts {
+            if !self.layouts.contains(&layout.id) {
+                next.layouts.remove(&layout.id);
+            }
+        }
+        for list in &before.watchlists {
+            if !self.watchlists.contains(&list.id) {
+                next.watchlists.remove(&list.id);
+            }
+        }
+        for script in &before.scripts {
+            if !self.scripts.contains(&script.id) {
+                next.scripts.remove(&script.id);
+            }
+        }
+        next.timeframes.clone_from(&self.timeframes);
+        next
+    }
+
     /// Every market the chosen layouts and watchlists name, with what uses it, in the order they
     /// are met.
     pub fn symbols(&self, library: &Library) -> Vec<(TvSymbol, Usage)> {
@@ -182,6 +205,12 @@ pub enum LeftOut {
     Interval(String),
     /// A watchlist's markets with no match.
     Markets(usize),
+    /// Symbols that became a market the list already has.
+    SameMarket(usize),
+    /// Symbols past what a watchlist holds.
+    ListFull(usize),
+    /// Fibonacci or Gann drawings brought over with DegenView's levels.
+    DefaultLevels(usize),
 }
 
 /// The plan for `selection`. `base` is the look a new chart gets here.
@@ -248,12 +277,17 @@ pub fn plan(
             let mut list = Watchlist::new(unique(&mut list_names, &name));
             let mut section = None;
             let mut markets = 0;
-            let mut missing = 0;
+            let (mut missing, mut same, mut full) = (0, 0, 0);
             let mut seen = HashSet::new();
             for row in &found.rows {
                 match row {
                     WatchRow::Section(title) => {
-                        section = list.add_section(title, None).ok().map(|added| added.id);
+                        // An unnamed section's markets stay outside any, not in the one before.
+                        let title = Watchlist::sanitized_name(title);
+                        section = (!title.is_empty())
+                            .then(|| list.add_section(&title, None).ok())
+                            .flatten()
+                            .map(|added| added.id);
                     }
                     WatchRow::Market(symbol) => match mappings.market(symbol) {
                         Some(market) => {
@@ -264,10 +298,12 @@ pub fn plan(
                             );
                             item.image_url.clone_from(&market.image_url);
                             // Two TradingView venues may map to one market here.
-                            if seen.insert(item.instrument.key())
-                                && list.add_checked(item, section).is_ok()
-                            {
+                            if !seen.insert(item.instrument.key()) {
+                                same += 1;
+                            } else if list.add_checked(item, section).is_ok() {
                                 markets += 1;
+                            } else {
+                                full += 1;
                             }
                         }
                         None => missing += 1,
@@ -278,10 +314,14 @@ pub fn plan(
                 source_id: found.id.clone(),
                 list,
                 markets,
-                left_out: (missing > 0)
-                    .then_some(LeftOut::Markets(missing))
-                    .into_iter()
-                    .collect(),
+                left_out: [
+                    (missing, LeftOut::Markets(missing)),
+                    (same, LeftOut::SameMarket(same)),
+                    (full, LeftOut::ListFull(full)),
+                ]
+                .into_iter()
+                .filter_map(|(count, entry)| (count > 0).then_some(entry))
+                .collect(),
             }
         })
         .collect();

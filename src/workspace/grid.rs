@@ -318,7 +318,7 @@ impl ChartWorkspace {
         let mut drawing_style_copied: Option<(Tool, DrawingStyle)> = None;
         let style_clipboard = self.tools.style_clipboard();
         let dialog_open =
-            self.tools.has_dialog() || self.content.sheet_open() || self.studio_open();
+            self.tools.has_dialog() || self.content.sheet_open() || self.sheet_over_charts();
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
         let mut drawing_alert: Option<(u64, f64)> = None;
