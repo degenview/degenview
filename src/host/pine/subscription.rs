@@ -9,7 +9,9 @@
 //! script again, or a replay that gets through, brings the alert back by itself.
 
 use crate::host::pine::KlineSecurityDataProvider;
-use crate::model::alert::pine::{ChartKey, PineAlertState, PineAlertSubscription, ScriptFailure};
+use crate::model::alert::pine::{
+    ChartKey, PineAlertState, PineAlertSubscription, RearmBlock, ScriptFailure,
+};
 use crate::model::chart::synthetic::Construction;
 use crate::model::market::bucket::Grid;
 use crate::model::pine::instance::PineInstance;
@@ -65,10 +67,107 @@ impl ChartFeed {
     fn can_take_over(&self, subscription: &PineAlertSubscription) -> bool {
         self.on.chart_id == subscription.chart_id
             && subscription.watches(&self.symbol_key, &self.timeframe)
-            && self.instance_of(subscription).is_some_and(|instance| {
-                crate::store::scripts::hash_source(&instance.source) == subscription.source_hash
-            })
+            && self
+                .instance_of(subscription)
+                .is_some_and(|instance| has_source_of(subscription, instance))
     }
+}
+
+fn has_source_of(subscription: &PineAlertSubscription, instance: &PineInstance) -> bool {
+    crate::store::scripts::hash_source(&instance.source) == subscription.source_hash
+}
+
+/// Whether `instance` is the alert's script: the same saved script, whatever its text now; for one
+/// that came from no saved script, the very same text.
+fn is_script_of(subscription: &PineAlertSubscription, instance: &PineInstance) -> bool {
+    match &subscription.script_id {
+        Some(script_id) => instance.script_id.as_ref() == Some(script_id),
+        None => has_source_of(subscription, instance),
+    }
+}
+
+/// What a switched-off alert would be re-armed on.
+struct RearmTarget {
+    on: ChartKey,
+    instance: PineInstance,
+}
+
+/// Whether the tab `subscription` names is open.
+fn tab_open(subscription: &PineAlertSubscription, charts: &[ChartFeed]) -> bool {
+    charts
+        .iter()
+        .any(|chart| Some(chart.on.workspace_id) == subscription.workspace_id)
+}
+
+/// The indicator a switched-off alert would be re-armed on: the one it was armed on if that is
+/// still there, else the one copy of its script on its chart. With its tab closed, any open chart
+/// of the same id may be that chart.
+fn rearm_target(
+    subscription: &PineAlertSubscription,
+    subscriptions: &[PineAlertSubscription],
+    charts: &[ChartFeed],
+) -> Result<RearmTarget, RearmBlock> {
+    if subscription.state == PineAlertState::ScriptDeleted {
+        return Err(RearmBlock::ScriptDeleted);
+    }
+    let tab_open = tab_open(subscription, charts);
+    let own: Vec<&ChartFeed> = charts
+        .iter()
+        .filter(|chart| {
+            chart.on.chart_id == subscription.chart_id
+                && (!tab_open || subscription.is_on(chart.on))
+        })
+        .collect();
+    if own.is_empty() {
+        return Err(RearmBlock::ChartNotOpen);
+    }
+    let on_market: Vec<&ChartFeed> = own
+        .into_iter()
+        .filter(|chart| subscription.watches(&chart.symbol_key, &chart.timeframe))
+        .collect();
+    if on_market.is_empty() {
+        return Err(RearmBlock::OtherMarket);
+    }
+    let mut found: Vec<(ChartKey, &PineInstance)> = on_market
+        .iter()
+        .filter_map(|chart| {
+            let instance = chart
+                .instance_of(subscription)
+                .filter(|instance| has_source_of(subscription, instance))?;
+            Some((chart.on, instance))
+        })
+        .collect();
+    if found.is_empty() {
+        found = on_market
+            .iter()
+            .flat_map(|chart| {
+                chart
+                    .instances
+                    .iter()
+                    .filter(|instance| is_script_of(subscription, instance))
+                    .map(|instance| (chart.on, instance))
+            })
+            .collect();
+    }
+    let (on, instance) = match found.as_slice() {
+        [] => return Err(RearmBlock::ScriptNotApplied),
+        [one] => *one,
+        _ => return Err(RearmBlock::AppliedMoreThanOnce),
+    };
+    let taken = subscriptions.iter().any(|other| {
+        other.id != subscription.id
+            && other.is_active()
+            && other.is_on(on)
+            && other.instance_id == Some(instance.id)
+            && other.watches(&subscription.symbol_key, &subscription.timeframe)
+    });
+    if taken {
+        return Err(RearmBlock::AlreadyArmed);
+    }
+    Ok(RearmTarget {
+        on,
+        instance: instance.clone(),
+    })
 }
 
 /// What the chart a script alert runs on feeds it. A price-based chart gives the script its
@@ -137,6 +236,8 @@ struct Running {
 pub struct PineSubscriptionHost {
     subscriptions: Vec<PineAlertSubscription>,
     running: HashMap<u64, Running>,
+    /// What each switched-off alert can be re-armed on, as of the last [`Self::reconcile`].
+    rearm: HashMap<u64, Result<RearmTarget, RearmBlock>>,
 }
 
 impl PineSubscriptionHost {
@@ -144,6 +245,7 @@ impl PineSubscriptionHost {
         Self {
             subscriptions: store.pine_subscriptions(),
             running: HashMap::new(),
+            rearm: HashMap::new(),
         }
     }
 
@@ -162,14 +264,43 @@ impl PineSubscriptionHost {
         }
     }
 
-    /// Forgets what was built for a subscription that is gone or switched off, so arming it
-    /// again starts from a fresh compile.
+    /// Why a switched-off alert cannot be re-armed; `None` when it can.
+    pub fn rearm_block(&self, subscription_id: u64) -> Option<RearmBlock> {
+        match self.rearm.get(&subscription_id) {
+            Some(target) => target.as_ref().err().copied(),
+            // No chart has been looked at for it yet.
+            None => Some(RearmBlock::ChartNotOpen),
+        }
+    }
+
+    /// Arms a switched-off alert again on the indicator [`Self::reconcile`] found for it. Does
+    /// nothing while [`Self::rearm_block`] says why it cannot be.
+    pub fn rearm(&mut self, subscription_id: u64, store: &Store) {
+        let Some(Ok(target)) = self.rearm.remove(&subscription_id) else {
+            return;
+        };
+        let source_hash = crate::store::scripts::hash_source(&target.instance.source);
+        let mut subscriptions = store.pine_subscriptions();
+        for subscription in subscriptions
+            .iter_mut()
+            .filter(|subscription| subscription.id == subscription_id)
+        {
+            subscription.rearm_on(target.on, &target.instance, source_hash.clone());
+        }
+        let _ = store.replace_pine_subscriptions(&subscriptions);
+        self.reload(store);
+    }
+
+    /// Forgets what was built for a subscription that is gone, switched off or now has another
+    /// source, so arming it again starts from a fresh compile and shows no old failure.
     fn drop_stopped_runs(&mut self) {
         let subscriptions = &self.subscriptions;
-        self.running.retain(|id, _| {
-            subscriptions
-                .iter()
-                .any(|subscription| subscription.id == *id && subscription.is_active())
+        self.running.retain(|id, running| {
+            subscriptions.iter().any(|subscription| {
+                subscription.id == *id
+                    && subscription.is_active()
+                    && subscription.source_hash == running.key.source_hash
+            })
         });
     }
 
@@ -178,7 +309,8 @@ impl PineSubscriptionHost {
         &self.subscriptions
     }
 
-    /// Brings the subscriptions up to date with every open chart.
+    /// Brings the subscriptions up to date with every open chart, and works out what each
+    /// switched-off one could be re-armed on.
     ///
     /// An alert whose tab is not open moves to a chart that runs its script on its market (a saved
     /// layout opened in another tab), and otherwise waits; paused alerts too, so they can be
@@ -188,10 +320,7 @@ impl PineSubscriptionHost {
     pub fn reconcile(&mut self, charts: &[ChartFeed], store: &Store) {
         let mut changed = false;
         for subscription in &mut self.subscriptions {
-            let tab_open = charts
-                .iter()
-                .any(|chart| Some(chart.on.workspace_id) == subscription.workspace_id);
-            if !tab_open
+            if !tab_open(subscription, charts)
                 && let Some(chart) = charts
                     .iter()
                     .find(|chart| chart.can_take_over(subscription))
@@ -228,6 +357,15 @@ impl PineSubscriptionHost {
         if changed {
             let _ = store.replace_pine_subscriptions(&self.subscriptions);
         }
+        self.rearm = self
+            .subscriptions
+            .iter()
+            .filter(|subscription| !subscription.is_active())
+            .map(|subscription| {
+                let target = rearm_target(subscription, &self.subscriptions, charts);
+                (subscription.id, target)
+            })
+            .collect();
     }
 
     /// [`Self::run_active_on`] for a time-based chart on the first tab.
@@ -583,8 +721,8 @@ mod tests {
         assert!(host.failure(1).is_some());
     }
 
-    /// The way a user fixes a script: the corrected one goes on the chart as a new instance,
-    /// with a new alert.
+    /// A corrected script goes on the chart as a new instance: its new alert fires, and the old
+    /// one reads as changed until it is re-armed.
     #[test]
     fn a_fixed_script_fires_and_the_broken_alert_reads_as_changed() {
         let fixed = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)";
@@ -693,6 +831,159 @@ mod tests {
             let moved = &store.pine_subscriptions()[0];
             assert_eq!((moved.workspace_id, moved.state), (Some(5), state));
         }
+    }
+
+    const SAYS_OLD: &str = "//@version=6\nindicator(\"S\")\nalert(\"old\", alert.freq_all)";
+    const SAYS_NEW: &str = "//@version=6\nindicator(\"S\")\nlen = input.int(2)\n\
+        alert(\"new\", alert.freq_all)";
+
+    /// A copy of the saved script the alerts were armed on.
+    fn copy(id: u64, source: &str) -> PineInstance {
+        PineInstance::new(id, Some("saved-script".into()), "S v2", source)
+    }
+
+    fn armed(id: u64, state: PineAlertState) -> PineAlertSubscription {
+        PineAlertSubscription {
+            script_id: Some("saved-script".into()),
+            state,
+            ..subscription(id, SAYS_OLD)
+        }
+    }
+
+    fn host_of(subscriptions: &[PineAlertSubscription]) -> (Store, PineSubscriptionHost) {
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_pine_subscriptions(subscriptions)
+            .expect("write");
+        let host = PineSubscriptionHost::load(&store);
+        (store, host)
+    }
+
+    #[test]
+    fn rearm_takes_the_same_script_as_the_chart_has_it_now_and_stays_armed() {
+        use crate::model::pine::instance::StoredInput;
+
+        let (store, mut host) = host_of(&[armed(1, PineAlertState::Active)]);
+        let mut newer = copy(11, SAYS_NEW);
+        newer.inputs.insert("len".into(), StoredInput::Int(9));
+        let charts = [chart(1, &[newer])];
+        host.reconcile(&charts, &store);
+        assert_eq!(
+            store.pine_subscriptions()[0].state,
+            PineAlertState::ScriptChanged
+        );
+        assert_eq!(host.rearm_block(1), None);
+
+        host.rearm(1, &store);
+        host.reconcile(&charts, &store);
+        let rearmed = &store.pine_subscriptions()[0];
+        assert_eq!(rearmed.state, PineAlertState::Active, "it stays armed");
+        assert_eq!(
+            (rearmed.instance_id, rearmed.source.as_str()),
+            (Some(11), SAYS_NEW)
+        );
+        assert_eq!(
+            rearmed.source_hash,
+            crate::store::scripts::hash_source(SAYS_NEW)
+        );
+        assert_eq!(rearmed.inputs.get("len"), Some(&StoredInput::Int(9)));
+        assert_eq!(rearmed.script_name, "S v2");
+
+        let mut live = chart(1, &charts[0].instances);
+        assert!(host.run_active_on(&live, LIVE_NOW).is_empty());
+        live.bars[4].close += 1.0;
+        let fired = host.run_active_on(&live, LIVE_NOW + 1);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].1.message, "new");
+    }
+
+    #[test]
+    fn rearm_needs_exactly_one_indicator_to_take_and_prefers_the_one_it_was_armed_on() {
+        let other_script = PineInstance::new(11, Some("another".into()), "T", SAYS_OLD);
+        let mut other_market = chart(1, &[copy(10, SAYS_OLD)]);
+        other_market.symbol_key = "binance:ETHUSDT".into();
+        for (charts, block) in [
+            (vec![], Some(RearmBlock::ChartNotOpen)),
+            (vec![other_market], Some(RearmBlock::OtherMarket)),
+            (
+                vec![chart(1, &[other_script])],
+                Some(RearmBlock::ScriptNotApplied),
+            ),
+            (
+                vec![chart(1, &[copy(11, SAYS_NEW), copy(12, SAYS_NEW)])],
+                Some(RearmBlock::AppliedMoreThanOnce),
+            ),
+            // Paused beside a second copy of its script: it goes back to its own.
+            (
+                vec![chart(1, &[copy(10, SAYS_OLD), copy(11, SAYS_NEW)])],
+                None,
+            ),
+            // The id was given to another copy of the script since.
+            (vec![chart(1, &[copy(10, SAYS_NEW)])], None),
+        ] {
+            let (store, mut host) = host_of(&[armed(1, PineAlertState::Paused)]);
+            host.reconcile(&charts, &store);
+            assert_eq!(host.rearm_block(1), block);
+            let expected = match (block, charts.first()) {
+                (None, Some(chart)) => (PineAlertState::Active, chart.instances[0].source.clone()),
+                _ => (PineAlertState::Paused, SAYS_OLD.to_owned()),
+            };
+            host.rearm(1, &store);
+            let after = &store.pine_subscriptions()[0];
+            assert_eq!((after.state, after.source.clone()), expected, "{block:?}");
+        }
+    }
+
+    #[test]
+    fn rearm_never_arms_one_indicator_twice_or_a_deleted_script() {
+        let mut newer = armed(2, PineAlertState::Active);
+        newer.instance_id = Some(11);
+        newer.source_hash = crate::store::scripts::hash_source(SAYS_NEW);
+        let (store, mut host) = host_of(&[
+            armed(1, PineAlertState::ScriptChanged),
+            newer,
+            armed(3, PineAlertState::ScriptDeleted),
+        ]);
+        host.reconcile(&[chart(1, &[copy(11, SAYS_NEW)])], &store);
+        assert_eq!(host.rearm_block(1), Some(RearmBlock::AlreadyArmed));
+        assert_eq!(host.rearm_block(3), Some(RearmBlock::ScriptDeleted));
+    }
+
+    /// A changed alert saved before alerts named their tab, or whose tab was closed, matches no
+    /// chart exactly: it is re-armed on the one open chart of its id that has its script.
+    #[test]
+    fn rearm_finds_the_tab_of_a_changed_alert_that_has_none() {
+        for tab in [None, Some(9)] {
+            let mut orphan = armed(1, PineAlertState::ScriptChanged);
+            orphan.workspace_id = tab;
+            let (store, mut host) = host_of(&[orphan]);
+            let both = [
+                chart(2, &[copy(11, SAYS_NEW)]),
+                chart(3, &[copy(11, SAYS_NEW)]),
+            ];
+            host.reconcile(&both, &store);
+            assert_eq!(host.rearm_block(1), Some(RearmBlock::AppliedMoreThanOnce));
+
+            host.reconcile(&[chart(2, &[]), chart(3, &[copy(11, SAYS_NEW)])], &store);
+            assert_eq!(host.rearm_block(1), None, "{tab:?}");
+            host.rearm(1, &store);
+            assert_eq!(store.pine_subscriptions()[0].workspace_id, Some(3));
+            assert_eq!(store.pine_subscriptions()[0].state, PineAlertState::Active);
+        }
+    }
+
+    #[test]
+    fn a_new_source_forgets_what_the_old_one_failed_on() {
+        let (store, mut host) = host_of(&[subscription(1, UNCOMPILABLE)]);
+        let applied = [instance(UNCOMPILABLE)];
+        host.run_active(1, "binance:BTCUSDT", "1h", &bars(), &applied, LIVE_NOW);
+        assert!(host.failure(1).is_some());
+
+        store
+            .replace_pine_subscriptions(&[subscription(1, SAYS_NEW)])
+            .expect("write");
+        host.reload(&store);
+        assert_eq!(host.failure(1), None);
     }
 
     #[test]

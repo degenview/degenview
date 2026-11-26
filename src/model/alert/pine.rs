@@ -7,7 +7,7 @@
 //! fires it by accident.
 
 use crate::i18n::tr;
-use crate::model::pine::instance::StoredInput;
+use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::pine::Diagnostic;
 use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::pine::builtins::alert::frequency::AlertFrequency;
@@ -23,7 +23,8 @@ pub enum PineAlertState {
     Active,
     /// Switched off by the user.
     Paused,
-    /// The chart's script no longer matches `source_hash`. Silent until the user re-arms.
+    /// The chart no longer has the indicator, with the source, it was armed on. Silent until
+    /// the user re-arms it on the script as the chart has it then.
     ScriptChanged,
     /// The saved script it was created from no longer exists.
     ScriptDeleted,
@@ -44,6 +45,41 @@ impl ScriptFailure {
     pub fn diagnostic(&self) -> &Diagnostic {
         match self {
             Self::Compile(diagnostic) | Self::Runtime(diagnostic) => diagnostic,
+        }
+    }
+}
+
+/// Why a switched-off alert cannot be re-armed right now.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RearmBlock {
+    ScriptDeleted,
+    ChartNotOpen,
+    /// Its chart shows another market or timeframe.
+    OtherMarket,
+    /// Its chart has no copy of its script.
+    ScriptNotApplied,
+    /// Its chart has several copies of its script, none of them the one it was armed on, so
+    /// which to watch is unknown.
+    AppliedMoreThanOnce,
+    /// Another active alert already watches the indicator it would take.
+    AlreadyArmed,
+}
+
+impl RearmBlock {
+    /// What the user has to do, or why nothing helps.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::ScriptDeleted => tr!("Script deleted"),
+            Self::ChartNotOpen | Self::OtherMarket => {
+                tr!("Open its chart on the same market to re-arm it")
+            }
+            Self::ScriptNotApplied => tr!("Add its script to the chart to re-arm it"),
+            Self::AppliedMoreThanOnce => tr!(
+                "Its script is on the chart more than once. Remove the extra copies to re-arm it."
+            ),
+            Self::AlreadyArmed => {
+                tr!("This indicator already has an active alert on this chart.")
+            }
         }
     }
 }
@@ -112,6 +148,20 @@ impl PineAlertSubscription {
     /// Whether this is the market the subscription was created for.
     pub fn watches(&self, symbol_key: &str, timeframe: &str) -> bool {
         self.symbol_key == symbol_key && self.timeframe == timeframe
+    }
+
+    /// Arms the alert again on `instance` of `chart`, taking its source and inputs: the same
+    /// indicator as before, or its script applied anew, edited or not.
+    pub fn rearm_on(&mut self, chart: ChartKey, instance: &PineInstance, source_hash: String) {
+        self.workspace_id = Some(chart.workspace_id);
+        self.chart_id = chart.chart_id;
+        self.instance_id = Some(instance.id);
+        self.script_id = instance.script_id.clone();
+        self.script_name = instance.name.clone();
+        self.source = instance.source.clone();
+        self.inputs = instance.inputs.clone();
+        self.source_hash = source_hash;
+        self.state = PineAlertState::Active;
     }
 
     pub fn input_values(&self) -> HashMap<String, InputValue> {

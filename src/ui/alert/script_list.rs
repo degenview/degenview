@@ -5,7 +5,7 @@
 use super::center::{self, AlertCenterAction};
 use crate::i18n::{tr, tr_n};
 use crate::model::DataSource;
-use crate::model::alert::pine::{PineAlertState, PineAlertSubscription, ScriptFailure};
+use crate::model::alert::pine::{PineAlertState, PineAlertSubscription, RearmBlock, ScriptFailure};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
 use crate::ui::{kit, theme};
@@ -27,7 +27,8 @@ pub struct ScriptAlertRow {
     pub status: &'static str,
     pub tone: Tone,
     pub active: bool,
-    pub can_rearm: bool,
+    /// Why Re-arm is unavailable; `None` when it would work.
+    pub rearm_block: Option<RearmBlock>,
     pub created_at_ms: i64,
 }
 
@@ -83,6 +84,7 @@ impl ScriptAlertRow {
         subscription: &PineAlertSubscription,
         dataset: Option<(&str, &str)>,
         failure: Option<&ScriptFailure>,
+        rearm_block: Option<RearmBlock>,
     ) -> Self {
         let (status, tone) = status_of(subscription, dataset, failure);
         let (prefix, ticker) = subscription
@@ -110,9 +112,7 @@ impl ScriptAlertRow {
             status,
             tone,
             active: subscription.is_active(),
-            // A chart showing this market must be open to re-arm; a deleted script can't be.
-            can_rearm: subscription.state != PineAlertState::ScriptDeleted
-                && dataset.is_some_and(|(key, timeframe)| subscription.watches(key, timeframe)),
+            rearm_block,
             created_at_ms: subscription.created_at_ms,
         }
     }
@@ -215,12 +215,11 @@ fn menu(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAc
             ui.close();
         }
     } else {
+        let enabled = row.rearm_block.is_none();
         let response =
-            ui.scope(|ui| kit::menu_item(ui, Icon::PlayFill, tr!("Re-arm"), row.can_rearm, false));
-        if !row.can_rearm {
-            response
-                .response
-                .on_hover_text(tr!("Open its chart on the same market to re-arm it"));
+            ui.scope(|ui| kit::menu_item(ui, Icon::PlayFill, tr!("Re-arm"), enabled, false));
+        if let Some(block) = row.rearm_block {
+            response.response.on_hover_text(block.explanation());
         }
         if response.inner {
             actions.push(AlertCenterAction::RearmScript(row.id));
@@ -396,14 +395,14 @@ mod tests {
                 ("Script doesn't compile", Tone::Bad)
             );
         }
-        let row = ScriptAlertRow::from_subscription(&active, None, Some(&error));
+        let row = ScriptAlertRow::from_subscription(&active, None, Some(&error), None);
         assert_eq!(
             row.detail(),
             "BTCUSDT · 1h · Line 4: Undeclared identifier 'nope'"
         );
         // A switched-off alert reads as switched off.
         let paused = subscription(PineAlertState::Paused);
-        let row = ScriptAlertRow::from_subscription(&paused, None, Some(&error));
+        let row = ScriptAlertRow::from_subscription(&paused, None, Some(&error), None);
         assert_eq!((row.status, row.problem), ("Paused", None));
     }
 
@@ -424,36 +423,38 @@ mod tests {
                 ("Script stopped with an error", Tone::Bad)
             );
         }
-        let row = ScriptAlertRow::from_subscription(&active, None, Some(&failure));
+        let row = ScriptAlertRow::from_subscription(&active, None, Some(&failure), None);
         assert_eq!(
             row.detail(),
             "BTCUSDT · 1h · Line 4: Index 5 is out of bounds"
         );
         let paused = subscription(PineAlertState::Paused);
-        let row = ScriptAlertRow::from_subscription(&paused, None, Some(&failure));
+        let row = ScriptAlertRow::from_subscription(&paused, None, Some(&failure), None);
         assert_eq!((row.status, row.problem), ("Paused", None));
     }
 
     #[test]
-    fn a_row_reads_market_webhooks_and_when_it_can_be_re_armed() {
+    fn a_row_reads_market_webhooks_and_why_it_cannot_be_re_armed() {
         let paused = subscription(PineAlertState::Paused);
         let open =
-            ScriptAlertRow::from_subscription(&paused, Some(("binance:BTCUSDT", "1h")), None);
+            ScriptAlertRow::from_subscription(&paused, Some(("binance:BTCUSDT", "1h")), None, None);
         assert_eq!(open.detail(), "BTCUSDT · 1h · 2 webhooks");
-        assert!(open.can_rearm && !open.active);
-        let closed = ScriptAlertRow::from_subscription(&paused, None, None);
-        assert!(!closed.can_rearm);
-        let deleted = ScriptAlertRow::from_subscription(
-            &subscription(PineAlertState::ScriptDeleted),
-            Some(("binance:BTCUSDT", "1h")),
+        assert!(open.rearm_block.is_none() && !open.active);
+        let blocked = ScriptAlertRow::from_subscription(
+            &paused,
             None,
+            None,
+            Some(RearmBlock::ScriptNotApplied),
         );
-        assert!(!deleted.can_rearm, "a deleted script can't be re-armed");
+        assert_eq!(
+            blocked.rearm_block.map(RearmBlock::explanation),
+            Some("Add its script to the chart to re-arm it")
+        );
         let mut noted = subscription(PineAlertState::Active);
         noted.note = "Breakout".into();
         noted.webhook_endpoint_ids = vec![1];
         assert_eq!(
-            ScriptAlertRow::from_subscription(&noted, None, None).detail(),
+            ScriptAlertRow::from_subscription(&noted, None, None, None).detail(),
             "Breakout · 1 webhook"
         );
     }
@@ -461,8 +462,18 @@ mod tests {
     #[test]
     fn search_matches_name_or_symbol_newest_first() {
         let mut rows = vec![
-            ScriptAlertRow::from_subscription(&subscription(PineAlertState::Active), None, None),
-            ScriptAlertRow::from_subscription(&subscription(PineAlertState::Active), None, None),
+            ScriptAlertRow::from_subscription(
+                &subscription(PineAlertState::Active),
+                None,
+                None,
+                None,
+            ),
+            ScriptAlertRow::from_subscription(
+                &subscription(PineAlertState::Active),
+                None,
+                None,
+                None,
+            ),
         ];
         rows[1].script_name = "Trend".into();
         rows[1].created_at_ms = 9;
@@ -480,22 +491,29 @@ mod tests {
 
     #[test]
     fn the_list_draws_headlessly_empty_populated_and_searched() {
+        let row = |state, dataset, failure: Option<&ScriptFailure>, block| {
+            ScriptAlertRow::from_subscription(&subscription(state), dataset, failure, block)
+        };
+        let open = Some(("binance:BTCUSDT", "1h"));
         let rows = [
-            ScriptAlertRow::from_subscription(
-                &subscription(PineAlertState::Active),
-                Some(("binance:BTCUSDT", "1h")),
+            row(PineAlertState::Active, open, None, None),
+            row(
+                PineAlertState::Paused,
                 None,
+                None,
+                Some(RearmBlock::ChartNotOpen),
             ),
-            ScriptAlertRow::from_subscription(&subscription(PineAlertState::Paused), None, None),
-            ScriptAlertRow::from_subscription(
-                &subscription(PineAlertState::Active),
+            row(
+                PineAlertState::Active,
                 None,
                 Some(&ScriptFailure::Compile(undeclared())),
+                None,
             ),
-            ScriptAlertRow::from_subscription(
-                &subscription(PineAlertState::Active),
+            row(
+                PineAlertState::Active,
                 None,
                 Some(&ScriptFailure::Runtime(undeclared())),
+                None,
             ),
         ];
         let ctx = egui::Context::default();

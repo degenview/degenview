@@ -21,7 +21,7 @@ pub const INLINE_CALL_LIMIT: usize = 4;
 
 pub fn footnote_text() -> &'static str {
     tr!(
-        "Fires only while this chart shows this symbol and timeframe and its live feed is running. Editing the script pauses the alert until you re-arm it."
+        "Fires only while this chart shows this symbol and timeframe and its live feed is running. Taking the indicator off the chart stops the alert until you add its script again and re-arm it."
     )
 }
 

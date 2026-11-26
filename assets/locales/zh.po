@@ -721,6 +721,10 @@ msgstr "添加图片"
 msgid "Add in Settings"
 msgstr "在设置中添加"
 
+#: src/model/alert/pine.rs
+msgid "Add its script to the chart to re-arm it"
+msgstr "将其脚本添加到图表即可重新激活"
+
 #: src/ui/drawing/properties/fib_pages.rs src/ui/drawing/properties/tests.rs
 msgid "Add level"
 msgstr "添加级别"
@@ -6217,8 +6221,8 @@ msgid "Fires once, then waits until you turn it back on."
 msgstr "触发一次后暂停，直到你重新开启。"
 
 #: src/ui/alert/pine_editor.rs
-msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Editing the script pauses the alert until you re-arm it."
-msgstr "仅当此图表显示该标的和周期，且实时数据正在运行时才会触发。编辑脚本会暂停提醒，直到你重新激活。"
+msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Taking the indicator off the chart stops the alert until you add its script again and re-arm it."
+msgstr "仅当此图表显示该标的和周期，且实时数据正在运行时才会触发。从图表中移除指标后，提醒会停止，直到你重新添加其脚本并重新激活。"
 
 #: src/ui/replay/bar.rs
 msgid "First Bar"
@@ -7449,6 +7453,10 @@ msgstr "填充的浓淡由其不透明度决定。"
 #: src/ui/chart/card/overlay_card.rs src/ui/chart/settings/overlay.rs
 msgid "Its own scale"
 msgstr "独立刻度"
+
+#: src/model/alert/pine.rs
+msgid "Its script is on the chart more than once. Remove the extra copies to re-arm it."
+msgstr "图表上有多个其脚本的副本。移除多余的副本即可重新激活。"
 
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Its symbols stay in your other watchlists. Charts, drawings and alerts are not affected."
@@ -10284,7 +10292,7 @@ msgstr "在新标签页中打开"
 msgid "Open interest"
 msgstr "持仓量"
 
-#: src/ui/alert/script_list.rs
+#: src/model/alert/pine.rs
 msgid "Open its chart on the same market to re-arm it"
 msgstr "在同一市场上打开它的图表即可重新激活"
 
@@ -12914,6 +12922,7 @@ msgstr "脚本提醒由你脚本中的 alert() 调用创建。"
 msgid "Script changed — re-arm"
 msgstr "脚本已更改，需重新激活"
 
+#: src/model/alert/pine.rs
 #: src/ui/alert/script_list.rs
 msgid "Script deleted"
 msgstr "脚本已删除"

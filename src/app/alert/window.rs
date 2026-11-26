@@ -149,6 +149,7 @@ fn show(ui: &mut egui::Ui, env: &AlertsWindowEnv) {
                     subscription,
                     dataset,
                     pine.failure(subscription.id).as_ref(),
+                    pine.rearm_block(subscription.id),
                 )
             })
             .collect()
@@ -227,23 +228,18 @@ fn show(ui: &mut egui::Ui, env: &AlertsWindowEnv) {
                     }
                 }
             }
-            AlertCenterAction::PauseScript(id)
-            | AlertCenterAction::RearmScript(id)
-            | AlertCenterAction::DeleteScript(id) => {
+            AlertCenterAction::RearmScript(id) => {
+                if let Ok(mut host) = env.pine_host.lock() {
+                    host.rearm(id, &store);
+                }
+            }
+            AlertCenterAction::PauseScript(id) | AlertCenterAction::DeleteScript(id) => {
                 let mut subscriptions = store.pine_subscriptions();
-                match action {
-                    AlertCenterAction::DeleteScript(_) => {
-                        subscriptions.retain(|s| s.id != id);
-                    }
-                    AlertCenterAction::PauseScript(_) => {
-                        for s in subscriptions.iter_mut().filter(|s| s.id == id) {
-                            s.state = PineAlertState::Paused;
-                        }
-                    }
-                    _ => {
-                        for s in subscriptions.iter_mut().filter(|s| s.id == id) {
-                            s.state = PineAlertState::Active;
-                        }
+                if matches!(action, AlertCenterAction::DeleteScript(_)) {
+                    subscriptions.retain(|s| s.id != id);
+                } else {
+                    for s in subscriptions.iter_mut().filter(|s| s.id == id) {
+                        s.state = PineAlertState::Paused;
                     }
                 }
                 let _ = store.replace_pine_subscriptions(&subscriptions);

@@ -785,6 +785,10 @@ msgstr ""
 msgid "Add in Settings"
 msgstr ""
 
+#: src/model/alert/pine.rs
+msgid "Add its script to the chart to re-arm it"
+msgstr ""
+
 #: src/ui/drawing/properties/fib_pages.rs
 #: src/ui/drawing/properties/tests.rs
 msgid "Add level"
@@ -6695,7 +6699,8 @@ msgstr ""
 #: src/ui/alert/pine_editor.rs
 msgid ""
 "Fires only while this chart shows this symbol and timeframe and its live feed "
-"is running. Editing the script pauses the alert until you re-arm it."
+"is running. Taking the indicator off the chart stops the alert until you add "
+"its script again and re-arm it."
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -8050,6 +8055,12 @@ msgstr ""
 #: src/ui/chart/card/overlay_card.rs
 #: src/ui/chart/settings/overlay.rs
 msgid "Its own scale"
+msgstr ""
+
+#: src/model/alert/pine.rs
+msgid ""
+"Its script is on the chart more than once. Remove the extra copies to re-arm "
+"it."
 msgstr ""
 
 #: src/ui/watchlist/sidebar/modals.rs
@@ -11140,7 +11151,7 @@ msgstr ""
 msgid "Open interest"
 msgstr ""
 
-#: src/ui/alert/script_list.rs
+#: src/model/alert/pine.rs
 msgid "Open its chart on the same market to re-arm it"
 msgstr ""
 
@@ -13974,6 +13985,7 @@ msgstr ""
 msgid "Script changed — re-arm"
 msgstr ""
 
+#: src/model/alert/pine.rs
 #: src/ui/alert/script_list.rs
 msgid "Script deleted"
 msgstr ""
