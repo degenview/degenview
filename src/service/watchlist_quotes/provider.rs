@@ -391,8 +391,10 @@ fn oanda(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quot
     parse_oanda_pricing(&body, requests)
 }
 
-/// `{"prices": [{"instrument": "EUR_USD", "bid": "1.08501", "ask": "1.08521", "time": ISO}]}`: the
-/// quote of a market is the mid of its bid and ask.
+/// `{"prices": [{"instrument": "EUR_USD", "bids": [{"price": "1.08501"}], "asks": [{"price":
+/// "1.08521"}], "time": ISO}]}`: the quote of a market is the mid of its inside bid and ask.
+/// A market that is not tradeable right now has empty level arrays, so the closeout prices
+/// are the fallback.
 pub fn parse_oanda_pricing(
     body: &str,
     requests: &[QuoteRequest],
@@ -412,7 +414,11 @@ pub fn parse_oanda_pricing(
         }) else {
             continue;
         };
-        let mid = match (number(price.pointer("/bid")), number(price.pointer("/ask"))) {
+        let bid = number(price.pointer("/bids/0/price"))
+            .or_else(|| number(price.pointer("/closeoutBid")));
+        let ask = number(price.pointer("/asks/0/price"))
+            .or_else(|| number(price.pointer("/closeoutAsk")));
+        let mid = match (bid, ask) {
             (Some(bid), Some(ask)) => (bid + ask) / 2.0,
             _ => continue,
         };
@@ -1504,12 +1510,14 @@ mod tests {
     }
 
     #[test]
-    fn oanda_quotes_are_the_mid_of_the_bid_and_ask() {
+    fn oanda_quotes_are_the_mid_of_the_inside_bid_and_ask() {
+        // Oanda answers with arrays of price levels; the first of each is the inside market.
         let body = r#"{
             "prices":[
-                {"instrument":"EUR_USD","bid":"1.08501","ask":"1.08521","status":"tradeable","time":"2026-10-09T13:00:00Z"},
-                {"instrument":"XAU_USD","bid":"2650.10","ask":"2650.30","status":"tradeable","time":"2026-10-09T13:00:00Z"},
-                {"instrument":"HALTED","status":"halted"}
+                {"instrument":"EUR_USD","bids":[{"price":"1.08501","liquidity":10000000}],"asks":[{"price":"1.08521","liquidity":10000000}],"status":"tradeable","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"XAU_USD","bids":[{"price":"2650.10"}],"asks":[{"price":"2650.30"}],"status":"tradeable","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"HALTED","bids":[],"asks":[],"closeoutBid":"1.10000","closeoutAsk":"1.10020","status":"halted","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"NOLEVELS","status":"halted"}
             ]
         }"#;
         let quotes = parse_oanda_pricing(
@@ -1518,17 +1526,20 @@ mod tests {
                 request("eur_usd"),
                 request("XAU_USD"),
                 request("HALTED"),
+                request("NOLEVELS"),
                 request("ABSENT"),
             ],
         )
         .unwrap();
-        assert_eq!(quotes.len(), 2);
+        assert_eq!(quotes.len(), 3);
         assert_eq!(quotes["eur_usd"].price, 1.08511);
         assert_eq!(
             quotes["eur_usd"].timestamp_ms,
             Some(crate::format::days_from_civil(2026, 10, 9) * 86_400_000 + 13 * 3_600_000)
         );
         assert_eq!(quotes["XAU_USD"].price, 2650.2);
+        // A halted market still has a price, from its closeout levels.
+        assert_eq!(quotes["HALTED"].price, 1.10010);
         assert!(parse_oanda_pricing("not json", &[request("EUR_USD")]).is_err());
         assert!(
             parse_oanda_pricing(r#"{"errorMessage":"bad"}"#, &[request("EUR_USD")])

@@ -714,7 +714,7 @@ impl Engine {
     /// The source behind an instrument key (`SLUG:SYMBOL`).
     fn source_of(&self, key: &str) -> Option<DataSource> {
         let slug = key.split(':').next()?;
-        ALL_SOURCES
+        DataSource::ALL
             .into_iter()
             .find(|source| source.watchlist_slug() == slug)
     }
@@ -760,25 +760,9 @@ impl Engine {
     }
 }
 
-const ALL_SOURCES: [DataSource; 13] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-    DataSource::Alpaca,
-    DataSource::Polymarket,
-    DataSource::Kalshi,
-    DataSource::CoinMarketCap,
-];
-
 /// A stable order for sources, so rounds are deterministic.
 fn source_order(source: DataSource) -> u8 {
-    ALL_SOURCES
+    DataSource::ALL
         .iter()
         .position(|candidate| *candidate == source)
         .unwrap_or(usize::MAX) as u8
