@@ -5010,7 +5010,7 @@ msgstr "Удалить это оповещение?"
 
 #: src/ui/workspace/toolbar.rs
 msgid "Delete this layout"
-msgstr "Удалить этот слой"
+msgstr "Удалить этот макет"
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Delete this theme?"
@@ -8346,7 +8346,7 @@ msgstr "Название макета"
 
 #: src/model/tab/title.rs
 msgid "Layout name only"
-msgstr "Только имя слоя"
+msgstr "Только название макета"
 
 #: src/ui/workspace/toolbar.rs
 msgid "Layout: {help}"
@@ -8358,7 +8358,7 @@ msgstr "Макет: {name}"
 
 #: src/ui/workspace/empty_state/tabs.rs src/ui/workspace/toolbar.rs
 msgid "Layouts"
-msgstr "Слои"
+msgstr "Макеты"
 
 #: src/ui/replay/bar.rs
 msgid "Leave replay and return to the live market"
@@ -13651,7 +13651,7 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Save layout"
-msgstr "Сохранить слой"
+msgstr "Сохранить макет"
 
 #: src/ui/workspace/layout_prompts.rs
 msgid "Save the current charts, timeframe and layout under a name."
@@ -13663,9 +13663,7 @@ msgstr "Сохраните текущий вид, чтобы добавить"
 
 #: src/ui/workspace/toolbar.rs
 msgid "Save the layout first, then Autosave can keep it up to date."
-msgstr ""
-"Сначала сохраните слой, затем автосохранение будет поддерживать его в "
-"актуальном состоянии."
+msgstr "Сначала сохраните макет, затем автосохранение будет поддерживать его в актуальном состоянии."
 
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Save this chart's look, or give it another."
@@ -15367,7 +15365,7 @@ msgstr "Только символ"
 
 #: src/model/tab/title.rs
 msgid "Symbol, price and layout"
-msgstr "Символ, цена и слой"
+msgstr "Символ, цена и макет"
 
 #: src/ui/workspace/toolbar.rs
 msgid "Symbol: {symbol}. Search for another"
@@ -16234,7 +16232,7 @@ msgstr "Ключ остаётся в защищённом хранилище э�
 
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
-msgstr "Не удалось записать автосохранение. Выберите «Сохранить слой»."
+msgstr "Не удалось записать автосохранение. Выберите «Сохранить макет»."
 
 #: src/ui/chart/settings/canvas.rs
 msgid "The last price's tag shows the price alone."
@@ -18927,7 +18925,7 @@ msgstr "Пишите и управляйте скриптами, чьи вызо
 
 #: src/ui/workspace/toolbar.rs
 msgid "Write changes to this layout a moment after you make them."
-msgstr "Сохранять изменения в этот слой сразу после их внесения."
+msgstr "Сохранять изменения в этот макет сразу после их внесения."
 
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Write one in the Pine Studio and it shows up here."
