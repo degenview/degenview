@@ -3,12 +3,13 @@
 //! realtime ticks and closes. Webhook/notification dispatch is the caller's (the app), which
 //! already owns the webhook + notification services.
 //!
-//! Whether a script still compiles is a fact about this build of the app and the libraries it
-//! imports, not about the subscription, so it is kept here with the run and never stored: an
-//! update that accepts the script again brings the alert back by itself.
+//! Whether a script can run (it compiles, and does not stop with a runtime error) is a fact about
+//! this build of the app, the libraries it imports and the bars it is fed, not about the
+//! subscription, so it is kept here with the run and never stored: an update that accepts the
+//! script again, or a replay that gets through, brings the alert back by itself.
 
 use crate::host::pine::KlineSecurityDataProvider;
-use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
+use crate::model::alert::pine::{PineAlertState, PineAlertSubscription, ScriptFailure};
 use crate::model::chart::synthetic::Construction;
 use crate::model::market::bucket::Grid;
 use crate::model::pine::instance::PineInstance;
@@ -97,7 +98,8 @@ impl ChartRun {
 struct Running {
     key: RunKey,
     /// The controller, or why the source does not compile: the alert cannot fire then, and its
-    /// status says so. Compiled again when the key changes or the alert is armed anew.
+    /// status says so. Compiled again when the key changes or the alert is armed anew. A
+    /// controller keeps the runtime error its script stopped with, until a replay gets through.
     controller: Result<ExecutionController, Diagnostic>,
 }
 
@@ -120,14 +122,13 @@ impl PineSubscriptionHost {
         self.drop_stopped_runs();
     }
 
-    /// Why a subscription's script cannot run, once its chart has fed it. `None` while it
-    /// compiles, and before its chart has shown the market it watches.
-    pub fn compile_error(&self, subscription_id: u64) -> Option<&Diagnostic> {
-        self.running
-            .get(&subscription_id)?
-            .controller
-            .as_ref()
-            .err()
+    /// Why a subscription's script cannot run, once its chart has fed it. `None` while it runs,
+    /// and before its chart has shown the market it watches.
+    pub fn failure(&self, subscription_id: u64) -> Option<ScriptFailure> {
+        match &self.running.get(&subscription_id)?.controller {
+            Err(error) => Some(ScriptFailure::Compile(error.clone())),
+            Ok(controller) => controller.error().cloned().map(ScriptFailure::Runtime),
+        }
     }
 
     /// Forgets what was built for a subscription that is gone or switched off, so arming it
@@ -456,10 +457,7 @@ mod tests {
                 .replace_pine_subscriptions(&[subscription(1, source)])
                 .expect("write");
             let mut host = PineSubscriptionHost::load(&store);
-            assert!(
-                host.compile_error(1).is_none(),
-                "nothing has compiled it yet"
-            );
+            assert_eq!(host.failure(1), None, "nothing has compiled it yet");
             let applied = [instance(source)];
             let mut data = bars();
             for tick in 0..3 {
@@ -471,7 +469,9 @@ mod tests {
                         .is_empty()
                 );
             }
-            let error = host.compile_error(1).expect("a diagnostic");
+            let Some(ScriptFailure::Compile(error)) = host.failure(1) else {
+                panic!("a compile failure: {:?}", host.failure(1));
+            };
             assert!(error.message.contains("nope"), "{}", error.message);
             assert_eq!(error.range.start.line, 4);
             // The stored alert is untouched: a build that accepts the script runs it again.
@@ -490,25 +490,25 @@ mod tests {
         let data = bars();
         let applied = [instance(UNCOMPILABLE)];
         host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
-        assert!(host.compile_error(1).is_some());
+        assert!(host.failure(1).is_some());
 
         // An edit that leaves it armed keeps what is known.
         let mut noted = broken.clone();
         noted.note = "Breakout".into();
         store.replace_pine_subscriptions(&[noted]).expect("write");
         host.reload(&store);
-        assert!(host.compile_error(1).is_some());
+        assert!(host.failure(1).is_some());
 
         let mut paused = broken.clone();
         paused.state = PineAlertState::Paused;
         store.replace_pine_subscriptions(&[paused]).expect("write");
         host.reload(&store);
-        assert!(host.compile_error(1).is_none());
+        assert!(host.failure(1).is_none());
 
         store.replace_pine_subscriptions(&[broken]).expect("write");
         host.reload(&store);
         host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
-        assert!(host.compile_error(1).is_some());
+        assert!(host.failure(1).is_some());
     }
 
     /// The way a user fixes a script: the corrected one goes on the chart as a new instance,
@@ -524,7 +524,7 @@ mod tests {
         let mut data = bars();
         let applied = [instance(UNCOMPILABLE)];
         host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
-        assert!(host.compile_error(1).is_some());
+        assert!(host.failure(1).is_some());
 
         let mut rearmed = subscription(2, fixed);
         rearmed.instance_id = Some(11);
@@ -547,8 +547,8 @@ mod tests {
 
         assert_eq!(fired.len(), 1);
         assert_eq!(fired[0].0.id, 2);
-        assert!(host.compile_error(2).is_none());
-        assert!(host.compile_error(1).is_none());
+        assert!(host.failure(2).is_none());
+        assert!(host.failure(1).is_none());
         assert_eq!(
             store.pine_subscriptions()[0].state,
             PineAlertState::ScriptChanged
@@ -727,5 +727,96 @@ mod tests {
         for key in ["BINANCE:BTCUSDT", "COINBASE:ETH-USD", "BTCUSDT"] {
             assert_eq!(symbol_info(key).grid, Grid::Utc, "{key}");
         }
+    }
+
+    /// Fine on history, then stops on a live tick that closes above 102.5.
+    const FAILS_ON_A_TICK: &str = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)\n\
+        if barstate.isrealtime and close > 102.5\n    runtime.error(\"late\")";
+
+    fn runtime_message(host: &PineSubscriptionHost) -> Option<String> {
+        match host.failure(1) {
+            Some(ScriptFailure::Runtime(error)) => Some(error.message),
+            Some(other) => panic!("not a runtime failure: {other:?}"),
+            None => None,
+        }
+    }
+
+    fn host_with(source: &str) -> (Store, PineSubscriptionHost) {
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_pine_subscriptions(&[subscription(1, source)])
+            .expect("write");
+        let host = PineSubscriptionHost::load(&store);
+        (store, host)
+    }
+
+    #[test]
+    fn a_script_that_stops_on_a_live_tick_says_why_and_stays_armed() {
+        let (store, mut host) = host_with(FAILS_ON_A_TICK);
+        let applied = [instance(FAILS_ON_A_TICK)];
+        let mut data = bars();
+        let mut feed = |host: &mut PineSubscriptionHost, close: f64, now: i64| {
+            data[4].close = close;
+            host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, now)
+                .len()
+        };
+        feed(&mut host, 102.0, LIVE_NOW);
+        assert_eq!(feed(&mut host, 102.1, LIVE_NOW + 1), 1);
+        assert_eq!(runtime_message(&host), None);
+
+        assert_eq!(feed(&mut host, 103.0, LIVE_NOW + 2), 0);
+        assert_eq!(runtime_message(&host).as_deref(), Some("late"));
+        // The script stays stopped, as on TradingView: the price coming back changes nothing, and
+        // neither does a frame that brings no new data.
+        for now in [LIVE_NOW + 3, LIVE_NOW + 4] {
+            assert_eq!(feed(&mut host, 102.0, now), 0);
+            assert_eq!(runtime_message(&host).as_deref(), Some("late"));
+        }
+        assert_eq!(store.pine_subscriptions()[0].state, PineAlertState::Active);
+    }
+
+    #[test]
+    fn a_replay_that_gets_through_clears_a_runtime_error() {
+        let (_store, mut host) = host_with(FAILS_ON_A_TICK);
+        let applied = [instance(FAILS_ON_A_TICK)];
+        let mut data = bars();
+        let run = |host: &mut PineSubscriptionHost, data: &[Kline]| {
+            host.run_active(1, "binance:BTCUSDT", "1h", data, &applied, LIVE_NOW)
+                .len()
+        };
+        run(&mut host, &data);
+        data[4].close = 103.0;
+        run(&mut host, &data);
+        assert!(host.failure(1).is_some());
+
+        // Older bars were corrected, so the history is replayed, silently, and the script runs.
+        data[0].close = 101.0;
+        data[4].close = 102.0;
+        assert_eq!(run(&mut host, &data), 0);
+        assert_eq!(host.failure(1), None);
+        data[4].close = 102.1;
+        assert_eq!(run(&mut host, &data), 1);
+    }
+
+    #[test]
+    fn a_script_that_stops_on_history_says_why_until_armed_anew() {
+        let source = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)\n\
+            if bar_index == 2\n    runtime.error(\"early\")";
+        let (store, mut host) = host_with(source);
+        let applied = [instance(source)];
+        let mut data = bars();
+        for tick in 0..3 {
+            data[4].close += 1.0;
+            let fired =
+                host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW + tick);
+            assert!(fired.is_empty());
+            assert_eq!(runtime_message(&host).as_deref(), Some("early"));
+        }
+
+        let mut paused = subscription(1, source);
+        paused.state = PineAlertState::Paused;
+        store.replace_pine_subscriptions(&[paused]).expect("write");
+        host.reload(&store);
+        assert_eq!(host.failure(1), None);
     }
 }

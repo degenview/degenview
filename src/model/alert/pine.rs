@@ -7,6 +7,7 @@
 
 use crate::i18n::tr;
 use crate::model::pine::instance::StoredInput;
+use crate::pine::Diagnostic;
 use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::pine::builtins::alert::frequency::AlertFrequency;
 use crate::pine::compiler::program::InputValue;
@@ -25,6 +26,25 @@ pub enum PineAlertState {
     ScriptChanged,
     /// The saved script it was created from no longer exists.
     ScriptDeleted,
+}
+
+/// Why an armed subscription's script cannot run, so its alert cannot fire. Found by running the
+/// script, and a fact about this build of the app and the data it was run on rather than about the
+/// subscription: never stored.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScriptFailure {
+    /// The source does not compile.
+    Compile(Diagnostic),
+    /// The script stopped with a runtime error, on history or on a live bar.
+    Runtime(Diagnostic),
+}
+
+impl ScriptFailure {
+    pub fn diagnostic(&self) -> &Diagnostic {
+        match self {
+            Self::Compile(diagnostic) | Self::Runtime(diagnostic) => diagnostic,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

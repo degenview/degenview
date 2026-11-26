@@ -13990,6 +13990,10 @@ msgstr ""
 msgid "Script not loaded"
 msgstr ""
 
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr ""
+
 #: src/pine_studio/bar.rs
 #: src/ui/alert/center.rs
 #: src/ui/chart/indicator_strip.rs

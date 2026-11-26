@@ -1,5 +1,8 @@
 use super::alert::NOW;
 use super::*;
+use crate::host::pine::subscription::PineSubscriptionHost;
+use crate::mcp::types::PineAlertFailureStage;
+use crate::model::Kline;
 
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::pine::instance::{PineInstance, StoredInput};
@@ -524,9 +527,11 @@ fn script_alert_subscriptions_are_listed_without_webhooks_or_invented_history() 
         created_at_ms: NOW,
         webhook_endpoint_ids: vec![424_242],
     };
-    let result = pine_alerts(&[subscription]);
+    let store = Store::open_in_memory().expect("open");
+    let result = pine_alerts(&[subscription], &PineSubscriptionHost::load(&store));
     assert_eq!(result.total, 1);
     let info = &result.subscriptions[0];
+    assert_eq!(info.cannot_run, None);
     assert_eq!(info.subscription_id, "1791000000000000001");
     assert_eq!(
         (
@@ -543,4 +548,74 @@ fn script_alert_subscriptions_are_listed_without_webhooks_or_invented_history() 
         !json.contains("424242") && !json.contains(STRATEGY_SOURCE.trim()),
         "{json}"
     );
+}
+
+#[test]
+fn an_active_script_alert_that_cannot_run_is_listed_with_why() {
+    let alert = |id: u64, source: &str| PineAlertSubscription {
+        id,
+        chart_id: 1,
+        instance_id: Some(10),
+        script_id: None,
+        script_name: "S".into(),
+        source: source.into(),
+        inputs: Default::default(),
+        symbol_key: "binance:BTCUSDT".into(),
+        timeframe: "1h".into(),
+        source_hash: crate::store::scripts::hash_source(source),
+        note: String::new(),
+        state: PineAlertState::Active,
+        created_at_ms: NOW,
+        webhook_endpoint_ids: Vec::new(),
+    };
+    let uncompilable = "//@version=6\nindicator(\"S\")\nplot(nope)";
+    let stops = "//@version=6\nindicator(\"S\")\nruntime.error(\"early\")";
+    let subscriptions = [alert(1, uncompilable), alert(2, stops)];
+    let store = Store::open_in_memory().expect("open");
+    store
+        .replace_pine_subscriptions(&subscriptions)
+        .expect("write");
+    let mut alert_runs = PineSubscriptionHost::load(&store);
+    let bars = [Kline {
+        open_time: 0,
+        close_time: 3_600_000,
+        open: 1.0,
+        high: 1.0,
+        low: 1.0,
+        close: 1.0,
+        volume: 1.0,
+    }];
+    let applied = [
+        PineInstance::new(10, None, "S", uncompilable),
+        PineInstance::new(10, None, "S", stops),
+    ];
+    for instance in &applied {
+        alert_runs.run_active(
+            1,
+            "binance:BTCUSDT",
+            "1h",
+            &bars,
+            std::slice::from_ref(instance),
+            NOW,
+        );
+    }
+
+    let listed = pine_alerts(&subscriptions, &alert_runs);
+    let why: Vec<_> = listed
+        .subscriptions
+        .iter()
+        .map(|info| {
+            let failure = info.cannot_run.as_ref().expect("a failure");
+            assert_eq!(info.state, ScriptAlertState::Active);
+            (
+                failure.stage,
+                failure.diagnostic.line,
+                failure.diagnostic.message.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(why[0].0, PineAlertFailureStage::Compile);
+    assert_eq!(why[0].1, 3);
+    assert!(why[0].2.contains("nope"), "{}", why[0].2);
+    assert_eq!(why[1], (PineAlertFailureStage::Runtime, 3, "early"));
 }

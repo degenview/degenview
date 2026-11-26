@@ -12969,6 +12969,10 @@ msgstr "Skript gelöscht"
 msgid "Script doesn't compile"
 msgstr "Skript kompiliert nicht"
 
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr "Skript mit Fehler gestoppt"
+
 #: src/pine_studio/sheets.rs
 msgid "Script name"
 msgstr "Skriptname"

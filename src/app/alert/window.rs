@@ -148,7 +148,7 @@ fn show(ui: &mut egui::Ui, env: &AlertsWindowEnv) {
                 ScriptAlertRow::from_subscription(
                     subscription,
                     dataset,
-                    pine.compile_error(subscription.id),
+                    pine.failure(subscription.id).as_ref(),
                 )
             })
             .collect()

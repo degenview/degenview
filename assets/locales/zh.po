@@ -12922,6 +12922,10 @@ msgstr "脚本已删除"
 msgid "Script doesn't compile"
 msgstr "脚本无法编译"
 
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr "脚本因错误停止"
+
 #: src/pine_studio/sheets.rs
 msgid "Script name"
 msgstr "脚本名称"

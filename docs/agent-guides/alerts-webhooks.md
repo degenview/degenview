@@ -11,9 +11,13 @@
   fields out of `sync::record::project`'s alert projection.
 - Unseen count comes from `alerts.lastSeenAt`, never an event flag (snapshot replacement rewrites
   events). `ui::alert::banner` shows over every workspace.
-- Whether a script alert's script compiles is runtime knowledge, never stored:
-  `PineSubscriptionHost` keeps the diagnostic with the run (`compile_error`), and the Scripts tab
-  shows "Script doesn't compile" with it. A build that accepts the script again needs no re-arm.
+- Whether a script alert's script can run is runtime knowledge, never stored:
+  `PineSubscriptionHost::failure` answers a `ScriptFailure` from the run it holds (the compile
+  diagnostic, or the error the controller's script stopped with). The Scripts tab shows "Script
+  doesn't compile" or "Script stopped with an error" with it, and `degenview_list_pine_alerts`
+  reports it as `cannot_run`. A build that accepts the script again needs no re-arm. A script
+  stopped by a runtime error stays stopped, as on TradingView, until its history is replayed
+  (changed history or inputs, a restart, Pause then Re-arm); a replay that gets through clears it.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
   save/webhook actions back as `WorkspaceAction`s; only Alerts-window edits host the sheet there.
 - An open sheet holds `alert_editor::quote_owner` demand and gets the current quote each frame,

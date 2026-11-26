@@ -163,6 +163,11 @@ impl ExecutionController {
         self
     }
 
+    /// How the script's last run failed; `None` while it runs, and before its first update.
+    pub fn error(&self) -> Option<&Diagnostic> {
+        self.last_error.as_ref()
+    }
+
     pub fn update(
         &mut self,
         bars: &[Kline],

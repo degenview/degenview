@@ -5,8 +5,7 @@
 use super::center::{self, AlertCenterAction};
 use crate::i18n::{tr, tr_n};
 use crate::model::DataSource;
-use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
-use crate::pine::Diagnostic;
+use crate::model::alert::pine::{PineAlertState, PineAlertSubscription, ScriptFailure};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
 use crate::ui::{kit, theme};
@@ -22,7 +21,7 @@ pub struct ScriptAlertRow {
     pub source: Option<DataSource>,
     pub timeframe: String,
     pub note: String,
-    /// Why the script cannot run: where it stops compiling and what the compiler says there.
+    /// Why the script cannot run: the line it fails on and what the compiler or runtime says there.
     pub problem: Option<String>,
     pub webhook_count: usize,
     pub status: &'static str,
@@ -34,25 +33,26 @@ pub struct ScriptAlertRow {
 
 /// What a script alert's badge says: whether it can fire now, and if not, why. `dataset` is the
 /// `(symbol_key, timeframe)` of the chart the alert was created on, when that chart is open, and
-/// `compile_error` is why its script does not compile, if the runtime found that it does not.
+/// `failure` is why its script cannot run, if running it found that it cannot.
 pub fn status_of(
     subscription: &PineAlertSubscription,
     dataset: Option<(&str, &str)>,
-    compile_error: Option<&Diagnostic>,
+    failure: Option<&ScriptFailure>,
 ) -> (&'static str, Tone) {
     match subscription.state {
         PineAlertState::Paused => (tr!("Paused"), Tone::Neutral),
         PineAlertState::ScriptChanged => (tr!("Script changed — re-arm"), Tone::Warning),
         PineAlertState::ScriptDeleted => (tr!("Script deleted"), Tone::Bad),
-        PineAlertState::Active if compile_error.is_some() => {
-            (tr!("Script doesn't compile"), Tone::Bad)
-        }
-        PineAlertState::Active => match dataset {
-            None => (tr!("Chart not open"), Tone::Neutral),
-            Some((key, timeframe)) if subscription.watches(key, timeframe) => {
+        PineAlertState::Active => match (failure, dataset) {
+            (Some(ScriptFailure::Compile(_)), _) => (tr!("Script doesn't compile"), Tone::Bad),
+            (Some(ScriptFailure::Runtime(_)), _) => {
+                (tr!("Script stopped with an error"), Tone::Bad)
+            }
+            (None, None) => (tr!("Chart not open"), Tone::Neutral),
+            (None, Some((key, timeframe))) if subscription.watches(key, timeframe) => {
                 (tr!("Active"), Tone::Good)
             }
-            Some(_) => (tr!("Other symbol on chart"), Tone::Warning),
+            (None, Some(_)) => (tr!("Other symbol on chart"), Tone::Warning),
         },
     }
 }
@@ -82,9 +82,9 @@ impl ScriptAlertRow {
     pub fn from_subscription(
         subscription: &PineAlertSubscription,
         dataset: Option<(&str, &str)>,
-        compile_error: Option<&Diagnostic>,
+        failure: Option<&ScriptFailure>,
     ) -> Self {
-        let (status, tone) = status_of(subscription, dataset, compile_error);
+        let (status, tone) = status_of(subscription, dataset, failure);
         let (prefix, ticker) = subscription
             .symbol_key
             .split_once(':')
@@ -96,8 +96,9 @@ impl ScriptAlertRow {
             source: source_of(prefix),
             timeframe: subscription.timeframe.clone(),
             note: subscription.note.clone(),
-            problem: compile_error
+            problem: failure
                 .filter(|_| subscription.is_active())
+                .map(ScriptFailure::diagnostic)
                 .map(|error| {
                     tr!(
                         "Line {line}: {message}",
@@ -316,7 +317,7 @@ fn script_menu() -> [&'static str; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::{DiagnosticCategory, SourceRange};
+    use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
     fn subscription(state: PineAlertState) -> PineAlertSubscription {
         PineAlertSubscription {
@@ -382,7 +383,7 @@ mod tests {
     #[test]
     fn an_armed_alert_whose_script_does_not_compile_says_so_and_why() {
         let active = subscription(PineAlertState::Active);
-        let error = undeclared();
+        let error = ScriptFailure::Compile(undeclared());
         // Whatever its chart shows: it cannot fire anywhere.
         for dataset in [
             None,
@@ -402,6 +403,33 @@ mod tests {
         // A switched-off alert reads as switched off.
         let paused = subscription(PineAlertState::Paused);
         let row = ScriptAlertRow::from_subscription(&paused, None, Some(&error));
+        assert_eq!((row.status, row.problem), ("Paused", None));
+    }
+
+    #[test]
+    fn an_armed_alert_whose_script_stopped_says_so_and_why() {
+        let active = subscription(PineAlertState::Active);
+        let mut error = undeclared();
+        error.category = DiagnosticCategory::Runtime;
+        error.message = "Index 5 is out of bounds".into();
+        let failure = ScriptFailure::Runtime(error);
+        for dataset in [
+            None,
+            Some(("binance:BTCUSDT", "1h")),
+            Some(("binance:ETHUSDT", "1h")),
+        ] {
+            assert_eq!(
+                status_of(&active, dataset, Some(&failure)),
+                ("Script stopped with an error", Tone::Bad)
+            );
+        }
+        let row = ScriptAlertRow::from_subscription(&active, None, Some(&failure));
+        assert_eq!(
+            row.detail(),
+            "BTCUSDT · 1h · Line 4: Index 5 is out of bounds"
+        );
+        let paused = subscription(PineAlertState::Paused);
+        let row = ScriptAlertRow::from_subscription(&paused, None, Some(&failure));
         assert_eq!((row.status, row.problem), ("Paused", None));
     }
 
@@ -461,7 +489,12 @@ mod tests {
             ScriptAlertRow::from_subscription(
                 &subscription(PineAlertState::Active),
                 None,
-                Some(&undeclared()),
+                Some(&ScriptFailure::Compile(undeclared())),
+            ),
+            ScriptAlertRow::from_subscription(
+                &subscription(PineAlertState::Active),
+                None,
+                Some(&ScriptFailure::Runtime(undeclared())),
             ),
         ];
         let ctx = egui::Context::default();

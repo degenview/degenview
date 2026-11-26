@@ -118,6 +118,9 @@ entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
 - Read-only script tools: `mcp/pine/tools.rs` and `mcp/pine/scripts.rs` with `ScriptStore` and compiler
   on a worker; chart-private Pine state via `ChartWorkspace::pine_instance_views` on the app
   thread. Never invent reports or alert history.
+- `degenview_list_pine_alerts` reports `state` as stored and, beside it, `cannot_run` from
+  `PineSubscriptionHost::failure` for an active alert whose script does not compile or stopped with
+  a runtime error. Absent also means the app has not run it yet (its chart not open since launch).
 - Scripts on charts: `ChartWorkspace::{add_pine_instance_to,
   change_pine_instance,remove_pine_instance_from}` (take the undo step); validate scripts and inputs
   with `mcp::pine` before queuing; apply only saved text, never the draft.
