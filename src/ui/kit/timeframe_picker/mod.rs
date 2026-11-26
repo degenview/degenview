@@ -15,7 +15,7 @@ use super::hints::{Hint, hint_row, hints_width};
 use super::search_box::compact_search_box;
 use super::{
     HEADING_INSET, MEDIUM, MENU_FRAME_MARGIN, REGULAR, galley, menu_frame, menu_heading,
-    menu_scope, menu_separator, size, tile_chip, tile_chip_text_width,
+    menu_scope, menu_separator, size, tile_chip_starred, tile_chip_text_width,
 };
 use crate::i18n::tr;
 use crate::model::{DataSource, Timeframe};
@@ -44,6 +44,8 @@ pub struct TimeframePickerInput<'a> {
     pub current: Timeframe,
     /// The custom timeframes the person pinned, in any order.
     pub pinned: &'a [Timeframe],
+    /// The favorite timeframes starred for quick access on the toolbar.
+    pub favorites: &'a [Timeframe],
     /// The market sources of the charts the pick would reach, for the line that warns of one that
     /// cannot draw it.
     pub sources: &'a [DataSource],
@@ -56,6 +58,8 @@ pub enum TimeframePick {
     /// Chart it and keep it among the chips.
     ChartAndPin(Timeframe),
     Unpin(Timeframe),
+    /// Star or unstar a timeframe for quick access on the toolbar.
+    ToggleFavorite(Timeframe),
 }
 
 /// The popover under `button`, open while the button's popup is. Returns what was picked this
@@ -211,15 +215,19 @@ impl Body<'_> {
                     ui.add_space(HEADING_INSET);
                     for timeframe in row {
                         let label = timeframe.label();
-                        let response = tile_chip(
+                        let is_favorite = self.input.favorites.contains(timeframe);
+                        let (response, star_clicked) = tile_chip_starred(
                             ui,
                             self.chip,
                             &label,
                             *timeframe == self.input.current,
                             highlighted == Some(*timeframe),
-                        )
-                        .on_hover_text(timeframe.description());
-                        if response.clicked() {
+                            is_favorite,
+                        );
+                        let response = response.on_hover_text(timeframe.description());
+                        if star_clicked {
+                            pick = Some(TimeframePick::ToggleFavorite(*timeframe));
+                        } else if response.clicked() {
                             pick = Some(TimeframePick::Chart(*timeframe));
                         }
                         if !Timeframe::PRESETS.contains(timeframe) {

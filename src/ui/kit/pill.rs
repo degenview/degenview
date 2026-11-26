@@ -165,8 +165,8 @@ pub fn value_chip(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
 
 const TILE_RADIUS: f32 = 6.0;
 
-/// How wide `label` is inside a [`tile_chip`], at its widest weight; a grid sizes its chips from
-/// the widest of its labels.
+/// How wide `label` is inside a [`tile_chip_starred`], at its widest weight; a grid sizes its
+/// chips from the widest of its labels.
 pub fn tile_chip_text_width(ui: &Ui, label: &str) -> f32 {
     galley(
         ui,
@@ -180,16 +180,16 @@ pub fn tile_chip_text_width(ui: &Ui, label: &str) -> f32 {
     .x
 }
 
-/// One choice of a grid: a rounded rectangle of exactly `extent` with a hairline border, the label
-/// centred. `selected` is the choice made (lit, semibold); `highlighted` is the keyboard's place,
-/// drawn like a hover.
-pub fn tile_chip(
+/// One choice of a grid with a favorite star on the right: a rounded rectangle of exactly `extent`
+/// with a hairline border. Returns `(response, star_clicked)`.
+pub fn tile_chip_starred(
     ui: &mut Ui,
     extent: Vec2,
     label: &str,
     selected: bool,
     highlighted: bool,
-) -> egui::Response {
+    is_favorite: bool,
+) -> (egui::Response, bool) {
     let (rect, response) = ui.allocate_exact_size(extent, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {
@@ -217,10 +217,41 @@ pub fn tile_chip(
         theme::text_primary(),
         f32::INFINITY,
     );
-    ui.painter().galley(
-        rect.center() - text.size() / 2.0,
+    // Shift the label slightly left so the star on the right stays visually balanced.
+    painter.galley(
+        pos2(
+            rect.center().x - text.size().x / 2.0 - 5.0,
+            rect.center().y - text.size().y / 2.0,
+        ),
         text,
         theme::text_primary(),
     );
-    response
+
+    let star_center = pos2((rect.right() - 12.0).round(), rect.center().y.round());
+    let star_hit_rect = Rect::from_center_size(star_center, Vec2::splat(18.0));
+    let star_hovered = ui.rect_contains_pointer(star_hit_rect);
+    let pointer_pos = ui.input(|i| i.pointer.interact_pos());
+    let star_clicked =
+        response.clicked() && pointer_pos.map_or(star_hovered, |p| star_hit_rect.contains(p));
+
+    let star_icon = if is_favorite {
+        Icon::StarFill
+    } else {
+        Icon::Star
+    };
+    let star_color = if is_favorite || star_hovered {
+        theme::text_primary()
+    } else if lit {
+        theme::text_secondary()
+    } else {
+        theme::with_alpha(theme::text_secondary(), 0.7)
+    };
+    icons::paint(
+        painter,
+        Rect::from_center_size(star_center, Vec2::splat(11.0)),
+        star_icon,
+        star_color,
+    );
+
+    (response, star_clicked)
 }

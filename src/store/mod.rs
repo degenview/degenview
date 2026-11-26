@@ -17,6 +17,7 @@ pub mod chart;
 pub mod drawing_favorites;
 pub mod drawing_template;
 pub mod editor_theme;
+pub mod favorite_timeframes;
 pub mod frame_cache;
 pub mod identity;
 pub mod language;

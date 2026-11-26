@@ -66,7 +66,7 @@ pub use page::{empty_state, footer_bar, footer_bar_with, notice_card};
 pub use palette::{ACCENT, GREEN, ORANGE, RED, Tone, hairline, primary, window};
 pub use pill::{
     chip_size, paint_chip, paint_count, paint_status_badge, status_badge, status_badge_size,
-    tile_chip, tile_chip_text_width, value_chip,
+    tile_chip_starred, tile_chip_text_width, value_chip,
 };
 pub use tab_bar::{TabItem, tab_bar, tab_bar_regular, tab_bar_regular_width, tab_bar_slim};
 pub use text::{
