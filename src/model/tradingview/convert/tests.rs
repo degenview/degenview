@@ -1,6 +1,8 @@
 use super::*;
-use crate::model::chart::kind::PriceSource;
+use crate::model::chart::kind::{LineDash, PriceSource};
 use crate::model::drawings::style::{HorizontalAlign, StatsPosition, VerticalAlign, VisibilityRow};
+use crate::model::forecast::style::{ProfileVolume, RowsLayout};
+use crate::model::pattern::elliott::Degree;
 use crate::model::tradingview::fixtures::{self, T0, drawing};
 use serde_json::{Value, json};
 
@@ -394,4 +396,211 @@ fn a_tables_alignment_and_a_labels_weight_carry_over() {
     );
     let converted = convert(&raw(&label), 1, None).unwrap();
     assert!(!shape(&converted.drawing).1.text.bold);
+}
+
+/// Converted with as many of `points` as the tool takes.
+fn with_points(tool: &str, props: Value, points: &[(i64, f64)]) -> Converted {
+    (1..=points.len())
+        .rev()
+        .find_map(|count| {
+            let source = drawing("s", tool, "X:Y", props.clone(), &points[..count]);
+            convert(&raw(&source), 1, None).ok()
+        })
+        .unwrap_or_else(|| panic!("{tool} takes none of these"))
+}
+
+fn styled(tool: &str, props: Value, points: &[(i64, f64)]) -> (Tool, DrawingStyle, String) {
+    let converted = with_points(tool, props, points);
+    let kind = converted.drawing.tool().expect("a tool");
+    let (_, style, text) = shape(&converted.drawing);
+    (kind, *style, text.to_owned())
+}
+
+const THREE: [(i64, f64); 3] = [(0, 1.0), (1, 2.0), (2, 3.0)];
+
+#[test]
+fn a_channels_lines_are_its_levels() {
+    let level = |color: &str, visible: bool, coeff: f64, style: i64, width: i64| {
+        json!({"color": color, "visible": visible, "coeff": coeff,
+               "lineStyle": style, "lineWidth": width})
+    };
+    let (_, style, text) = styled(
+        "LineToolParallelChannel",
+        json!({
+            "level1": level("#010101", true, -0.5, 0, 1),
+            "level2": level("#ff0000", true, 0.0, 2, 3),
+            "level4": level("#00ff00", false, 0.5, 1, 2),
+            "level5": level("#0000ff", true, 0.75, 0, 4),
+            "labelVisible": true, "labelText": "range", "labelTextColor": "#123456",
+            "labelVertAlign": "top",
+        }),
+        &THREE,
+    );
+    assert_eq!(style.stroke.color, [255, 0, 0, 255]);
+    assert_eq!(
+        (style.stroke.width, style.stroke.dash),
+        (3.0, LineDash::Dashed)
+    );
+    assert!(!style.middle_line.enabled);
+    // 0.75 is the second extra line, -0.25 (here moved to -0.5) the third.
+    assert!(style.channel_levels[1].line.enabled);
+    assert_eq!(style.channel_levels[1].line.width, 4.0);
+    assert_eq!(style.channel_levels[2].ratio, -0.5);
+    assert_eq!(text, "range");
+    assert_eq!(style.text.color, [0x12, 0x34, 0x56, 255]);
+    assert_eq!(style.text.valign, VerticalAlign::Bottom);
+}
+
+#[test]
+fn a_pitchforks_kind_median_and_levels_come_over() {
+    let (kind, style, _) = styled(
+        "LineToolPitchfork",
+        json!({
+            "style": 3,
+            "median": {"color": "#ff0000", "visible": true, "linestyle": 1, "linewidth": 3},
+            "level0": [0.3, "#00ff00", true, 2, 4],
+        }),
+        &THREE,
+    );
+    assert_eq!(kind, Tool::SchiffPitchfork, "its setting says what it is");
+    assert_eq!(style.stroke.color, [255, 0, 0, 255]);
+    assert_eq!(style.stroke.dash, LineDash::Dotted);
+    let first = style.pitchfork_levels[0];
+    assert_eq!(
+        (first.ratio, first.line.enabled, first.line.width),
+        (0.3, true, 4.0)
+    );
+    assert_eq!(first.line.dash, LineDash::Dashed);
+    // The classes drawn as a kind of their own keep it.
+    for (class, setting, kind) in [
+        ("LineToolSchiffPitchfork2", 3, Tool::SchiffPitchfork),
+        ("LineToolSchiffPitchfork", 1, Tool::ModifiedSchiffPitchfork),
+        ("LineToolInsidePitchfork", 2, Tool::InsidePitchfork),
+    ] {
+        assert_eq!(
+            styled(class, json!({"style": setting}), &THREE).0,
+            kind,
+            "{class}"
+        );
+    }
+}
+
+#[test]
+fn fib_levels_are_read_wherever_they_are_numbered_like_ours() {
+    for class in [
+        "LineToolFibChannel",
+        "LineToolFibTimeZone",
+        "LineToolTrendBasedFibTime",
+        "LineToolFibCircles",
+        "LineToolFibSpeedResistanceArcs",
+        "LineToolFibWedge",
+        "LineToolPitchfan",
+    ] {
+        let converted = with_points(class, json!({"level1": [0.42, "#ff0000", true]}), &THREE);
+        assert!(!converted.default_levels, "{class}");
+        let levels = shape(&converted.drawing).1.fib.expect(class).levels;
+        assert_eq!(levels.as_slice().len(), 1, "{class}");
+        assert_eq!(levels.as_slice()[0].ratio, 0.42, "{class}");
+    }
+    assert!(with_points("LineToolGannFan", json!({}), &THREE).default_levels);
+}
+
+#[test]
+fn settings_named_differently_by_their_tool_are_still_read() {
+    let red = [255, 0, 0, 255];
+    let (_, path, _) = styled("LineToolPath", json!({"lineStyle": 2}), &THREE);
+    assert_eq!(path.stroke.dash, LineDash::Dashed);
+    let (_, flag, _) = styled("LineToolFlagMark", json!({"flagColor": "#ff0000"}), &THREE);
+    assert_eq!(flag.stroke.color, red);
+    let (_, mark, _) = styled(
+        "LineToolArrowMarkUp",
+        json!({"arrowColor": "#ff0000", "color": "#00ff00"}),
+        &THREE,
+    );
+    assert_eq!(
+        (mark.stroke.color, mark.text.color),
+        (red, [0, 255, 0, 255])
+    );
+    let (_, marker, _) = styled(
+        "LineToolArrowMarker",
+        json!({"backgroundColor": "#ff0000"}),
+        &THREE,
+    );
+    assert_eq!(marker.stroke.color, red);
+    let (_, callout, _) = styled("LineToolCallout", json!({"bordercolor": "#ff0000"}), &THREE);
+    assert_eq!(callout.border.color, red);
+    let (_, boxed, _) = styled(
+        "LineToolRectangle",
+        json!({"vertLabelsAlign": "bottom",
+               "middleLine": {"showLine": true, "lineColor": "#ff0000", "lineWidth": 3}}),
+        &THREE,
+    );
+    assert_eq!(boxed.text.valign, VerticalAlign::Top);
+    assert!(boxed.middle_line.enabled);
+    assert_eq!(
+        (boxed.middle_line.color, boxed.middle_line.width),
+        (red, 3.0)
+    );
+    let (_, arrow, _) = styled("LineToolArrow", json!({"showAngle": true}), &THREE);
+    assert!(arrow.stats.angle);
+}
+
+#[test]
+fn a_regression_a_measurement_a_profile_and_a_waves_degree_keep_their_settings() {
+    let (_, regression, _) = styled(
+        "LineToolRegressionTrend",
+        json!({
+            "inputs": {"source": "hl2", "upper diviation": 3, "lower diviation": -1,
+                       "use lower diviation": false},
+            "styles": {"baseLine": {"color": "#ff0000", "linewidth": 4}, "showPearsons": false},
+        }),
+        &THREE,
+    );
+    let options = regression.regression;
+    assert_eq!(options.source, PriceSource::Hl2);
+    assert_eq!((options.upper_dev, options.lower_dev), (3.0, -1.0));
+    assert!(!options.lower.enabled && !options.pearson);
+    assert_eq!(
+        (options.base.color, options.base.width),
+        ([255, 0, 0, 255], 4.0)
+    );
+
+    let (_, measure, _) = styled(
+        "LineToolDateAndPriceRange",
+        json!({"showPipsPriceRange": false, "showVolume": false,
+               "labelBackgroundColor": "#ff0000"}),
+        &THREE,
+    );
+    assert!(!measure.measure.ticks && !measure.measure.volume);
+    assert_eq!(measure.measure.label, [255, 0, 0, 255]);
+
+    let (_, profile, _) = styled(
+        "LineToolFixedRangeVolumeProfile",
+        json!({
+            "inputs": {"rows": 50, "rowsLayout": "Ticks Per Row", "vaVolume": 60, "volume": "Delta"},
+            "graphics": {
+                "hhists": {"histBarsVA": {"percentWidth": 45, "direction": "right_to_left"}},
+                "horizlines": {"pocLines": {"visible": false}},
+            },
+        }),
+        &THREE,
+    );
+    let options = profile.profile;
+    assert_eq!(options.layout, RowsLayout::Ticks);
+    assert_eq!(
+        (options.ticks, options.value_area, options.width),
+        (50, 60.0, 45.0)
+    );
+    assert_eq!(options.volume, ProfileVolume::Delta);
+    assert!(options.right && !options.poc);
+
+    let six = [(0, 1.0), (1, 2.0), (2, 3.0), (3, 2.0), (4, 4.0), (5, 3.0)];
+    for (stored, degree) in [
+        (7, Degree::Intermediate),
+        (3, Degree::GrandSupercycle),
+        (0, Degree::GrandSupercycle),
+    ] {
+        let (_, wave, _) = styled("LineToolElliottImpulse", json!({"degree": stored}), &six);
+        assert_eq!(wave.pattern.degree, degree, "{stored}");
+    }
 }

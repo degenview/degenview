@@ -2,21 +2,18 @@
 //! TradingView's placement points, which DegenView's tools are built from too, and the look is
 //! carried over where both have the setting.
 
-use super::color::{self, with_transparency};
 use super::drawing::RawDrawing;
 use crate::model::annotation::image_content::Content;
 use crate::model::annotation::link_card::{Link, LinkCard};
 use crate::model::annotation::table::{
     COLUMN_WIDTH_RANGE, MAX_CELL_CHARS, MAX_COLUMNS, MAX_ROWS, ROW_HEIGHT_RANGE, TableData,
 };
-use crate::model::chart::kind::{LineDash, PriceSource, Rgba};
 use crate::model::drawings::Geometry;
-use crate::model::drawings::style::{
-    DrawingStyle, HorizontalAlign, LineEnd, StatsPosition, VerticalAlign, Visibility, VisibilityRow,
-};
-use crate::model::fib::style::{FibLevel, FibStyle, Levels};
+use crate::model::drawings::style::{DrawingStyle, Visibility, VisibilityRow};
+use crate::model::fib::style::FibStyle;
 use crate::model::{Anchor, Drawing, Tool};
 use serde_json::Value;
+use style::{has_percent_bands, style, words};
 
 /// Why a drawing is left out.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -147,6 +144,25 @@ pub fn tool_of(class: &str) -> Option<Tool> {
         .map(|(_, tool)| *tool)
 }
 
+/// A pitchfork's kind is also one of its settings, which wins over the class it was drawn as.
+fn variant(raw: &RawDrawing, tool: Tool) -> Tool {
+    use Tool::{InsidePitchfork, ModifiedSchiffPitchfork, Pitchfork, SchiffPitchfork};
+    if !matches!(
+        tool,
+        Pitchfork | SchiffPitchfork | ModifiedSchiffPitchfork | InsidePitchfork
+    ) {
+        return tool;
+    }
+    // TradingView's `LineToolPitchforkStyle`: Original, Schiff, Inside, Schiff2.
+    match raw.props.get("style").and_then(Value::as_i64) {
+        Some(0) => Pitchfork,
+        Some(1) => ModifiedSchiffPitchfork,
+        Some(2) => InsidePitchfork,
+        Some(3) => SchiffPitchfork,
+        _ => tool,
+    }
+}
+
 /// A name to show for a class DegenView has no tool for: `LineToolEmoji` is `Emoji`.
 pub fn class_label(class: &str) -> &str {
     class.strip_prefix("LineTool").unwrap_or(class)
@@ -157,7 +173,7 @@ pub fn convert(raw: &RawDrawing, id: u64, tick: Option<f64>) -> Result<Converted
     if raw.tool == "LineToolImage" {
         return Err(Unsupported::Picture);
     }
-    let tool = tool_of(&raw.tool).ok_or(Unsupported::Tool)?;
+    let tool = variant(raw, tool_of(&raw.tool).ok_or(Unsupported::Tool)?);
     // A pinned drawing's points are not where it is.
     if raw.flag("anchored") == Some(true) {
         return Err(Unsupported::Pinned);
@@ -191,17 +207,17 @@ pub fn convert(raw: &RawDrawing, id: u64, tick: Option<f64>) -> Result<Converted
     };
     let mut converted = finish(raw, drawing);
     converted.cut_text |= cut_table;
-    // A retracement's and an extension's levels are read; the others' are stored in ways not
-    // known here.
-    converted.default_levels = FibStyle::for_tool(tool).is_some()
-        && !matches!(tool, Tool::FibRetracement | Tool::FibExtension);
+    // The speed fan's and the Gann tools' levels are stored in ways whose match with ours is not
+    // known; the spiral has none.
+    converted.default_levels =
+        FibStyle::for_tool(tool).is_some() && !style::reads_levels(tool) && tool != Tool::FibSpiral;
     converted.percent_bands = tool == Tool::AnchoredVwap && has_percent_bands(raw);
     Ok(converted)
 }
 
 /// The switches every drawing has, and its words.
 fn finish(raw: &RawDrawing, mut drawing: Drawing) -> Converted {
-    let text = raw.str("text").unwrap_or("").trim_end();
+    let text = words(raw);
     drawing.set_text(text);
     let cut_text = !text.is_empty()
         && matches!(&drawing, Drawing::Shape { text: kept, .. }
@@ -259,345 +275,6 @@ fn visibility(raw: &RawDrawing) -> Visibility {
     .fold(Visibility::ALL, |visibility, (row, shown)| {
         visibility.with_row(row, shown)
     })
-}
-
-/// A colour setting, under whichever name the tool keeps it.
-fn colour(raw: &RawDrawing, keys: &[&str]) -> Option<Rgba> {
-    keys.iter()
-        .find_map(|key| raw.str(key).and_then(color::parse))
-}
-
-fn dash(code: i64) -> LineDash {
-    match code {
-        1 => LineDash::Dotted,
-        2 => LineDash::Dashed,
-        _ => LineDash::Solid,
-    }
-}
-
-/// The tool's own default look, with what TradingView's drawing sets.
-fn style(raw: &RawDrawing, tool: Tool) -> DrawingStyle {
-    let mut style = tool.default_style();
-    // A note's connector and marker are its stroke; a text tool's `color` is its text.
-    let writes = matches!(
-        tool,
-        Tool::Text | Tool::Comment | Tool::PriceLabel | Tool::Callout | Tool::Note
-    );
-    let stroke_keys: &[&str] = if writes {
-        &["lineColor", "markerColor"]
-    } else if tool == Tool::Pin {
-        &["markerColor"]
-    } else {
-        &["linecolor", "lineColor", "color"]
-    };
-    if let Some(color) = colour(raw, stroke_keys) {
-        style.stroke.color = color;
-    }
-    if let Some(width) = raw
-        .number("linewidth")
-        .or_else(|| raw.number("lineWidth"))
-        .or_else(|| (tool == Tool::Highlighter).then(|| raw.number("width"))?)
-    {
-        style.stroke.width = width as f32;
-    }
-    if let Some(code) = raw.props.get("linestyle").and_then(Value::as_i64) {
-        style.stroke.dash = dash(code);
-    }
-    if let Some(color) = colour(raw, &["backgroundColor", "background"]) {
-        let transparency = raw
-            .number("backgroundTransparency")
-            .or_else(|| raw.number("transparency"));
-        // An `rgba` colour carries its own opacity.
-        style.fill.color = match transparency {
-            Some(transparency) if color[3] == 255 => with_transparency(color, transparency),
-            _ => color,
-        };
-        if let Some(enabled) = raw
-            .flag("fillBackground")
-            .or_else(|| raw.flag("drawBackground"))
-        {
-            style.fill.enabled = enabled;
-        }
-    }
-    let text_keys: &[&str] = if writes && tool != Tool::PriceLabel {
-        &["textColor", "textcolor", "color"]
-    } else {
-        &["textColor", "textcolor"]
-    };
-    if let Some(color) = colour(raw, text_keys) {
-        style.text.color = color;
-    }
-    if tool == Tool::PriceLabel
-        && let Some(color) = colour(raw, &["color"])
-    {
-        style.text.color = color;
-    }
-    if let Some(size) = raw.number("fontsize").or_else(|| raw.number("fontSize")) {
-        style.text.size = size as f32;
-    }
-    if let Some(bold) = raw
-        .flag("bold")
-        .or_else(|| raw.str("fontWeight").map(|weight| weight == "bold"))
-    {
-        style.text.bold = bold;
-    }
-    if let Some(italic) = raw.flag("italic") {
-        style.text.italic = italic;
-    }
-    if let Some(wrap) = raw.flag("wordWrap") {
-        style.wrap = wrap;
-        if let Some(width) = raw.number("wordWrapWidth") {
-            style.box_width = width as f32;
-        }
-    }
-    if let Some(color) = colour(raw, &["borderColor"]) {
-        style.border.color = color;
-        style.border.enabled = raw.flag("drawBorder").unwrap_or(style.border.enabled);
-    }
-    if let Some(extend) = raw
-        .flag("extendLeft")
-        .or_else(|| raw.flag("extendLinesLeft"))
-    {
-        style.extend_left = extend;
-    }
-    if let Some(extend) = raw.flag("extendRight").or_else(|| raw.flag("extendLines")) {
-        style.extend_right = extend;
-    }
-    // TradingView numbers a line end: 0 plain, 1 arrow.
-    for (key, end) in [
-        ("leftEnd", &mut style.head_start),
-        ("rightEnd", &mut style.head_end),
-    ] {
-        if let Some(code) = raw.props.get(key).and_then(Value::as_i64) {
-            *end = if code == 1 {
-                LineEnd::Arrow
-            } else {
-                LineEnd::Plain
-            };
-        }
-    }
-    if let Some(shown) = raw.flag("showPriceLabels") {
-        style.price_labels = shown;
-    }
-    if let Some(shown) = raw.flag("showMiddlePoint") {
-        style.middle_point = shown;
-    }
-    if matches!(
-        tool,
-        Tool::TrendLine
-            | Tool::Ray
-            | Tool::InfoLine
-            | Tool::ExtendedLine
-            | Tool::TrendAngle
-            | Tool::HorizontalLine
-            | Tool::HorizontalRay
-    ) {
-        line_label(raw, &mut style);
-        line_stats(raw, &mut style);
-    }
-    if tool == Tool::Table
-        && let Some(align) = raw.str("horzAlign").and_then(horizontal)
-    {
-        style.text.align = align;
-    }
-    if tool == Tool::AnchoredVwap {
-        vwap(raw, &mut style);
-    }
-    if matches!(tool, Tool::LongPosition | Tool::ShortPosition) {
-        position_options(raw, &mut style);
-    }
-    if matches!(tool, Tool::FibRetracement | Tool::FibExtension) {
-        fib(raw, &mut style);
-    }
-    style.sanitized()
-}
-
-fn horizontal(name: &str) -> Option<HorizontalAlign> {
-    match name {
-        "left" => Some(HorizontalAlign::Left),
-        "center" => Some(HorizontalAlign::Center),
-        "right" => Some(HorizontalAlign::Right),
-        _ => None,
-    }
-}
-
-/// Where a line's words sit on it. TradingView names the edge of the words that meets the line,
-/// so its `bottom` is above the line; DegenView names the side of the line.
-fn line_label(raw: &RawDrawing, style: &mut DrawingStyle) {
-    if let Some(align) = raw.str("horzLabelsAlign").and_then(horizontal) {
-        style.text.align = align;
-    }
-    match raw.str("vertLabelsAlign") {
-        Some("bottom") => style.text.valign = VerticalAlign::Top,
-        Some("middle") => style.text.valign = VerticalAlign::Middle,
-        Some("top") => style.text.valign = VerticalAlign::Bottom,
-        _ => {}
-    }
-}
-
-/// The measurements a line prints beside itself.
-fn line_stats(raw: &RawDrawing, style: &mut DrawingStyle) {
-    let stats = &mut style.stats;
-    for (key, shown) in [
-        ("showPriceRange", &mut stats.price_range),
-        ("showPercentPriceRange", &mut stats.percent),
-        ("showBarsRange", &mut stats.bars),
-        ("showDateTimeRange", &mut stats.time),
-        ("showDistance", &mut stats.distance),
-        ("showAngle", &mut stats.angle),
-        ("alwaysShowStats", &mut stats.always_show),
-    ] {
-        if let Some(value) = raw.flag(key) {
-            *shown = value;
-        }
-    }
-    // TradingView's fourth, "auto", has no counterpart: the tool's own place stands.
-    match raw.props.get("statsPosition").and_then(Value::as_i64) {
-        Some(0) => stats.position = StatsPosition::Left,
-        Some(1) => stats.position = StatsPosition::Center,
-        Some(2) => stats.position = StatsPosition::Right,
-        _ => {}
-    }
-}
-
-fn has_percent_bands(raw: &RawDrawing) -> bool {
-    let Some(inputs) = raw.props.get("inputs") else {
-        return false;
-    };
-    let on = |key: &str| inputs.get(key).and_then(Value::as_bool) == Some(true);
-    inputs.get("Bands Calculation Mode").and_then(Value::as_str) == Some("Percentage")
-        && (on("calculate_stDev") || on("calculate_stDev_2") || on("calculate_stDev_3"))
-}
-
-/// An anchored VWAP, which TradingView keeps as a study: its settings are `inputs` and the look of
-/// each of its plots is under `styles`.
-fn vwap(raw: &RawDrawing, style: &mut DrawingStyle) {
-    let input = |key: &str| raw.props.get("inputs").and_then(|inputs| inputs.get(key));
-    let plot = |name: &str| raw.props.get("styles").and_then(|styles| styles.get(name));
-    let color_of = |plot: &Value| {
-        let color = color::parse(plot.get("color")?.as_str()?)?;
-        Some(match plot.get("transparency").and_then(Value::as_f64) {
-            Some(transparency) if color[3] == 255 => with_transparency(color, transparency),
-            _ => color,
-        })
-    };
-    if let Some(line) = plot("VWAP") {
-        if let Some(color) = color_of(line) {
-            style.stroke.color = color;
-        }
-        if let Some(width) = line.get("linewidth").and_then(Value::as_f64) {
-            style.stroke.width = width as f32;
-        }
-        if let Some(code) = line.get("linestyle").and_then(Value::as_i64) {
-            style.stroke.dash = dash(code);
-        }
-    }
-    if let Some(source) = input("source").and_then(Value::as_str) {
-        style.vwap.source = match source {
-            "open" => PriceSource::Open,
-            "high" => PriceSource::High,
-            "low" => PriceSource::Low,
-            "close" => PriceSource::Close,
-            "hl2" => PriceSource::Hl2,
-            "hlc3" => PriceSource::Hlc3,
-            "ohlc4" => PriceSource::Ohlc4,
-            _ => style.vwap.source,
-        };
-    }
-    let percent = has_percent_bands(raw);
-    for (band, suffix) in style.vwap.bands.iter_mut().zip(["", "_2", "_3"]) {
-        if let Some(on) = input(&format!("calculate_stDev{suffix}")).and_then(Value::as_bool) {
-            band.enabled = on && !percent;
-        }
-        if let Some(multiplier) =
-            input(&format!("bands_multiplier{suffix}")).and_then(Value::as_f64)
-        {
-            band.multiplier = multiplier as f32;
-        }
-        if let Some(color) = plot(&format!("UpperBand{suffix}")).and_then(color_of) {
-            band.color = color;
-        }
-    }
-    if let Some(fill) = raw
-        .props
-        .get("areaBackground")
-        .and_then(|area| area.get("fillBackground"))
-        .and_then(Value::as_bool)
-    {
-        style.vwap.fill = fill;
-    }
-}
-
-fn position_options(raw: &RawDrawing, style: &mut DrawingStyle) {
-    let options = &mut style.position;
-    if let Some(account) = raw.number("accountSize") {
-        options.account = account;
-    }
-    if let Some(risk) = raw.number("risk") {
-        options.risk = risk;
-        options.risk_percent = raw.str("riskDisplayMode") != Some("money");
-    }
-    if let Some(lot) = raw.number("lotSize") {
-        options.lot = lot;
-    }
-    if let Some(color) = colour(raw, &["profitBackground"]) {
-        options.profit = color;
-    }
-    if let Some(color) = colour(raw, &["stopBackground"]) {
-        options.stop = color;
-    }
-    if let Some(compact) = raw.flag("compact") {
-        options.compact = compact;
-    }
-    if let Some(always) = raw.flag("alwaysShowStats") {
-        options.always_stats = always;
-    }
-}
-
-/// A retracement's own levels: `level1`…`level24`, as `[ratio, colour, shown]` or as an object.
-fn fib(raw: &RawDrawing, style: &mut DrawingStyle) {
-    let levels: Vec<FibLevel> = (1..=24)
-        .filter_map(|index| {
-            let value = raw.props.get(&format!("level{index}"))?;
-            let (ratio, color, shown) = match value {
-                Value::Array(parts) => (
-                    parts.first()?.as_f64()?,
-                    parts.get(1).and_then(Value::as_str),
-                    parts.get(2).and_then(Value::as_bool),
-                ),
-                level => (
-                    level.get("coeff")?.as_f64()?,
-                    level.get("color").and_then(Value::as_str),
-                    level.get("visible").and_then(Value::as_bool),
-                ),
-            };
-            Some(FibLevel {
-                ratio: ratio as f32,
-                enabled: shown.unwrap_or(true),
-                color: color.and_then(color::parse).unwrap_or(style.stroke.color),
-                ..FibLevel::default()
-            })
-        })
-        .collect();
-    let Some(mut own) = style.fib else {
-        return;
-    };
-    if !levels.is_empty() {
-        own.levels = Levels::from_levels(&levels);
-    }
-    if let Some(reverse) = raw.flag("reverse") {
-        own.reverse = reverse;
-    }
-    if let Some(shown) = raw.flag("showCoeffs") {
-        own.show_labels = shown;
-    }
-    if let Some(shown) = raw.flag("showPrices") {
-        own.show_prices = shown;
-    }
-    if let Some(percent) = raw.flag("coeffsAsPercents") {
-        own.as_percent = percent;
-    }
-    style.fib = Some(own);
 }
 
 /// Entry, target and stop. TradingView keeps the distances in price steps; without the step they
@@ -723,5 +400,6 @@ fn post(
     .ok_or(Unsupported::Points)
 }
 
+mod style;
 #[cfg(test)]
 mod tests;
