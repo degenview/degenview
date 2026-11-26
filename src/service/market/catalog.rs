@@ -50,7 +50,8 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         self.get_from(lookup::shared(), download)
     }
 
-    fn get_from(
+    /// `get` with the cache passed in, so a provider's tests see one list per cache.
+    pub(in crate::service::market) fn get_from(
         &self,
         cache: &LookupCache,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
