@@ -2,7 +2,7 @@
 //! File menu, drawn over the tab it was opened on, and able to open what it added there.
 
 use super::{ChartWorkspace, WorkspaceAction};
-use crate::host::tradingview::{Outcome, Targets, TradingViewImport};
+use crate::host::tradingview::{Outcome, Targets, TradingViewImport, offer};
 use crate::store::scripts::ScriptStore;
 use eframe::egui;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ impl ChartWorkspace {
         if self.tradingview.is_some() {
             return;
         }
+        offer::mark_offered(&self.store);
         let targets = Targets {
             store: self.store.clone(),
             watchlist: Arc::clone(&self.watchlist),

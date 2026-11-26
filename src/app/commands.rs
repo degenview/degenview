@@ -125,6 +125,7 @@ impl DegenViewApp {
                 AppAction::OpenPortfolio => self.open_portfolio(ctx),
                 AppAction::OpenPine => self.open_pine(ctx),
                 AppAction::ScriptsImported => self.sync.note_scripts_changed(),
+                AppAction::ImportTradingView => self.import_tradingview(ctx),
                 AppAction::OpenPineSource(target) => self.open_pine_source(ctx, &target),
                 AppAction::OpenAlpacaSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_alpaca);

@@ -3035,9 +3035,20 @@ msgstr "График {timeframe}"
 msgid "Chart's scale"
 msgstr "Шкала графика"
 
+#: src/ui/tradingview/offer.rs
+msgid "Charts and indicators"
+msgstr "Графики и индикаторы"
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "Графики, которые уже используют её, сохранят свой вид."
+
+#: src/ui/tradingview/offer.rs
+msgid "Charts, indicators and {count} drawing"
+msgid_plural "Charts, indicators and {count} drawings"
+msgstr[0] "Графики, индикаторы и {count} рисунок"
+msgstr[1] "Графики, индикаторы и {count} рисунка"
+msgstr[2] "Графики, индикаторы и {count} рисунков"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -3112,6 +3123,10 @@ msgstr "Изм."
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
 msgstr "Изм.%"
+
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "Выбрать, что импортировать"
 
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
@@ -9198,6 +9213,10 @@ msgstr "Статус рынка"
 msgid "Market value unavailable · {error}"
 msgstr "Рыночная стоимость недоступна · {error}"
 
+#: src/ui/tradingview/offer.rs
+msgid "Markets and sections"
+msgstr "Рынки и разделы"
+
 #: src/ui/chart/settings/compare.rs
 msgid ""
 "Markets on the chart's scale are drawn from where the chart starts, so their "
@@ -9960,6 +9979,10 @@ msgstr "Без секции"
 #: src/ui/watchlist/sidebar/content.rs
 msgid "No Symbols"
 msgstr "Нет символов"
+
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "Нет, спасибо"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -11665,6 +11688,10 @@ msgstr "Документация Pine Script"
 #: src/native_bridge.rs src/ui/settings/window.rs
 msgid "Pine Studio"
 msgstr "Pine Studio"
+
+#: src/ui/tradingview/offer.rs
+msgid "Pine code you wrote or saved"
+msgstr "Код Pine, который вы написали или сохранили"
 
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -17067,6 +17094,10 @@ msgstr "Брокер не может торговать на этом рынке
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "Это не распознанный экспорт транзакций CoinMarketCap."
 
+#: src/ui/tradingview/offer.rs
+msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
+msgstr "Этот вопрос задаётся один раз. Позже выберите «Импорт из TradingView» в меню макетов."
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid ""
 "This is the editor itself. Click in it, select text or press ⌘F to see more "
@@ -19019,6 +19050,10 @@ msgstr ""
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "Можно хранить не более {max} пользовательских тем."
+
+#: src/ui/tradingview/offer.rs
+msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
+msgstr "Вы выбираете, что перенести, и сначала видите предварительный просмотр. В TradingView ничего не меняется."
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."
@@ -22374,6 +22409,10 @@ msgstr "Импорт завершён"
 msgid "Import from TradingView"
 msgstr "Импорт из TradingView"
 
+#: src/ui/tradingview/offer.rs
+msgid "Import from TradingView?"
+msgstr "Импортировать из TradingView?"
+
 #: src/native_bridge.rs src/ui/workspace/empty_state/mod.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Import from TradingView…"
@@ -22489,6 +22528,10 @@ msgid_plural "Text of {count} drawings is shortened"
 msgstr[0] "Текст {count} рисунка сокращён"
 msgstr[1] "Текст {count} рисунков сокращён"
 msgstr[2] "Текст {count} рисунков сокращён"
+
+#: src/ui/tradingview/offer.rs
+msgid "The TradingView app on this computer has things you can bring over:"
+msgstr "В приложении TradingView на этом компьютере есть то, что можно перенести:"
 
 #: src/service/tradingview/mod.rs
 msgid "The TradingView app’s data wasn’t found on this computer."

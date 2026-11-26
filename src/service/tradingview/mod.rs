@@ -90,6 +90,18 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
         Some(folder) => vec![folder.to_owned()],
         None => locate::data_folders(&locate::Environment::current()),
     };
+    read(folders, chosen.is_some())
+}
+
+/// What there is to import, looked for without anyone having asked: only where the system lets
+/// an app look without a question of its own. `None` when there is nothing.
+pub fn discover() -> Option<Library> {
+    let folders = locate::unguarded_data_folders(&locate::Environment::current());
+    read(folders, false).ok().map(|scan| scan.library)
+}
+
+/// Reads what `folders` hold; `chosen` when the person named the folder.
+fn read(folders: Vec<PathBuf>, chosen: bool) -> Result<Scan, ScanError> {
     let mut documents = Vec::new();
     let mut used = None;
     // One folder that cannot be read does not lose what the others hold.
@@ -118,10 +130,7 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
     let Some(folder) = used else {
         return Err(match failed {
             Some(error) => error.into(),
-            None => nowhere(
-                chosen.is_some(),
-                crate::service::system::sandbox::is_flatpak(),
-            ),
+            None => nowhere(chosen, crate::service::system::sandbox::is_flatpak()),
         });
     };
     let library = parse::library(documents);

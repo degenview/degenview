@@ -2774,9 +2774,18 @@ msgstr "应用 {timeframe}"
 msgid "Chart's scale"
 msgstr "图表刻度"
 
+#: src/ui/tradingview/offer.rs
+msgid "Charts and indicators"
+msgstr "图表和指标"
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "已使用它的图表保持原有外观。"
+
+#: src/ui/tradingview/offer.rs
+msgid "Charts, indicators and {count} drawing"
+msgid_plural "Charts, indicators and {count} drawings"
+msgstr[0] "图表、指标和 {count} 个绘图"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -2851,6 +2860,10 @@ msgstr "涨跌"
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
 msgstr "涨跌幅"
+
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "选择导入内容"
 
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
@@ -7152,6 +7165,10 @@ msgstr "从 CoinMarketCap 导入"
 msgid "Import from CoinMarketCap…"
 msgstr "从 CoinMarketCap 导入…"
 
+#: src/ui/tradingview/offer.rs
+msgid "Import from TradingView?"
+msgstr "从 TradingView 导入？"
+
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Import into {name}"
 msgstr "导入到 {name}"
@@ -8504,6 +8521,10 @@ msgstr "市场状态"
 msgid "Market value unavailable · {error}"
 msgstr "市值不可用 · {error}"
 
+#: src/ui/tradingview/offer.rs
+msgid "Markets and sections"
+msgstr "市场和分组"
+
 #: src/ui/chart/settings/compare.rs
 msgid "Markets on the chart's scale are drawn from where the chart starts, so their prices only line up as a change. Read them on a relative axis:"
 msgstr "使用图表刻度的市场从图表起点开始绘制，因此价格只能按涨跌幅对齐。在相对刻度上查看："
@@ -9229,6 +9250,10 @@ msgstr "无分组"
 #: src/ui/watchlist/sidebar/content.rs
 msgid "No Symbols"
 msgstr "没有标的"
+
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "不用了"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -10816,6 +10841,10 @@ msgstr "Pine Script 文档"
 #: src/native_bridge.rs src/ui/settings/window.rs
 msgid "Pine Studio"
 msgstr "Pine Studio"
+
+#: src/ui/tradingview/offer.rs
+msgid "Pine code you wrote or saved"
+msgstr "您编写或保存的 Pine 代码"
 
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -14695,6 +14724,10 @@ msgstr "钥匙串密钥已替换，但无法清除已保存的 MCP 状态。请�
 msgid "The Stochastic formula applied to RSI."
 msgstr "把随机指标公式应用于 RSI。"
 
+#: src/ui/tradingview/offer.rs
+msgid "The TradingView app on this computer has things you can bring over:"
+msgstr "此电脑上的 TradingView 应用中有以下内容可以导入："
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr "账户资金不足以下最小订单。"
@@ -15807,6 +15840,10 @@ msgstr "这不是该券商可交易的市场。"
 #: src/model/portfolio/csv.rs
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "这不是可识别的 CoinMarketCap 交易导出文件。"
+
+#: src/ui/tradingview/offer.rs
+msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
+msgstr "此提示只出现一次。以后可在布局菜单中选择“从 TradingView 导入”。"
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme."
@@ -17567,6 +17604,10 @@ msgstr "你已同意上传到 {hosts}。对于其他任何主机，DegenView 会
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "最多可保留 {max} 个自定义主题。"
+
+#: src/ui/tradingview/offer.rs
+msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
+msgstr "导入内容由您选择，并会先显示预览。TradingView 中的内容不会有任何改动。"
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."

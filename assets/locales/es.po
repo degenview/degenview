@@ -2799,9 +2799,19 @@ msgstr "Graficar {timeframe}"
 msgid "Chart's scale"
 msgstr "Escala del gráfico"
 
+#: src/ui/tradingview/offer.rs
+msgid "Charts and indicators"
+msgstr "Gráficos e indicadores"
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "Los gráficos que ya la usan conservan su aspecto."
+
+#: src/ui/tradingview/offer.rs
+msgid "Charts, indicators and {count} drawing"
+msgid_plural "Charts, indicators and {count} drawings"
+msgstr[0] "Gráficos, indicadores y {count} dibujo"
+msgstr[1] "Gráficos, indicadores y {count} dibujos"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -2876,6 +2886,10 @@ msgstr "Camb."
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
 msgstr "Camb. %"
+
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "Elegir qué importar"
 
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
@@ -7186,6 +7200,10 @@ msgstr "Importar desde CoinMarketCap"
 msgid "Import from CoinMarketCap…"
 msgstr "Importar desde CoinMarketCap…"
 
+#: src/ui/tradingview/offer.rs
+msgid "Import from TradingView?"
+msgstr "¿Importar desde TradingView?"
+
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Import into {name}"
 msgstr "Importar en {name}"
@@ -8540,6 +8558,10 @@ msgstr "Estado del mercado"
 msgid "Market value unavailable · {error}"
 msgstr "Valor de mercado no disponible · {error}"
 
+#: src/ui/tradingview/offer.rs
+msgid "Markets and sections"
+msgstr "Mercados y secciones"
+
 #: src/ui/chart/settings/compare.rs
 msgid "Markets on the chart's scale are drawn from where the chart starts, so their prices only line up as a change. Read them on a relative axis:"
 msgstr "Los mercados en la escala del gráfico se dibujan desde donde empieza el gráfico, así que sus precios solo coinciden como variación. Léelos en un eje relativo:"
@@ -9265,6 +9287,10 @@ msgstr "Sin sección"
 #: src/ui/watchlist/sidebar/content.rs
 msgid "No Symbols"
 msgstr "Sin símbolos"
+
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "No, gracias"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -10853,6 +10879,10 @@ msgstr "Documentación de Pine Script"
 #: src/native_bridge.rs src/ui/settings/window.rs
 msgid "Pine Studio"
 msgstr "Pine Studio"
+
+#: src/ui/tradingview/offer.rs
+msgid "Pine code you wrote or saved"
+msgstr "Código Pine que escribiste o guardaste"
 
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -14746,6 +14776,10 @@ msgstr "La clave del Llavero se ha sustituido, pero no se ha podido borrar el es
 msgid "The Stochastic formula applied to RSI."
 msgstr "La fórmula del Estocástico aplicada al RSI."
 
+#: src/ui/tradingview/offer.rs
+msgid "The TradingView app on this computer has things you can bring over:"
+msgstr "La aplicación TradingView de este ordenador tiene cosas que puedes traer:"
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr "La cuenta no puede permitirse aquí la orden mínima."
@@ -15855,6 +15889,10 @@ msgstr "Este no es un mercado en el que el bróker pueda operar."
 #: src/model/portfolio/csv.rs
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "No es una exportación de transacciones de CoinMarketCap reconocida."
+
+#: src/ui/tradingview/offer.rs
+msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
+msgstr "Solo se pregunta una vez. Más adelante, elige «Importar desde TradingView» en el menú de diseños."
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme."
@@ -17622,6 +17660,10 @@ msgstr "Aceptaste subir a {hosts}. DegenView vuelve a preguntar para cualquier o
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "Puedes tener como máximo {max} temas personalizados."
+
+#: src/ui/tradingview/offer.rs
+msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
+msgstr "Tú eliges qué se importa y antes ves una vista previa. En TradingView no cambia nada."
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."

@@ -4,6 +4,7 @@
 //! [`Action`]s; the rules are in `model::tradingview`.
 
 mod apply;
+pub mod offer;
 
 pub use apply::Targets;
 

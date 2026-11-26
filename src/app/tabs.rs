@@ -617,8 +617,10 @@ impl DegenViewApp {
         id
     }
 
-    /// File ▸ Import from TradingView: over the focused chart tab, else over a new one.
+    /// File ▸ Import from TradingView, and the offer made at launch: over the focused chart tab,
+    /// else over a new one.
     pub(super) fn import_tradingview(&mut self, ctx: &egui::Context) {
+        self.import_offer.withdraw();
         let focused = self.tabs.focused_tab();
         let is_chart = self
             .tabs

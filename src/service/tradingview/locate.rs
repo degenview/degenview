@@ -78,12 +78,31 @@ pub fn cache_in(folder: &Path) -> Option<PathBuf> {
         .find(|dir| cache::is_cache(dir))
 }
 
-/// The data folders that hold a cache here.
-pub fn data_folders(environment: &Environment) -> Vec<PathBuf> {
-    candidates(environment)
-        .into_iter()
+/// Whether the system asks the person before an app may open `folder`: macOS guards the
+/// container of a sandboxed app.
+fn guarded(folder: &Path) -> bool {
+    cfg!(target_os = "macos") && folder.to_string_lossy().contains("/Library/Containers/")
+}
+
+fn with_cache(folders: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
+    folders
         .filter(|folder| cache_in(folder).is_some())
         .collect()
+}
+
+/// The data folders that hold a cache here.
+pub fn data_folders(environment: &Environment) -> Vec<PathBuf> {
+    with_cache(candidates(environment).into_iter())
+}
+
+/// Those of [`data_folders`] that can be looked into unasked, without the system putting a
+/// question to the person. The others are not touched.
+pub fn unguarded_data_folders(environment: &Environment) -> Vec<PathBuf> {
+    with_cache(
+        candidates(environment)
+            .into_iter()
+            .filter(|folder| !guarded(folder)),
+    )
 }
 
 #[cfg(test)]
@@ -104,5 +123,24 @@ mod tests {
     #[test]
     fn an_empty_environment_has_no_folders() {
         assert!(data_folders(&Environment::default()).is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_sandboxed_apps_container_is_not_looked_into_unasked() {
+        let temp = Scratch::new();
+        let environment = Environment {
+            home: Some(temp.path().to_owned()),
+            ..Environment::default()
+        };
+        let folders = candidates(&environment);
+        for folder in &folders {
+            testing::simple(
+                &folder.join("Cache/Cache_Data"),
+                &[Fake::ok("https://x.com/", "")],
+            );
+        }
+        assert_eq!(data_folders(&environment), folders);
+        assert_eq!(unguarded_data_folders(&environment), folders[..1]);
     }
 }

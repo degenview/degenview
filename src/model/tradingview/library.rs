@@ -16,6 +16,29 @@ impl Library {
     pub fn is_empty(&self) -> bool {
         self.layouts.is_empty() && self.watchlists.is_empty() && self.scripts.is_empty()
     }
+
+    pub fn contents(&self) -> Contents {
+        Contents {
+            layouts: self.layouts.len(),
+            drawings: self
+                .layouts
+                .iter()
+                .map(|layout| layout.drawings.len())
+                .sum(),
+            watchlists: self.watchlists.len(),
+            scripts: self.scripts.len(),
+        }
+    }
+}
+
+/// How much of each kind a library holds.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Contents {
+    pub layouts: usize,
+    /// Over all layouts.
+    pub drawings: usize,
+    pub watchlists: usize,
+    pub scripts: usize,
 }
 
 /// A saved chart layout.

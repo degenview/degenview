@@ -3,6 +3,7 @@
 //! answers with [`Action`]s.
 
 mod choose;
+pub mod offer;
 mod preview;
 mod result;
 pub mod words;

@@ -4,6 +4,22 @@ Brings layouts, drawings, watchlists and the user's own Pine scripts over from t
 **desktop app** on the same computer. Entry points: the toolbar's layout menu, the new-tab page, and
 File ▸ Import from TradingView on macOS.
 
+## The offer at launch
+
+The first launch that finds something to bring over asks, once, whether to import it, and lists how
+many layouts (with their drawings), watchlists and scripts there are
+(`host::tradingview::offer`, `ui::tradingview::offer`). Yes opens the import over the focused chart
+tab.
+
+- It counts as made as soon as it is on screen: the `tradingview.offered` setting, local to this
+  computer. Opening the import by hand first sets it too.
+- While there is nothing to offer, each launch looks again.
+- The look runs off the frame and keeps only the counts.
+- Unasked, no folder is opened that the system guards with a question of its own: on macOS the App
+  Store build's container is left alone (`locate::unguarded_data_folders`). A Flatpak cannot see
+  TradingView's folder at all. Neither gets the offer; the menu still works.
+- It appears unasked, so Enter does nothing until a button is reached with Tab. Esc declines.
+
 ## Where the data comes from
 
 TradingView keeps charts on its servers and has no export for drawings or layouts. The desktop app

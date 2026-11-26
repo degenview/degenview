@@ -2799,9 +2799,19 @@ msgstr "{timeframe} anzeigen"
 msgid "Chart's scale"
 msgstr "Skala des Charts"
 
+#: src/ui/tradingview/offer.rs
+msgid "Charts and indicators"
+msgstr "Charts und Indikatoren"
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr "Charts, die sie bereits nutzen, behalten ihr Aussehen."
+
+#: src/ui/tradingview/offer.rs
+msgid "Charts, indicators and {count} drawing"
+msgid_plural "Charts, indicators and {count} drawings"
+msgstr[0] "Charts, Indikatoren und {count} Zeichnung"
+msgstr[1] "Charts, Indikatoren und {count} Zeichnungen"
 
 #: src/ui/trade/tables.rs
 msgid "Check"
@@ -2876,6 +2886,10 @@ msgstr "Änd."
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
 msgstr "Änd.%"
+
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "Auswahl treffen"
 
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
@@ -8540,6 +8554,10 @@ msgstr "Marktstatus"
 msgid "Market value unavailable · {error}"
 msgstr "Marktwert nicht verfügbar · {error}"
 
+#: src/ui/tradingview/offer.rs
+msgid "Markets and sections"
+msgstr "Märkte und Abschnitte"
+
 #: src/ui/chart/settings/compare.rs
 msgid "Markets on the chart's scale are drawn from where the chart starts, so their prices only line up as a change. Read them on a relative axis:"
 msgstr "Märkte auf der Skala des Charts werden ab dem Chart-Beginn gezeichnet, ihre Preise passen daher nur als Änderung zusammen. Lies sie auf einer relativen Achse ab:"
@@ -9265,6 +9283,10 @@ msgstr "Kein Abschnitt"
 #: src/ui/watchlist/sidebar/content.rs
 msgid "No Symbols"
 msgstr "Keine Symbole"
+
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "Nein, danke"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -10853,6 +10875,10 @@ msgstr "Pine-Script-Dokumentation"
 #: src/native_bridge.rs src/ui/settings/window.rs
 msgid "Pine Studio"
 msgstr "Pine Studio"
+
+#: src/ui/tradingview/offer.rs
+msgid "Pine code you wrote or saved"
+msgstr "Pine-Code, den du geschrieben oder gespeichert hast"
 
 #: src/model/chart/context/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
@@ -15856,6 +15882,10 @@ msgstr "Diesen Markt kann der Broker nicht handeln."
 msgid "This is not a recognized CoinMarketCap transaction export."
 msgstr "Das ist kein erkannter Transaktionsexport von CoinMarketCap."
 
+#: src/ui/tradingview/offer.rs
+msgid "This is only asked once. Later, choose Import from TradingView in the layout menu."
+msgstr "Diese Frage kommt nur einmal. Später findest du „Aus TradingView importieren“ im Layout-Menü."
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "This is the editor itself. Click in it, select text or press ⌘F to see more of the theme."
 msgstr "Das ist der Editor selbst. Klicke hinein, markiere Text oder drücke ⌘F, um mehr vom Theme zu sehen."
@@ -17622,6 +17652,10 @@ msgstr "Du hast Uploads zu {hosts} zugestimmt. Für jeden anderen Host fragt Deg
 #: src/model/editor_theme/theme/mod.rs
 msgid "You can keep at most {max} custom themes."
 msgstr "Du kannst höchstens {max} eigene Themes behalten."
+
+#: src/ui/tradingview/offer.rs
+msgid "You choose what comes over and see a preview first. Nothing in TradingView changes."
+msgstr "Du wählst aus, was übernommen wird, und siehst zuerst eine Vorschau. In TradingView ändert sich nichts."
 
 #: src/pine_studio/library/disk_banner.rs
 msgid "You have unsaved changes too. Saving is on hold until you choose."
@@ -20697,6 +20731,10 @@ msgstr "Import abgeschlossen"
 msgid "Import from TradingView"
 msgstr "Aus TradingView importieren"
 
+#: src/ui/tradingview/offer.rs
+msgid "Import from TradingView?"
+msgstr "Aus TradingView importieren?"
+
 #: src/native_bridge.rs src/ui/workspace/empty_state/mod.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Import from TradingView…"
@@ -20803,6 +20841,10 @@ msgid "Text of {count} drawing is shortened"
 msgid_plural "Text of {count} drawings is shortened"
 msgstr[0] "Text von {count} Zeichnung wird gekürzt"
 msgstr[1] "Text von {count} Zeichnungen wird gekürzt"
+
+#: src/ui/tradingview/offer.rs
+msgid "The TradingView app on this computer has things you can bring over:"
+msgstr "Die TradingView-App auf diesem Computer hat Dinge, die du übernehmen kannst:"
 
 #: src/service/tradingview/mod.rs
 msgid "The TradingView app’s data wasn’t found on this computer."
