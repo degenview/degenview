@@ -441,6 +441,8 @@ fn status_line(ui: &Ui, at: Pos2, result: &SearchResult, quote: Option<&Watchlis
             Some(Freshness::MarketClosed) => (tr!("Market closed"), false),
             _ => return 0.0,
         },
+        // Forex and the CFDs on it rest over the weekend.
+        DataSource::Oanda => (tr!("Open 24/5"), true),
         _ => (tr!("Open 24/7"), true),
     };
     let galley = kit::galley(

@@ -73,6 +73,7 @@ mod tests {
             ("COINGECKO", DataSource::CoinGecko),
             ("DEXSCREENER", DataSource::DexScreener),
             ("ALPACA", DataSource::Alpaca),
+            ("OANDA", DataSource::Oanda),
             ("POLYMARKET", DataSource::Polymarket),
             ("KALSHI", DataSource::Kalshi),
             ("CMC", DataSource::CoinMarketCap),

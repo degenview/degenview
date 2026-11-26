@@ -2,7 +2,7 @@
 
 # DegenView: the free, open source TradingView alternative
 
-Charts for crypto, stocks and prediction markets, with Pine Script v6 that runs on your own machine.
+Charts for crypto, stocks, forex and prediction markets, with Pine Script v6 that runs on your own machine.
 No account. No subscription.
 
 [![Latest release](https://img.shields.io/github/v/release/degenview/degenview?include_prereleases&label=release)](https://github.com/degenview/degenview/releases)
@@ -32,6 +32,7 @@ No account. No subscription.
 
 - **Crypto** from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko and on-chain DEX pairs, searchable side by side.
 - **US stocks and ETFs** through Alpaca. A free key is all you need.
+- **Forex, metals and index CFDs** through Oanda, in charts, symbol search and watchlists. Needs your Oanda account ID and access token.
 - **Prediction markets** from Polymarket and Kalshi, charted as probabilities.
 - **Market-wide gauges** such as Crypto Fear and Greed and Altcoin Season.
 - **Live prices** streamed in real time, with watchlists and a quick symbol search on `⌘K` or `Ctrl+K`.

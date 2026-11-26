@@ -534,6 +534,10 @@ msgstr ""
 msgid "Access"
 msgstr ""
 
+#: src/ui/settings/api_keys.rs
+msgid "Access Token"
+msgstr ""
+
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Access token (optional)"
 msgstr ""
@@ -543,6 +547,10 @@ msgstr ""
 #: src/ui/drawing/properties/tests.rs
 #: src/ui/settings/brokers.rs
 msgid "Account"
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Account ID"
 msgstr ""
 
 #: src/ui/paper/account_sheet.rs
@@ -822,6 +830,10 @@ msgstr ""
 msgid "Add the secret value that {token} stands for."
 msgstr ""
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr ""
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr ""
@@ -888,6 +900,16 @@ msgstr ""
 
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
+msgstr ""
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid ""
+"Add your Oanda credentials in Settings to search and chart forex, metals and "
+"index CFDs."
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
@@ -3686,6 +3708,10 @@ msgid "Connect Alpaca to chart US stocks and ETFs in DegenView."
 msgstr ""
 
 #: src/ui/settings/window.rs
+msgid "Connect Oanda to chart forex, metals and index CFDs in DegenView."
+msgstr ""
+
+#: src/ui/settings/window.rs
 msgid ""
 "Connect a broker to trade for real from your charts. Paper trading is "
 "separate."
@@ -3966,6 +3992,10 @@ msgstr ""
 msgid "Copy style"
 msgstr ""
 
+#: src/ui/settings/api_keys.rs
+msgid "Copy the account ID and the token here. Oanda only shows the token once."
+msgstr ""
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr ""
@@ -4086,6 +4116,10 @@ msgstr ""
 
 #: src/service/keychain/secret_service.rs
 msgid "Could not remove it from the keyring: {reason}"
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Could not remove the credentials: {error}"
 msgstr ""
 
 #: src/ui/settings/api_keys.rs
@@ -4382,6 +4416,10 @@ msgstr ""
 msgid "Create a watchlist from the menu above."
 msgstr ""
 
+#: src/ui/settings/api_keys.rs
+msgid "Create an Oanda account."
+msgstr ""
+
 #: src/ui/paper/header.rs
 msgid "Create one to practise trading with simulated money."
 msgstr ""
@@ -4428,6 +4466,14 @@ msgid ""
 "Credentials are stored in your system's secure storage and never leave this "
 "computer. They are not synced, and no script, alert or other program can use "
 "them to trade."
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials removed. Oanda charts need them to load."
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials saved"
 msgstr ""
 
 #: src/model/cursor/mod.rs
@@ -6706,6 +6752,10 @@ msgstr ""
 msgid "Foreground only"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Forex"
+msgstr ""
+
 #: src/ui/settings/snapshots.rs
 msgid "Forget"
 msgstr ""
@@ -6838,6 +6888,10 @@ msgstr ""
 
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Getting ready"
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Getting your credentials"
 msgstr ""
 
 #: src/ui/settings/api_keys.rs
@@ -7618,6 +7672,10 @@ msgstr[1] ""
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "In Account Management, open Personal Access Tokens and generate a token."
 msgstr ""
 
 #: src/ui/watchlist/sidebar/detail.rs
@@ -10542,6 +10600,18 @@ msgstr ""
 msgid "OK"
 msgstr ""
 
+#: src/service/market/error.rs
+msgid "Oanda error: {error}"
+msgstr ""
+
+#: src/model/watchlist/text.rs
+msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Oanda refused your access token. Check it in Settings"
+msgstr ""
+
 #: src/model/chart/context/mod.rs
 #: src/ui/chart/object_tree/mod.rs
 msgid "Object tree"
@@ -10768,6 +10838,10 @@ msgid "Open"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/detail.rs
+msgid "Open 24/5"
+msgstr ""
+
+#: src/ui/chart/symbol_picker/detail.rs
 msgid "Open 24/7"
 msgstr ""
 
@@ -10877,6 +10951,10 @@ msgstr ""
 #: src/ui/settings/broker_words.rs
 msgid ""
 "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Open the Oanda API documentation"
 msgstr ""
 
 #: src/ui/settings/about.rs
@@ -12457,6 +12535,10 @@ msgstr ""
 #: src/ui/chart/settings/mod.rs
 #: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Remove Credentials"
 msgstr ""
 
 #: src/pine_studio/library/script_actions.rs
@@ -14127,8 +14209,20 @@ msgstr ""
 msgid "Set up Alpaca to open a stock"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Set up Oanda to search forex"
+msgstr ""
+
+#: src/service/market/error.rs
+msgid "Set up this provider's API key in Settings first."
+msgstr ""
+
 #: src/service/market/error.rs
 msgid "Set up your Alpaca API key before using stock charts."
+msgstr ""
+
+#: src/service/market/error.rs
+msgid "Set up your Oanda account in Settings before using Oanda charts."
 msgstr ""
 
 #: src/app/window.rs
@@ -17518,6 +17612,10 @@ msgstr ""
 
 #: src/service/watchlist_quotes/provider.rs
 msgid "Unexpected OKX response"
+msgstr ""
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Oanda response"
 msgstr ""
 
 #: src/model/broker/ticket.rs

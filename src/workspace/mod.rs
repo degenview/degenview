@@ -88,6 +88,8 @@ pub enum WorkspaceAction {
     OpenWebhookSettings,
     /// Open Settings on the Alpaca page (the symbol picker's "Stocks need an Alpaca key" notice).
     OpenAlpacaSettings,
+    /// Open Settings on the Oanda page (the symbol picker's "Set up Oanda to search forex" notice).
+    OpenOandaSettings,
     /// Open Settings on the Brokers page (the live trading panel).
     OpenBrokerSettings,
     /// Open Settings on the Snapshots page (the camera menu's "Configure Snapshots…").

@@ -292,6 +292,20 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             }
             Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
         }
+        DataSource::Oanda => {
+            let symbol = rest.to_uppercase();
+            let valid = symbol.split_once('_').is_some_and(|(base, quote)| {
+                [base, quote]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
+            });
+            if !valid {
+                return Err(
+                    tr!("Oanda instruments are written BASE_QUOTE, like EUR_USD").to_owned(),
+                );
+            }
+            Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
+        }
         DataSource::Kraken => {
             let valid = rest.split_once('/').is_some_and(|(base, quote)| {
                 [base, quote]
@@ -590,6 +604,25 @@ mod tests {
                 .map(|skipped| skipped.reason.as_str())
                 .collect::<Vec<_>>(),
             ["Not a MEXC spot symbol (perpetuals and futures aren't supported)"; 2]
+        );
+    }
+
+    #[test]
+    fn oanda_rows_are_instruments_written_base_underscore_quote() {
+        let parsed = parse("OANDA:eur_usd\nOANDA:EURUSD\nOANDA:EUR-USD\nOANDA:EUR_USD_PERP");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "OANDA:EUR_USD");
+        assert_eq!(item.name, "EUR/USD");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Oanda instruments are written BASE_QUOTE, like EUR_USD"; 3]
         );
     }
 

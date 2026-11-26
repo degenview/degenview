@@ -462,6 +462,16 @@ fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<Strin
     problems
 }
 
+/// The messages of the source a catalog gives no translation for: not listed, left empty or
+/// marked fuzzy. Each of them would show in English.
+fn untranslated(catalog: &Catalog, source: &[(String, Use)]) -> Vec<String> {
+    unique_messages(source)
+        .keys()
+        .filter(|(context, msgid)| catalog.get(context, msgid).is_none())
+        .map(|(context, msgid)| format!("{context:?} {msgid:?} has no translation"))
+        .collect()
+}
+
 #[test]
 fn every_catalog_matches_the_messages_in_the_source() {
     let source = messages_in_source();
@@ -471,7 +481,8 @@ fn every_catalog_matches_the_messages_in_the_source() {
         };
         let catalog =
             Catalog::parse(po).unwrap_or_else(|error| panic!("{}: {error}", locale.tag()));
-        let problems = problems_in_catalog(&catalog, &source);
+        let mut problems = problems_in_catalog(&catalog, &source);
+        problems.extend(untranslated(&catalog, &source));
         assert!(
             problems.is_empty(),
             "{}:\n{}",
@@ -548,6 +559,39 @@ msgstr[2] "{count} оповещений"
 
     let not_counted = russian("msgid \"{count} alert\"\nmsgstr \"{count} оповещение\"\n");
     assert_eq!(problems_in_catalog(&not_counted, &source).len(), 1);
+}
+
+#[test]
+fn a_message_a_catalog_would_show_in_english_is_reported() {
+    let source = [
+        used(Kind::Plain, "Save", &[]),
+        used(Kind::Plain, "Open", &[]),
+        used(Kind::Plain, "Close", &[]),
+        used(Kind::Context("month".into()), "May", &[]),
+    ];
+    let catalog = russian(
+        r#"msgid "Save"
+msgstr "Сохранить"
+
+msgid "Open"
+msgstr ""
+
+#, fuzzy
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "May"
+msgstr "Май"
+"#,
+    );
+    assert_eq!(
+        untranslated(&catalog, &source),
+        [
+            r#""" "Close" has no translation"#,
+            r#""" "Open" has no translation"#,
+            r#""month" "May" has no translation"#,
+        ]
+    );
 }
 
 #[test]

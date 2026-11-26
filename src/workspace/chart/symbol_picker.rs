@@ -119,6 +119,7 @@ impl ChartWorkspace {
                 ));
             }
             Some(Output::OpenAlpacaSettings) => actions.push(WorkspaceAction::OpenAlpacaSettings),
+            Some(Output::OpenOandaSettings) => actions.push(WorkspaceAction::OpenOandaSettings),
             None => {}
         }
         if !self.symbol_picker.is_open() {

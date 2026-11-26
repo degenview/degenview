@@ -97,24 +97,8 @@ pub fn parse_type(text: &str) -> Option<PortfolioTransactionType> {
     ALL_TYPES.into_iter().find(|kind| type_name(*kind) == text)
 }
 
-const ALL_SOURCES: [DataSource; 13] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-    DataSource::Alpaca,
-    DataSource::Polymarket,
-    DataSource::Kalshi,
-    DataSource::CoinMarketCap,
-];
-
 pub fn parse_source(text: &str) -> Option<DataSource> {
-    ALL_SOURCES
+    DataSource::ALL
         .into_iter()
         .find(|source| source.display_name() == text)
 }
@@ -1230,7 +1214,7 @@ mod tests {
         for kind in ALL_TYPES {
             assert_eq!(parse_type(type_name(kind)), Some(kind));
         }
-        for source in ALL_SOURCES {
+        for source in DataSource::ALL {
             assert_eq!(parse_source(source.display_name()), Some(source));
         }
         assert_eq!(

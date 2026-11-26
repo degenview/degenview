@@ -71,6 +71,8 @@ enum AppAction {
     OpenPineSource(crate::model::pine::logs_view::SourceTarget),
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
+    /// Open Settings on the Oanda page.
+    OpenOandaSettings,
     OpenBrokerSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,

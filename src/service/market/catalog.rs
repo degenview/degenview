@@ -6,6 +6,10 @@
 //! relaunch starts warm, and refreshes it after `TTL`. When a refresh fails the previous list is
 //! served and the provider is left alone for `FAILURE_BACKOFF`, so an outage costs a search
 //! nothing and does not turn into a retry per keystroke.
+//!
+//! A list has an owner. Most providers publish one list for everybody; a list that depends on who
+//! asks (an account's instruments) is asked for by that owner, and no owner is ever answered with
+//! another's. Memory holds the list of the last owner asked for, the lookup cache each owner's.
 
 use crate::service::ProviderError;
 use crate::service::cache::lookup::{self, LookupCache};
@@ -18,9 +22,11 @@ use std::time::{Duration, Instant};
 pub const TTL: Duration = Duration::from_secs(24 * 3_600);
 /// How long to leave a provider alone after a failed (or empty) download.
 const FAILURE_BACKOFF: Duration = Duration::from_secs(300);
-const KEY: &str = "all";
+/// The owner of a list that is the same for everybody.
+const EVERYONE: &str = "all";
 
 struct Loaded<T> {
+    owner: String,
     items: Arc<Vec<T>>,
     /// The list is used as it is until then.
     fresh_until: Instant,
@@ -42,20 +48,31 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         }
     }
 
-    /// The list, from memory, the lookup cache or — only when neither is fresh — `download`.
+    /// The provider's public list: `get_for` for everybody.
     pub fn get(
         &self,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
-        self.get_from(lookup::shared(), download)
+        self.get_for(EVERYONE, download)
+    }
+
+    /// `owner`'s list, from memory, the lookup cache or — only when neither is fresh —
+    /// `download`.
+    pub fn get_for(
+        &self,
+        owner: &str,
+        download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
+        self.get_from(lookup::shared(), owner, download)
     }
 
     fn get_from(
         &self,
         cache: &LookupCache,
+        owner: &str,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
-        if let Some(items) = self.fresh() {
+        if let Some(items) = self.fresh(owner) {
             return Ok(items);
         }
         let _refreshing = self
@@ -63,20 +80,15 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             .lock()
             .map_err(|_| ProviderError::other("catalog unavailable"))?;
         // Another search may have finished the download while this one waited.
-        if let Some(items) = self.fresh() {
+        if let Some(items) = self.fresh(owner) {
             return Ok(items);
         }
-        let held = self
-            .memory
-            .lock()
-            .ok()
-            .and_then(|memory| memory.as_ref().map(|loaded| Arc::clone(&loaded.items)));
-        let stale = match held {
-            Some(items) => Some(items),
-            None => match cache.get::<Vec<T>>(self.namespace, KEY, TTL) {
+        let stale = match self.held(owner) {
+            Some((items, _)) => Some(items),
+            None => match cache.get::<Vec<T>>(self.namespace, owner, TTL) {
                 Some(hit) if hit.fresh => {
                     let items = Arc::new(hit.value);
-                    self.keep(&items, TTL.saturating_sub(hit.age));
+                    self.keep(owner, &items, TTL.saturating_sub(hit.age));
                     return Ok(items);
                 }
                 Some(hit) => Some(Arc::new(hit.value)),
@@ -85,39 +97,49 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         };
         match download() {
             Ok(items) if !items.is_empty() => {
-                cache.put(self.namespace, KEY, &items);
+                cache.put(self.namespace, owner, &items);
                 let items = Arc::new(items);
-                self.keep(&items, TTL);
+                self.keep(owner, &items, TTL);
                 Ok(items)
             }
             // An empty list is a provider hiccup, not an answer worth a day.
             Ok(_) => self.fall_back(
+                owner,
                 stale,
                 ProviderError::other("the provider returned no symbols"),
             ),
-            Err(error) => self.fall_back(stale, error),
+            Err(error) => self.fall_back(owner, stale, error),
         }
     }
 
     fn fall_back(
         &self,
+        owner: &str,
         stale: Option<Arc<Vec<T>>>,
         error: ProviderError,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
         let items = stale.ok_or(error)?;
-        self.keep(&items, FAILURE_BACKOFF);
+        self.keep(owner, &items, FAILURE_BACKOFF);
         Ok(items)
     }
 
-    fn fresh(&self) -> Option<Arc<Vec<T>>> {
+    /// `owner`'s list if memory holds it, and until when it is used as it is.
+    fn held(&self, owner: &str) -> Option<(Arc<Vec<T>>, Instant)> {
         let memory = self.memory.lock().ok()?;
-        let loaded = memory.as_ref()?;
-        (Instant::now() < loaded.fresh_until).then(|| Arc::clone(&loaded.items))
+        let loaded = memory.as_ref().filter(|loaded| loaded.owner == owner)?;
+        Some((Arc::clone(&loaded.items), loaded.fresh_until))
     }
 
-    fn keep(&self, items: &Arc<Vec<T>>, fresh_for: Duration) {
+    fn fresh(&self, owner: &str) -> Option<Arc<Vec<T>>> {
+        self.held(owner)
+            .filter(|(_, fresh_until)| Instant::now() < *fresh_until)
+            .map(|(items, _)| items)
+    }
+
+    fn keep(&self, owner: &str, items: &Arc<Vec<T>>, fresh_for: Duration) {
         if let Ok(mut memory) = self.memory.lock() {
             *memory = Some(Loaded {
+                owner: owner.to_owned(),
                 items: Arc::clone(items),
                 fresh_until: Instant::now() + fresh_for,
             });
@@ -190,7 +212,11 @@ mod tests {
         let (cache, catalog) = fixture.launch();
         for _ in 0..5 {
             let items = catalog
-                .get_from(&cache, fixture.download(Ok(pairs(&["BTCUSDT", "ETHUSDT"]))))
+                .get_from(
+                    &cache,
+                    EVERYONE,
+                    fixture.download(Ok(pairs(&["BTCUSDT", "ETHUSDT"]))),
+                )
                 .unwrap();
             assert_eq!(items.len(), 2);
         }
@@ -202,7 +228,7 @@ mod tests {
         let fixture = Fixture::new();
         let (cache, catalog) = fixture.launch();
         catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["BTCUSDT"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
             .unwrap();
         cache.flush("catalog_test");
 
@@ -210,6 +236,7 @@ mod tests {
         let items = catalog
             .get_from(
                 &cache,
+                EVERYONE,
                 fixture.download(Err(ProviderError::other("must not be asked"))),
             )
             .unwrap();
@@ -222,14 +249,14 @@ mod tests {
         let fixture = Fixture::new();
         let (cache, catalog) = fixture.launch();
         catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["OLD"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
             .unwrap();
         cache.flush("catalog_test");
         fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
 
         let (cache, catalog) = fixture.launch();
         let items = catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["NEW"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["NEW"]))))
             .unwrap();
         assert_eq!(*items, pairs(&["NEW"]));
         assert_eq!(fixture.downloads(), 2);
@@ -240,7 +267,7 @@ mod tests {
         let fixture = Fixture::new();
         let (cache, catalog) = fixture.launch();
         catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["OLD"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
             .unwrap();
         cache.flush("catalog_test");
         fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
@@ -250,6 +277,7 @@ mod tests {
             let items = catalog
                 .get_from(
                     &cache,
+                    EVERYONE,
                     fixture.download(Err(ProviderError::other("offline"))),
                 )
                 .unwrap();
@@ -269,12 +297,13 @@ mod tests {
         let error = catalog
             .get_from(
                 &cache,
+                EVERYONE,
                 fixture.download(Err(ProviderError::other("offline"))),
             )
             .unwrap_err();
         assert_eq!(error, ProviderError::other("offline"));
         let items = catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["BTCUSDT"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
             .unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(fixture.downloads(), 2);
@@ -286,13 +315,13 @@ mod tests {
         let (cache, catalog) = fixture.launch();
         assert!(
             catalog
-                .get_from(&cache, fixture.download(Ok(Vec::new())))
+                .get_from(&cache, EVERYONE, fixture.download(Ok(Vec::new())))
                 .is_err()
         );
         cache.flush("catalog_test");
         let (cache, catalog) = fixture.launch();
         let items = catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["A"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["A"]))))
             .unwrap();
         assert_eq!(items.len(), 1);
     }
@@ -302,16 +331,72 @@ mod tests {
         let fixture = Fixture::new();
         let (cache, catalog) = fixture.launch();
         catalog
-            .get_from(&cache, fixture.download(Ok(pairs(&["A"]))))
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["A"]))))
             .unwrap();
         catalog.clear_memory();
         // Still in the lookup cache, so no download.
         catalog
             .get_from(
                 &cache,
+                EVERYONE,
                 fixture.download(Err(ProviderError::other("not asked"))),
             )
             .unwrap();
         assert_eq!(fixture.downloads(), 1);
+    }
+
+    /// The lists `owner` is answered with, asking the provider for `names` if it has to.
+    fn ask(
+        catalog: &Catalog<Pair>,
+        cache: &LookupCache,
+        owner: &str,
+        names: &[&str],
+    ) -> Arc<Vec<Pair>> {
+        catalog
+            .get_from(cache, owner, || Ok(pairs(names)))
+            .expect("a list")
+    }
+
+    #[test]
+    fn each_owner_has_its_own_list_across_relaunches() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        assert_eq!(
+            *ask(&catalog, &cache, "a", &["EUR_USD"]),
+            pairs(&["EUR_USD"])
+        );
+        assert_eq!(
+            *ask(&catalog, &cache, "b", &["USD_JPY"]),
+            pairs(&["USD_JPY"])
+        );
+        cache.flush("catalog_test");
+
+        let (cache, catalog) = fixture.launch();
+        assert_eq!(*ask(&catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
+        assert_eq!(*ask(&catalog, &cache, "b", &["asked"]), pairs(&["USD_JPY"]));
+    }
+
+    #[test]
+    fn memory_releases_the_previous_owners_list() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        let first = Arc::downgrade(&ask(&catalog, &cache, "a", &["EUR_USD"]));
+        assert!(
+            first.upgrade().is_some(),
+            "held while it is the last asked for"
+        );
+        ask(&catalog, &cache, "b", &["USD_JPY"]);
+        assert!(first.upgrade().is_none());
+    }
+
+    #[test]
+    fn a_failed_download_never_answers_with_another_owners_list() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        ask(&catalog, &cache, "a", &["EUR_USD"]);
+        let error = catalog
+            .get_from(&cache, "b", || Err(ProviderError::other("offline")))
+            .unwrap_err();
+        assert_eq!(error, ProviderError::other("offline"));
     }
 }

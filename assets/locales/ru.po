@@ -580,6 +580,10 @@ msgstr "Принят"
 msgid "Access"
 msgstr "Доступ"
 
+#: src/ui/settings/api_keys.rs
+msgid "Access Token"
+msgstr "Токен доступа"
+
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Access token (optional)"
 msgstr "Токен доступа (необязательно)"
@@ -588,6 +592,10 @@ msgstr "Токен доступа (необязательно)"
 #: src/ui/drawing/properties/tests.rs src/ui/settings/brokers.rs
 msgid "Account"
 msgstr "Счёт"
+
+#: src/ui/settings/api_keys.rs
+msgid "Account ID"
+msgstr "ID аккаунта"
 
 #: src/ui/paper/account_sheet.rs
 msgid "Account name"
@@ -856,6 +864,10 @@ msgstr "Добавить индикатор на график."
 msgid "Add the secret value that {token} stands for."
 msgstr "Укажите секретное значение, которое заменяет {token}."
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "Укажите API-ключ этого провайдера в Настройках, чтобы видеть его котировки"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr ""
@@ -922,6 +934,16 @@ msgstr "Укажите ваши API-ключи Alpaca в Настройках."
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Укажите ваш API-ключ ImgBB в Настройки ▸ Снимки, чтобы делиться ими."
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid ""
+"Add your Oanda credentials in Settings to search and chart forex, metals and "
+"index CFDs."
+msgstr "Укажите учётные данные Oanda в Настройках, чтобы искать и открывать графики форекса, металлов и индексных CFD."
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "Укажите учётные данные Oanda в Настройках, чтобы видеть котировки Oanda"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid ""
@@ -3741,6 +3763,10 @@ msgid "Connect Alpaca to chart US stocks and ETFs in DegenView."
 msgstr "Подключите Alpaca для просмотра графиков акций и ETF США в DegenView."
 
 #: src/ui/settings/window.rs
+msgid "Connect Oanda to chart forex, metals and index CFDs in DegenView."
+msgstr "Подключите Oanda для просмотра графиков форекса, металлов и индексных CFD в DegenView."
+
+#: src/ui/settings/window.rs
 msgid ""
 "Connect a broker to trade for real from your charts. Paper trading is "
 "separate."
@@ -4018,6 +4044,11 @@ msgstr "Копировать ответ"
 msgid "Copy style"
 msgstr "Копировать стиль"
 
+#: src/ui/settings/api_keys.rs
+msgid ""
+"Copy the account ID and the token here. Oanda only shows the token once."
+msgstr "Скопируйте сюда ID аккаунта и токен. Oanda показывает токен только один раз."
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr "Копировать ответ"
@@ -4144,6 +4175,10 @@ msgstr "Не удалось прочитать {path}: {error}"
 #: src/service/keychain/secret_service.rs
 msgid "Could not remove it from the keyring: {reason}"
 msgstr "Не удалось удалить из связки ключей: {reason}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Could not remove the credentials: {error}"
+msgstr "Не удалось удалить учётные данные: {error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not remove the key: {error}"
@@ -4435,6 +4470,10 @@ msgstr "Создать список наблюдения"
 msgid "Create a watchlist from the menu above."
 msgstr "Создайте список наблюдения через меню выше."
 
+#: src/ui/settings/api_keys.rs
+msgid "Create an Oanda account."
+msgstr "Создайте аккаунт Oanda."
+
 #: src/ui/paper/header.rs
 msgid "Create one to practise trading with simulated money."
 msgstr "Создайте счёт, чтобы тренироваться в торговле на виртуальные средства."
@@ -4483,6 +4522,14 @@ msgid ""
 "computer. They are not synced, and no script, alert or other program can use "
 "them to trade."
 msgstr "Учётные данные хранятся в защищённом хранилище вашей системы и никогда не покидают этот компьютер. Они не синхронизируются, и ни один скрипт, алерт или другая программа не может использовать их для торговли."
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials removed. Oanda charts need them to load."
+msgstr "Учётные данные удалены. Для загрузки графиков Oanda они необходимы."
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials saved"
+msgstr "Учётные данные сохранены"
 
 #: src/model/cursor/mod.rs
 msgid "Cross"
@@ -6775,6 +6822,10 @@ msgstr "Проверка только при активном окне"
 msgid "Foreground only"
 msgstr "Только передний план"
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Forex"
+msgstr "Форекс"
+
 #: src/ui/settings/snapshots.rs
 msgid "Forget"
 msgstr "Сбросить"
@@ -6908,6 +6959,10 @@ msgstr "Получить API-ключ ImgBB"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Getting ready"
 msgstr "Подготовка"
+
+#: src/ui/settings/api_keys.rs
+msgid "Getting your credentials"
+msgstr "Как получить учётные данные"
 
 #: src/ui/settings/api_keys.rs
 msgid "Getting your keys"
@@ -7717,6 +7772,11 @@ msgstr[2] ""
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "Импорт…"
+
+#: src/ui/settings/api_keys.rs
+msgid ""
+"In Account Management, open Personal Access Tokens and generate a token."
+msgstr "В разделе Account Management откройте Personal Access Tokens и создайте токен."
 
 #: src/ui/watchlist/sidebar/detail.rs
 msgid "In lists"
@@ -10655,6 +10715,18 @@ msgstr "Значения OHLC"
 msgid "OK"
 msgstr "ОК"
 
+#: src/service/market/error.rs
+msgid "Oanda error: {error}"
+msgstr "Ошибка Oanda: {error}"
+
+#: src/model/watchlist/text.rs
+msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
+msgstr "Инструменты Oanda записываются в формате BASE_QUOTE, например EUR_USD"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Oanda refused your access token. Check it in Settings"
+msgstr "Oanda отклонила ваш токен доступа. Проверьте его в Настройках"
+
 #: src/model/chart/context/mod.rs src/ui/chart/object_tree/mod.rs
 msgid "Object tree"
 msgstr "Дерево объектов"
@@ -10890,6 +10962,10 @@ msgid "Open"
 msgstr "Открытие"
 
 #: src/ui/chart/symbol_picker/detail.rs
+msgid "Open 24/5"
+msgstr "Открыт 24/5"
+
+#: src/ui/chart/symbol_picker/detail.rs
 msgid "Open 24/7"
 msgstr "Круглосуточно"
 
@@ -10997,6 +11073,10 @@ msgid ""
 "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
 msgstr ""
 "Откройте Coinbase Developer Platform (portal.cdp.coinbase.com) и войдите."
+
+#: src/ui/settings/api_keys.rs
+msgid "Open the Oanda API documentation"
+msgstr "Открыть документацию API Oanda"
 
 #: src/ui/settings/about.rs
 msgid "Open the release page on GitHub"
@@ -12548,6 +12628,10 @@ msgstr "Удалить точку останова"
 #: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
 msgstr "Удалить график"
+
+#: src/ui/settings/api_keys.rs
+msgid "Remove Credentials"
+msgstr "Удалить учётные данные"
 
 #: src/pine_studio/library/script_actions.rs
 msgid "Remove Favorite"
@@ -14232,9 +14316,21 @@ msgstr "Настроить"
 msgid "Set up Alpaca to open a stock"
 msgstr "Настройте Alpaca, чтобы открыть акцию"
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Set up Oanda to search forex"
+msgstr "Настройте Oanda, чтобы искать на форексе"
+
+#: src/service/market/error.rs
+msgid "Set up this provider's API key in Settings first."
+msgstr "Сначала настройте API-ключ этого провайдера в Настройках."
+
 #: src/service/market/error.rs
 msgid "Set up your Alpaca API key before using stock charts."
 msgstr "Настройте ваш API-ключ Alpaca перед использованием графиков акций."
+
+#: src/service/market/error.rs
+msgid "Set up your Oanda account in Settings before using Oanda charts."
+msgstr "Настройте аккаунт Oanda в Настройках перед использованием графиков Oanda."
 
 #: src/app/window.rs src/ui/chart/card/overlay_card.rs
 #: src/ui/drawing/layer/menu.rs src/ui/window/tab_bar/mod.rs
@@ -17739,6 +17835,10 @@ msgstr "Неожиданный ответ MEXC"
 #: src/service/watchlist_quotes/provider.rs
 msgid "Unexpected OKX response"
 msgstr "Неожиданный ответ OKX"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Oanda response"
+msgstr "Неожиданный ответ Oanda"
 
 #: src/model/broker/ticket.rs src/ui/settings/window.rs
 msgid "Unknown"

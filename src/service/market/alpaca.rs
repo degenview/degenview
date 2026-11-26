@@ -19,7 +19,8 @@ pub struct Alpaca;
 pub const ALPACA: Alpaca = Alpaca;
 
 fn credentials() -> Result<(String, String), ProviderError> {
-    crate::service::keychain::api_keys::alpaca_credentials().ok_or(ProviderError::MissingKey)
+    crate::service::keychain::api_keys::alpaca_credentials()
+        .ok_or(ProviderError::MissingKey(DataSource::Alpaca))
 }
 
 /// Settings ▸ Alpaca ▸ Test Connection: one bar of one stock, asked for with the given keys (the

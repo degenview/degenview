@@ -127,14 +127,13 @@ reviewed and the flag removed, so never leave a guess flagged and never remove t
 
 ## Verify
 
-- `cargo test --lib i18n`: the catalog and the source agree (no stale message, same placeholders,
-  consistent plural use), plural formulas match CLDR, the file is valid to `msgfmt` (which needs
-  GNU gettext installed).
-- **Nothing may be left untranslated.** `msgattrib --untranslated --no-obsolete assets/locales/<tag>.po`
-  must print nothing, and `msgfmt --statistics` must count every message. An entry that is missing
-  shows in English and no test fails (a catalog may be incomplete), so a lost edit is found only by
-  this check or by looking at the screen: the Spanish restart question shipped with an English title
-  that way. After a scripted edit of the file, run both again.
+- `cargo test --lib i18n`: the catalog and the source agree (no stale or untranslated message, same
+  placeholders, consistent plural use), plural formulas match CLDR, the file is valid to `msgfmt`
+  (which needs GNU gettext installed).
+- **Nothing may be left untranslated.** An entry that is missing, empty or `fuzzy` shows in English;
+  `every_catalog_matches_the_messages_in_the_source` fails on it. For a language not yet in
+  `LANGUAGES`, which no test reads, `msgattrib --untranslated --no-obsolete assets/locales/<tag>.po`
+  must print nothing.
 - `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`.
 - **Look at screens in the language**, not only the catalog. `DEGENVIEW_LOCALE=<tag>` names the
   language for one run (over the saved choice and the system's). Use a release build and a scratch

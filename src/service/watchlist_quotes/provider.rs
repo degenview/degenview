@@ -4,10 +4,14 @@
 
 use super::engine::Outcome;
 use crate::i18n::tr;
+use crate::lock::lock;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
-use crate::model::{DataSource, Timeframe};
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::ProviderError;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// One market to price. `symbol` is the id the provider's quote call takes.
@@ -22,7 +26,8 @@ pub struct QuoteRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QuoteFailure {
     RateLimited,
-    CredentialsMissing,
+    /// No credentials of the provider are saved.
+    CredentialsMissing(DataSource),
     /// The provider refused the request itself, as it does for an unknown symbol.
     /// Retrying a smaller batch can find which symbol it was.
     Rejected(String),
@@ -34,9 +39,15 @@ impl QuoteFailure {
     pub fn message(&self) -> String {
         match self {
             Self::RateLimited => tr!("Rate limited by the provider").to_owned(),
-            Self::CredentialsMissing => {
-                tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
-            }
+            Self::CredentialsMissing(source) => match source {
+                DataSource::Alpaca => {
+                    tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
+                }
+                DataSource::Oanda => {
+                    tr!("Add your Oanda credentials in Settings to see Oanda quotes").to_owned()
+                }
+                _ => tr!("Add this provider's API key in Settings to see its quotes").to_owned(),
+            },
             Self::Rejected(message) | Self::Failed(message) => message.clone(),
         }
     }
@@ -77,7 +88,22 @@ pub fn chunk_size(source: DataSource) -> usize {
 
 // MARK: Live provider
 
-pub struct LiveProvider;
+pub struct LiveProvider {
+    /// Each Oanda instrument's reference for a given cutoff hour. Oanda's
+    /// pricing answer carries no 24h figure; one hourly candle per instrument supplies it.
+    oanda_day_ago: Arc<Mutex<HashMap<String, DayAgoReference>>>,
+    /// Set while a background refresh of those prices runs, so rounds do not stack them.
+    oanda_refreshing: Arc<AtomicBool>,
+}
+
+impl Default for LiveProvider {
+    fn default() -> Self {
+        Self {
+            oanda_day_ago: Arc::new(Mutex::new(HashMap::new())),
+            oanda_refreshing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 const COINBASE_URL: &str = "https://api.exchange.coinbase.com";
 const OKX_URL: &str = "https://www.okx.com/api/v5";
@@ -107,6 +133,8 @@ impl QuoteProvider for LiveProvider {
             DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
             DataSource::DexScreener => Ok(dexscreener(requests)),
             DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
+            DataSource::Oanda => oanda(requests, &self.oanda_day_ago, &self.oanda_refreshing)
+                .map(Outcome::from_quotes),
             DataSource::Polymarket | DataSource::Kalshi => Ok(prediction(source, requests)),
             DataSource::CoinMarketCap => Ok(Outcome::default()),
         }
@@ -146,8 +174,11 @@ pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
         (DataSource::Alpaca, 401 | 403) => QuoteFailure::Failed(
             tr!("Alpaca refused your API key. Check it in Settings").to_owned(),
         ),
-        // Binance answers an unknown symbol in a batch with 400; so does Alpaca.
-        (DataSource::Binance | DataSource::Alpaca, 400) => {
+        (DataSource::Oanda, 401 | 403) => QuoteFailure::Failed(
+            tr!("Oanda refused your access token. Check it in Settings").to_owned(),
+        ),
+        // Binance answers an unknown symbol in a batch with 400; so do Alpaca and Oanda.
+        (DataSource::Binance | DataSource::Alpaca | DataSource::Oanda, 400) => {
             QuoteFailure::Rejected(tr!("The provider answered HTTP 400").to_owned())
         }
         // Bybit refuses some countries, and a client that asks too often, with a 403.
@@ -345,7 +376,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
 
 fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let Some((key, secret)) = crate::service::keychain::api_keys::alpaca_credentials() else {
-        return Err(QuoteFailure::CredentialsMissing);
+        return Err(QuoteFailure::CredentialsMissing(DataSource::Alpaca));
     };
     let symbols = requests
         .iter()
@@ -361,13 +392,186 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
     parse_alpaca_snapshots(&body, requests)
 }
 
+/// Oanda's `/accounts/{id}/pricing`: the mid of the inside bid and ask of every instrument
+/// asked for, plus the price about a day ago so the change column has a basis. The day-ago
+/// prices are read from the cache only; the ones it lacks are refreshed in the background, so
+/// one slow candle request cannot stall the quote round for every provider.
+fn oanda(
+    requests: &[QuoteRequest],
+    day_ago: &Arc<Mutex<HashMap<String, DayAgoReference>>>,
+    refreshing: &Arc<AtomicBool>,
+) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
+        return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
+    };
+    let symbols = requests
+        .iter()
+        .map(|request| request.symbol.to_uppercase())
+        .collect::<Vec<_>>()
+        .join(",");
+    let url = format!(
+        "{}/accounts/{account_id}/pricing?instruments={symbols}",
+        crate::service::market::oanda::BASE_URL
+    );
+    let auth = format!("Bearer {token}");
+    let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())])?;
+    let mut quotes = parse_oanda_pricing(&body, requests)?;
+    let now = crate::clock::now_ms();
+    let stale = {
+        let cache = lock(day_ago);
+        fill_day_ago(&mut quotes, requests, &cache, now);
+        stale_instruments(requests, &cache, now)
+    };
+    if !stale.is_empty()
+        && refreshing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    {
+        let cache = Arc::clone(day_ago);
+        let flag = Arc::clone(refreshing);
+        crate::service::work_queue::submit_for(DataSource::Oanda, move || {
+            for instrument in stale {
+                if let Ok(reference) = oanda_day_ago_price(&instrument, now) {
+                    lock(&cache).insert(instrument, reference);
+                }
+            }
+            flag.store(false, Ordering::Release);
+        });
+    }
+    Ok(quotes)
+}
+
+const HOUR_MS: i64 = 3_600_000;
+
+#[derive(Clone, Copy)]
+struct DayAgoReference {
+    hour: i64,
+    price: Option<f64>,
+}
+
+fn day_ago_hour(now: i64) -> i64 {
+    (now - 24 * HOUR_MS).div_euclid(HOUR_MS) * HOUR_MS
+}
+
+/// Attach references already obtained for the current cutoff hour.
+fn fill_day_ago(
+    quotes: &mut HashMap<String, SourceQuote>,
+    requests: &[QuoteRequest],
+    cache: &HashMap<String, DayAgoReference>,
+    now: i64,
+) {
+    let hour = day_ago_hour(now);
+    for request in requests {
+        if let Some(quote) = quotes.get_mut(&request.symbol)
+            && let Some(reference) = cache.get(&request.symbol.to_uppercase())
+            && reference.hour == hour
+        {
+            quote.previous_day_price = reference.price;
+        }
+    }
+}
+
+fn stale_instruments(
+    requests: &[QuoteRequest],
+    cache: &HashMap<String, DayAgoReference>,
+    now: i64,
+) -> Vec<String> {
+    let hour = day_ago_hour(now);
+    requests
+        .iter()
+        .map(|request| request.symbol.to_uppercase())
+        .filter(|instrument| {
+            cache
+                .get(instrument)
+                .is_none_or(|reference| reference.hour != hour)
+        })
+        .collect()
+}
+
+/// The opening midpoint of the candle covering 24 hours ago. A closed market
+/// has no reference for that hour.
+fn oanda_day_ago_price(instrument: &str, now: i64) -> Result<DayAgoReference, ProviderError> {
+    day_ago_reference(now, |start, end| {
+        crate::service::fetch_klines_range(
+            DataSource::Oanda,
+            instrument,
+            Timeframe::HOUR_1,
+            start,
+            end,
+            1,
+        )
+    })
+}
+
+fn day_ago_reference(
+    now: i64,
+    fetch: impl FnOnce(i64, i64) -> Result<Vec<Kline>, ProviderError>,
+) -> Result<DayAgoReference, ProviderError> {
+    let hour = day_ago_hour(now);
+    let price = fetch(hour, hour + HOUR_MS)?
+        .into_iter()
+        .find(|candle| candle.open_time == hour)
+        .map(|candle| candle.open);
+    Ok(DayAgoReference { hour, price })
+}
+
+/// `{"prices": [{"instrument": "EUR_USD", "bids": [{"price": "1.08501"}], "asks": [{"price":
+/// "1.08521"}], "time": ISO}]}`: the quote of a market is the mid of its inside bid and ask.
+/// A market that is not tradeable right now has empty level arrays, so the closeout prices
+/// are the fallback.
+pub fn parse_oanda_pricing(
+    body: &str,
+    requests: &[QuoteRequest],
+) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let value = json(body)?;
+    let prices = value
+        .get("prices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Oanda response").to_owned()))?;
+    let mut quotes = HashMap::new();
+    for request in requests {
+        let Some(price) = prices.iter().find(|price| {
+            price
+                .get("instrument")
+                .and_then(Value::as_str)
+                .is_some_and(|name| name.eq_ignore_ascii_case(&request.symbol))
+        }) else {
+            continue;
+        };
+        let bid = number(price.pointer("/bids/0/price"))
+            .or_else(|| number(price.pointer("/closeoutBid")));
+        let ask = number(price.pointer("/asks/0/price"))
+            .or_else(|| number(price.pointer("/closeoutAsk")));
+        let mid = match (bid, ask) {
+            (Some(bid), Some(ask)) => (bid + ask) / 2.0,
+            _ => continue,
+        };
+        if mid > 0.0 {
+            quotes.insert(
+                request.symbol.clone(),
+                SourceQuote {
+                    price: mid,
+                    previous_day_price: None,
+                    volume_24h: None,
+                    volume_kind: None,
+                    timestamp_ms: price
+                        .pointer("/time")
+                        .and_then(Value::as_str)
+                        .and_then(crate::format::parse_iso8601),
+                },
+            );
+        }
+    }
+    Ok(quotes)
+}
+
 /// The hourly points a prediction market's quote reads: a month of them, from which the price a
 /// day before the last one is picked.
 const PREDICTION_POINTS: u32 = 720;
 
 /// The price a day before the last point of `series` (oldest first), or the oldest one when the
 /// market has not been traded that long.
-fn day_before(series: &[crate::model::Kline]) -> Option<f64> {
+fn day_before(series: &[Kline]) -> Option<f64> {
     const DAY_MS: i64 = 86_400_000;
     let last = series.last()?;
     series
@@ -908,7 +1112,7 @@ pub fn parse_alpaca_snapshots(
 mod tests {
     #[test]
     fn a_prediction_quote_compares_with_the_price_a_day_earlier() {
-        use crate::model::Kline;
+        use Kline;
         let point = |hours: i64, price: f64| Kline {
             open_time: hours * 3_600_000,
             close_time: hours * 3_600_000,
@@ -1430,13 +1634,133 @@ mod tests {
     }
 
     #[test]
+    fn oanda_quotes_are_the_mid_of_the_inside_bid_and_ask() {
+        // Oanda answers with arrays of price levels; the first of each is the inside market.
+        let body = r#"{
+            "prices":[
+                {"instrument":"EUR_USD","bids":[{"price":"1.08501","liquidity":10000000}],"asks":[{"price":"1.08521","liquidity":10000000}],"status":"tradeable","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"XAU_USD","bids":[{"price":"2650.10"}],"asks":[{"price":"2650.30"}],"status":"tradeable","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"HALTED","bids":[],"asks":[],"closeoutBid":"1.10000","closeoutAsk":"1.10020","status":"halted","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"NOLEVELS","status":"halted"}
+            ]
+        }"#;
+        let quotes = parse_oanda_pricing(
+            body,
+            &[
+                request("eur_usd"),
+                request("XAU_USD"),
+                request("HALTED"),
+                request("NOLEVELS"),
+                request("ABSENT"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(quotes.len(), 3);
+        assert_eq!(quotes["eur_usd"].price, 1.08511);
+        assert_eq!(
+            quotes["eur_usd"].timestamp_ms,
+            Some(crate::format::days_from_civil(2026, 10, 9) * 86_400_000 + 13 * 3_600_000)
+        );
+        assert_eq!(quotes["XAU_USD"].price, 2650.2);
+        // A halted market still has a price, from its closeout levels.
+        assert_eq!(quotes["HALTED"].price, 1.10010);
+        assert!(parse_oanda_pricing("not json", &[request("EUR_USD")]).is_err());
+        assert!(
+            parse_oanda_pricing(r#"{"errorMessage":"bad"}"#, &[request("EUR_USD")])
+                .expect_err("no prices")
+                == QuoteFailure::Failed("Unexpected Oanda response".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_day_ago_reference_requests_the_hour_covering_the_cutoff() {
+        let hour = crate::format::parse_iso8601("2026-11-25T17:00:00Z").unwrap();
+        let now = hour + 24 * HOUR_MS + 123_456;
+        let reference = day_ago_reference(now, |start, end| {
+            assert_eq!((start, end), (hour, hour + HOUR_MS));
+            Ok(vec![Kline {
+                open_time: start,
+                close_time: end - 1,
+                open: 5100.0,
+                high: 5110.0,
+                low: 5090.0,
+                close: 5105.0,
+                volume: 1.0,
+            }])
+        })
+        .unwrap();
+        assert_eq!(reference.price, Some(5100.0));
+    }
+
+    #[test]
+    fn a_closed_hour_has_no_reference_and_is_not_fetched_again() {
+        let now = crate::format::parse_iso8601("2026-11-29T23:00:00Z").unwrap();
+        let reference = day_ago_reference(now, |_, _| Ok(Vec::new())).unwrap();
+        assert_eq!(reference.price, None);
+        let cache = HashMap::from([("EUR_USD".to_owned(), reference)]);
+        assert!(stale_instruments(&[request("EUR_USD")], &cache, now + 1).is_empty());
+    }
+
+    fn quote(price: f64) -> SourceQuote {
+        SourceQuote {
+            price,
+            previous_day_price: None,
+            volume_24h: None,
+            volume_kind: None,
+            timestamp_ms: None,
+        }
+    }
+
+    #[test]
+    fn the_publication_path_reads_only_the_cache_and_the_rest_is_stale() {
+        let requests = vec![
+            request("EUR_USD"),
+            request("SPX500_USD"),
+            request("NOQUOTE"),
+        ];
+        let mut quotes: HashMap<String, SourceQuote> = requests
+            .iter()
+            .map(|request| (request.symbol.clone(), quote(1.0)))
+            .collect();
+        let now = 25 * HOUR_MS - 1;
+        let cache = HashMap::from([(
+            "EUR_USD".to_owned(),
+            DayAgoReference {
+                hour: day_ago_hour(now),
+                price: Some(1.05),
+            },
+        )]);
+        fill_day_ago(&mut quotes, &requests, &cache, now);
+        assert_eq!(quotes["EUR_USD"].previous_day_price, Some(1.05));
+        assert_eq!(
+            quotes["SPX500_USD"].previous_day_price, None,
+            "no network read on the publication path"
+        );
+        assert_eq!(
+            stale_instruments(&requests, &cache, now),
+            ["SPX500_USD", "NOQUOTE"],
+            "the instruments to refresh in the background"
+        );
+        // Once the entry ages out it is stale too, and a fresh quote is left without a change.
+        let aged = now + 1;
+        assert_eq!(
+            stale_instruments(&requests, &cache, aged),
+            ["EUR_USD", "SPX500_USD", "NOQUOTE"]
+        );
+        let mut fresh: HashMap<String, SourceQuote> =
+            HashMap::from([(request("EUR_USD").symbol, quote(1.1))]);
+        fill_day_ago(&mut fresh, &requests, &cache, aged);
+        assert_eq!(fresh["EUR_USD"].previous_day_price, None);
+    }
+
+    #[test]
     fn failures_describe_themselves() {
         assert_eq!(
             QuoteFailure::RateLimited.message(),
             "Rate limited by the provider"
         );
         assert!(
-            QuoteFailure::CredentialsMissing
+            QuoteFailure::CredentialsMissing(DataSource::Alpaca)
                 .message()
                 .contains("Alpaca")
         );
@@ -1453,7 +1777,10 @@ mod tests {
     #[test]
     fn a_quote_failure_is_worded_in_the_language() {
         use crate::i18n::{Locale, with_locale};
-        for failure in [QuoteFailure::RateLimited, QuoteFailure::CredentialsMissing] {
+        for failure in [
+            QuoteFailure::RateLimited,
+            QuoteFailure::CredentialsMissing(DataSource::Oanda),
+        ] {
             let english = failure.message();
             assert_ne!(with_locale(Locale::PSEUDO, || failure.message()), english);
         }
