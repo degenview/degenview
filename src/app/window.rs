@@ -214,7 +214,7 @@ fn show_window(
         if env.import_offer.show(&ctx)
             && let Ok(mut pending) = env.app_actions.lock()
         {
-            pending.push(AppAction::ImportTradingView);
+            pending.push(AppAction::AcceptImportOffer);
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
         let cycle = ui.input_mut(|input| {

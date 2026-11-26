@@ -9,6 +9,7 @@ pub mod offer;
 pub use apply::Targets;
 
 use crate::i18n::tr;
+use crate::model::tradingview::library::Contents;
 use crate::model::tradingview::placement::Spot;
 use crate::model::tradingview::plan::{
     self, Mappings, Match, Placements, Plan, Selection, Summary, Taken,
@@ -88,12 +89,23 @@ pub struct Providers {
     pub candles: Arc<Candles>,
 }
 
+/// Where an import starts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Start {
+    /// On its welcome: what it does and what there is to bring over.
+    Welcome,
+    /// Past it, on choosing what to bring: the person has just seen it, as the offer at launch.
+    Choose,
+}
+
 /// What is being chosen and previewed.
 struct Review {
     /// Tells this reading apart from any other, for the sheet.
     opening: u64,
     folder: PathBuf,
     library: Library,
+    /// The library in outline, for the welcome.
+    contents: Contents,
     selection: Selection,
     mappings: Mappings,
     /// Matches symbols to markets.
@@ -132,6 +144,8 @@ pub struct TradingViewImport {
     targets: Targets,
     providers: Providers,
     stage: Stage,
+    /// The welcome is still up. The data is read and matched behind it.
+    welcoming: bool,
     /// The folder the person chose; `None` reads where the app keeps its data.
     chosen: Option<PathBuf>,
     /// The folder panel, while it is open. The sheet under it stays as it was.
@@ -146,23 +160,25 @@ pub struct TradingViewImport {
 
 impl TradingViewImport {
     /// Opens the import and starts reading the app's data.
-    pub fn open(targets: Targets, ctx: &egui::Context) -> Self {
+    pub fn open(targets: Targets, start: Start, ctx: &egui::Context) -> Self {
         let providers = Providers {
             search: Arc::new(crate::service::search),
             candles: Arc::new(tradingview::candles_around),
         };
-        Self::with_providers(targets, providers, None, ctx)
+        Self::with_providers(targets, providers, None, start, ctx)
     }
 
     pub fn with_providers(
         targets: Targets,
         providers: Providers,
         folder: Option<PathBuf>,
+        start: Start,
         ctx: &egui::Context,
     ) -> Self {
         Self {
             targets,
             providers,
+            welcoming: start == Start::Welcome,
             stage: read(folder.clone(), ctx),
             chosen: folder,
             folder_panel: None,
@@ -252,6 +268,7 @@ impl TradingViewImport {
             opening: new_id(),
             selection,
             folder: scan.folder,
+            contents: scan.library.contents(),
             library: scan.library,
             mappings,
             resolver: {
@@ -367,6 +384,8 @@ impl TradingViewImport {
 
     fn view(&self) -> View<'_> {
         match &self.stage {
+            Stage::Reading(_) if self.welcoming => View::Welcome(None),
+            Stage::Review(review) if self.welcoming => View::Welcome(Some(&review.contents)),
             Stage::Reading(_) => View::Reading,
             Stage::Failed { message, hint } => View::Failed(message, hint),
             Stage::Review(review) => View::Content(Content {
@@ -401,6 +420,7 @@ impl TradingViewImport {
                 }));
             }
             Action::ChooseFolder => {}
+            Action::Begin => self.welcoming = false,
             Action::Reload => self.reread(ctx),
             Action::OpenLayout(id) => return Outcome::OpenLayout(id),
             Action::Import => {

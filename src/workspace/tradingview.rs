@@ -2,14 +2,14 @@
 //! File menu, drawn over the tab it was opened on, and able to open what it added there.
 
 use super::{ChartWorkspace, WorkspaceAction};
-use crate::host::tradingview::{Outcome, Targets, TradingViewImport, offer};
+use crate::host::tradingview::{Outcome, Start, Targets, TradingViewImport, offer};
 use crate::store::scripts::ScriptStore;
 use eframe::egui;
 use std::sync::Arc;
 
 impl ChartWorkspace {
     /// Opens the import, unless this tab already has it open.
-    pub fn open_tradingview_import(&mut self, ctx: &egui::Context) {
+    pub fn open_tradingview_import(&mut self, start: Start, ctx: &egui::Context) {
         if self.tradingview.is_some() {
             return;
         }
@@ -19,7 +19,7 @@ impl ChartWorkspace {
             watchlist: Arc::clone(&self.watchlist),
             scripts: Arc::new(ScriptStore::default_location),
         };
-        self.tradingview = Some(TradingViewImport::open(targets, ctx));
+        self.tradingview = Some(TradingViewImport::open(targets, start, ctx));
         ctx.request_repaint();
     }
 

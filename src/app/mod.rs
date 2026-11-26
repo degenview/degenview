@@ -73,7 +73,8 @@ enum AppAction {
     /// Open the Pine Studio on the source of a Pine logs message.
     OpenPineSource(crate::model::pine::logs_view::SourceTarget),
     /// The TradingView import was asked for from outside a chart tab (the offer at launch).
-    ImportTradingView,
+    /// The offer to import from TradingView was taken.
+    AcceptImportOffer,
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
     /// Open Settings on the Oanda page.

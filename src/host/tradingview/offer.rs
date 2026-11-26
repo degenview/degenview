@@ -6,7 +6,7 @@ use crate::model::tradingview::library::Contents;
 use crate::service::tradingview;
 use crate::service::work_queue::{self, Pending};
 use crate::store::SharedStore;
-use crate::ui::tradingview::offer::{self as sheet, Choice};
+use crate::ui::tradingview::welcome::{self, Choice, Occasion};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -101,7 +101,7 @@ impl ImportOffer {
         let State::Asking(found) = &*state else {
             return false;
         };
-        let Some(choice) = sheet::show(ctx, found) else {
+        let Some(choice) = welcome::show(ctx, Some(found), Occasion::Offer) else {
             return false;
         };
         *state = State::Over;

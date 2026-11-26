@@ -420,7 +420,7 @@ impl ChartWorkspace {
 #[cfg(test)]
 mod tests {
     use crate::host::paper::PaperHost;
-    use crate::host::tradingview::{Providers, Targets, TradingViewImport};
+    use crate::host::tradingview::{Providers, Start, Targets, TradingViewImport};
     use crate::model::watchlist::WatchlistInstrument;
     use crate::model::{DataSource, InstrumentId};
     use crate::service::tradingview::cache::testing::Scratch;
@@ -516,6 +516,7 @@ mod tests {
             targets,
             providers,
             Some(folder.path().to_owned()),
+            Start::Choose,
             &ctx,
         ));
         for _ in 0..2 {

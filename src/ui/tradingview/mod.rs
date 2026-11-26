@@ -1,11 +1,11 @@
-//! The TradingView import's sheet: reading, choosing what to bring and which markets stand for
-//! its symbols, the preview, and the result. A pure view over what `host::tradingview` holds; it
+//! The TradingView import's sheets: the welcome, reading, choosing what to bring and which markets
+//! stand for its symbols, the preview, and the result. A pure view over what `host::tradingview` holds; it
 //! answers with [`Action`]s.
 
 mod choose;
-pub mod offer;
 mod preview;
 mod result;
+pub mod welcome;
 pub mod words;
 
 #[cfg(test)]
@@ -13,6 +13,7 @@ mod gallery_tests;
 
 use crate::i18n::tr;
 use crate::model::Timeframe;
+use crate::model::tradingview::library::Contents;
 use crate::model::tradingview::plan::{Mappings, Plan, Selection, Summary};
 use crate::model::tradingview::{Library, TvSymbol};
 use crate::ui::chart::picker_kit::{art, widgets};
@@ -51,6 +52,9 @@ pub struct Content<'a> {
 }
 
 pub enum View<'a> {
+    /// The first page, with what was found once the data is read.
+    Welcome(Option<&'a Contents>),
+    /// Reading the data again.
     Reading,
     /// What went wrong, and what to do about it.
     Failed(&'a str, &'a str),
@@ -61,6 +65,8 @@ pub enum View<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     Close,
+    /// Leave the welcome for choosing what to bring.
+    Begin,
     /// Read another folder.
     ChooseFolder,
     /// Read the same folder again.
@@ -81,6 +87,16 @@ pub enum Action {
 }
 
 pub fn show(ctx: &egui::Context, view: &View<'_>) -> Vec<Action> {
+    // The welcome is a sheet of its own shape.
+    if let View::Welcome(found) = view {
+        return welcome::show(ctx, *found, welcome::Occasion::Opened)
+            .map(|choice| match choice {
+                welcome::Choice::Import => Action::Begin,
+                welcome::Choice::Dismiss => Action::Close,
+            })
+            .into_iter()
+            .collect();
+    }
     let mut actions = Vec::new();
     sheet::show(ctx, Id::new("tradingview-import"), SIZE.x, |ui| {
         body(ui, view, &mut actions);
@@ -113,6 +129,8 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
     // `set_height` made the sheet's own rect SIZE.y tall, so measure from the cursor.
     let height = tall - (ui.cursor().top() - top) - FOOTER_HEIGHT;
     match view {
+        // Drawn by `welcome`, never inside this sheet.
+        View::Welcome(_) => {}
         View::Reading => result::reading(ui, height, actions),
         View::Failed(message, hint) => result::failed(ui, height, message, hint, actions),
         View::Content(content) => match (content.step, content.plan) {

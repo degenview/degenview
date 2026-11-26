@@ -4,6 +4,7 @@ use super::now_ms;
 use super::tabs::TabContent;
 use crate::host::settings::SettingsHost;
 use crate::host::tab::window::TabRequest;
+use crate::host::tradingview::Start;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::alert::{AlertRuntimeCommand, AlertRuntimeCommandPayload};
 use crate::model::tab::windows::WindowClose;
@@ -67,7 +68,7 @@ impl DegenViewApp {
                 NativeCommand::OpenSettings => self.open_settings(ctx),
                 NativeCommand::OpenPineStudio => self.open_pine(ctx),
                 NativeCommand::OpenPortfolio => self.open_portfolio(ctx),
-                NativeCommand::ImportTradingView => self.import_tradingview(ctx),
+                NativeCommand::ImportTradingView => self.import_tradingview(Start::Welcome, ctx),
                 NativeCommand::OpenDocs => {
                     ctx.open_url(egui::OpenUrl::new_tab(tab_bar::DOCS_URL));
                 }
@@ -125,7 +126,7 @@ impl DegenViewApp {
                 AppAction::OpenPortfolio => self.open_portfolio(ctx),
                 AppAction::OpenPine => self.open_pine(ctx),
                 AppAction::ScriptsImported => self.sync.note_scripts_changed(),
-                AppAction::ImportTradingView => self.import_tradingview(ctx),
+                AppAction::AcceptImportOffer => self.import_tradingview(Start::Choose, ctx),
                 AppAction::OpenPineSource(target) => self.open_pine_source(ctx, &target),
                 AppAction::OpenAlpacaSettings => {
                     self.open_settings_page(ctx, SettingsHost::open_alpaca);

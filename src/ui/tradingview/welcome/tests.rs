@@ -52,12 +52,19 @@ fn a_card_lists_a_few_names_and_counts_the_rest() {
 }
 
 /// Pictures for a person to look at:
-/// `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_offer -- --ignored`.
+/// `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_welcome -- --ignored`.
 #[test]
 #[ignore = "writes images for a person to look at"]
-fn gallery_of_the_offer() {
+fn gallery_of_the_welcome() {
     let _theme = theme::RestoreDefaultTheme;
-    for (name, contents) in [("full", found(5, 2, 1)), ("one", found(1, 0, 0))] {
+    let (full, one) = (found(5, 2, 1), found(1, 0, 0));
+    let pictures = [
+        ("full", Some(&full), Occasion::Offer),
+        ("one", Some(&one), Occasion::Offer),
+        ("opened", Some(&full), Occasion::Opened),
+        ("looking", None, Occasion::Opened),
+    ];
+    for (name, found, occasion) in pictures {
         for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
             // A moment with a parcel on its way and the chart half built.
             for (moment, time) in [("early", 1.1), ("late", 4.2)] {
@@ -69,11 +76,11 @@ fn gallery_of_the_offer() {
                     last = Some(screen.run(Vec::new(), |ui| {
                         ui.painter()
                             .rect_filled(ui.max_rect(), 0.0, theme::chrome());
-                        body(ui, &contents, time, false, &mut None);
+                        body(ui, found, occasion, time, false, &mut None);
                     }));
                 }
                 screen.save(
-                    &format!("offer-{name}-{moment}-{theme_name}"),
+                    &format!("welcome-{name}-{moment}-{theme_name}"),
                     last.expect("a frame"),
                 );
             }

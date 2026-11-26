@@ -118,7 +118,7 @@ fn open(targets: &Targets, folder: PathBuf, ctx: &egui::Context) -> TradingViewI
         search: search(),
         candles: candles(),
     };
-    TradingViewImport::with_providers(targets.clone(), providers, Some(folder), ctx)
+    TradingViewImport::with_providers(targets.clone(), providers, Some(folder), Start::Choose, ctx)
 }
 
 /// Polls until `done`, as frames would.
@@ -202,6 +202,59 @@ fn importing_again_adds_beside_what_is_there() {
         .map(|view| view.name)
         .collect();
     assert_eq!(names, ["Majors", "Majors 2"]);
+}
+
+#[test]
+fn an_import_opened_by_hand_starts_on_the_welcome() {
+    let scratch = Scratch::new();
+    let targets = targets(&scratch);
+    let ctx = egui::Context::default();
+    let providers = Providers {
+        search: search(),
+        candles: candles(),
+    };
+    let mut import = TradingViewImport::with_providers(
+        targets,
+        providers,
+        Some(data_folder(&scratch)),
+        Start::Welcome,
+        &ctx,
+    );
+    assert!(matches!(import.view(), View::Welcome(None)));
+    settle(&mut import, &ctx, matched);
+    let View::Welcome(Some(found)) = import.view() else {
+        panic!("not on the welcome");
+    };
+    assert!(!found.layouts.is_empty() && !found.scripts.is_empty());
+
+    import.act(Action::Begin, &ctx);
+    assert!(matches!(import.view(), View::Content(content) if content.step == Step::Choose));
+    // Reading again is not opening again.
+    import.act(Action::Reload, &ctx);
+    assert!(matches!(import.view(), View::Reading));
+    settle(&mut import, &ctx, matched);
+    assert!(matches!(import.view(), View::Content(_)));
+}
+
+#[test]
+fn a_welcome_with_nothing_to_bring_says_why() {
+    let scratch = Scratch::new();
+    let ctx = egui::Context::default();
+    let providers = Providers {
+        search: search(),
+        candles: candles(),
+    };
+    let mut import = TradingViewImport::with_providers(
+        targets(&scratch),
+        providers,
+        Some(scratch.path().to_owned()),
+        Start::Welcome,
+        &ctx,
+    );
+    settle(&mut import, &ctx, |stage| {
+        matches!(stage, Stage::Failed { .. })
+    });
+    assert!(matches!(import.view(), View::Failed(..)));
 }
 
 #[test]
@@ -463,7 +516,8 @@ fn a_post_without_candles_is_left_out_and_can_be_tried_again() {
         candles: Arc::new(move |spot| flag.load(Ordering::SeqCst).then(|| working(spot)).flatten()),
     };
     let folder = folder_of(&scratch, with_a_post());
-    let mut import = TradingViewImport::with_providers(targets, providers, Some(folder), &ctx);
+    let mut import =
+        TradingViewImport::with_providers(targets, providers, Some(folder), Start::Choose, &ctx);
     settle(&mut import, &ctx, placed);
     import.act(Action::Preview, &ctx);
     assert_eq!(post_price(&import), None);

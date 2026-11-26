@@ -4,12 +4,18 @@ Brings layouts, drawings, watchlists and the user's own Pine scripts over from t
 **desktop app** on the same computer. Entry points: the toolbar's layout menu, the new-tab page, and
 File ▸ Import from TradingView on macOS.
 
+## The welcome
+
+The import's first page (`ui::tradingview::welcome`): a moving picture of the move, one card per
+kind that was found (how many, how much is in them, the first names), and what the import never
+does. "Choose What to Import" leads on to choosing. The data is read and its symbols matched behind
+it. When there is nothing to read, the page that says why takes its place.
+
 ## The offer at launch
 
-The first launch that finds something to bring over asks, once, whether to import it
-(`host::tradingview::offer`). The sheet (`ui::tradingview::offer`) shows a moving picture of the
-move, one card per kind that was found (how many, how much is in them, the first names), and what
-the import never does. "Choose What to Import" opens the import over the focused chart tab.
+The first launch that finds something to bring over shows the welcome unasked, once, as an offer
+(`host::tradingview::offer`). Taking it opens the import over the focused chart tab, past the
+welcome (`Start::Choose`).
 
 - It counts as made as soon as it is on screen: the `tradingview.offered` setting, local to this
   computer. Opening the import by hand first sets it too.

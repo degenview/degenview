@@ -4,6 +4,7 @@ use super::window::WindowEnv;
 use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::{Placement, TabWindowHost};
+use crate::host::tradingview::Start;
 use crate::model::InstrumentId;
 use crate::model::Timeframe;
 use crate::model::tab::link::LinkHub;
@@ -619,7 +620,7 @@ impl DegenViewApp {
 
     /// File ▸ Import from TradingView, and the offer made at launch: over the focused chart tab,
     /// else over a new one.
-    pub(super) fn import_tradingview(&mut self, ctx: &egui::Context) {
+    pub(super) fn import_tradingview(&mut self, start: Start, ctx: &egui::Context) {
         self.import_offer.withdraw();
         let focused = self.tabs.focused_tab();
         let is_chart = self
@@ -634,7 +635,7 @@ impl DegenViewApp {
         };
         self.tabs.each_chart(|workspace| {
             if workspace.id() == target {
-                workspace.open_tradingview_import(ctx);
+                workspace.open_tradingview_import(start, ctx);
             }
         });
     }
