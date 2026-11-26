@@ -60,3 +60,11 @@ fn a_folder_without_a_cache_and_a_cache_without_charts_say_so() {
         Err(ScanError::NothingFound)
     ));
 }
+
+#[test]
+fn a_sandbox_that_finds_nothing_says_to_point_at_the_folder() {
+    assert!(matches!(nowhere(false, true), ScanError::Sandboxed));
+    assert!(matches!(nowhere(false, false), ScanError::NotInstalled));
+    assert!(matches!(nowhere(true, true), ScanError::NotACache));
+    assert!(ScanError::Sandboxed.hint().contains(".config/TradingView"));
+}

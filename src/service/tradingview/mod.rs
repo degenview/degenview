@@ -18,12 +18,37 @@ use std::path::{Path, PathBuf};
 pub enum ScanError {
     #[error("{}", tr!("The TradingView app’s data wasn’t found on this computer."))]
     NotInstalled,
+    #[error("{}", tr!("This Flatpak can’t look for TradingView’s data by itself."))]
+    Sandboxed,
     #[error("{}", tr!("This folder doesn’t hold TradingView’s data."))]
     NotACache,
     #[error("{}", unreadable(.0))]
     Unreadable(#[from] std::io::Error),
     #[error("{}", tr!("No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."))]
     NothingFound,
+}
+
+impl ScanError {
+    /// What to do about it.
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Self::Sandboxed => tr!(
+                "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+            ),
+            Self::NotInstalled | Self::NotACache | Self::Unreadable(_) | Self::NothingFound => tr!(
+                "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+            ),
+        }
+    }
+}
+
+/// Why no data folder was there to read.
+fn nowhere(chosen: bool, sandboxed: bool) -> ScanError {
+    match (chosen, sandboxed) {
+        (true, _) => ScanError::NotACache,
+        (false, true) => ScanError::Sandboxed,
+        (false, false) => ScanError::NotInstalled,
+    }
 }
 
 // Written where it is shown, in the language in use: the extractor reads a `tr!` whose values are
@@ -93,8 +118,10 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
     let Some(folder) = used else {
         return Err(match failed {
             Some(error) => error.into(),
-            None if chosen.is_some() => ScanError::NotACache,
-            None => ScanError::NotInstalled,
+            None => nowhere(
+                chosen.is_some(),
+                crate::service::system::sandbox::is_flatpak(),
+            ),
         });
     };
     let library = parse::library(documents);

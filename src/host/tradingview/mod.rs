@@ -109,7 +109,7 @@ struct Review {
 
 enum Stage {
     Reading(Read),
-    Failed(String),
+    Failed { message: String, hint: &'static str },
     Review(Box<Review>),
     Done(Summary),
 }
@@ -208,7 +208,10 @@ impl TradingViewImport {
             if let Some(result) = job.poll_or(lost) {
                 self.stage = match result {
                     Ok(scan) => Stage::Review(Box::new(self.review(scan, ctx))),
-                    Err(error) => Stage::Failed(error.to_string()),
+                    Err(error) => Stage::Failed {
+                        message: error.to_string(),
+                        hint: error.hint(),
+                    },
                 };
             }
         }
@@ -229,7 +232,7 @@ impl TradingViewImport {
                 let spots = review.selection.spots(&review.library, &review.mappings);
                 review.placer.ask(spots);
             }
-            Stage::Reading(_) | Stage::Failed(_) | Stage::Done(_) => {}
+            Stage::Reading(_) | Stage::Failed { .. } | Stage::Done(_) => {}
         }
     }
 
@@ -352,7 +355,7 @@ impl TradingViewImport {
     fn view(&self) -> View<'_> {
         match &self.stage {
             Stage::Reading(_) => View::Reading,
-            Stage::Failed(message) => View::Failed(message),
+            Stage::Failed { message, hint } => View::Failed(message, hint),
             Stage::Review(review) => View::Content(Content {
                 opening: review.opening,
                 folder: &review.folder,

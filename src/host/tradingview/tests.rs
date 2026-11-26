@@ -226,7 +226,9 @@ fn a_folder_with_nothing_in_it_says_so() {
     let scratch = Scratch::new();
     let ctx = egui::Context::default();
     let mut import = open(&targets(&scratch), scratch.path().to_owned(), &ctx);
-    settle(&mut import, &ctx, |stage| matches!(stage, Stage::Failed(_)));
+    settle(&mut import, &ctx, |stage| {
+        matches!(stage, Stage::Failed { .. })
+    });
 }
 
 #[test]

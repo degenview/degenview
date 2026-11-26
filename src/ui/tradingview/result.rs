@@ -62,7 +62,13 @@ fn explanation(ui: &mut Ui, text: &str) {
     );
 }
 
-pub(super) fn failed(ui: &mut Ui, height: f32, message: &str, actions: &mut Vec<Action>) {
+pub(super) fn failed(
+    ui: &mut Ui,
+    height: f32,
+    message: &str,
+    hint: &str,
+    actions: &mut Vec<Action>,
+) {
     centred(
         ui,
         height,
@@ -71,13 +77,7 @@ pub(super) fn failed(ui: &mut Ui, height: f32, message: &str, actions: &mut Vec<
         |ui| {
             explanation(ui, message);
             ui.add_space(8.0);
-            explanation(
-                ui,
-                tr!(
-                    "Install the TradingView desktop app, sign in, and open the layouts and watchlists \
-                 you want to bring over."
-                ),
-            );
+            explanation(ui, hint);
         },
     );
     let mut choose = false;

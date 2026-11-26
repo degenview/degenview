@@ -20967,3 +20967,9 @@ msgstr[1] "{count} Beiträge werden noch platziert"
 
 msgid "Looking up markets and prices…"
 msgstr "Märkte und Preise werden gesucht …"
+
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "Dieses Flatpak kann die Daten von TradingView nicht selbst suchen."
+
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "Wähle den Datenordner von TradingView: meist snap/tradingview/current/.config/TradingView oder .config/TradingView in deinem persönlichen Ordner. Drücke Strg+H, um versteckte Ordner zu sehen."

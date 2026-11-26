@@ -51,7 +51,8 @@ pub struct Content<'a> {
 
 pub enum View<'a> {
     Reading,
-    Failed(&'a str),
+    /// What went wrong, and what to do about it.
+    Failed(&'a str, &'a str),
     Content(Content<'a>),
     Done(&'a Summary),
 }
@@ -112,7 +113,7 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
     let height = tall - (ui.cursor().top() - top) - FOOTER_HEIGHT;
     match view {
         View::Reading => result::reading(ui, height, actions),
-        View::Failed(message) => result::failed(ui, height, message, actions),
+        View::Failed(message, hint) => result::failed(ui, height, message, hint, actions),
         View::Content(content) => match (content.step, content.plan) {
             (Step::Preview, Some(plan)) => preview::show(ui, height, content, plan, actions),
             _ => choose::show(ui, height, content, actions),

@@ -33,7 +33,8 @@ query: they are not logged, stored or shown. `route()` is tested both ways; wide
 | Linux | `~/snap/tradingview/current/.config/TradingView`, `~/.config/TradingView` | simple |
 
 The cache is `Cache/Cache_Data` inside it. "Choose Folder…" reads any other folder, which is also how
-a sandboxed (Flatpak) DegenView gets access: through the portal. Bodies are gzip, brotli or zstd
+a sandboxed (Flatpak) DegenView gets access: through the portal, and the sheet says so there
+(`ScanError::Sandboxed`). Bodies are gzip, brotli or zstd
 (Windows is mostly zstd). Both formats are read while TradingView runs.
 
 ## What is read
@@ -126,6 +127,11 @@ TradingView's code, the imported layout looked at in the app, and both real scri
 grid code, interval string and mapped indicator opens as written. TradingView itself was not open
 beside it for a side-by-side comparison.
 
+Verified in a Flatpak sandbox (Fedora, aarch64; this build run with the installed app's permissions,
+on X11, Secret portal off): picking a folder in the XDG portal, including a hidden one under
+`~/snap/tradingview/current` (a symlink), and a whole import through the document portal. The packaged
+bundle itself was built by CI but not run.
+
 Verified with a made-up data folder: a whole import on Linux (Fedora, aarch64, a bare X server),
 including picking the folder in the `zenity` panel `rfd` falls back to without a portal. Also: sync
 accepts everything an import writes (a test holds it), and mutation fuzzing of the cache readers,
@@ -133,7 +139,7 @@ document parsers and drawing conversion found no panic.
 
 **Not verified** — check against a real drawing before trusting:
 
-- Picking a folder through the XDG portal or the macOS panel.
+- Picking a folder in the macOS panel.
 
 - How each tool's stored points and settings map, for tools never seen in real data. Seen:
   TrendLine, Brush, Highlighter, RiskRewardLong, AnchoredVWAP, Text, TextNote, Note, PriceLabel,

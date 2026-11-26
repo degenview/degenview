@@ -3088,6 +3088,13 @@ msgstr ""
 msgid "Choose TradingView’s data folder"
 msgstr ""
 
+#: src/service/tradingview/mod.rs
+msgid ""
+"Choose TradingView’s data folder: usually "
+"snap/tradingview/current/.config/TradingView or .config/TradingView in your "
+"home folder. Press Ctrl+H to see hidden folders."
+msgstr ""
+
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
 msgstr ""
@@ -16931,6 +16938,10 @@ msgstr ""
 
 #: src/pine_studio/ai/panel.rs
 msgid "Thinking…"
+msgstr ""
+
+#: src/service/tradingview/mod.rs
+msgid "This Flatpak can’t look for TradingView’s data by itself."
 msgstr ""
 
 #: src/ui/settings/sync.rs

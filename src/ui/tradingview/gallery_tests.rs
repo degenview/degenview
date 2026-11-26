@@ -129,7 +129,10 @@ fn tradingview_gallery() {
     frame("reading", &View::Reading);
     frame(
         "failed",
-        &View::Failed("The TradingView app\u{2019}s data wasn\u{2019}t found on this computer."),
+        &View::Failed(
+            "The TradingView app\u{2019}s data wasn\u{2019}t found on this computer.",
+            crate::service::tradingview::ScanError::Sandboxed.hint(),
+        ),
     );
     frame("done", &View::Done(&summary));
 }

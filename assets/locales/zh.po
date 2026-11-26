@@ -20709,3 +20709,9 @@ msgstr[0] "{count} 条帖子仍在定位中"
 
 msgid "Looking up markets and prices…"
 msgstr "正在查找市场和价格…"
+
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "此 Flatpak 无法自行查找 TradingView 的数据。"
+
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "请选择 TradingView 的数据文件夹：通常是主文件夹中的 snap/tradingview/current/.config/TradingView 或 .config/TradingView。按 Ctrl+H 可显示隐藏文件夹。"
