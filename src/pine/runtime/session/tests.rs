@@ -568,3 +568,80 @@ fn strategy_readings_follow_the_broker_and_keep_a_history() {
     assert!(matches!(variable("before"), Some(RuntimeValue::Float(size)) if size > 0.0));
     assert!(matches!(variable("avg"), Some(RuntimeValue::Float(_))));
 }
+
+#[test]
+fn timeframe_change_with_a_varying_timeframe_rolls_back_with_realtime_ticks() {
+    // The live bar names an hour or two by its own close, which moves between ticks: every tick
+    // compares with what the last committed bar found, never with an earlier tick of its own bar.
+    let program = crate::pine::compiler::compile(
+        "//@version=6\nindicator(\"T\")\nplot(timeframe.change(close > 10 ? \"60\" : \"120\") ? 1 : 0)",
+        Limits::default(),
+        &crate::pine::compiler::NoLibraries,
+    );
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let priced = |hour: i64, close: f64| Kline {
+        close,
+        ..hourly(hour * 3_600_000)
+    };
+    // Hour 2 commits the two-hour period that opens at hour 2 (close below ten).
+    session
+        .load_history(&[priced(1, 5.0), priced(2, 5.0)], Some(3 * 3_600_000), None)
+        .unwrap();
+    let run = |session: &mut Session, hour: i64, close: f64, phase: BarPhase| {
+        session
+            .execute(
+                BarEvent {
+                    candle: priced(hour, close),
+                    phase,
+                },
+                true,
+                None,
+            )
+            .unwrap();
+        session.output().plots[0].values.last().copied().flatten()
+    };
+    // Hour 3: "120" finds the period hour 2 committed, "60" finds hour 3's own.
+    let tick = BarPhase::RealtimeTick { is_new: false };
+    assert_eq!(
+        run(
+            &mut session,
+            3,
+            5.0,
+            BarPhase::RealtimeTick { is_new: true }
+        ),
+        Some(0.0)
+    );
+    assert_eq!(run(&mut session, 3, 20.0, tick), Some(1.0));
+    assert_eq!(
+        run(&mut session, 3, 5.0, tick),
+        Some(0.0),
+        "the tick before left nothing behind"
+    );
+    assert_eq!(
+        run(
+            &mut session,
+            3,
+            20.0,
+            BarPhase::RealtimeClose { is_new: false }
+        ),
+        Some(1.0)
+    );
+    // Hour 4 compares with hour 3, which closed naming "60": hour 4's two-hour period differs.
+    assert_eq!(
+        run(
+            &mut session,
+            4,
+            5.0,
+            BarPhase::RealtimeTick { is_new: true }
+        ),
+        Some(1.0)
+    );
+}

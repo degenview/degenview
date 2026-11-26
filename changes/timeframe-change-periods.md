@@ -1,0 +1,1 @@
+fixed: Pine's timeframe.change now matches TradingView on stock charts (also around holidays and inside request.security of another market), when the timeframe differs from one bar to the next, and with an empty timeframe.

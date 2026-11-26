@@ -3738,3 +3738,123 @@ fn a_timeframe_change_in_a_loop_compares_every_run_with_the_previous_bar() {
         RuntimeValue::Int(9)
     );
 }
+
+/// TradingView keeps the opening time of the period the previous run fell in, by that run's own
+/// timeframe, and compares it with this run's (probes R6, R8): bars are a minute apart here.
+#[test]
+fn a_timeframe_that_changes_between_runs_compares_the_periods_each_run_found() {
+    // Even bars name 5-minute periods, odd bars 10-minute ones. The periods differ at bars 6 to 10
+    // and 16 to 19; comparing the previous bar under the current timeframe would count two.
+    assert_eq!(
+        changes_counted("n += timeframe.change(bar_index % 2 == 0 ? \"5\" : \"10\") ? 1 : 0"),
+        RuntimeValue::Int(9)
+    );
+}
+
+#[test]
+fn the_runs_of_a_bar_compare_with_what_the_last_run_of_the_previous_bar_found() {
+    // The previous bar's last run named a 10-minute period, which both runs of this bar compare with.
+    let session = run(
+        "var int five = 0\nvar int ten = 0\n\
+         for i = 0 to 1\n    changed = timeframe.change(i == 0 ? \"5\" : \"10\")\n    \
+         five += i == 0 and changed ? 1 : 0\n    ten += i == 1 and changed ? 1 : 0",
+        20,
+    );
+    assert_eq!(
+        value(&session, "five"),
+        RuntimeValue::Int(11),
+        "bars 5-10 and 15-19"
+    );
+    assert_eq!(value(&session, "ten"), RuntimeValue::Int(1), "bar 10");
+}
+
+#[test]
+fn an_empty_timeframe_is_the_charts_own() {
+    // TradingView, probe R8: `""` changes on every bar after the first run.
+    assert_eq!(
+        changes_counted("n += timeframe.change(\"\") ? 1 : 0"),
+        RuntimeValue::Int(19)
+    );
+}
+
+/// `body` over the regular-session 30-minute bars of 9, 10 and 11 November 2026 on a US stock.
+fn run_on_a_stock(body: &str) -> Session {
+    // 9 Nov 2026 14:30 UTC, the New York open.
+    let open = crate::pine::time::calendar::make(2026, 11, 9, 14, 30, 0, 0).unwrap();
+    run_over_sessions(open, &[0, 1, 2], body)
+}
+
+/// `body` over the 13 regular-session 30-minute bars of each of `days`, counted from the one whose
+/// session opens at `open`.
+fn run_over_sessions(open: i64, days: &[i64], body: &str) -> Session {
+    const MINUTE_MS: i64 = 60_000;
+    let data: Vec<Kline> = days
+        .iter()
+        .flat_map(|day| {
+            (0..13).map(move |bar| open + day * 1_440 * MINUTE_MS + bar * 30 * MINUTE_MS)
+        })
+        .zip(bars(13 * days.len()))
+        .map(|(open_time, bar)| Kline {
+            open_time,
+            close_time: open_time + 30 * MINUTE_MS,
+            ..bar
+        })
+        .collect();
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let symbol = SymbolInfo {
+        kind: "stock".to_owned(),
+        grid: crate::model::market::bucket::Grid::UsEquities,
+        ..SymbolInfo::default()
+    };
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        symbol,
+        None,
+        None,
+    );
+    session.fixed_bar_seconds = Some(1_800.0);
+    session.evaluate(&data).expect("runs");
+    session
+}
+
+#[test]
+fn a_stocks_four_hour_periods_are_its_sessions() {
+    // 09:30 and 13:30 New York open a period each day, not the UTC clock's four hours (TradingView,
+    // probe R9: 35 over eighteen sessions).
+    let session = run_on_a_stock("var int n = 0\nn += timeframe.change(\"240\") ? 1 : 0");
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn a_stocks_day_opens_with_its_session() {
+    // The day and the session's first four hours both open at 09:30, so a call that names the day
+    // before noon and four hours after changes only at 13:30 and at the next open (probe R9).
+    let session = run_on_a_stock(
+        "var int n = 0\n\
+         n += timeframe.change(hour(time, \"America/New_York\") < 12 ? \"D\" : \"240\") ? 1 : 0",
+    );
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn after_a_holiday_a_stocks_week_begins_with_the_first_day_that_trades() {
+    // Monday 31 August to Friday 4 September 2026, then Tuesday 8 and Wednesday 9: the 7th is Labor
+    // Day. The call names the day before noon and the week after, and is counted from the 8th. On
+    // the 8th both periods open with that day's first bar, so noon is no change (TradingView,
+    // probe Q2).
+    let open = crate::pine::time::calendar::make(2026, 8, 31, 13, 30, 0, 0).unwrap();
+    let session = run_over_sessions(
+        open,
+        &[0, 1, 2, 3, 4, 8, 9],
+        "var int n = 0\n\
+         changed = timeframe.change(hour(time, \"America/New_York\") < 12 ? \"D\" : \"W\")\n\
+         n += dayofmonth >= 8 and month == 9 and changed ? 1 : 0",
+    );
+    // The open of the 8th, the open of the 9th and noon of the 9th.
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(3));
+}
