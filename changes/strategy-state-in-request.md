@@ -1,1 +1,1 @@
-fixed: A Pine strategy that reads its own state (strategy.equity, strategy.position_size, strategy.closedtrades and the like) inside request.security is now refused with an error, as on TradingView, instead of silently reading an empty account.
+fixed: A Pine strategy that passes its own state (strategy.equity, strategy.position_size and the like), or anything computed from it, to request.security or another request is now refused with an error, as on TradingView, instead of silently reading an empty account.
