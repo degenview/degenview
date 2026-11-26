@@ -112,11 +112,16 @@ pub fn bar_end(grid: Grid, open_time: i64, seconds: f64) -> i64 {
 
 /// `time_close` of the bar that opens at `open_time`, for a bar length in seconds. A month, quarter
 /// or year closes where the calendar's does (TradingView, BTCUSDT 1M: October's bar is 31 days and
-/// February's 28, and the next bar opens at the close); any other bar closes `seconds` after it
-/// opens, as a stock's :30 hourly bar does off the UTC grid its bucket is cut on.
+/// February's 28, and the next bar opens at the close), and so do several weeks, whose last period
+/// of a year the next year's count cuts short (TradingView, `"3W"`: the one that opens on 29
+/// December 2025 closes on 5 January). Any other bar closes `seconds` after it opens, as a stock's
+/// :30 hourly bar does off the UTC grid its bucket is cut on.
 pub fn close_time(grid: Grid, open_time: i64, seconds: f64) -> i64 {
     let month = (30 * DAY) as f64;
-    if seconds >= month && (seconds / month).fract() == 0.0 {
+    let whole_months = seconds >= month && (seconds / month).fract() == 0.0;
+    let several_weeks = grid == Grid::Utc
+        && timeframe_of(seconds).is_some_and(|tf| tf.unit() == TimeUnit::Week && tf.count() > 1);
+    if whole_months || several_weeks {
         bar_end(grid, open_time, seconds)
     } else {
         open_time + (seconds * 1_000.0) as i64

@@ -3390,6 +3390,37 @@ mod tests {
     }
 
     #[test]
+    fn a_years_short_last_period_closes_where_the_next_years_first_opens() {
+        // TradingView, BTCUSDT 1D (probe R13, 2026-11-26): the three-week period that opens on
+        // 29 December 2025 reads time_close 5 January, and the next one 26 January.
+        const DAY_MS: i64 = 86_400_000;
+        let first = time::calendar::make(2025, 12, 22, 0, 0, 0, 0).unwrap();
+        // Daily bars from 22 December to 11 January, each closing at its day of the run.
+        let chart: Vec<Kline> = (0..21)
+            .map(|day| bar(first + day * DAY_MS, day as f64))
+            .collect();
+        let plots = loaded(
+            "plot(request.security(syminfo.tickerid, \"3W\", close))\n\
+             plot(request.security(syminfo.tickerid, \"3W\", time_close, lookahead = barmerge.lookahead_on))",
+            TestProvider::default(),
+            &chart,
+            86_400.0,
+            None,
+        );
+        // The short period (29 December to 4 January) is read from the bar that closes it.
+        assert_eq!(
+            plots[0][12],
+            Some(6.0),
+            "3 January still reads the period before"
+        );
+        assert_eq!(plots[0][13], Some(13.0), "4 January closes the short one");
+        let close =
+            |month, date| time::calendar::make(2026, month, date, 0, 0, 0, 0).unwrap() as f64;
+        assert_eq!(plots[1][9], Some(close(1, 5)), "31 December");
+        assert_eq!(plots[1][16], Some(close(1, 26)), "7 January");
+    }
+
+    #[test]
     fn the_last_candle_of_a_request_is_the_last_on_every_chart_bar_that_reads_it() {
         // TradingView, probes A, R3 and R4: a "D" request with lookahead_on reads the day still
         // forming with islast true on every chart bar of that day, not on the chart's last bar only.

@@ -57,7 +57,8 @@ watchlists.
   bucket can be short; the days before that Monday belong to the previous year's), months count
   from January each year (so `3M` is the calendar quarter, `12M` the year), both as TradingView
   anchors them (2026-11-26, `time("2W" | "3W" | "4W" | "2M" | "5M")` on `BINANCE:BTCUSDT`). A bucket
-  closes 1 ms before the next opens. Multi-**day** buckets are known to differ: TradingView counts
+  closes 1 ms before the next opens. Pine's `time_close` of a several-week bar on a 24/7 market is its bucket's end, the short one
+  included (`time::bucket::close_time`). Multi-**day** buckets are known to differ: TradingView counts
   them from 1 January (a stock's in trading days), which providers' own multi-day candles and gap
   filling do not yet follow.
   `Grid::UsEquities` is a US stock (Alpaca): its **intraday** buckets anchor at the session open,
