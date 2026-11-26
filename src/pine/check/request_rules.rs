@@ -74,7 +74,8 @@ pub fn validate(
             expressions.push(expression);
         }
     });
-    if expressions.is_empty() {
+    // Nothing can carry what the script never names, which is every indicator.
+    if expressions.is_empty() || !names_the_strategy(statements) {
         return Vec::new();
     }
     let script = Script::new(statements, resolutions, builtin_methods);
@@ -111,6 +112,18 @@ fn is_builtin_method(member: &str) -> bool {
     METHOD_NAMESPACES
         .iter()
         .any(|namespace| registry::is_function(&format!("{namespace}.{member}")))
+}
+
+/// Whether any name in the script, read or called, is in the `strategy` namespace.
+fn names_the_strategy(statements: &[Statement]) -> bool {
+    let mut found = false;
+    traversal::for_each_identifier(statements, &mut |name, _| {
+        found |= name.starts_with("strategy.");
+    });
+    traversal::for_each_call_site(statements, &mut |call| {
+        found |= call.name.starts_with("strategy.");
+    });
+    found
 }
 
 /// The name TradingView prints for a read of the strategy's state, if `name` is one. `call` is
