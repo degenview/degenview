@@ -29,6 +29,8 @@ pub enum Document {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fetched {
     pub at_ms: i64,
+    /// Which data folder it came from. Folders can belong to different accounts.
+    pub folder: usize,
     pub document: Document,
 }
 
@@ -36,6 +38,7 @@ pub struct Fetched {
 #[derive(Default)]
 struct ScriptBuild {
     newest: Option<((u32, u32), Script)>,
+    folder: usize,
 }
 
 /// What a delta says of one drawing.
@@ -67,11 +70,16 @@ struct Page {
 pub fn library(mut documents: Vec<Fetched>) -> Library {
     documents.sort_by_key(|fetched| fetched.at_ms);
     let mut layouts: BTreeMap<String, LayoutBuild> = BTreeMap::new();
-    let mut watchlists: BTreeMap<String, (i64, TvWatchlist)> = BTreeMap::new();
+    let mut watchlists: BTreeMap<String, (i64, usize, TvWatchlist)> = BTreeMap::new();
     let mut scripts: BTreeMap<String, ScriptBuild> = BTreeMap::new();
     let mut saved: BTreeMap<String, String> = BTreeMap::new();
 
-    for Fetched { at_ms, document } in documents {
+    for Fetched {
+        at_ms,
+        folder,
+        document,
+    } in documents
+    {
         match document {
             Document::LayoutPage { html } => {
                 if let Some((layout, page)) = embedded_id(&html).zip(page(&html)) {
@@ -92,15 +100,16 @@ pub fn library(mut documents: Vec<Fetched>) -> Library {
             Document::Watchlists { json, complete } => {
                 // A list missing from a newer list of all of them was deleted.
                 if complete && let Some(ids) = listed(&json, number_id) {
-                    watchlists.retain(|id, _| ids.contains(id));
+                    watchlists.retain(|id, (_, from, _)| *from != folder || ids.contains(id));
                 }
                 for list in watchlists_of(&json) {
-                    watchlists.insert(list.id.clone(), (at_ms, list));
+                    watchlists.insert(list.id.clone(), (at_ms, folder, list));
                 }
             }
             Document::Script { id, json } => {
                 if let Some((version, script)) = script(&id, &json) {
                     let build = scripts.entry(id).or_default();
+                    build.folder = folder;
                     if build.newest.as_ref().is_none_or(|(old, _)| *old <= version) {
                         build.newest = Some((version, script));
                     }
@@ -111,7 +120,7 @@ pub fn library(mut documents: Vec<Fetched>) -> Library {
                 if let Some(ids) = listed(&json, |script| {
                     script.get("scriptIdPart")?.as_str().map(str::to_owned)
                 }) {
-                    scripts.retain(|id, _| ids.contains(id));
+                    scripts.retain(|id, build| build.folder != folder || ids.contains(id));
                 }
                 saved.extend(saved_names(&json));
             }
@@ -126,6 +135,7 @@ pub fn library(mut documents: Vec<Fetched>) -> Library {
 
     let mut watchlists: Vec<(i64, TvWatchlist)> = watchlists
         .into_values()
+        .map(|(at_ms, _, list)| (at_ms, list))
         .filter(|(_, list)| list.symbols().next().is_some())
         .collect();
     watchlists.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.name.cmp(&b.1.name)));
@@ -575,7 +585,11 @@ mod tests {
 
     #[test]
     fn broken_documents_contribute_nothing() {
-        let broken = |document| Fetched { at_ms: 1, document };
+        let broken = |document| Fetched {
+            at_ms: 1,
+            folder: 0,
+            document,
+        };
         let found = library(vec![
             broken(Document::LayoutPage {
                 html: r#"initData.uid = "a"; initData.content = {nope"#.into(),
@@ -607,6 +621,7 @@ mod tests {
             ]};"#;
         let found = library(vec![Fetched {
             at_ms: 1,
+            folder: 0,
             document: Document::LayoutPage { html: html.into() },
         }]);
         let shown: Vec<bool> = found.layouts[0].charts.iter().map(|c| c.shown).collect();
@@ -654,6 +669,7 @@ mod tests {
     fn what_a_newer_listing_no_longer_names_was_deleted() {
         let lists = |at_ms, complete, json: serde_json::Value| Fetched {
             at_ms,
+            folder: 0,
             document: Document::Watchlists {
                 json: json.to_string(),
                 complete,
@@ -661,6 +677,7 @@ mod tests {
         };
         let saved = |at_ms, json: serde_json::Value| Fetched {
             at_ms,
+            folder: 0,
             document: Document::SavedScripts {
                 json: json.to_string(),
             },
@@ -691,6 +708,14 @@ mod tests {
             ),
         ]);
         assert_eq!(gone, (vec!["L9".to_owned()], 0));
+
+        // Another folder's listing, which may be another account's, deletes nothing here.
+        let mut other = lists(100, true, serde_json::json!([list(9)]));
+        other.folder = 1;
+        assert_eq!(
+            names(vec![other]),
+            (vec!["L9".to_owned(), "Coins".to_owned()], 1)
+        );
 
         // One list on its own, an error and a signed-out account's nothing delete nothing.
         let kept = names(vec![

@@ -41,6 +41,7 @@ pub fn sources(layout: &str, at_ms: i64, drawings: &[Value]) -> Fetched {
         .collect();
     Fetched {
         at_ms,
+        folder: 0,
         document: Document::Sources {
             layout: layout.into(),
             json: json!({"success": true, "payload": {"sources": map}}).to_string(),
@@ -76,6 +77,7 @@ pub fn layout_page(layout: &str, at_ms: i64) -> Fetched {
     });
     Fetched {
         at_ms,
+        folder: 0,
         document: Document::LayoutPage {
             html: format!(
                 "<script>window.initData.content = {content};\n\
@@ -88,6 +90,7 @@ pub fn layout_page(layout: &str, at_ms: i64) -> Fetched {
 fn script_version(version: &str, at_ms: i64) -> Fetched {
     Fetched {
         at_ms,
+        folder: 0,
         document: Document::Script {
             id: "USER;abc".into(),
             json: json!({
@@ -132,6 +135,7 @@ pub fn documents() -> Vec<Fetched> {
         deleted,
         Fetched {
             at_ms: 5,
+            folder: 0,
             document: Document::Watchlists {
                 complete: true,
                 json: lists.to_string(),
@@ -141,6 +145,7 @@ pub fn documents() -> Vec<Fetched> {
         script_version("2.0", 50),
         Fetched {
             at_ms: 60,
+            folder: 0,
             document: Document::SavedScripts {
                 json: json!([{"scriptIdPart": "USER;abc", "scriptName": "My bands"}]).to_string(),
             },

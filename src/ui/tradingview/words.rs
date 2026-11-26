@@ -177,6 +177,11 @@ pub fn left_out(entry: &LeftOut) -> String {
             "{count} post is placed at an estimated height",
             "{count} posts are placed at an estimated height"
         ),
+        LeftOut::PostsPlacing(count) => tr_n!(
+            *count,
+            "{count} post is still being placed",
+            "{count} posts are still being placed"
+        ),
         LeftOut::PostsUnplaced(count) => tr_n!(
             *count,
             "{count} post whose place on the chart couldn\u{2019}t be worked out",

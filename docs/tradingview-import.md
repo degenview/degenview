@@ -46,7 +46,8 @@ a sandboxed (Flatpak) DegenView gets access: through the portal. Bodies are gzip
 | `pine-facade/get/USER;…`, `…/list?filter=saved` | Script sources (newest version) and saved names |
 
 A newer `symbols_list/all/` or saved list that no longer names a list or script means it was deleted.
-An empty or failed answer says nothing (a signed-out account's).
+An empty or failed answer says nothing (a signed-out account's), and a listing speaks only for its
+own data folder. Two accounts used in one installation cannot be told apart.
 
 A layout whose page is not cached is rebuilt from its drawings: one chart per symbol, at the interval
 most of its drawings were made on.
@@ -69,17 +70,24 @@ most of its drawings were made on.
 - **Drawings**: `model::tradingview::convert::TOOLS` is the one table. TradingView stores placement
   points, which our tools are built from. A time is `time_t + offset × bar`. A drawing belongs to a
   layout and a symbol there, to a chart and a market here: it goes to the first chart showing its
-  symbol, else to the first chart under that market, and the preview says that it shows once the
-  chart is switched there.
-- **Settings** carried over beyond colour, width and text: line labels' side (TradingView's
-  `vertLabelsAlign` names the edge of the words that meets the line, so `bottom` is *above* it), line
-  measurements, anchored VWAP source, bands, colours and fill (`inputs`/`styles`; percentage bands
-  have no counterpart), table alignment, `fontWeight`.
+  symbol, else the first opening on that market, else to the first chart under its own market, and
+  the preview says that it shows once the chart is switched there.
+- **Settings** (`convert/style.rs`) carried over beyond colour, width and text: line and box labels'
+  side (TradingView's `vertLabelsAlign` names the edge of the words that meets the line, so `bottom`
+  is *above* it), line and arrow measurements, parallel channel lines (`level1`…`level7`) and label,
+  pitchfork kind (`style`), median and levels, regression trend, measurements' contents, volume
+  profile, anchored VWAP (percentage bands have no counterpart), fib levels where TradingView numbers
+  them as DegenView does, Elliott degree, table alignment, and the tools that name a setting their own
+  way (`arrowColor`, `flagColor`, `bordercolor`, `lineStyle`). The speed fan's and the Gann tools'
+  levels are DegenView's own, and the preview says so. To list a tool's settings, open the public
+  embed widget (`s.tradingview.com/widgetembed`), take webpack's `require` from
+  `webpackChunktradingview`, and call `getLineTool(name).createProperties().state()`.
 - **Posts** have no price. TradingView sets one beside its bar: `position` percent of the way from
   the high (low when negative) to the chart's edge; the stored point price means nothing.
   `model::tradingview::placement` applies that to the candles 75 bars either side, fetched from the
   matched market, and the preview says the height is estimated. Without those candles the post is
-  left out (Reload asks again).
+  left out (Reload or Search Again asks again). A provider with no time-range endpoint (CoinGecko)
+  cannot place them.
 - **Pinned** drawings (`anchored: true`) sit at a place on the screen and are left out.
 - **Script names** are made into file names every system accepts. A watchlist none of whose symbols
   has a market is not added.
@@ -133,7 +141,7 @@ document parsers and drawing conversion found no panic.
   made to draw the rest in.
 - Left out: ellipse, signpost and Three drives (stored shape unknown), arrow marks left and right,
   bars pattern, ghost feed, images, emoji, icons, stickers, and text or notes pinned to the screen.
-- Fibonacci and Gann levels other than the retracement's and extension's are DegenView's own; the
-  preview says so.
+- The settings of tools never seen in real data are read from TradingView's defaults, not from a
+  drawing the web app saved.
 - Linux: the folder (`~/.config/TradingView`) and cache format were seen on an unpacked snap run
   under FEX; the app could not connect there, so no real Linux data has been read.

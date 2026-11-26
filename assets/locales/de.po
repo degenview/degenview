@@ -20959,3 +20959,11 @@ msgstr[1] "{count} Zeichnungen liegen auf {symbol} ({exchange}): Wechsle den Cha
 
 msgid "None of its symbols has a market, so it isn’t imported"
 msgstr "Keinem der Symbole ist ein Markt zugeordnet, daher wird die Liste nicht importiert"
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} Beitrag wird noch platziert"
+msgstr[1] "{count} Beiträge werden noch platziert"
+
+msgid "Looking up markets and prices…"
+msgstr "Märkte und Preise werden gesucht …"

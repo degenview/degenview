@@ -8964,6 +8964,10 @@ msgstr ""
 msgid "Looking the order up at the broker…"
 msgstr ""
 
+#: src/ui/tradingview/preview.rs
+msgid "Looking up markets and prices…"
+msgstr ""
+
 #: src/ui/settings/storage.rs
 msgid "Lookups"
 msgstr ""
@@ -20264,6 +20268,12 @@ msgstr[1] ""
 #: src/ui/tradingview/words.rs
 msgid "{count} post is placed at an estimated height"
 msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
 msgstr[0] ""
 msgstr[1] ""
 

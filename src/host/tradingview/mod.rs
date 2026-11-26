@@ -364,6 +364,7 @@ impl TradingViewImport {
                     .spots(&review.library, &review.mappings)
                     .iter()
                     .any(|spot| !review.placements.contains_key(spot)),
+                unplaced: review.placements.values().any(Option::is_none),
                 step: review.step,
                 plan: review.plan.as_ref(),
             }),

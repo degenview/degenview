@@ -20702,3 +20702,10 @@ msgstr[0] "{count} 个绘图位于 {symbol}（{exchange}）：将图表切换到
 
 msgid "None of its symbols has a market, so it isn’t imported"
 msgstr "其中没有任何代码匹配到市场，因此不导入"
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} 条帖子仍在定位中"
+
+msgid "Looking up markets and prices…"
+msgstr "正在查找市场和价格…"

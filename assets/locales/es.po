@@ -20895,3 +20895,11 @@ msgstr[1] "{count} dibujos están en {symbol} ({exchange}): cambia el gráfico a
 
 msgid "None of its symbols has a market, so it isn’t imported"
 msgstr "Ninguno de sus símbolos tiene mercado, así que no se importa"
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} publicación todavía se está colocando"
+msgstr[1] "{count} publicaciones todavía se están colocando"
+
+msgid "Looking up markets and prices…"
+msgstr "Buscando mercados y precios…"

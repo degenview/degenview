@@ -69,7 +69,7 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
     let mut used = None;
     // One folder that cannot be read does not lose what the others hold.
     let mut failed = None;
-    for folder in folders {
+    for (number, folder) in folders.into_iter().enumerate() {
         let Some(dir) = locate::cache_in(&folder) else {
             continue;
         };
@@ -84,6 +84,7 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
             let document = document(&response.url, response.body)?;
             Some(Fetched {
                 at_ms: response.at_ms,
+                folder: number,
                 document,
             })
         }));

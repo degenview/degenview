@@ -239,12 +239,13 @@ fn symbols_section(
     );
     let caption = tr_n!(tally.total, "symbol matched", "symbols matched");
     matching::band(ui, tally, &caption);
-    let can_retry = symbols.iter().any(|(symbol, _)| {
-        matches!(
-            content.mappings.status(symbol),
-            Match::Unmatched(Unmatched::NeedsKey | Unmatched::Unreachable)
-        )
-    });
+    let can_retry = content.unplaced
+        || symbols.iter().any(|(symbol, _)| {
+            matches!(
+                content.mappings.status(symbol),
+                Match::Unmatched(Unmatched::NeedsKey | Unmatched::Unreachable)
+            )
+        });
     if can_retry {
         ui.add_space(8.0);
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {

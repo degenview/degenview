@@ -42,6 +42,8 @@ pub struct Content<'a> {
     pub mappings: &'a Mappings,
     /// Whether drawings are still being given their place.
     pub placing: bool,
+    /// Whether a drawing's place could not be looked up.
+    pub unplaced: bool,
     pub step: Step,
     /// Present on the preview.
     pub plan: Option<&'a Plan>,

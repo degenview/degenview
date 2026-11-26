@@ -232,6 +232,8 @@ pub enum LeftOut {
     Pinned(usize),
     /// Posts brought over at a height worked out from the candles around them.
     PostsEstimated(usize),
+    /// Posts whose height is still being worked out.
+    PostsPlacing(usize),
     /// Posts whose height could not be worked out.
     PostsUnplaced(usize),
     /// Anchored VWAPs whose percentage bands are off.

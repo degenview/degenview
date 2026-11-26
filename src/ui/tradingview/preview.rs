@@ -325,7 +325,9 @@ fn footer(ui: &mut Ui, content: &Content<'_>, plan: &Plan, actions: &mut Vec<Act
         ui,
         |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            let (color, text) = if anything {
+            let (color, text) = if searching {
+                (theme::REPLAY, tr!("Looking up markets and prices\u{2026}"))
+            } else if anything {
                 (theme::UP, tr!("Ready to import"))
             } else {
                 (theme::REPLAY, tr!("Nothing to import"))

@@ -96,6 +96,7 @@ fn tradingview_gallery() {
             selection: &selection,
             mappings: &mappings,
             placing: false,
+            unplaced: false,
             step,
             plan: (step == Step::Preview).then_some(&built),
         })
@@ -119,6 +120,7 @@ fn tradingview_gallery() {
             selection: &nothing,
             mappings: &mappings,
             placing: false,
+            unplaced: false,
             step: Step::Choose,
             plan: None,
         }),

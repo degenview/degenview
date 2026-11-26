@@ -309,6 +309,8 @@ fn file_drawings(
     let (mut pictures, mut positions, mut cut, mut default_levels) = (0, 0, 0, 0);
     let mut broken = found.unreadable;
     let (mut pinned, mut estimated, mut unplaced, mut percent_bands) = (0, 0, 0, 0);
+    // Whose price is still being looked up.
+    let mut placing = 0;
     // Filed on a chart that opens on another market, by market.
     let mut elsewhere: BTreeMap<String, (DataSource, String, usize)> = BTreeMap::new();
     for raw in ordered {
@@ -316,13 +318,28 @@ fn file_drawings(
             *unmapped.entry(&raw.symbol).or_default() += 1;
             continue;
         };
+        // The chart with TradingView's symbol, else one that opens on the market it became.
+        let wanted = InstrumentId::new(market.source, &market.symbol).key();
         let index = building
             .iter()
             .position(|chart| chart.symbol == raw.symbol)
+            .or_else(|| {
+                building.iter().position(|built| {
+                    InstrumentId::new(built.chart.source, &built.chart.symbol).key() == wanted
+                })
+            })
             .unwrap_or(0);
         let target = &mut building[index];
         // A drawing beside a bar is given the price worked out for it.
-        let placed = Spot::of(raw, market)
+        let spot = Spot::of(raw, market);
+        if spot
+            .as_ref()
+            .is_some_and(|spot| !placements.contains_key(spot))
+        {
+            placing += 1;
+            continue;
+        }
+        let placed = spot
             .and_then(|spot| placements.get(&spot).copied().flatten())
             .map(|price| raw.at_price(price));
         let guessed = placed.is_some();
@@ -393,6 +410,7 @@ fn file_drawings(
         (pinned, LeftOut::Pinned(pinned)),
         (estimated, LeftOut::PostsEstimated(estimated)),
         (unplaced, LeftOut::PostsUnplaced(unplaced)),
+        (placing, LeftOut::PostsPlacing(placing)),
         (percent_bands, LeftOut::PercentBands(percent_bands)),
     ] {
         if count > 0 {

@@ -248,3 +248,68 @@ fn a_scripts_name_is_one_every_system_can_keep_a_file_under() {
     let long = file_name(&"\u{1F680}".repeat(120));
     assert!(long.starts_with('\u{1F680}') && long.len() <= 200, "{long}");
 }
+
+fn with_drawing(id: &str, tool: &str, on: &str, props: serde_json::Value) -> Library {
+    let mut library = library();
+    let source = fixtures::drawing(id, tool, on, props, &[(0, 1.0), (1, 2.0)]);
+    library.layouts[0]
+        .drawings
+        .push(crate::model::tradingview::drawing::RawDrawing::read(id, &source).unwrap());
+    library
+}
+
+fn first_layout(library: &Library, mappings: &Mappings) -> PlannedLayout {
+    plan(
+        library,
+        &Selection::all(library),
+        mappings,
+        &Default::default(),
+        &Taken::default(),
+        &ChartAppearance::default(),
+    )
+    .layouts
+    .remove(0)
+}
+
+#[test]
+fn a_post_still_being_looked_up_is_not_called_unplaceable() {
+    let library = with_drawing(
+        "post",
+        "LineToolTweet",
+        "BINANCE:BTCUSDT",
+        serde_json::json!({"position": 10.0}),
+    );
+    let left_out = first_layout(&library, &mapped()).left_out;
+    assert!(left_out.contains(&LeftOut::PostsPlacing(1)), "{left_out:?}");
+    assert!(
+        !left_out.contains(&LeftOut::PostsUnplaced(1)),
+        "{left_out:?}"
+    );
+}
+
+#[test]
+fn a_drawing_goes_to_the_chart_that_shows_the_market_it_became() {
+    let library = with_drawing(
+        "eth",
+        "LineToolTrendLine",
+        "KRAKEN:ETHUSD",
+        serde_json::json!({}),
+    );
+    let mut mappings = mapped();
+    // The second chart, BITSTAMP:ETHUSD, opens on Coinbase ETH-USD; so does this symbol.
+    mappings.found(
+        symbol("KRAKEN:ETHUSD"),
+        Match::Substitute(market(DataSource::Coinbase, "ETH-USD")),
+    );
+    let layout = first_layout(&library, &mappings);
+    let key = InstrumentId::new(DataSource::Coinbase, "ETH-USD").key();
+    assert_eq!(layout.charts[1].drawings.get(&key).len(), 1);
+    assert!(
+        !layout
+            .left_out
+            .iter()
+            .any(|entry| matches!(entry, LeftOut::OtherMarket { .. })),
+        "{:?}",
+        layout.left_out
+    );
+}
