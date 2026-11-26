@@ -1,13 +1,15 @@
-//! Settings ▸ Alpaca and Settings ▸ CoinMarketCap: the API keys that unlock US stock data and
-//! raise the market-index rate limits. Pages over the shared key stores; saving, removing and the
-//! CoinMarketCap connection test happen here, since the stores are process-wide, but every rule
-//! (what may be saved, what the status says) is a plain function tested against in-memory stores.
+//! Settings ▸ Alpaca, Settings ▸ Oanda and Settings ▸ CoinMarketCap: the API keys that unlock US
+//! stock data, Oanda's forex and CFD markets, and raise the market-index rate limits. Pages over
+//! the shared key stores; saving, removing and the connection tests happen here, since the stores
+//! are process-wide, but every rule (what may be saved, what the status says) is a plain function
+//! tested against in-memory stores.
 
 use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
-    AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
+    AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, OandaCredentials,
+    OandaCredentialsStore,
 };
 use crate::service::work_queue::{self, Pending};
 use crate::ui::icons::{self, Icon};
@@ -32,6 +34,18 @@ pub struct AlpacaForm {
 }
 
 #[derive(Default)]
+pub struct OandaForm {
+    pub account_id: String,
+    pub access_token: String,
+    /// Whether the saved credentials have been read into the fields yet (reading may prompt).
+    loaded: bool,
+    pub is_saved: bool,
+    pub status: Option<StatusMessage>,
+    test: Option<Pending<Result<(), ProviderError>>>,
+    autosave: Autosave,
+}
+
+#[derive(Default)]
 pub struct CmcForm {
     pub api_key: String,
     loaded: bool,
@@ -44,6 +58,7 @@ pub struct CmcForm {
 #[derive(Default)]
 pub struct ApiKeysState {
     pub alpaca: AlpacaForm,
+    pub oanda: OandaForm,
     pub cmc: CmcForm,
 }
 
@@ -129,6 +144,93 @@ impl AlpacaForm {
             Err(error) => {
                 StatusMessage::error(tr!("Could not remove the keys: {error}", error = error.0))
             }
+        });
+    }
+}
+
+// MARK: Oanda rules
+
+impl OandaForm {
+    /// Fills the fields from the saved credentials, once.
+    pub fn load(&mut self, store: &OandaCredentialsStore) {
+        if self.loaded {
+            return;
+        }
+        self.loaded = true;
+        self.is_saved = store.is_configured();
+        if self.is_saved {
+            let saved = store.credentials();
+            self.account_id = saved.account_id;
+            self.access_token = saved.access_token;
+        }
+    }
+
+    pub fn can_save(&self) -> bool {
+        !self.account_id.trim().is_empty() && !self.access_token.trim().is_empty()
+    }
+
+    pub fn badge(&self) -> (&'static str, Tone) {
+        if self.is_saved {
+            (tr!("Credentials saved"), Tone::Good)
+        } else {
+            (tr!("Not configured"), Tone::Neutral)
+        }
+    }
+
+    pub fn save(&mut self, store: &OandaCredentialsStore) {
+        let credentials = OandaCredentials {
+            account_id: self.account_id.clone(),
+            access_token: self.access_token.clone(),
+        };
+        self.status = Some(match store.save(&credentials) {
+            Ok(()) => {
+                self.is_saved = true;
+                StatusMessage::saved_securely()
+            }
+            Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
+        });
+    }
+
+    pub fn is_testing(&self) -> bool {
+        self.test.is_some()
+    }
+
+    /// Asks Oanda for the account's instrument list with the typed credentials, on Oanda's
+    /// workers; `poll_test` picks up the answer.
+    pub fn start_test(
+        &mut self,
+        repaint: Option<&egui::Context>,
+        test: impl FnOnce(String, String) -> Result<(), ProviderError> + Send + 'static,
+    ) {
+        if self.test.is_some() {
+            return;
+        }
+        self.status = None;
+        let (account_id, access_token) = (self.account_id.clone(), self.access_token.clone());
+        self.test = Some(work_queue::start_for(
+            DataSource::Oanda,
+            repaint,
+            move || test(account_id, access_token),
+        ));
+    }
+
+    /// Takes the connection test's answer when it has arrived.
+    pub fn poll_test(&mut self) {
+        take_test_answer(&mut self.test, &mut self.status);
+    }
+
+    pub fn remove(&mut self, store: &OandaCredentialsStore) {
+        self.status = Some(match store.save(&OandaCredentials::default()) {
+            Ok(()) => {
+                self.account_id.clear();
+                self.access_token.clear();
+                self.is_saved = false;
+                StatusMessage::ok(tr!("Credentials removed. Oanda charts need them to load."))
+            }
+            Err(error) => StatusMessage::error(tr!(
+                "Could not remove the credentials: {error}",
+                error = error.0
+            )),
         });
     }
 }
@@ -354,6 +456,90 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
     });
 }
 
+pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCredentialsStore) {
+    let form = &mut state.oanda;
+    form.load(store);
+    form.poll_test();
+    if form.is_testing() {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(150));
+    }
+    let (text, tone) = form.badge();
+    kit::status_badge(ui, text, tone);
+    ui.add_space(18.0);
+    section(ui, tr!("API credentials"), None, |ui| {
+        card(ui, |ui| {
+            ui.vertical(|ui| {
+                let account_id = field(
+                    ui,
+                    "oanda-account-id",
+                    tr!("Account ID"),
+                    None,
+                    "001-…",
+                    &mut form.account_id,
+                    false,
+                );
+                form.autosave.watch(&account_id, false);
+                ui.add_space(12.0);
+                let token = field(
+                    ui,
+                    "oanda-access-token",
+                    tr!("Access Token"),
+                    Some(crate::platform::credential_stored_hint()),
+                    "",
+                    &mut form.access_token,
+                    true,
+                );
+                form.autosave.watch(&token, true);
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                if form.is_testing() {
+                    ui.add(LoadingIndicator::new().size(14.0));
+                } else if kit::sheet_button(ui, tr!("Test Connection"), false, form.can_save())
+                    .clicked()
+                {
+                    form.start_test(Some(ui.ctx()), |account_id, token| {
+                        crate::service::oanda_test_connection(&account_id, &token)
+                    });
+                }
+                if form.is_saved && destructive_button(ui, tr!("Remove Credentials")).clicked() {
+                    form.remove(store);
+                    form.autosave.cancel();
+                }
+            });
+        });
+        if let Some(status) = &form.status {
+            ui.add_space(8.0);
+            status_message(ui, &status.text(), status.is_error);
+        }
+    });
+    // Both fields are needed, so nothing is saved until both are there.
+    if form.autosave.due(ui.ctx()) && form.can_save() {
+        form.save(store);
+    }
+    section(ui, tr!("Getting your credentials"), None, |ui| {
+        card(ui, |ui| {
+            step_row(ui, 1, tr!("Create an Oanda account."));
+            step_row(
+                ui,
+                2,
+                tr!("In Account Management, open Personal Access Tokens and generate a token."),
+            );
+            step_row(
+                ui,
+                3,
+                tr!("Copy the account ID and the token here. Oanda only shows the token once."),
+            );
+            link(
+                ui,
+                tr!("Open the Oanda API documentation"),
+                "https://developer.oanda.com/",
+            );
+        });
+    });
+}
+
 pub fn coinmarketcap_body(
     ui: &mut egui::Ui,
     state: &mut ApiKeysState,
@@ -436,6 +622,10 @@ mod tests {
         CoinMarketCapKeyStore::with_backend(Box::new(MemoryBackend::default()))
     }
 
+    fn oanda_store() -> OandaCredentialsStore {
+        OandaCredentialsStore::with_backend(Box::new(MemoryBackend::default()))
+    }
+
     #[test]
     fn alpaca_saves_only_with_both_fields_and_reports_it() {
         let store = alpaca_store();
@@ -481,6 +671,43 @@ mod tests {
             form.status,
             Some(StatusMessage::ok(
                 "Keys removed. Stock charts need keys to load."
+            ))
+        );
+        assert!(!store.is_configured());
+    }
+
+    #[test]
+    fn oanda_saves_only_with_both_fields_and_loads_them_back_once() {
+        let store = oanda_store();
+        let mut form = OandaForm::default();
+        form.load(&store);
+        assert_eq!(form.badge(), ("Not configured", Tone::Neutral));
+        assert!(!form.can_save());
+        form.account_id = " 001-001 ".into();
+        assert!(!form.can_save(), "the token is missing too");
+        form.access_token = "tok".into();
+        assert!(form.can_save());
+        form.save(&store);
+        assert_eq!(form.status, Some(StatusMessage::saved_securely()));
+        assert_eq!(form.badge(), ("Credentials saved", Tone::Good));
+        assert_eq!(store.credentials().account_id, "001-001", "saved trimmed");
+
+        let mut reloaded = OandaForm::default();
+        reloaded.load(&store);
+        assert!(reloaded.is_saved);
+        assert_eq!(
+            (reloaded.account_id.as_str(), reloaded.access_token.as_str()),
+            ("001-001", "tok")
+        );
+        reloaded.account_id = "typed".into();
+        reloaded.load(&store);
+        assert_eq!(reloaded.account_id, "typed", "a second load keeps edits");
+        reloaded.remove(&store);
+        assert!(!reloaded.is_saved && reloaded.account_id.is_empty());
+        assert_eq!(
+            reloaded.status,
+            Some(StatusMessage::ok(
+                "Credentials removed. Oanda charts need them to load."
             ))
         );
         assert!(!store.is_configured());

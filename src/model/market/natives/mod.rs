@@ -171,6 +171,34 @@ const ALPACA: [Timeframe; 8] = [
     Timeframe::MONTH_1,
 ];
 
+/// Oanda's granularities: S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30, H1, H2, H4, H6, H8,
+/// H12, D, W and M. The intraday ones are cut on the UTC clock like every intraday bucket here;
+/// the day, week and month are stamped at 5pm New York (21:00 or 22:00 UTC), an offset inside
+/// their UTC bucket, which is kept as Alpaca's New York midnight offset is, so folds still land
+/// in the right bucket.
+const OANDA: [Timeframe; 20] = [
+    seconds(5),
+    seconds(10),
+    seconds(15),
+    seconds(30),
+    minutes(1),
+    minutes(2),
+    minutes(4),
+    minutes(5),
+    minutes(10),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(6),
+    hours(8),
+    hours(12),
+    Timeframe::DAY_1,
+    Timeframe::WEEK_1,
+    Timeframe::MONTH_1,
+];
+
 /// GeckoTerminal's OHLCV aggregates (it indexes DEXScreener's pools): minute 1, 5 and 15, hour 1,
 /// 4 and 12, and the day.
 const GECKOTERMINAL: [Timeframe; 7] = [
@@ -201,6 +229,7 @@ impl DataSource {
             Self::Gate => &GATE,
             Self::Mexc => &MEXC,
             Self::Alpaca => &ALPACA,
+            Self::Oanda => &OANDA,
             Self::DexScreener => &GECKOTERMINAL,
             Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => &[],
         }
@@ -242,6 +271,7 @@ impl DataSource {
             | Self::Gate
             | Self::Mexc
             | Self::Alpaca
+            | Self::Oanda
             | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
             // Their lines are drawn from points a minute or more apart.
@@ -264,7 +294,8 @@ impl DataSource {
             | Self::Bybit
             | Self::Gate
             | Self::Mexc
-            | Self::Alpaca => true,
+            | Self::Alpaca
+            | Self::Oanda => true,
             Self::DexScreener => self.plan(timeframe).is_some_and(|plan| {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;
                 page_days < GECKOTERMINAL_HISTORY_DAYS

@@ -205,6 +205,7 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
         "COINGECKO" => Some(DataSource::CoinGecko),
         "DEXSCREENER" => Some(DataSource::DexScreener),
         "ALPACA" => Some(DataSource::Alpaca),
+        "OANDA" => Some(DataSource::Oanda),
         "POLYMARKET" => Some(DataSource::Polymarket),
         "KALSHI" => Some(DataSource::Kalshi),
         "CMC" => Some(DataSource::CoinMarketCap),

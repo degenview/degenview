@@ -27,6 +27,7 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
         SettingsSection::Appearance => art.appearance(),
         SettingsSection::PineStudio => art.pine_studio(),
         SettingsSection::Alpaca => art.alpaca(),
+        SettingsSection::Oanda => art.oanda(),
         SettingsSection::Brokers => art.brokers(),
         SettingsSection::CoinMarketCap => art.coinmarketcap(),
         SettingsSection::Ai => art.ai(),
@@ -285,6 +286,23 @@ impl Art<'_> {
             coin.y - 2.8..=coin.y + 2.8,
             Stroke::new(1.5, Color32::WHITE),
         );
+    }
+
+    /// A ring with a gap at the top and a dot in the gap, like the Oanda mark.
+    fn oanda(&self) {
+        let card = self.scene();
+        let centre = pos2(card.center().x, card.bottom() - 16.0);
+        let pi = std::f32::consts::PI;
+        let gap = 0.9;
+        self.arc(
+            centre,
+            15.0,
+            -pi / 2.0 + gap / 2.0,
+            -pi / 2.0 + 2.0 * pi - gap / 2.0,
+            Stroke::new(5.0, self.tint),
+        );
+        let dot = centre + vec2(0.0, -15.0);
+        self.painter.circle_filled(dot, 3.2, self.tint);
     }
 
     /// A prompt, the change it asked for as a diff, and sparkles.

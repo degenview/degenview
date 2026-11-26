@@ -44,7 +44,7 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
             pair(Binance, "ETHBTC", "ETH", "BTC"),
         ]),
         (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
-        (Alpaca, _) => Err(ProviderError::MissingKey),
+        (Alpaca, _) => Err(ProviderError::MissingKey(Alpaca)),
         (DataSource::Polymarket, "fed") => Ok(vec![
             chance(DataSource::Polymarket, "Fed decision", "Cut", Some(0.2)),
             chance(DataSource::Polymarket, "Fed decision", "Hold", Some(0.7)),
@@ -438,6 +438,10 @@ fn tab_walks_the_market_tabs_and_each_narrows_the_list() {
     assert_eq!(rig.picker.scope, Scope::Crypto);
     assert!(!rig.names().iter().any(|name| name.contains("Grayscale")));
     rig.key(Key::Tab, Modifiers::NONE);
+    rig.settle();
+    assert_eq!(rig.picker.scope, Scope::Forex);
+    assert!(!rig.names().iter().any(|name| name.contains("Grayscale")));
+    rig.key(Key::Tab, Modifiers::NONE);
     assert_eq!(rig.picker.scope, Scope::Predictions);
     rig.key(Key::Tab, Modifiers::NONE);
     assert_eq!(rig.picker.scope, Scope::Dashboards);
@@ -558,6 +562,7 @@ fn the_watchlists_tab_is_the_last_tab_and_tab_wraps_to_all() {
     for expected in [
         Scope::Stocks,
         Scope::Crypto,
+        Scope::Forex,
         Scope::Predictions,
         Scope::Dashboards,
         Scope::Watchlists,
@@ -1265,7 +1270,7 @@ fn a_venue_nothing_serves_is_named_and_the_symbol_searched_everywhere() {
     let shown = texts(&mut rig);
     assert!(
         shown.iter().any(|text| text
-            == "KUCOIN isn't supported. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, and Alpaca."),
+            == "KUCOIN isn't supported. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca, and Oanda."),
         "{shown:?}"
     );
     assert!(
@@ -1282,7 +1287,7 @@ fn a_plain_miss_lists_the_venues_that_were_searched() {
     let shown = texts(&mut rig);
     assert!(
         shown.iter().any(|text| text
-            == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, and Alpaca."),
+            == "Nothing matches “zzz”. Searched: Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca, and Oanda."),
         "{shown:?}"
     );
     rig.picker.set_venue(Some(DataSource::Coinbase));
@@ -1364,15 +1369,21 @@ fn comparing_offers_only_the_tabs_whose_markets_can_be_drawn_over_a_chart() {
         seen.push(rig.picker.scope);
     }
     assert_eq!(
-        seen[..4],
-        [Scope::Stocks, Scope::Crypto, Scope::Watchlists, Scope::All]
+        seen[..5],
+        [
+            Scope::Stocks,
+            Scope::Crypto,
+            Scope::Forex,
+            Scope::Watchlists,
+            Scope::All
+        ]
     );
 }
 
 #[test]
 fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
-    // The six tab titles and the "All venues" pull-down, as they measure at 15 and 14 pt.
-    let labels = [16.9, 45.5, 45.6, 74.7, 80.3, 69.3];
+    // The seven tab titles and the "All venues" pull-down, as they measure at 15 and 14 pt.
+    let labels = [16.9, 45.5, 45.6, 37.1, 74.7, 80.3, 69.3];
     let filter = Some(161.7);
     let roomy = TabFit {
         padding: 28.0,
@@ -1384,7 +1395,7 @@ fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
         fit_tabs(&labels, filter, 630.0),
         TabFit {
             padding: 20.0,
-            compact: false
+            compact: true
         }
     );
     assert_eq!(
@@ -1409,9 +1420,9 @@ fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
         }
     );
     // With no pull-down the tabs keep their room longer.
-    assert_eq!(fit_tabs(&labels, None, 520.0), roomy);
-    // The smallest picker (520 wide) still holds every tab and the pull-down's icon.
-    let room = 520.0 - 2.0 * PADDING;
+    assert_eq!(fit_tabs(&labels, None, 600.0), roomy);
+    // The smallest picker still holds every tab and the pull-down's icon.
+    let room = MIN_WIDTH - 2.0 * PADDING;
     let fit = fit_tabs(&labels, filter, room);
     let used: f32 = labels.iter().map(|label| label + fit.padding).sum::<f32>()
         + FILTER_GAP

@@ -22,6 +22,7 @@ pub mod work_queue;
 
 pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
+pub use market::oanda::test_connection as oanda_test_connection;
 
 use crate::model::{DataSource, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
@@ -192,6 +193,7 @@ pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
         DataSource::CoinGecko => &market::coingecko::COINGECKO,
         DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
         DataSource::Alpaca => &market::alpaca::ALPACA,
+        DataSource::Oanda => &market::oanda::OANDA,
         DataSource::Polymarket => &market::polymarket::POLYMARKET,
         DataSource::Kalshi => &market::kalshi::KALSHI,
         DataSource::CoinMarketCap => &market::cmc::COIN_MARKET_CAP,

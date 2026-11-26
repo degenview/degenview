@@ -147,7 +147,7 @@ impl Outcome {
             .max_by_key(|failure| match failure {
                 QuoteFailure::RateLimited => 3,
                 QuoteFailure::Failed(_) | QuoteFailure::Rejected(_) => 2,
-                QuoteFailure::CredentialsMissing => 1,
+                QuoteFailure::CredentialsMissing(_) => 1,
             })
     }
 }
@@ -576,9 +576,9 @@ impl Engine {
         }
         let source_answered = !outcome.quotes.is_empty();
         match outcome.worst_failure() {
-            Some(QuoteFailure::CredentialsMissing) => {
+            Some(QuoteFailure::CredentialsMissing(source)) => {
                 state.next_allowed_ms = now + 60_000;
-                state.last_error = Some(QuoteFailure::CredentialsMissing.message());
+                state.last_error = Some(QuoteFailure::CredentialsMissing(*source).message());
             }
             Some(failure) => {
                 let (low, high) = if matches!(failure, QuoteFailure::RateLimited) {
@@ -616,7 +616,7 @@ impl Engine {
                 updates.insert(
                     key.clone(),
                     match failure {
-                        QuoteFailure::CredentialsMissing => {
+                        QuoteFailure::CredentialsMissing(_) => {
                             WatchlistQuote::unsupported(Some(failure.message()))
                         }
                         _ => self.fallback(key, Some(failure.message())),
@@ -1574,7 +1574,8 @@ mod tests {
     #[test]
     fn missing_credentials_mark_stocks_unsupported_and_retry_after_a_minute() {
         let (engine, book, provider) = setup();
-        *provider.failure.lock().unwrap() = Some(QuoteFailure::CredentialsMissing);
+        *provider.failure.lock().unwrap() =
+            Some(QuoteFailure::CredentialsMissing(DataSource::Alpaca));
         let aapl = id(DataSource::Alpaca, "AAPL");
         lock(&engine).update(1, vec![aapl.clone()], true, T0);
         round(&engine, &provider, T0);

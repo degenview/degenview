@@ -234,7 +234,8 @@ mod tests {
                 "MEXC",
                 "DEXScreener",
                 "CoinGecko",
-                "Alpaca"
+                "Alpaca",
+                "Oanda"
             ]
         );
         assert_eq!(
@@ -242,5 +243,6 @@ mod tests {
             ["Coinbase"]
         );
         assert_eq!(names(&of("btc", Scope::Stocks), Scope::Stocks), ["Alpaca"]);
+        assert_eq!(names(&of("eur", Scope::Forex), Scope::Forex), ["Oanda"]);
     }
 }

@@ -26,7 +26,7 @@ const RELATED_LIMIT: usize = 6;
 
 /// The markets the picker lists, in the order the providers are asked (and so the order exchanges
 /// that list the same market appear in).
-pub const PROVIDERS: [DataSource; 10] = [
+pub const PROVIDERS: [DataSource; 11] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -37,6 +37,7 @@ pub const PROVIDERS: [DataSource; 10] = [
     DataSource::DexScreener,
     DataSource::CoinGecko,
     DataSource::Alpaca,
+    DataSource::Oanda,
 ];
 
 /// The prediction markets the Predictions tab asks, in the order their answers are listed.
@@ -45,10 +46,12 @@ pub const PREDICTION_PROVIDERS: [DataSource; 2] = [DataSource::Polymarket, DataS
 /// What the market tabs narrow the list to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {
-    /// Crypto and stocks together.
+    /// Crypto, stocks and forex together.
     All,
     Stocks,
     Crypto,
+    /// Oanda's forex, metals and index CFDs.
+    Forex,
     /// Polymarket and Kalshi: events with their choices.
     Predictions,
     /// CoinMarketCap's market-wide indices and the portfolio views. Nothing is searched.
@@ -58,10 +61,11 @@ pub enum Scope {
 }
 
 impl Scope {
-    pub const TABS: [Self; 6] = [
+    pub const TABS: [Self; 7] = [
         Self::All,
         Self::Stocks,
         Self::Crypto,
+        Self::Forex,
         Self::Predictions,
         Self::Dashboards,
         Self::Watchlists,
@@ -72,6 +76,7 @@ impl Scope {
             Self::All => tr!("All"),
             Self::Stocks => tr!("Stocks"),
             Self::Crypto => tr!("Crypto"),
+            Self::Forex => tr!("Forex"),
             Self::Predictions => tr!("Predictions"),
             Self::Dashboards => tr!("Dashboards"),
             Self::Watchlists => tr!("Watchlists"),
@@ -82,7 +87,12 @@ impl Scope {
         match self {
             Self::All | Self::Watchlists => PROVIDERS.contains(&source),
             Self::Stocks => source == DataSource::Alpaca,
-            Self::Crypto => PROVIDERS.contains(&source) && source != DataSource::Alpaca,
+            Self::Forex => source == DataSource::Oanda,
+            Self::Crypto => {
+                PROVIDERS.contains(&source)
+                    && source != DataSource::Alpaca
+                    && source != DataSource::Oanda
+            }
             Self::Predictions => PREDICTION_PROVIDERS.contains(&source),
             Self::Dashboards => source == DataSource::CoinMarketCap,
         }
@@ -129,7 +139,7 @@ impl Scope {
             Self::Predictions => tr!("Search markets (e.g. Bitcoin, Fed, election)"),
             Self::Dashboards => tr!("Filter indices and portfolio views"),
             Self::Watchlists => tr!("Filter your watchlists"),
-            Self::All | Self::Stocks | Self::Crypto => tr!("Search symbol…"),
+            Self::All | Self::Stocks | Self::Crypto | Self::Forex => tr!("Search symbol…"),
         }
     }
 }
@@ -151,6 +161,7 @@ pub fn popular() -> Vec<SearchResult> {
 pub fn market_kind(source: DataSource) -> &'static str {
     match source {
         DataSource::Alpaca => tr!("Stock"),
+        DataSource::Oanda => tr!("Forex"),
         DataSource::Polymarket | DataSource::Kalshi => tr!("Prediction"),
         DataSource::CoinMarketCap => tr!("Index"),
         _ => tr!("Crypto"),
@@ -418,10 +429,14 @@ mod tests {
     fn the_scopes_cover_their_own_markets() {
         assert!(Scope::All.includes(DataSource::Binance));
         assert!(Scope::All.includes(DataSource::Alpaca));
+        assert!(Scope::All.includes(DataSource::Oanda));
         assert!(Scope::Crypto.includes(DataSource::DexScreener));
         assert!(!Scope::Crypto.includes(DataSource::Alpaca));
+        assert!(!Scope::Crypto.includes(DataSource::Oanda));
         assert!(Scope::Stocks.includes(DataSource::Alpaca));
         assert!(!Scope::Stocks.includes(DataSource::Coinbase));
+        assert!(Scope::Forex.includes(DataSource::Oanda));
+        assert!(!Scope::Forex.includes(DataSource::Binance));
         assert!(Scope::Predictions.includes(DataSource::Polymarket));
         assert!(Scope::Predictions.includes(DataSource::Kalshi));
         assert!(!Scope::Predictions.includes(DataSource::Binance));
@@ -431,7 +446,13 @@ mod tests {
         assert!(!Scope::Dashboards.searches());
         assert!(Scope::Predictions.searches());
         // Prediction markets and indices never leak into the tabs that list spot markets.
-        for scope in [Scope::All, Scope::Stocks, Scope::Crypto, Scope::Watchlists] {
+        for scope in [
+            Scope::All,
+            Scope::Stocks,
+            Scope::Crypto,
+            Scope::Forex,
+            Scope::Watchlists,
+        ] {
             assert!(!scope.includes(DataSource::Polymarket));
             assert!(!scope.includes(DataSource::Kalshi));
             assert!(!scope.includes(DataSource::CoinMarketCap));
@@ -442,14 +463,20 @@ mod tests {
     fn a_mode_offers_only_the_tabs_it_can_use() {
         assert_eq!(Scope::tabs(PickMode::Chart), Scope::TABS);
         assert_eq!(Scope::tabs(PickMode::Add), Scope::TABS);
-        // A market compared over a chart is a crypto or stock market.
+        // A market compared over a chart is a crypto, stock or forex market.
         assert_eq!(
             Scope::tabs(PickMode::Compare),
-            [Scope::All, Scope::Stocks, Scope::Crypto, Scope::Watchlists]
+            [
+                Scope::All,
+                Scope::Stocks,
+                Scope::Crypto,
+                Scope::Forex,
+                Scope::Watchlists
+            ]
         );
         // A watchlist's own markets are already in the sidebar being added to.
         assert!(!Scope::tabs(PickMode::Watchlist).contains(&Scope::Watchlists));
-        assert_eq!(Scope::Crypto.next(PickMode::Compare), Scope::Watchlists);
+        assert_eq!(Scope::Crypto.next(PickMode::Compare), Scope::Forex);
         assert_eq!(Scope::Dashboards.next(PickMode::Watchlist), Scope::All);
     }
 
@@ -468,7 +495,9 @@ mod tests {
     #[test]
     fn a_scope_offers_only_its_own_venues() {
         assert_eq!(Scope::Stocks.venues(), [DataSource::Alpaca]);
+        assert_eq!(Scope::Forex.venues(), [DataSource::Oanda]);
         assert!(!Scope::Crypto.venues().contains(&DataSource::Alpaca));
+        assert!(!Scope::Crypto.venues().contains(&DataSource::Oanda));
         assert_eq!(Scope::All.venues().len(), PROVIDERS.len());
         assert_eq!(Scope::Watchlists.venues().len(), PROVIDERS.len());
         assert_eq!(Scope::Predictions.venues(), PREDICTION_PROVIDERS);
@@ -499,6 +528,7 @@ mod tests {
             DataSource::Mexc,
             DataSource::DexScreener,
             DataSource::CoinGecko,
+            DataSource::Oanda,
         ] {
             search
                 .answers

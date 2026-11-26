@@ -40,6 +40,8 @@ use search::{Backend, Listing, Scope, SymbolSearch};
 use watchlists::WatchlistGroup;
 
 const SIZE: Vec2 = vec2(1000.0, 660.0);
+/// The narrowest the picker gets: still wide enough for every tab plus the pull-down's icon.
+const MIN_WIDTH: f32 = 560.0;
 const PADDING: f32 = 16.0;
 const TABS: f32 = 44.0;
 const FOOTER: f32 = 44.0;
@@ -358,7 +360,7 @@ impl SymbolPicker {
 
         let screen = ctx.content_rect().size();
         let size = vec2(
-            SIZE.x.min(screen.x - 48.0).max(520.0),
+            SIZE.x.min(screen.x - 48.0).max(MIN_WIDTH),
             SIZE.y.min(screen.y - 48.0).max(400.0),
         );
         let related = self
@@ -559,7 +561,7 @@ impl SymbolPicker {
                 });
                 return Rows::of_items(items, head.as_deref());
             }
-            Scope::All | Scope::Stocks | Scope::Crypto => {}
+            Scope::All | Scope::Stocks | Scope::Crypto | Scope::Forex => {}
         }
         if !lookup.is_empty() {
             let head = lookup.unsupported.as_ref().map(|prefix| {
@@ -1364,7 +1366,7 @@ impl SymbolPicker {
                 );
                 return;
             }
-            Scope::All | Scope::Stocks | Scope::Crypto | Scope::Predictions => {}
+            Scope::All | Scope::Stocks | Scope::Crypto | Scope::Forex | Scope::Predictions => {}
         }
         if let Some(venue) = lookup.outside(self.scope) {
             widgets::no_results(
@@ -1438,7 +1440,7 @@ impl SymbolPicker {
             .find(|(source, _)| *source == DataSource::Alpaca)
             .map(|(_, error)| error);
         match failure {
-            Some(ProviderError::MissingKey) => {
+            Some(ProviderError::MissingKey(_)) => {
                 Some(Notice::missing_key(tr!("Stocks need an Alpaca key")))
             }
             Some(error) => Some(Notice {

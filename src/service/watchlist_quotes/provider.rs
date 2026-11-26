@@ -22,7 +22,8 @@ pub struct QuoteRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QuoteFailure {
     RateLimited,
-    CredentialsMissing,
+    /// No credentials of the provider are saved.
+    CredentialsMissing(DataSource),
     /// The provider refused the request itself, as it does for an unknown symbol.
     /// Retrying a smaller batch can find which symbol it was.
     Rejected(String),
@@ -34,9 +35,15 @@ impl QuoteFailure {
     pub fn message(&self) -> String {
         match self {
             Self::RateLimited => tr!("Rate limited by the provider").to_owned(),
-            Self::CredentialsMissing => {
-                tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
-            }
+            Self::CredentialsMissing(source) => match source {
+                DataSource::Alpaca => {
+                    tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
+                }
+                DataSource::Oanda => {
+                    tr!("Add your Oanda credentials in Settings to see Oanda quotes").to_owned()
+                }
+                _ => tr!("Add this provider's API key in Settings to see its quotes").to_owned(),
+            },
             Self::Rejected(message) | Self::Failed(message) => message.clone(),
         }
     }
@@ -107,6 +114,7 @@ impl QuoteProvider for LiveProvider {
             DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
             DataSource::DexScreener => Ok(dexscreener(requests)),
             DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
+            DataSource::Oanda => oanda(requests).map(Outcome::from_quotes),
             DataSource::Polymarket | DataSource::Kalshi => Ok(prediction(source, requests)),
             DataSource::CoinMarketCap => Ok(Outcome::default()),
         }
@@ -146,8 +154,11 @@ pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
         (DataSource::Alpaca, 401 | 403) => QuoteFailure::Failed(
             tr!("Alpaca refused your API key. Check it in Settings").to_owned(),
         ),
-        // Binance answers an unknown symbol in a batch with 400; so does Alpaca.
-        (DataSource::Binance | DataSource::Alpaca, 400) => {
+        (DataSource::Oanda, 401 | 403) => QuoteFailure::Failed(
+            tr!("Oanda refused your access token. Check it in Settings").to_owned(),
+        ),
+        // Binance answers an unknown symbol in a batch with 400; so do Alpaca and Oanda.
+        (DataSource::Binance | DataSource::Alpaca | DataSource::Oanda, 400) => {
             QuoteFailure::Rejected(tr!("The provider answered HTTP 400").to_owned())
         }
         // Bybit refuses some countries, and a client that asks too often, with a 403.
@@ -345,7 +356,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
 
 fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let Some((key, secret)) = crate::service::keychain::api_keys::alpaca_credentials() else {
-        return Err(QuoteFailure::CredentialsMissing);
+        return Err(QuoteFailure::CredentialsMissing(DataSource::Alpaca));
     };
     let symbols = requests
         .iter()
@@ -359,6 +370,69 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
     )?;
     parse_alpaca_snapshots(&body, requests)
+}
+
+/// Oanda's `/accounts/{id}/pricing`: the mid of the bid and ask of every instrument asked for.
+fn oanda(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
+        return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
+    };
+    let symbols = requests
+        .iter()
+        .map(|request| request.symbol.to_uppercase())
+        .collect::<Vec<_>>()
+        .join(",");
+    let url = format!(
+        "{}/accounts/{account_id}/pricing?instruments={symbols}",
+        crate::service::market::oanda::BASE_URL
+    );
+    let auth = format!("Bearer {token}");
+    let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())])?;
+    parse_oanda_pricing(&body, requests)
+}
+
+/// `{"prices": [{"instrument": "EUR_USD", "bid": "1.08501", "ask": "1.08521", "time": ISO}]}`: the
+/// quote of a market is the mid of its bid and ask.
+pub fn parse_oanda_pricing(
+    body: &str,
+    requests: &[QuoteRequest],
+) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    let value = json(body)?;
+    let prices = value
+        .get("prices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Oanda response").to_owned()))?;
+    let mut quotes = HashMap::new();
+    for request in requests {
+        let Some(price) = prices.iter().find(|price| {
+            price
+                .get("instrument")
+                .and_then(Value::as_str)
+                .is_some_and(|name| name.eq_ignore_ascii_case(&request.symbol))
+        }) else {
+            continue;
+        };
+        let mid = match (number(price.pointer("/bid")), number(price.pointer("/ask"))) {
+            (Some(bid), Some(ask)) => (bid + ask) / 2.0,
+            _ => continue,
+        };
+        if mid > 0.0 {
+            quotes.insert(
+                request.symbol.clone(),
+                SourceQuote {
+                    price: mid,
+                    previous_day_price: None,
+                    volume_24h: None,
+                    volume_kind: None,
+                    timestamp_ms: price
+                        .pointer("/time")
+                        .and_then(Value::as_str)
+                        .and_then(crate::format::parse_iso8601),
+                },
+            );
+        }
+    }
+    Ok(quotes)
 }
 
 /// The hourly points a prediction market's quote reads: a month of them, from which the price a
@@ -1430,13 +1504,47 @@ mod tests {
     }
 
     #[test]
+    fn oanda_quotes_are_the_mid_of_the_bid_and_ask() {
+        let body = r#"{
+            "prices":[
+                {"instrument":"EUR_USD","bid":"1.08501","ask":"1.08521","status":"tradeable","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"XAU_USD","bid":"2650.10","ask":"2650.30","status":"tradeable","time":"2026-10-09T13:00:00Z"},
+                {"instrument":"HALTED","status":"halted"}
+            ]
+        }"#;
+        let quotes = parse_oanda_pricing(
+            body,
+            &[
+                request("eur_usd"),
+                request("XAU_USD"),
+                request("HALTED"),
+                request("ABSENT"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(quotes.len(), 2);
+        assert_eq!(quotes["eur_usd"].price, 1.08511);
+        assert_eq!(
+            quotes["eur_usd"].timestamp_ms,
+            Some(crate::format::days_from_civil(2026, 10, 9) * 86_400_000 + 13 * 3_600_000)
+        );
+        assert_eq!(quotes["XAU_USD"].price, 2650.2);
+        assert!(parse_oanda_pricing("not json", &[request("EUR_USD")]).is_err());
+        assert!(
+            parse_oanda_pricing(r#"{"errorMessage":"bad"}"#, &[request("EUR_USD")])
+                .expect_err("no prices")
+                == QuoteFailure::Failed("Unexpected Oanda response".to_owned())
+        );
+    }
+
+    #[test]
     fn failures_describe_themselves() {
         assert_eq!(
             QuoteFailure::RateLimited.message(),
             "Rate limited by the provider"
         );
         assert!(
-            QuoteFailure::CredentialsMissing
+            QuoteFailure::CredentialsMissing(DataSource::Alpaca)
                 .message()
                 .contains("Alpaca")
         );
@@ -1453,7 +1561,10 @@ mod tests {
     #[test]
     fn a_quote_failure_is_worded_in_the_language() {
         use crate::i18n::{Locale, with_locale};
-        for failure in [QuoteFailure::RateLimited, QuoteFailure::CredentialsMissing] {
+        for failure in [
+            QuoteFailure::RateLimited,
+            QuoteFailure::CredentialsMissing(DataSource::Oanda),
+        ] {
             let english = failure.message();
             assert_ne!(with_locale(Locale::PSEUDO, || failure.message()), english);
         }

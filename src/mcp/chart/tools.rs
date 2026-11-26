@@ -10,7 +10,7 @@ use crate::mcp::chart::drawings::{
 };
 use crate::mcp::tools::{
     Caller, DegenViewMcp, McpIndicator, McpSource, alpaca_configured, failure, invalid,
-    parse_chart_id, parse_workspace_id, unexpected,
+    oanda_configured, parse_chart_id, parse_workspace_id, unexpected,
 };
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, CandlesResult, ChartsResult, DrawingsChangeResult,
@@ -312,6 +312,11 @@ impl DegenViewMcp {
         if source == DataSource::Alpaca && !alpaca_configured().await {
             return Err(failure(&McpError::Unsupported(
                 "Alpaca needs API credentials: add them in DegenView Settings > API Keys".into(),
+            )));
+        }
+        if source == DataSource::Oanda && !oanda_configured().await {
+            return Err(failure(&McpError::Unsupported(
+                "Oanda needs API credentials: add them in DegenView Settings > Oanda".into(),
             )));
         }
         match self

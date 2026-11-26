@@ -309,6 +309,7 @@ fn only_sources_with_utc_candles_count_down() {
             DataSource::Gate,
             DataSource::Mexc,
             DataSource::DexScreener,
+            DataSource::Oanda,
         ]
     );
 }

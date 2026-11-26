@@ -13,15 +13,19 @@ pub enum ProviderError {
     /// The same for Alpaca, whose failures name it: they are usually its keys.
     #[error("{}", alpaca_error(.0))]
     Alpaca(http::Error),
+    /// The same for Oanda, whose failures name it: they are usually its credentials.
+    #[error("{}", oanda_error(.0))]
+    Oanda(http::Error),
     /// The same for CoinMarketCap, whose failures name it: they are usually its key or plan.
     #[error("{}", coinmarketcap_error(.0))]
     CoinMarketCap(http::Error),
     /// The provider answered with something other than what it documents.
     #[error("{}", data_error(.0))]
     Data(String),
-    /// No Alpaca keys are saved, so stocks can be neither searched nor charted.
-    #[error("{}", tr!("Set up your Alpaca API key before using stock charts."))]
-    MissingKey,
+    /// No credentials of the provider are saved, so its markets can be neither searched nor
+    /// charted.
+    #[error("{}", missing_key(.0))]
+    MissingKey(DataSource),
     /// The provider has nothing for this market, interval or range, or refused it in its own words.
     #[error("{0}")]
     Other(String),
@@ -41,6 +45,20 @@ fn network_error(error: &http::Error) -> String {
 
 fn alpaca_error(error: &http::Error) -> String {
     tr!("Alpaca error: {error}", error = error)
+}
+
+fn oanda_error(error: &http::Error) -> String {
+    tr!("Oanda error: {error}", error = error)
+}
+
+fn missing_key(provider: &DataSource) -> &'static str {
+    match provider {
+        DataSource::Alpaca => tr!("Set up your Alpaca API key before using stock charts."),
+        DataSource::Oanda => {
+            tr!("Set up your Oanda account in Settings before using Oanda charts.")
+        }
+        _ => tr!("Set up this provider's API key in Settings first."),
+    }
 }
 
 fn coinmarketcap_error(error: &http::Error) -> String {
@@ -87,11 +105,12 @@ impl ProviderError {
     /// failure or the provider's own refusal is not.
     pub fn is_transient(&self) -> bool {
         match self {
-            Self::Network(error) | Self::Alpaca(error) | Self::CoinMarketCap(error) => {
-                error.is_transient()
-            }
+            Self::Network(error)
+            | Self::Alpaca(error)
+            | Self::Oanda(error)
+            | Self::CoinMarketCap(error) => error.is_transient(),
             Self::Data(_)
-            | Self::MissingKey
+            | Self::MissingKey(_)
             | Self::Other(_)
             | Self::UnsupportedInterval { .. } => false,
         }
@@ -103,6 +122,7 @@ impl ProviderError {
             self,
             Self::Network(http::Error::Status(429))
                 | Self::Alpaca(http::Error::Status(429))
+                | Self::Oanda(http::Error::Status(429))
                 | Self::CoinMarketCap(http::Error::Status(429))
         )
     }
@@ -124,6 +144,10 @@ mod tests {
             "Alpaca error: HTTP 429"
         );
         assert_eq!(
+            ProviderError::Oanda(status.clone()).to_string(),
+            "Oanda error: HTTP 429"
+        );
+        assert_eq!(
             ProviderError::CoinMarketCap(status).to_string(),
             "CoinMarketCap error: HTTP 429"
         );
@@ -132,8 +156,12 @@ mod tests {
             "Data error: expected a candle array"
         );
         assert_eq!(
-            ProviderError::MissingKey.to_string(),
+            ProviderError::MissingKey(DataSource::Alpaca).to_string(),
             "Set up your Alpaca API key before using stock charts."
+        );
+        assert_eq!(
+            ProviderError::MissingKey(DataSource::Oanda).to_string(),
+            "Set up your Oanda account in Settings before using Oanda charts."
         );
         assert_eq!(
             ProviderError::other("No CoinMarketCap data").to_string(),
@@ -152,13 +180,14 @@ mod tests {
         }
         assert!(ProviderError::from(http::Error::Network("reset".to_owned())).is_transient());
         assert!(ProviderError::Alpaca(http::Error::Status(503)).is_transient());
+        assert!(ProviderError::Oanda(http::Error::Status(503)).is_transient());
         for error in [
             ProviderError::from(http::Error::Status(400)),
             ProviderError::from(http::Error::Status(404)),
             ProviderError::from(http::Error::BodyTooLarge(1)),
             ProviderError::data("bad"),
             ProviderError::other("no market"),
-            ProviderError::MissingKey,
+            ProviderError::MissingKey(DataSource::Alpaca),
             ProviderError::unsupported(DataSource::Gate, Timeframe::SECOND_1),
         ] {
             assert!(!error.is_transient(), "{error}");
@@ -172,16 +201,17 @@ mod tests {
         assert!(!unsupported.is_rate_limited());
         // A message that happens to read like one is not.
         assert!(!ProviderError::other("CoinGecko has no 1m history").is_unsupported_interval());
-        assert!(!ProviderError::MissingKey.is_unsupported_interval());
+        assert!(!ProviderError::MissingKey(DataSource::Alpaca).is_unsupported_interval());
     }
 
     #[test]
     fn only_a_429_is_a_rate_limit() {
         assert!(ProviderError::Network(http::Error::Status(429)).is_rate_limited());
         assert!(ProviderError::Alpaca(http::Error::Status(429)).is_rate_limited());
+        assert!(ProviderError::Oanda(http::Error::Status(429)).is_rate_limited());
         assert!(!ProviderError::Network(http::Error::Status(500)).is_rate_limited());
         // A message that happens to hold the digits is not a rate limit.
         assert!(!ProviderError::other("No data for 429 days").is_rate_limited());
-        assert!(!ProviderError::MissingKey.is_rate_limited());
+        assert!(!ProviderError::MissingKey(DataSource::Oanda).is_rate_limited());
     }
 }
