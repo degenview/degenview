@@ -167,6 +167,9 @@
   match to a pixel at every size; widths differ by a few percent because the font does.
   A box's text is clipped to its top and bottom but runs past its sides, as on TradingView (a
   `size.huge` `0123` is wider than a narrow box).
+  An extended box (`extend.*`) runs to the plot's edge from any distance, with no border on that
+  side (`geometry::extended_box`), and its text stays placed by `left`/`right`. TradingView does the
+  same; unexplained there: a box 1,400-1,500 bars back showed its text mid-plot, not copied.
   Unmeasured: the text a `plotshape` puts beside a non-label shape (reads the label scale) and the
   size of `plotchar` glyphs (always 12 points).
 - Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
