@@ -45,6 +45,9 @@ a sandboxed (Flatpak) DegenView gets access: through the portal. Bodies are gzip
 | `/api/v1/symbols_list/{all,custom,active}` | Watchlists (`###` entries are sections). Colour-flag lists are skipped |
 | `pine-facade/get/USER;…`, `…/list?filter=saved` | Script sources (newest version) and saved names |
 
+A newer `symbols_list/all/` or saved list that no longer names a list or script means it was deleted.
+An empty or failed answer says nothing (a signed-out account's).
+
 A layout whose page is not cached is rebuilt from its drawings: one chart per symbol, at the interval
 most of its drawings were made on.
 
@@ -66,7 +69,20 @@ most of its drawings were made on.
 - **Drawings**: `model::tradingview::convert::TOOLS` is the one table. TradingView stores placement
   points, which our tools are built from. A time is `time_t + offset × bar`. A drawing belongs to a
   layout and a symbol there, to a chart and a market here: it goes to the first chart showing its
-  symbol, else to the first chart under that market.
+  symbol, else to the first chart under that market, and the preview says that it shows once the
+  chart is switched there.
+- **Settings** carried over beyond colour, width and text: line labels' side (TradingView's
+  `vertLabelsAlign` names the edge of the words that meets the line, so `bottom` is *above* it), line
+  measurements, anchored VWAP source, bands, colours and fill (`inputs`/`styles`; percentage bands
+  have no counterpart), table alignment, `fontWeight`.
+- **Posts** have no price. TradingView sets one beside its bar: `position` percent of the way from
+  the high (low when negative) to the chart's edge; the stored point price means nothing.
+  `model::tradingview::placement` applies that to the candles 75 bars either side, fetched from the
+  matched market, and the preview says the height is estimated. Without those candles the post is
+  left out (Reload asks again).
+- **Pinned** drawings (`anchored: true`) sit at a place on the screen and are left out.
+- **Script names** are made into file names every system accepts. A watchlist none of whose symbols
+  has a market is not added.
 - **Positions** store distances in price steps. The step comes from a chart's `pricescale`; without
   one the distance follows from the drawing's own risk figures `(accountSize − amountStop) / qty`;
   otherwise the position is left out.
@@ -96,6 +112,11 @@ tool registry; note `schiff_pitchfork` is `LineToolSchiffPitchfork2` and the *mo
 and the Fibonacci level layout `[coeff, color, visible, text]`. To check a later version, search the
 cached `static.tradingview.com` scripts for `["LineTool…",async`, `"2h":["h",0,1]` and
 `@tv-basicstudies`.
+
+Verified on every drawing in real data (34, 12 tool types): each stored setting checked against
+TradingView's code, the imported layout looked at in the app, and both real scripts compile. Every
+grid code, interval string and mapped indicator opens as written. TradingView itself was not open
+beside it for a side-by-side comparison.
 
 Verified with a made-up data folder: a whole import on Linux (Fedora, aarch64, a bare X server),
 including picking the folder in the `zenity` panel `rfd` falls back to without a portal. Also: sync

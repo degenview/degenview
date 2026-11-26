@@ -33,7 +33,7 @@ fn folder_of(scratch: &Scratch, documents: Vec<parse::Fetched>) -> PathBuf {
                 ),
                 json,
             ),
-            Document::Watchlists { json } => (
+            Document::Watchlists { json, .. } => (
                 "https://www.tradingview.com/api/v1/symbols_list/all/".to_owned(),
                 json,
             ),

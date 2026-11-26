@@ -70,7 +70,10 @@ pub(super) fn counts(plan: &Plan) -> [usize; 5] {
         layouts.len(),
         layouts.iter().map(|layout| layout.charts.len()).sum(),
         plan.drawing_count(),
-        plan.watchlists.len(),
+        plan.watchlists
+            .iter()
+            .filter(|list| list.markets > 0)
+            .count(),
         plan.scripts.len(),
     ]
 }

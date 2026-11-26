@@ -108,7 +108,8 @@ pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
 enum Route {
     LayoutPage,
     Sources(String),
-    Watchlists,
+    /// Watchlists; `true` for the address that gives all of them.
+    Watchlists(bool),
     Script(String),
     SavedScripts,
 }
@@ -135,7 +136,7 @@ fn route(url: &str) -> Option<Route> {
         (_, ["api", "v1", "symbols_list", rest @ ..])
             if site && matches!(rest, ["all" | "custom" | "active"] | ["custom", _]) =>
         {
-            Some(Route::Watchlists)
+            Some(Route::Watchlists(matches!(rest, ["all"])))
         }
         (
             "charts-storage.tradingview.com",
@@ -159,7 +160,10 @@ fn document(url: &str, body: Vec<u8>) -> Option<Document> {
     Some(match route(url)? {
         Route::LayoutPage => Document::LayoutPage { html: text },
         Route::Sources(layout) => Document::Sources { layout, json: text },
-        Route::Watchlists => Document::Watchlists { json: text },
+        Route::Watchlists(complete) => Document::Watchlists {
+            json: text,
+            complete,
+        },
         Route::Script(id) => Document::Script { id, json: text },
         Route::SavedScripts => Document::SavedScripts { json: text },
     })

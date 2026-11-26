@@ -220,6 +220,8 @@ pub enum LeftOut {
     Interval(String),
     /// A watchlist's markets with no match.
     Markets(usize),
+    /// A watchlist none of whose symbols has a market.
+    NoMarket,
     /// Symbols that became a market the list already has.
     SameMarket(usize),
     /// Symbols past what a watchlist holds.
@@ -306,7 +308,8 @@ pub fn plan(
             } else {
                 name
             };
-            let mut list = Watchlist::new(unique(&mut list_names, &name));
+            // Named once it is known to be added: a list with no market takes no name.
+            let mut list = Watchlist::new(name.clone());
             let mut section = None;
             let mut markets = 0;
             let (mut missing, mut same, mut full) = (0, 0, 0);
@@ -342,6 +345,9 @@ pub fn plan(
                     },
                 }
             }
+            if markets > 0 {
+                list.name = unique(&mut list_names, &name);
+            }
             PlannedWatchlist {
                 source_id: found.id.clone(),
                 list,
@@ -350,6 +356,7 @@ pub fn plan(
                     (missing, LeftOut::Markets(missing)),
                     (same, LeftOut::SameMarket(same)),
                     (full, LeftOut::ListFull(full)),
+                    (usize::from(markets == 0), LeftOut::NoMarket),
                 ]
                 .into_iter()
                 .filter_map(|(count, entry)| (count > 0).then_some(entry))
@@ -381,21 +388,47 @@ fn unique(used: &mut HashSet<String>, name: &str) -> String {
     candidate
 }
 
-/// A script's name as a file name the library accepts.
+/// The longest script name made, in bytes: a file name holds [`script_name::MAX_NAME_BYTES`],
+/// and numbering a name that is taken needs room too.
+const MAX_SCRIPT_NAME_BYTES: usize = 200;
+
+/// A script's name as a file name every system accepts: scripts are files, and are synced, so a
+/// name one system refuses (Windows more than the others) would not reach it.
 fn file_name(name: &str) -> String {
-    let kept: String = name
-        .chars()
-        .map(|c| {
-            if c.is_control() || matches!(c, '/' | '\\' | ':') {
-                '-'
-            } else {
-                c
-            }
-        })
-        .take(80)
-        .collect();
-    let kept = kept.trim().trim_start_matches('.').trim();
-    script_name::validate(kept).unwrap_or_else(|_| "TradingView script".to_owned())
+    let mut kept = String::new();
+    for c in name.trim().chars().take(80) {
+        let c = if c.is_control()
+            || matches!(c, '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*')
+        {
+            '-'
+        } else {
+            c
+        };
+        if kept.len() + c.len_utf8() > MAX_SCRIPT_NAME_BYTES {
+            break;
+        }
+        kept.push(c);
+    }
+    let mut kept = kept
+        .trim()
+        .trim_start_matches('.')
+        .trim_end_matches('.')
+        .trim()
+        .to_owned();
+    // Names Windows keeps for devices, with or without an extension.
+    let stem = kept
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.ends_with(|c: char| c.is_ascii_digit()));
+    if device {
+        kept.insert_str(0, "Script ");
+    }
+    script_name::validate(&kept).unwrap_or_else(|_| "TradingView script".to_owned())
 }
 
 #[cfg(test)]

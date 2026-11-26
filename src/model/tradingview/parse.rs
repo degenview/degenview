@@ -17,8 +17,8 @@ pub enum Document {
     LayoutPage { html: String },
     /// Drawings of a layout, as a delta: a drawing named with `null` was deleted.
     Sources { layout: String, json: String },
-    /// One watchlist, or several.
-    Watchlists { json: String },
+    /// One watchlist, or several; `complete` when it is every list the account has.
+    Watchlists { json: String, complete: bool },
     /// One version of a script of the account's own.
     Script { id: String, json: String },
     /// The list of scripts the account has saved.
@@ -89,7 +89,11 @@ pub fn library(mut documents: Vec<Fetched>) -> Library {
                 build.seen_at_ms = at_ms;
                 build.drawings.extend(changes);
             }
-            Document::Watchlists { json } => {
+            Document::Watchlists { json, complete } => {
+                // A list missing from a newer list of all of them was deleted.
+                if complete && let Some(ids) = listed(&json, number_id) {
+                    watchlists.retain(|id, _| ids.contains(id));
+                }
                 for list in watchlists_of(&json) {
                     watchlists.insert(list.id.clone(), (at_ms, list));
                 }
@@ -102,7 +106,15 @@ pub fn library(mut documents: Vec<Fetched>) -> Library {
                     }
                 }
             }
-            Document::SavedScripts { json } => saved.extend(saved_names(&json)),
+            Document::SavedScripts { json } => {
+                // Likewise a script a newer saved list no longer names.
+                if let Some(ids) = listed(&json, |script| {
+                    script.get("scriptIdPart")?.as_str().map(str::to_owned)
+                }) {
+                    scripts.retain(|id, _| ids.contains(id));
+                }
+                saved.extend(saved_names(&json));
+            }
         }
     }
 
@@ -399,12 +411,26 @@ fn watchlists_of(json: &str) -> Vec<TvWatchlist> {
     lists.into_iter().filter_map(watchlist).collect()
 }
 
+/// The ids a whole listing names. `None` unless it is a list that names something: an error, or
+/// the empty answer of a signed-out account, says nothing about what was deleted.
+fn listed(json: &str, id: impl Fn(&Value) -> Option<String>) -> Option<BTreeSet<String>> {
+    let Ok(Value::Array(entries)) = serde_json::from_str::<Value>(json) else {
+        return None;
+    };
+    let ids: BTreeSet<String> = entries.iter().filter_map(id).collect();
+    (!ids.is_empty()).then_some(ids)
+}
+
+fn number_id(list: &Value) -> Option<String> {
+    list.get("id")?.as_i64().map(|id| id.to_string())
+}
+
 /// A list the account made. The colour-flag lists are not lists of their own.
 fn watchlist(list: &Value) -> Option<TvWatchlist> {
     if list.get("type").and_then(Value::as_str) != Some("custom") {
         return None;
     }
-    let id = list.get("id")?.as_i64()?.to_string();
+    let id = number_id(list)?;
     let name = list.get("name")?.as_str()?.trim().to_owned();
     let mut seen = BTreeSet::new();
     let rows = list
@@ -559,6 +585,7 @@ mod tests {
                 json: "[]".into(),
             }),
             broken(Document::Watchlists {
+                complete: true,
                 json: "null".into(),
             }),
             broken(Document::Script {
@@ -621,5 +648,57 @@ mod tests {
         assert_eq!(layout.charts.len(), 4);
         assert_eq!(layout.charts[0].symbol.as_str(), "X:M7USD", "two drawings");
         assert_eq!(layout.drawings.len(), 9, "none is lost");
+    }
+
+    #[test]
+    fn what_a_newer_listing_no_longer_names_was_deleted() {
+        let lists = |at_ms, complete, json: serde_json::Value| Fetched {
+            at_ms,
+            document: Document::Watchlists {
+                json: json.to_string(),
+                complete,
+            },
+        };
+        let saved = |at_ms, json: serde_json::Value| Fetched {
+            at_ms,
+            document: Document::SavedScripts {
+                json: json.to_string(),
+            },
+        };
+        let list = |id: i64| {
+            serde_json::json!({"id": id, "type": "custom", "name": format!("L{id}"),
+                               "symbols": ["BINANCE:BTCUSDT"]})
+        };
+        let names = |extra: Vec<Fetched>| {
+            let mut documents = fixtures::documents();
+            documents.extend(extra);
+            let found = library(documents);
+            (
+                found
+                    .watchlists
+                    .iter()
+                    .map(|l| l.name.clone())
+                    .collect::<Vec<_>>(),
+                found.scripts.len(),
+            )
+        };
+
+        let gone = names(vec![
+            lists(100, true, serde_json::json!([list(9)])),
+            saved(
+                100,
+                serde_json::json!([{"scriptIdPart": "USER;other", "scriptName": "o"}]),
+            ),
+        ]);
+        assert_eq!(gone, (vec!["L9".to_owned()], 0));
+
+        // One list on its own, an error and a signed-out account's nothing delete nothing.
+        let kept = names(vec![
+            lists(100, false, serde_json::json!(list(9))),
+            lists(101, true, serde_json::json!({"detail": "sign in"})),
+            lists(102, true, serde_json::json!([])),
+            saved(103, serde_json::json!([])),
+        ]);
+        assert_eq!(kept, (vec!["L9".to_owned(), "Coins".to_owned()], 1));
     }
 }

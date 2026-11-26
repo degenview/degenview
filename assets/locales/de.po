@@ -20956,3 +20956,6 @@ msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that mar
 msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
 msgstr[0] "{count} Zeichnung liegt auf {symbol} ({exchange}): Wechsle den Chart zu diesem Markt, um sie zu sehen"
 msgstr[1] "{count} Zeichnungen liegen auf {symbol} ({exchange}): Wechsle den Chart zu diesem Markt, um sie zu sehen"
+
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr "Keinem der Symbole ist ein Markt zugeordnet, daher wird die Liste nicht importiert"

@@ -10345,6 +10345,10 @@ msgstr ""
 msgid "None of its charts has a market, so it isn’t imported"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr ""
+
 #: src/ui/portfolio/cards/top_performers.rs
 msgid "None of the holdings has price history for this range."
 msgstr ""

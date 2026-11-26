@@ -219,3 +219,32 @@ fn drawings_on_a_market_no_chart_opens_on_are_said_to_be_there() {
         layout.left_out
     );
 }
+
+#[test]
+fn a_watchlist_with_no_market_is_not_imported() {
+    let plan = built(&Mappings::default());
+    let list = &plan.watchlists[0];
+    assert_eq!(list.markets, 0);
+    assert!(
+        list.left_out.contains(&LeftOut::NoMarket),
+        "{:?}",
+        list.left_out
+    );
+}
+
+#[test]
+fn a_scripts_name_is_one_every_system_can_keep_a_file_under() {
+    for (found, expected) in [
+        ("RSI | MACD?", "RSI - MACD-"),
+        ("a<b>c*d\"e", "a-b-c-d-e"),
+        ("CON", "Script CON"),
+        ("com1.v2", "Script com1.v2"),
+        ("ends with dots...", "ends with dots"),
+        ("console", "console"),
+    ] {
+        assert_eq!(file_name(found), expected, "{found}");
+    }
+    // Shortened, not given up on, when its letters are long ones.
+    let long = file_name(&"\u{1F680}".repeat(120));
+    assert!(long.starts_with('\u{1F680}') && long.len() <= 200, "{long}");
+}

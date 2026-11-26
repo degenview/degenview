@@ -20699,3 +20699,6 @@ msgstr[0] "{count} 个锚定 VWAP 失去百分比通道"
 msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it"
 msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
 msgstr[0] "{count} 个绘图位于 {symbol}（{exchange}）：将图表切换到该市场即可看到"
+
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr "其中没有任何代码匹配到市场，因此不导入"

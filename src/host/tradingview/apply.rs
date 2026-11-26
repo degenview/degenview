@@ -58,11 +58,11 @@ fn add_scripts(plan: &Plan, targets: &Targets, summary: &mut Summary) -> HashMap
 }
 
 fn add_watchlists(plan: &Plan, targets: &Targets, summary: &mut Summary) {
-    if plan.watchlists.is_empty() {
+    if plan.watchlists.iter().all(|list| list.markets == 0) {
         return;
     }
     let mut store = crate::lock::lock(&targets.watchlist);
-    for planned in &plan.watchlists {
+    for planned in plan.watchlists.iter().filter(|list| list.markets > 0) {
         match store.add_list(planned.list.clone()) {
             Ok(_) => summary.watchlists += 1,
             Err(error) => summary.failures.push(failed(&planned.list.name, error)),

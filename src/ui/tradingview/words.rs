@@ -192,6 +192,9 @@ pub fn left_out(entry: &LeftOut) -> String {
             "{count} Fibonacci or Gann drawing uses DegenView\u{2019}s levels",
             "{count} Fibonacci or Gann drawings use DegenView\u{2019}s levels"
         ),
+        LeftOut::NoMarket => {
+            tr!("None of its symbols has a market, so it isn\u{2019}t imported").to_owned()
+        }
         LeftOut::Markets(count) => tr_n!(
             *count,
             "{count} symbol without a market",

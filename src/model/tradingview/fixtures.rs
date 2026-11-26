@@ -133,6 +133,7 @@ pub fn documents() -> Vec<Fetched> {
         Fetched {
             at_ms: 5,
             document: Document::Watchlists {
+                complete: true,
                 json: lists.to_string(),
             },
         },
