@@ -2,6 +2,7 @@
 //! answered from the `ScriptStore`.
 
 use crate::model::pine::script::LocalScript;
+use crate::model::pine::script_name;
 use crate::pine_studio::library::demo::BUNDLED;
 use crate::store::scripts::{ScriptStore, with_trailing_newline};
 use crate::sync::record::project::ScriptSnapshot;
@@ -52,9 +53,14 @@ impl ScriptSink for StoreScriptSink<'_> {
 
     fn find_by_name(&mut self, name: &str) -> Result<Option<NamedScript>, String> {
         let scripts = self.store.all_scripts().map_err(|e| e.to_string())?;
+        // As the store would name it.
+        let stored = script_name::portable(name).unwrap_or_default();
         Ok(scripts
             .iter()
-            .find(|script| script.name.eq_ignore_ascii_case(name.trim()))
+            .find(|script| {
+                script.name.eq_ignore_ascii_case(name.trim())
+                    || script.name.eq_ignore_ascii_case(&stored)
+            })
             .map(|script| NamedScript {
                 id: script.id.clone(),
                 pristine_demo: is_pristine_demo(&script.name, &script.source),

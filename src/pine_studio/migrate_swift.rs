@@ -2,6 +2,7 @@
 //! files it left in its data folder.
 
 use super::{PineStudio, inputs};
+use crate::model::pine::script_name;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -26,8 +27,9 @@ impl PineStudio {
         let imported = inputs
             .into_iter()
             .filter_map(|(swift_id, values)| {
-                let name = by_swift_id.get(&swift_id)?;
-                let script = self.scripts.iter().find(|s| &s.name == name)?;
+                // The name the Swift app used, as it was saved here.
+                let name = script_name::portable(by_swift_id.get(&swift_id)?).ok()?;
+                let script = self.scripts.iter().find(|s| s.name == name)?;
                 Some((script.id.clone(), values))
             })
             .collect();

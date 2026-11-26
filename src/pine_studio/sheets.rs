@@ -72,7 +72,7 @@ impl PineStudio {
         // A failed create explains itself until the name is edited.
         let entered = name.clone();
         let problem = self.name_problem(&name, None).or_else(|| error.clone());
-        let note = self.name_note(&name);
+        let note = self.name_note(&name, None);
         let can_create = name_is_usable(&name, problem.as_deref());
         let event = name_sheet(
             ctx,
@@ -122,7 +122,7 @@ impl PineStudio {
         let problem = self
             .name_problem(&name, Some(&id))
             .or_else(|| error.clone());
-        let note = self.name_note(&name);
+        let note = self.name_note(&name, Some(&id));
         let can_rename = name_is_usable(&name, problem.as_deref());
         let subtitle = tr!(
             "Choose a new name for \u{201c}{name}\u{201d}.",

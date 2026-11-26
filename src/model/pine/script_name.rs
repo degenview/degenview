@@ -26,17 +26,9 @@ impl std::error::Error for EmptyName {}
 /// hold replaced by `-`, and shortened to [`MAX_NAME_BYTES`]. A name that is already one is
 /// unchanged.
 pub fn portable(raw: &str) -> Result<String, EmptyName> {
-    let replaced: String = raw
-        .chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*' => '-',
-            c if c.is_control() => '-',
-            c => c,
-        })
-        .collect();
-    let mut name = fitted(&replaced).to_owned();
+    let mut name = fitted(&replaced(raw), MAX_NAME_BYTES).to_owned();
     if is_device(&name) {
-        name = fitted(&format!("Script {name}")).to_owned();
+        name = fitted(&format!("Script {name}"), MAX_NAME_BYTES).to_owned();
     }
     if name.is_empty() {
         return Err(EmptyName);
@@ -44,12 +36,36 @@ pub fn portable(raw: &str) -> Result<String, EmptyName> {
     Ok(name)
 }
 
-/// `name` within the length limit and without what a file name may not start or end with: a
+/// `name` followed by `suffix` (a number, "copy", where a conflicting version came from), the name
+/// giving way when the two are too long: the suffix is what tells them apart. `name` is kept as it
+/// is where it fits, since it may be a script's own.
+pub fn with_suffix(name: &str, suffix: &str) -> String {
+    let suffix = replaced(suffix);
+    let room = MAX_NAME_BYTES.saturating_sub(suffix.len());
+    let name = match name.len() <= room {
+        true => name,
+        false => fitted(name, room),
+    };
+    format!("{name}{suffix}")
+}
+
+/// `text` with what no file name may hold replaced.
+fn replaced(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*' => '-',
+            c if c.is_control() => '-',
+            c => c,
+        })
+        .collect()
+}
+
+/// `name` within `limit` bytes and without what a file name may not start or end with: a
 /// leading period hides a file, Windows drops trailing periods and spaces.
-fn fitted(name: &str) -> &str {
+fn fitted(name: &str, limit: usize) -> &str {
     let suffix = format!(".{FILE_EXTENSION}");
     let mut name = name.trim_start_matches(|c: char| c == '.' || c.is_whitespace());
-    let mut end = name.len().min(MAX_NAME_BYTES);
+    let mut end = name.len().min(limit);
     while !name.is_char_boundary(end) {
         end -= 1;
     }
@@ -76,11 +92,16 @@ fn fitted(name: &str) -> &str {
 fn is_device(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or_default().trim_end();
     let stem = stem.to_ascii_uppercase();
-    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ["COM", "LPT"].iter().any(|port| {
-            stem.strip_prefix(port)
-                .is_some_and(|rest| rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit())
+    matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|port| {
+        stem.strip_prefix(port).is_some_and(|rest| {
+            let mut digits = rest.chars();
+            // The superscripts count too.
+            matches!(digits.next(), Some('0'..='9' | '¹' | '²' | '³')) && digits.next().is_none()
         })
+    })
 }
 
 #[cfg(test)]
@@ -108,6 +129,8 @@ mod tests {
             ("twice.pine.pine", "twice"),
             ("CON", "Script CON"),
             ("com1.v2", "Script com1.v2"),
+            ("LPT²", "Script LPT²"),
+            ("conin$", "Script conin$"),
             (".pine", "pine"),
         ] {
             assert_eq!(portable(given).as_deref(), Ok(name), "{given:?}");
@@ -136,6 +159,18 @@ mod tests {
             let once = portable(given).unwrap();
             assert!(once.len() <= MAX_NAME_BYTES, "{once}");
             assert_eq!(portable(&once).as_deref(), Ok(once.as_str()), "{given:?}");
+        }
+    }
+
+    #[test]
+    fn a_suffix_is_kept_whole_and_the_name_gives_way() {
+        assert_eq!(with_suffix("Mine", " 2"), "Mine 2");
+        assert_eq!(with_suffix("A | B", " copy"), "A | B copy", "its own name");
+        assert_eq!(with_suffix("S", " (from a/b)"), "S (from a-b)");
+        for base in ["x".repeat(200), "é".repeat(100)] {
+            let numbered = with_suffix(&base, " 12");
+            assert!(numbered.ends_with(" 12") && numbered.len() <= MAX_NAME_BYTES);
+            assert_eq!(portable(&numbered).as_deref(), Ok(numbered.as_str()));
         }
     }
 

@@ -20958,3 +20958,17 @@ msgstr "Se guardará como «{name}»."
 
 msgid "The script’s file would land outside the library."
 msgstr "El archivo del script quedaría fuera de la biblioteca."
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} publicación todavía se está colocando"
+msgstr[1] "{count} publicaciones todavía se están colocando"
+
+msgid "Looking up markets and prices…"
+msgstr "Buscando mercados y precios…"
+
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "Este Flatpak no puede buscar por sí solo los datos de TradingView."
+
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "Elige la carpeta de datos de TradingView: normalmente snap/tradingview/current/.config/TradingView o .config/TradingView en tu carpeta personal. Pulsa Ctrl+H para ver las carpetas ocultas."

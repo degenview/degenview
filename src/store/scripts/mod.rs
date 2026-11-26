@@ -211,7 +211,7 @@ impl ScriptStore {
             return Err(ScriptStoreError::NameConflict);
         }
         let base = script_name::portable(requested)?;
-        let name = disambiguated(&base, &self.taken_names(None));
+        let name = self.claim(&base, self.taken_names(None), true)?;
         let now = now_ms();
         let script = LocalScript {
             id: id.to_owned(),
@@ -246,11 +246,16 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = script_name::portable(requested)?;
-        let target = if self.is_name_taken(&clean, Some(id)) {
-            disambiguated(&clean, &self.taken_names(Some(id)))
+        // A name the script already has is left alone, whatever it holds.
+        let target = if requested == current.name {
+            current.name.clone()
         } else {
-            clean
+            let clean = script_name::portable(requested)?;
+            if self.is_name_taken(&clean, Some(id)) {
+                disambiguated(&clean, &self.taken_names(Some(id)))
+            } else {
+                clean
+            }
         };
         if target != current.name {
             self.rename(id, &target)?;
@@ -275,7 +280,7 @@ impl ScriptStore {
     pub fn duplicate(&mut self, id: &str) -> Result<LocalScript> {
         let original = self.script(id)?.ok_or(ScriptStoreError::MissingScript)?;
         self.create(
-            &format!("{} copy", original.name),
+            &script_name::with_suffix(&original.name, " copy"),
             original.script_type,
             Some(&original.source),
             true,
@@ -410,6 +415,9 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
+        if new_name == script.name {
+            return Ok(script);
+        }
         let clean = script_name::portable(new_name)?;
         if clean == script.name {
             return Ok(script);
@@ -826,11 +834,12 @@ fn disambiguated(base: &str, taken: &HashSet<String>) -> String {
     if !taken.contains(&base.to_lowercase()) {
         return base.to_owned();
     }
+    let numbered = |n: u32| script_name::with_suffix(base, &format!(" {n}"));
     let mut n = 2;
-    while taken.contains(&format!("{base} {n}").to_lowercase()) {
+    while taken.contains(&numbered(n).to_lowercase()) {
         n += 1;
     }
-    format!("{base} {n}")
+    numbered(n)
 }
 
 /// A stable SHA-256 hash of a script's source, shared by compile-cache and alert identity.
