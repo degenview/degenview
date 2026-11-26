@@ -13867,22 +13867,6 @@ msgstr "Скрипт удалён"
 msgid "Script name"
 msgstr "Имя скрипта"
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "Имя скрипта не может содержать управляющие символы."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "Имя скрипта не может содержать «{character}»."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "Имя скрипта не может начинаться с точки."
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "Имя скрипта должно быть не длиннее {limit} байт."
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr "Скрипт не загружен"
@@ -22746,3 +22730,9 @@ msgstr "{name} добавляется с настройками по умолч�
 #: src/host/tradingview/apply.rs
 msgid "{name}: {error}"
 msgstr "{name}: {error}"
+
+msgid "Will be saved as “{name}”."
+msgstr "Будет сохранён как «{name}»."
+
+msgid "The script’s file would land outside the library."
+msgstr "Файл скрипта оказался бы вне библиотеки."
