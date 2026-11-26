@@ -170,7 +170,7 @@
   A line's `extend.right` runs past its second point and `extend.left` past its first, so a line
   written right to left swaps sides and an upright one extends up or down. A linefill is the band
   between the two lines run on only to the sides both extend (`LineExtend::shared`), its extended
-  ends one plot width (height for upright lines, unmeasured) past the edge, which shows when the
+  ends one plot width (height for upright lines) past the edge, which shows when the
   lines run opposite ways. It is drawn as two triangles that meet where its outline crosses itself
   (`geometry::band_triangles`). Boxes differ:
   their sides are by position, whichever of `left`/`right` is larger. All measured on TradingView.

@@ -318,10 +318,11 @@ fn side(a: Pos2, b: Pos2, p: Pos2) -> f32 {
     along.x * to.y - along.y * to.x
 }
 
-/// Where segments `ab` and `cd` cross each other between their ends.
+/// Where segments `ab` and `cd` meet, an end resting on the other segment included. Segments
+/// along one straight line have no single such point.
 fn crossing(a: Pos2, b: Pos2, c: Pos2, d: Pos2) -> Option<Pos2> {
     let (at_a, at_b) = (side(c, d, a), side(c, d, b));
-    (at_a * at_b < 0.0 && side(a, b, c) * side(a, b, d) < 0.0)
+    (at_a != at_b && at_a * at_b <= 0.0 && side(a, b, c) * side(a, b, d) <= 0.0)
         .then(|| a + (b - a) * (at_a / (at_a - at_b)))
 }
 
@@ -1109,6 +1110,12 @@ mod tests {
         assert_eq!(
             band_triangles([a0, a1, b1, b0]),
             [[a0, a1, middle], [middle, b1, b0]]
+        );
+        // An end resting on the other join (`a0` on `a1`..`b1`): split there, not across it.
+        let [a0, a1, b1, b0] = [at(5.0, 5.0), at(0.0, 10.0), at(10.0, 0.0), at(10.0, 10.0)];
+        assert_eq!(
+            band_triangles([a0, a1, b1, b0]),
+            [[a0, a1, a0], [a0, b1, b0]]
         );
         // Dented at `b0`: split from there, so nothing is painted outside the outline.
         let [a0, a1, b1, b0] = [at(0.0, 0.0), at(10.0, 5.0), at(0.0, 10.0), at(4.0, 5.0)];
