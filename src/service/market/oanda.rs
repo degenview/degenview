@@ -17,8 +17,6 @@ use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 /// Oanda's live trading API, the one the standalone `oandaohlc` downloader uses.
@@ -121,8 +119,9 @@ impl MarketSource for Oanda {
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
         let (account_id, token) = credentials()?;
-        let instruments =
-            catalog(account_id.trim()).get(|| download_instruments(&account_id, &token))?;
+        let instruments = CATALOG.get_for(account_id.trim(), || {
+            download_instruments(&account_id, &token)
+        })?;
         // `EUR/USD` and `eur_usd` find `EUR_USD`: Oanda writes an underscore.
         let needle = normalize(query);
         if needle.is_empty() {
@@ -225,33 +224,11 @@ struct Instrument {
     name: String,
 }
 
-/// One catalog per account, each downloaded at most once a day. The instrument list belongs to
-/// the account's credentials, so after an account switch the new account must not be searched
-/// through the old account's list.
-static CATALOGS: LazyLock<Mutex<HashMap<String, &'static Catalog<Instrument>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// The instrument list belongs to the account whose credentials downloaded it.
+static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda");
 
-/// The account's catalog, created on first use. Accounts are a handful, so the entries (and the
-/// leaked namespaces they name) live for the app's lifetime and are never trimmed.
-fn catalog(account_id: &str) -> &'static Catalog<Instrument> {
-    let mut catalogs = CATALOGS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    catalogs.entry(account_id.to_owned()).or_insert_with(|| {
-        let namespace: &'static str =
-            Box::leak(format!("catalog_oanda_{account_id}").into_boxed_str());
-        Box::leak(Box::new(Catalog::new(namespace)))
-    })
-}
-
-/// Forgets every account's list held in memory (after the disk cache was cleared).
 pub(in crate::service) fn clear_catalog() {
-    let catalogs = CATALOGS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    for catalog in catalogs.values() {
-        catalog.clear_memory();
-    }
+    CATALOG.clear_memory();
 }
 
 fn download_instruments(account_id: &str, token: &str) -> Result<Vec<Instrument>, ProviderError> {
@@ -307,7 +284,6 @@ fn matching_instruments(instruments: &[Instrument], needle: &str) -> Vec<SearchR
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const DAY_MS: i64 = 86_400_000;
 
@@ -516,85 +492,5 @@ mod tests {
         assert_eq!(instruments[0].name, "EUR_USD");
         assert!(parse_instruments("not json").is_err());
         assert!(parse_instruments("{}").expect("no instruments").is_empty());
-    }
-
-    #[test]
-    fn each_account_searches_its_own_list_and_clearing_forgets_them_all() {
-        use crate::service::cache::disk::{DiskCache, testing::TempCache};
-        use crate::service::cache::lookup::LookupCache;
-
-        let temp = TempCache::new();
-        let disk: &'static DiskCache = Box::leak(Box::new(DiskCache::at(temp.path())));
-        let now = || 1_700_000_000_000;
-        let cache = LookupCache::for_tests(disk, Box::new(now));
-        fn names(items: &std::sync::Arc<Vec<Instrument>>) -> Vec<&str> {
-            items.iter().map(|i| i.name.as_str()).collect()
-        }
-
-        let first = catalog("account-7-a");
-        let second = catalog("account-7-b");
-        assert!(
-            !std::ptr::eq(first, second),
-            "different accounts, different catalogs"
-        );
-        assert!(
-            std::ptr::eq(first, catalog("account-7-a")),
-            "the same account keeps its catalog"
-        );
-
-        let a = first
-            .get_from(&cache, || {
-                Ok(vec![Instrument {
-                    name: "EUR_USD".into(),
-                }])
-            })
-            .expect("account A's list");
-        let b = second
-            .get_from(&cache, || {
-                Ok(vec![Instrument {
-                    name: "USD_JPY".into(),
-                }])
-            })
-            .expect("account B's list");
-        assert_eq!(names(&a), ["EUR_USD"]);
-        assert_eq!(names(&b), ["USD_JPY"]);
-        cache.flush("catalog_oanda_account-7-a");
-        cache.flush("catalog_oanda_account-7-b");
-
-        // A relaunch (empty memory, a fresh cache object) reads each account's own persisted
-        // list, not the other account's.
-        let relaunched = LookupCache::for_tests(disk, Box::new(now));
-        first.clear_memory();
-        second.clear_memory();
-        let a = first
-            .get_from(&relaunched, || {
-                Err(ProviderError::other("must not be asked"))
-            })
-            .expect("account A's persisted list");
-        let b = second
-            .get_from(&relaunched, || {
-                Err(ProviderError::other("must not be asked"))
-            })
-            .expect("account B's persisted list");
-        assert_eq!(names(&a), ["EUR_USD"]);
-        assert_eq!(names(&b), ["USD_JPY"]);
-
-        // Clearing the catalogs (the disk cache was cleared) forgets them all: with an empty
-        // disk too, both accounts download again.
-        let empty = TempCache::new();
-        let empty_disk: &'static DiskCache = Box::leak(Box::new(DiskCache::at(empty.path())));
-        let empty_cache = LookupCache::for_tests(empty_disk, Box::new(|| 1_700_000_000_000));
-        clear_catalog();
-        let downloads = AtomicUsize::new(0);
-        let again = first
-            .get_from(&empty_cache, || {
-                downloads.fetch_add(1, Ordering::SeqCst);
-                Ok(vec![Instrument {
-                    name: "GBP_USD".into(),
-                }])
-            })
-            .expect("account A downloads again");
-        assert_eq!(names(&again), ["GBP_USD"]);
-        assert_eq!(downloads.load(Ordering::SeqCst), 1);
     }
 }
