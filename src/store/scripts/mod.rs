@@ -10,11 +10,12 @@
 pub mod registry;
 
 use crate::clock::now_ms;
+use crate::i18n::tr;
 use crate::model::pine::script::{
     CompileStatus, LocalScript, ScriptCompileRecord, ScriptDraft, ScriptId, ScriptType,
     ScriptVersion,
 };
-use crate::model::pine::script_name::{self, FILE_EXTENSION, ScriptNameError};
+use crate::model::pine::script_name::{self, EmptyName, FILE_EXTENSION};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use registry::LibraryRegistry;
@@ -42,7 +43,9 @@ pub enum ScriptStoreError {
     #[error("The file changed outside the app.")]
     ChangedOnDisk,
     #[error(transparent)]
-    Name(#[from] ScriptNameError),
+    Name(#[from] EmptyName),
+    #[error("{}", tr!("The script’s file would land outside the library."))]
+    OutsideLibrary,
     #[error("{0}")]
     Io(String),
 }
@@ -165,7 +168,7 @@ impl ScriptStore {
         disambiguating: bool,
     ) -> Result<LocalScript> {
         self.load_if_needed()?;
-        let base = script_name::validate(requested)?;
+        let base = script_name::portable(requested)?;
         if !disambiguating && self.is_name_taken(&base, None) {
             return Err(ScriptStoreError::NameConflict);
         }
@@ -207,8 +210,8 @@ impl ScriptStore {
         if self.metadata.contains_key(id) {
             return Err(ScriptStoreError::NameConflict);
         }
-        let base = script_name::validate(requested)?;
-        let name = self.claim(&base, self.taken_names(None), true)?;
+        let base = script_name::portable(requested)?;
+        let name = disambiguated(&base, &self.taken_names(None));
         let now = now_ms();
         let script = LocalScript {
             id: id.to_owned(),
@@ -243,7 +246,7 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = script_name::validate(requested)?;
+        let clean = script_name::portable(requested)?;
         let target = if self.is_name_taken(&clean, Some(id)) {
             disambiguated(&clean, &self.taken_names(Some(id)))
         } else {
@@ -407,7 +410,7 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = script_name::validate(new_name)?;
+        let clean = script_name::portable(new_name)?;
         if clean == script.name {
             return Ok(script);
         }
@@ -643,12 +646,12 @@ impl ScriptStore {
         self.scripts_dir.join(format!("{name}.{FILE_EXTENSION}"))
     }
 
-    /// Defense in depth behind the name validator: a file must land directly in the library.
+    /// Defense in depth behind [`script_name::portable`]: a file must land directly in the library.
     fn assert_inside_library(&self, path: &Path) -> Result<()> {
         if path.parent() == Some(self.scripts_dir.as_path()) {
             Ok(())
         } else {
-            Err(ScriptNameError::ForbiddenCharacter('/').into())
+            Err(ScriptStoreError::OutsideLibrary)
         }
     }
 

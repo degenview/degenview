@@ -372,10 +372,16 @@ impl PineStudio {
         }));
     }
 
+    /// What `raw` will be saved as, when that is not what was typed.
+    pub(crate) fn name_note(&self, raw: &str) -> Option<String> {
+        let name = crate::model::pine::script_name::portable(raw).ok()?;
+        (name != raw.trim()).then(|| tr!("Will be saved as “{name}”.", name = name))
+    }
+
     /// What is wrong with `raw` as a script's name, if anything. `renaming` is the script being
     /// renamed: its own name is not taken.
     pub(crate) fn name_problem(&self, raw: &str, renaming: Option<&str>) -> Option<String> {
-        match crate::model::pine::script_name::validate(raw) {
+        match crate::model::pine::script_name::portable(raw) {
             Err(error) => (!raw.trim().is_empty()).then(|| error.to_string()),
             Ok(clean) => self
                 .scripts

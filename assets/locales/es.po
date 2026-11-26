@@ -12941,22 +12941,6 @@ msgstr "Script eliminado"
 msgid "Script name"
 msgstr "Nombre del script"
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "Los nombres de script no pueden contener caracteres de control."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "Los nombres de script no pueden contener “{character}”."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "Los nombres de script no pueden empezar por un punto."
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "Los nombres de script deben tener {limit} bytes o menos."
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr "Script sin cargar"
@@ -20969,16 +20953,8 @@ msgstr[1] "{count} dibujos están en {symbol} ({exchange}): cambia el gráfico a
 msgid "None of its symbols has a market, so it isn’t imported"
 msgstr "Ninguno de sus símbolos tiene mercado, así que no se importa"
 
-msgid "{count} post is still being placed"
-msgid_plural "{count} posts are still being placed"
-msgstr[0] "{count} publicación todavía se está colocando"
-msgstr[1] "{count} publicaciones todavía se están colocando"
+msgid "Will be saved as “{name}”."
+msgstr "Se guardará como «{name}»."
 
-msgid "Looking up markets and prices…"
-msgstr "Buscando mercados y precios…"
-
-msgid "This Flatpak can’t look for TradingView’s data by itself."
-msgstr "Este Flatpak no puede buscar por sí solo los datos de TradingView."
-
-msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
-msgstr "Elige la carpeta de datos de TradingView: normalmente snap/tradingview/current/.config/TradingView o .config/TradingView en tu carpeta personal. Pulsa Ctrl+H para ver las carpetas ocultas."
+msgid "The script’s file would land outside the library."
+msgstr "El archivo del script quedaría fuera de la biblioteca."

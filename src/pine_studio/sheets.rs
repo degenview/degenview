@@ -72,6 +72,7 @@ impl PineStudio {
         // A failed create explains itself until the name is edited.
         let entered = name.clone();
         let problem = self.name_problem(&name, None).or_else(|| error.clone());
+        let note = self.name_note(&name);
         let can_create = name_is_usable(&name, problem.as_deref());
         let event = name_sheet(
             ctx,
@@ -84,7 +85,7 @@ impl PineStudio {
             },
             &mut name,
             &mut needs_focus,
-            problem.as_deref(),
+            NameLine::of(problem.as_deref(), note.as_deref()),
             can_create,
         );
         match event {
@@ -121,6 +122,7 @@ impl PineStudio {
         let problem = self
             .name_problem(&name, Some(&id))
             .or_else(|| error.clone());
+        let note = self.name_note(&name);
         let can_rename = name_is_usable(&name, problem.as_deref());
         let subtitle = tr!(
             "Choose a new name for \u{201c}{name}\u{201d}.",
@@ -137,7 +139,7 @@ impl PineStudio {
             },
             &mut name,
             &mut needs_focus,
-            problem.as_deref(),
+            NameLine::of(problem.as_deref(), note.as_deref()),
             can_rename,
         );
         match event {
@@ -241,6 +243,25 @@ struct NameSheet<'a> {
     action: &'a str,
 }
 
+/// What the line under the name field says.
+enum NameLine<'a> {
+    Empty,
+    /// What is wrong with the name.
+    Problem(&'a str),
+    /// What the name will be saved as, when not as typed.
+    Note(&'a str),
+}
+
+impl<'a> NameLine<'a> {
+    fn of(problem: Option<&'a str>, note: Option<&'a str>) -> Self {
+        match (problem, note) {
+            (Some(problem), _) => Self::Problem(problem),
+            (None, Some(note)) => Self::Note(note),
+            (None, None) => Self::Empty,
+        }
+    }
+}
+
 enum NameEvent {
     Submit,
     Cancel,
@@ -251,17 +272,17 @@ enum NameEvent {
 fn name_is_usable(name: &str, problem: Option<&str>) -> bool {
     !name.trim().is_empty()
         && problem.is_none()
-        && crate::model::pine::script_name::validate(name).is_ok()
+        && crate::model::pine::script_name::portable(name).is_ok()
 }
 
-/// The name field sheet New Script and Rename share: the field, a line for what is wrong with the
-/// name, the action and Cancel. Enter takes the name when `can_submit`, Escape cancels.
+/// The name field sheet New Script and Rename share: the field, a line about the name, the action
+/// and Cancel. Enter takes the name when `can_submit`, Escape cancels.
 fn name_sheet(
     ctx: &egui::Context,
     spec: &NameSheet,
     name: &mut String,
     needs_focus: &mut bool,
-    problem: Option<&str>,
+    line: NameLine<'_>,
     can_submit: bool,
 ) -> NameEvent {
     let mut cancel = false;
@@ -297,20 +318,27 @@ fn name_sheet(
                         }
                     });
                 });
-                // The problem line keeps its height with or without a message, so the buttons
+                // The line keeps its height with or without a message, so the buttons
                 // don't jump as the name becomes valid.
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.set_min_height(16.0);
-                    if let Some(problem) = problem {
-                        icons::inline(ui, Icon::TriangleFill, 11.0, kit::ORANGE);
-                        ui.label(kit::text(
-                            problem,
-                            kit::size::SUBHEADLINE,
-                            kit::REGULAR,
-                            theme::text_secondary(),
-                        ));
-                    }
+                    let text = match line {
+                        NameLine::Empty => return,
+                        NameLine::Problem(problem) => {
+                            icons::inline(ui, Icon::TriangleFill, 11.0, kit::ORANGE);
+                            problem
+                        }
+                        NameLine::Note(note) => note,
+                    };
+                    let label = egui::Label::new(kit::text(
+                        text,
+                        kit::size::SUBHEADLINE,
+                        kit::REGULAR,
+                        theme::text_secondary(),
+                    ));
+                    // A name can be longer than the sheet.
+                    ui.add(label.truncate());
                 });
                 ui.add_space(14.0);
             });

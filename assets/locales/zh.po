@@ -12894,22 +12894,6 @@ msgstr "脚本已删除"
 msgid "Script name"
 msgstr "脚本名称"
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "脚本名称不能包含控制字符。"
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "脚本名称不能包含“{character}”。"
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "脚本名称不能以句点开头。"
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "脚本名称不能超过 {limit} 字节。"
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr "脚本未加载"
@@ -20776,15 +20760,8 @@ msgstr[0] "{count} 个绘图位于 {symbol}（{exchange}）：将图表切换到
 msgid "None of its symbols has a market, so it isn’t imported"
 msgstr "其中没有任何代码匹配到市场，因此不导入"
 
-msgid "{count} post is still being placed"
-msgid_plural "{count} posts are still being placed"
-msgstr[0] "{count} 条帖子仍在定位中"
+msgid "Will be saved as “{name}”."
+msgstr "将保存为“{name}”。"
 
-msgid "Looking up markets and prices…"
-msgstr "正在查找市场和价格…"
-
-msgid "This Flatpak can’t look for TradingView’s data by itself."
-msgstr "此 Flatpak 无法自行查找 TradingView 的数据。"
-
-msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
-msgstr "请选择 TradingView 的数据文件夹：通常是主文件夹中的 snap/tradingview/current/.config/TradingView 或 .config/TradingView。按 Ctrl+H 可显示隐藏文件夹。"
+msgid "The script’s file would land outside the library."
+msgstr "脚本文件将位于脚本库之外。"

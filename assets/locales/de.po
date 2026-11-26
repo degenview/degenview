@@ -12941,22 +12941,6 @@ msgstr "Skript gelöscht"
 msgid "Script name"
 msgstr "Skriptname"
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "Skriptnamen dürfen keine Steuerzeichen enthalten."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "Skriptnamen dürfen „{character}“ nicht enthalten."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "Skriptnamen dürfen nicht mit einem Punkt beginnen."
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "Skriptnamen dürfen höchstens {limit} Byte lang sein."
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr "Skript nicht geladen"
@@ -21031,16 +21015,8 @@ msgstr[1] "{count} Zeichnungen liegen auf {symbol} ({exchange}): Wechsle den Cha
 msgid "None of its symbols has a market, so it isn’t imported"
 msgstr "Keinem der Symbole ist ein Markt zugeordnet, daher wird die Liste nicht importiert"
 
-msgid "{count} post is still being placed"
-msgid_plural "{count} posts are still being placed"
-msgstr[0] "{count} Beitrag wird noch platziert"
-msgstr[1] "{count} Beiträge werden noch platziert"
+msgid "Will be saved as “{name}”."
+msgstr "Wird als „{name}“ gespeichert."
 
-msgid "Looking up markets and prices…"
-msgstr "Märkte und Preise werden gesucht …"
-
-msgid "This Flatpak can’t look for TradingView’s data by itself."
-msgstr "Dieses Flatpak kann die Daten von TradingView nicht selbst suchen."
-
-msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
-msgstr "Wähle den Datenordner von TradingView: meist snap/tradingview/current/.config/TradingView oder .config/TradingView in deinem persönlichen Ordner. Drücke Strg+H, um versteckte Ordner zu sehen."
+msgid "The script’s file would land outside the library."
+msgstr "Die Skriptdatei läge außerhalb der Bibliothek."

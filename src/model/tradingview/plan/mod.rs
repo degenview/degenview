@@ -305,7 +305,11 @@ pub fn plan(
         .filter(|script| selection.scripts.contains(&script.id))
         .map(|script| PlannedScript {
             source_id: script.id.clone(),
-            name: unique(&mut script_names, &file_name(&script.name)),
+            name: unique(
+                &mut script_names,
+                &script_name::portable(&script.name)
+                    .unwrap_or_else(|_| "TradingView script".to_owned()),
+            ),
             source: script.source.clone(),
         })
         .collect();
@@ -430,49 +434,6 @@ fn unique(used: &mut HashSet<String>, name: &str) -> String {
         number += 1;
     }
     candidate
-}
-
-/// The longest script name made, in bytes: a file name holds [`script_name::MAX_NAME_BYTES`],
-/// and numbering a name that is taken needs room too.
-const MAX_SCRIPT_NAME_BYTES: usize = 200;
-
-/// A script's name as a file name every system accepts: scripts are files, and are synced, so a
-/// name one system refuses (Windows more than the others) would not reach it.
-fn file_name(name: &str) -> String {
-    let mut kept = String::new();
-    for c in name.trim().chars().take(80) {
-        let c = if c.is_control()
-            || matches!(c, '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*')
-        {
-            '-'
-        } else {
-            c
-        };
-        if kept.len() + c.len_utf8() > MAX_SCRIPT_NAME_BYTES {
-            break;
-        }
-        kept.push(c);
-    }
-    let mut kept = kept
-        .trim()
-        .trim_start_matches('.')
-        .trim_end_matches('.')
-        .trim()
-        .to_owned();
-    // Names Windows keeps for devices, with or without an extension.
-    let stem = kept
-        .split('.')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_uppercase();
-    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.len() == 4
-            && (stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.ends_with(|c: char| c.is_ascii_digit()));
-    if device {
-        kept.insert_str(0, "Script ");
-    }
-    script_name::validate(&kept).unwrap_or_else(|_| "TradingView script".to_owned())
 }
 
 #[cfg(test)]

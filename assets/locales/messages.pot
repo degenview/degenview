@@ -13925,22 +13925,6 @@ msgstr ""
 msgid "Script name"
 msgstr ""
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr ""
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr ""
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr ""
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr ""
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr ""
@@ -16699,6 +16683,10 @@ msgstr ""
 msgid "The scripts folder isn't available."
 msgstr ""
 
+#: src/store/scripts/mod.rs
+msgid "The script’s file would land outside the library."
+msgstr ""
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "The search stopped unexpectedly."
 msgstr ""
@@ -18909,6 +18897,10 @@ msgid ""
 "Wilder's momentum oscillator: the average gain over the average loss across "
 "the last N bars, scaled from 0 to 100. Above the upper level is conventionally"
 " overbought and below the lower level oversold."
+msgstr ""
+
+#: src/pine_studio/commands.rs
+msgid "Will be saved as “{name}”."
 msgstr ""
 
 #: src/model/pine/bundled/mod.rs
