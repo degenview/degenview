@@ -135,6 +135,19 @@ impl LineExtend {
     pub fn extends_right(self) -> bool {
         matches!(self, Self::Right | Self::Both)
     }
+
+    /// The sides both extend: how far the fill between two lines runs on.
+    pub fn shared(self, other: Self) -> Self {
+        match (
+            self.extends_left() && other.extends_left(),
+            self.extends_right() && other.extends_right(),
+        ) {
+            (true, true) => Self::Both,
+            (true, false) => Self::Left,
+            (false, true) => Self::Right,
+            (false, false) => Self::None,
+        }
+    }
 }
 
 /// `line.style_*` / `label.style_*` drawing style.
@@ -778,6 +791,16 @@ mod tests {
         assert!(!MarkerLocation::AboveBar.is_below());
         assert!(LineExtend::Both.extends_left() && LineExtend::Both.extends_right());
         assert!(!LineExtend::Right.extends_left());
+        use LineExtend::{Both, Left, None, Right};
+        for (a, b, shared) in [
+            (Both, Both, Both),
+            (Both, Right, Right),
+            (Left, Both, Left),
+            (Left, Right, None),
+            (Right, None, None),
+        ] {
+            assert_eq!((a.shared(b), b.shared(a)), (shared, shared), "{a:?} {b:?}");
+        }
     }
 
     #[test]

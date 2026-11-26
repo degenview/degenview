@@ -167,9 +167,17 @@
   match to a pixel at every size; widths differ by a few percent because the font does.
   A box's text is clipped to its top and bottom but runs past its sides, as on TradingView (a
   `size.huge` `0123` is wider than a narrow box).
+  A line's `extend.right` runs past its second point and `extend.left` past its first, so a line
+  written right to left swaps sides and an upright one extends up or down. A linefill is the band
+  between the two lines run on only to the sides both extend (`LineExtend::shared`). Its extended
+  ends lie where each line first leaves the plot enlarged by its own width and height on every
+  side, which shows when the lines run opposite ways. It is drawn as two triangles that meet where
+  its outline crosses itself (`geometry::band_triangles`). Boxes differ: their sides are by
+  position, whichever of `left`/`right` is larger. All measured on TradingView.
   An extended box (`extend.*`) runs to the plot's edge from any distance, with no border on that
   side (`geometry::extended_box`), and its text stays placed by `left`/`right`. TradingView does the
-  same; unexplained there: a box 1,400-1,500 bars back showed its text mid-plot, not copied.
+  same once it has loaded those bars; before that it places the text of a box on older bars within
+  the view, which is not copied (probe by scrolling back first).
   Unmeasured: the text a `plotshape` puts beside a non-label shape (reads the label scale) and the
   size of `plotchar` glyphs (always 12 points).
 - Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
