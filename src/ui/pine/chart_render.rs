@@ -244,13 +244,13 @@ impl PineLayer<'_> {
         Pos2::new(self.x_bar(bar), self.y(price))
     }
 
-    /// A line's two points on screen, run on to the plot's edges as `extend` says.
-    fn line_ends(&self, line: &LineOutput, extend: LineExtend) -> (Pos2, Pos2) {
+    /// A line's two points on screen, run on to the edges of `bounds` as `extend` says.
+    fn line_ends(&self, line: &LineOutput, extend: LineExtend, bounds: Rect) -> (Pos2, Pos2) {
         extended_line(
             self.point_bar(line.x1, line.y1),
             self.point_bar(line.x2, line.y2),
             extend,
-            self.plot,
+            bounds,
         )
     }
 
@@ -777,8 +777,10 @@ impl PineLayer<'_> {
     }
 
     /// The band between a linefill's two lines, under the lines themselves. As on TradingView it
-    /// runs on only to the sides both lines extend.
+    /// runs on only to the sides both lines extend, and ends a plot's width past the edge: that
+    /// shows when the lines run opposite ways, as the joins of their ends then cross the view.
     pub fn draw_linefills(&self, painter: &Painter) {
+        let bounds = self.plot.expand2(self.plot.size());
         for fill in &self.pine.linefills {
             let (Some(first), Some(second)) = (
                 self.pine.lines.iter().find(|l| l.id == fill.line1),
@@ -790,8 +792,8 @@ impl PineLayer<'_> {
                 continue;
             }
             let shared = first.extend.shared(second.extend);
-            let (a0, a1) = self.line_ends(first, shared);
-            let (b0, b1) = self.line_ends(second, shared);
+            let (a0, a1) = self.line_ends(first, shared, bounds);
+            let (b0, b1) = self.line_ends(second, shared, bounds);
             let mut mesh = Mesh::default();
             for corners in band_triangles([a0, a1, b1, b0]) {
                 triangle(&mut mesh, corners, rgba(fill.color));
@@ -839,8 +841,8 @@ impl PineLayer<'_> {
 
     pub fn draw_lines(&self, painter: &Painter) {
         for line in self.pine.lines.iter().filter(|l| l.is_complete()) {
-            let (start, end) = self.line_ends(line, LineExtend::None);
-            let (from, to) = self.line_ends(line, line.extend);
+            let (start, end) = self.line_ends(line, LineExtend::None, self.plot);
+            let (from, to) = self.line_ends(line, line.extend, self.plot);
             let width = line.width.max(1) as f32;
             let color = rgba(line.color);
             stroke_path(
@@ -1856,7 +1858,8 @@ mod tests {
     fn a_linefill_runs_on_only_where_both_its_lines_do() {
         let candles = candles(5);
         let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
-        // Both lines run from x 50 to 90 on a plot spanning 0..200.
+        // Both lines run from x 50 to 90 on a plot spanning 0..200, so an extended end of the fill
+        // lies at -200 or 400.
         let line = |id, price, extend| LineOutput {
             id,
             x1: 2,
@@ -1874,9 +1877,9 @@ mod tests {
             (LineExtend::None, LineExtend::None, (50.0, 90.0)),
             (LineExtend::Right, LineExtend::None, (50.0, 90.0)),
             (LineExtend::Left, LineExtend::Right, (50.0, 90.0)),
-            (LineExtend::Right, LineExtend::Right, (50.0, 200.0)),
-            (LineExtend::Left, LineExtend::Both, (0.0, 90.0)),
-            (LineExtend::Both, LineExtend::Both, (0.0, 200.0)),
+            (LineExtend::Right, LineExtend::Right, (50.0, 400.0)),
+            (LineExtend::Left, LineExtend::Both, (-200.0, 90.0)),
+            (LineExtend::Both, LineExtend::Both, (-200.0, 400.0)),
         ] {
             let mut output = empty();
             output.lines = vec![line(1, 150.0, first), line(2, 130.0, second)];
@@ -1896,6 +1899,64 @@ mod tests {
                 (bounds.left(), bounds.right()),
                 reach,
                 "{first:?} with {second:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_linefill_between_lines_running_opposite_ways_matches_tradingview() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        // Two level lines 20 apart on screen (y 50 and 70), both `extend.right`: one written left
+        // to right runs right, the other, written right to left, runs left.
+        let line = |id, x1, x2, price| LineOutput {
+            id,
+            x1,
+            y1: price,
+            x2,
+            y2: price,
+            color: 0,
+            width: 1,
+            style: LineStyle::Solid,
+            extend: LineExtend::Right,
+            time_anchored: false,
+            force_overlay: false,
+        };
+        let mut output = empty();
+        output.lines = vec![line(1, 2, 4, 150.0), line(2, 4, 2, 130.0)];
+        output.linefills.push(LinefillOutput {
+            id: 3,
+            line1: 1,
+            line2: 2,
+            color: 0x0000_FFFF,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let shapes = shapes_of(|painter| layer.draw_linefills(painter));
+        let [Shape::Mesh(mesh)] = shapes.as_slice() else {
+            panic!("one mesh, not {shapes:?}");
+        };
+        // The painted span of the column of pixels at `at`.
+        let span = |at: f32| {
+            let heights = mesh.indices.chunks(3).flat_map(|triangle| {
+                (0..3).filter_map(move |side| {
+                    let a = mesh.vertices[triangle[side] as usize].pos;
+                    let b = mesh.vertices[triangle[(side + 1) % 3] as usize].pos;
+                    ((a.x - at) * (b.x - at) < 0.0)
+                        .then(|| a.y + (b.y - a.y) * (at - a.x) / (b.x - a.x))
+                })
+            });
+            heights.fold((f32::MAX, f32::MIN), |(low, high), y| {
+                (low.min(y), high.max(y))
+            })
+        };
+        // As measured: a third of the gap along the upper line at the right edge, and a third
+        // along the lower line at the left edge.
+        let third = 20.0 / 3.0;
+        for (at, expected) in [(199.9, (50.0, 50.0 + third)), (0.1, (70.0 - third, 70.0))] {
+            let (low, high) = span(at);
+            assert!(
+                (low - expected.0).abs() < 0.1 && (high - expected.1).abs() < 0.1,
+                "at x {at}: {low}..{high}, not {expected:?}"
             );
         }
     }
