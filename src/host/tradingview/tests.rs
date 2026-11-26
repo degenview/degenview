@@ -244,3 +244,116 @@ fn a_name_taken_after_the_preview_is_still_not_taken_over() {
     assert_eq!(names, ["Majors", "Majors 2"]);
     assert!(first.take_wrote() && !first.take_wrote());
 }
+
+/// An import is only as good as what another computer accepts from iCloud, which refuses names,
+/// texts and collections past its limits.
+#[test]
+fn everything_imported_is_accepted_by_sync() {
+    use crate::model::tradingview::drawing::RawDrawing;
+    use crate::model::tradingview::library::WatchRow;
+    use crate::model::tradingview::parse;
+    use crate::model::tradingview::plan::{self, Mappings, Market, Selection, Taken};
+    use crate::sync::record::validate::{Verdict, validate};
+    use crate::sync::record::{RecordName, SCHEMA_VERSION, SyncRecord, project};
+
+    let long = "é".repeat(2_000);
+    let huge = "x".repeat(30_000);
+    let mut library = parse::library(fixtures::documents());
+    let layout = &mut library.layouts[0];
+    layout.name = Some(long.clone());
+    let many: Vec<(i64, f64)> = (0..5_000).map(|i| (i, 100.0)).collect();
+    let cells = vec![vec![huge.clone(); 40]; 80];
+    for (id, tool, props, points) in [
+        (
+            "text",
+            "LineToolText",
+            serde_json::json!({"text": huge}),
+            &many[..1],
+        ),
+        (
+            "note",
+            "LineToolTextNote",
+            serde_json::json!({"text": huge}),
+            &many[..2],
+        ),
+        (
+            "table",
+            "LineToolTable",
+            serde_json::json!({"cells": cells}),
+            &many[..1],
+        ),
+        ("brush", "LineToolBrush", serde_json::json!({}), &many[..]),
+    ] {
+        let source = fixtures::drawing(id, tool, "BINANCE:BTCUSDT", props, points);
+        layout
+            .drawings
+            .push(RawDrawing::read(id, &source).expect(id));
+    }
+    library.watchlists[0].name = long.clone();
+    library.watchlists[0]
+        .rows
+        .insert(0, WatchRow::Section(long.clone()));
+    library.scripts[0].name = format!("a/b:c\\{long}");
+
+    let selection = Selection::all(&library);
+    let mut mappings = Mappings::default();
+    for (symbol, _) in selection.symbols(&library) {
+        let market = Market {
+            source: crate::model::DataSource::Binance,
+            symbol: symbol.to_string(),
+            name: long.clone(),
+            image_url: None,
+        };
+        mappings.found(symbol.clone(), Match::Exact(market));
+    }
+    let plan = plan::plan(
+        &library,
+        &selection,
+        &mappings,
+        &Taken::default(),
+        &Default::default(),
+    );
+    assert_eq!(plan.drawing_count(), 6, "{:?}", plan.layouts[0].left_out);
+
+    let scratch = Scratch::new();
+    let targets = targets(&scratch);
+    let summary = apply::apply(&plan, &targets);
+    assert!(summary.failures.is_empty(), "{:?}", summary.failures);
+
+    let mut projected = Vec::new();
+    for view in targets.store.lock().unwrap().saved_views() {
+        let payload = serde_json::to_string(&view).unwrap();
+        projected.extend(project::project_row(
+            "saved_view",
+            &view.id.to_string(),
+            &payload,
+        ));
+    }
+    for list in targets.watchlist.lock().unwrap().lists() {
+        let payload = serde_json::to_string(list).unwrap();
+        projected.extend(project::project_row(
+            "watchlist",
+            &list.id.to_string(),
+            &payload,
+        ));
+    }
+    assert!(projected.len() > 6);
+    for entity in projected {
+        let verdict = validate(&SyncRecord {
+            name: RecordName::new(entity.kind, entity.sync_id.clone()).expect(&entity.sync_id),
+            schema_version: SCHEMA_VERSION,
+            revision: 1,
+            origin_device: "d".into(),
+            modified_ms: 0,
+            payload: entity.payload,
+        });
+        assert!(
+            matches!(verdict, Verdict::Accept(_)),
+            "{:?} {verdict:?}",
+            entity.kind
+        );
+    }
+    let mut scripts = (targets.scripts)().unwrap();
+    let script = scripts.all_scripts().unwrap().remove(0);
+    assert!(script.name.chars().count() <= 200 && !script.name.contains(['/', ':', '\\']));
+}
