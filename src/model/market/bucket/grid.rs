@@ -47,6 +47,21 @@ impl Grid {
         open + (t_ms - open).div_euclid(length) * length
     }
 
+    /// Where the period of `timeframe` that holds `t_ms` starts trading: the bucket's open, except
+    /// that on the session grid a day, week or month opens with the session of its first weekday.
+    /// Holidays are not known here and count as weekdays.
+    pub fn period_open_ms(self, timeframe: Timeframe, t_ms: i64) -> i64 {
+        let start = self.bucket_start_ms(timeframe, t_ms);
+        if self != Self::UsEquities || timeframe.is_intraday() {
+            return start;
+        }
+        let mut day = start.div_euclid(DAY_MS);
+        while !session::is_weekday(day) {
+            day += 1;
+        }
+        session::open_ms(day)
+    }
+
     /// Open time of the bucket after the one that contains `t_ms`; on the session grid the last
     /// bucket of a session ends at the close, not a length after it opens.
     pub fn next_bucket_start_ms(self, timeframe: Timeframe, t_ms: i64) -> i64 {

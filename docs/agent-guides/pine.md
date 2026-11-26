@@ -200,24 +200,37 @@
   TradingView's RE10128). Classic published formulas (reference lists none); Woodie's uses the
   setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
   (Pearson on mid-ranks) x 100.
-- `timeframe.change(tf)` is per call site, like `ta.change`: `ta::State::bar_times` (in
-  `RuntimeState::ta_states`, key `site_key`) holds the open time of the bar the site last ran on
-  and of the one before (`ta::previous_bar_time`), and the call compares the current bar with the
-  second. The first run of a site is false (no earlier run to compare with), a site that a branch,
-  a short-circuit, a `switch` arm or a conditionally called function skips keeps the last bar it ran
-  on, the runs of one bar (a loop) all see the same earlier bar, and two call sites, or one
-  function reached from two sites, never share it. Inside `request.security` the site's state is
-  the request's own. It does not read the chart's previous bar (`last_committed_open_time` is only
-  the guard against a repeated bar). Measured on TradingView (probe R2, BINANCE:BTCUSDT 4h, 84
-  fixed bars, 2026-11-01..11-15, the call counted per day): global every bar 14; `if` over the
-  window 13; `if inw and hour == 4` 13 (the chart-bar rule gives 0); `if hour == 4` that also runs
-  before the window 14; the two sides of an `if`/`else` 13 and 13; ternary, `and`, `switch` arm 13;
-  a function called conditionally 13, from two sites 13 and 13; two sites on every bar 13 and 13;
-  `"D"` and `"W"` at `hour == 4` 14 and 2; a `for i = 0 to 2` loop 39 (13 days x 3 runs, not
-  13); inside `request.security("240", ...)` 14 (`hour == 4`) and 13 (window). DegenView gives
-  the same 22 values on the same candles. Not measured: a series-string timeframe that changes between runs of
-  one site (the previous bar is compared under the current timeframe). `ta.*` in a `for` loop
-  still pushes one history entry per run (audit items 20/21), which `timeframe.change` does not.
+- `timeframe.change(tf)` is per call site, like `ta.change` of the period: `ta::State::periods` (in
+  `RuntimeState::ta_states`, key `site_key`) holds where the period found by the bar the site last
+  ran on opens, and the same for the bar before (`ta::previous_period`). A run compares the period
+  its own timeframe finds for the current bar with the one kept from the previous bar, so the
+  timeframe may differ from run to run (`h < 12 ? "D" : "W"` changes whenever the two periods open
+  at different times). It is not the previous bar's time cut by the current timeframe.
+  - The first run of a site is false. A site that a branch, a short-circuit, a `switch` arm or a
+    conditionally called function skips keeps what it found on the last bar it ran on. Two call
+    sites, or one function reached from two sites, never share it; inside `request.security` the
+    state is the request's own. The runs of one bar (a loop) all compare with the previous bar,
+    and what the last run found is what the next bar compares with.
+  - `""` is the running series' own timeframe.
+  - A period opens where `time::bucket::period_open` says: the bucket's start, except that a US
+    stock's day, week or month opens with the session of its first weekday, so the day and the
+    session's first `"240"` open together (`Grid::period_open_ms`; holidays count as weekdays).
+  - It does not read the chart's previous bar (`last_committed_open_time` only guards against a
+    repeated bar).
+  - Measured on TradingView over fixed windows. Per call site (probe R2, BINANCE:BTCUSDT 4h,
+    2026-11-01..11-15): global every bar 14; `if` over the window 13; `if inw and hour == 4` 13;
+    `if hour == 4` that also runs before the window 14; each side of an `if`/`else` 13; ternary,
+    `and`, `switch` arm 13; a conditionally called function 13, from two sites 13 and 13; two sites
+    on every bar 13 and 13; `"D"` and `"W"` at `hour == 4` 14 and 2; a three-run loop 39; inside
+    `request.security` 14 and 13. A timeframe that varies (probes R6, R8): `"D"` before noon else
+    `"W"` 25; `"W"` at 04:00 else `"D"` 37; `"240"` and `"D"` on alternate bars 69; through a
+    function 25; in a request 26; a loop naming `"D"`, `"W"`, `"240"` 69, 81, 83; weeks against
+    months to November 31, 88 and 1866; `""` 83 of 84 bars. Stock (probe R9, NASDAQ:AAPL 30m,
+    18 sessions): `"D"` 17, `"240"` 35, `"D"` before noon else `"240"` 35, `"240"`/`"60"`
+    alternating 197, `"D"` before noon else `"W"` 31. DegenView gives the same values on the same
+    bar times. Not measured: a week that starts on a holiday, a stock's `""`, and `""` inside a
+    request. `ta.*` in a `for` loop still pushes one history entry per run (audit items 20/21),
+    which `timeframe.change` does not.
 - `session.*` reads `trading_session::MarketSessions` by `syminfo.type`: crypto 24x7 UTC (session =
   UTC day); `stock` New York 09:30-16:00 weekdays, pre- from 04:00, post- to 20:00. Charts show the
   regular session, so `isfirstbar`/`islastbar` equal their `_regular` forms; a bar of a day or more

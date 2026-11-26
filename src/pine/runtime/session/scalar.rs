@@ -136,19 +136,24 @@ impl Session {
             "timeframe.change" => {
                 let timeframe = self.arg_value(arguments, 0, Some("timeframe"), context)?;
                 let seconds = match timeframe {
+                    // An empty timeframe is the running series' own.
+                    RuntimeValue::String(text) if text.is_empty() => {
+                        Some(self.bar_seconds).filter(|seconds| *seconds > 0.0)
+                    }
                     RuntimeValue::String(text) => crate::pine::time::seconds_of_timeframe(&text),
                     _ => None,
                 };
                 Ok(Some(match seconds {
                     Some(seconds) => {
+                        let bar = context.bar.open_time;
+                        let period =
+                            crate::pine::time::bucket::period_open(self.symbol.grid, bar, seconds);
                         let key = self.site_key(site, context);
                         let state = self.working.ta_states.entry(key).or_default();
-                        let open_time = context.bar.open_time;
-                        RuntimeValue::Bool(ta::previous_bar_time(open_time, state).is_some_and(
-                            |previous| {
-                                crate::pine::time::timeframe_changed(previous, open_time, seconds)
-                            },
-                        ))
+                        RuntimeValue::Bool(
+                            ta::previous_period(bar, period, state)
+                                .is_some_and(|previous| previous != period),
+                        )
                     }
                     None => RuntimeValue::Na,
                 }))

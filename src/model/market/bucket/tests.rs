@@ -1007,6 +1007,34 @@ mod session_grid {
         );
     }
 
+    #[test]
+    fn a_stocks_day_week_and_month_open_with_their_first_session() {
+        let grid = Grid::UsEquities;
+        // The day and the session's first four hours open together.
+        assert_eq!(
+            grid.period_open_ms(Timeframe::DAY_1, winter(18, 0)),
+            winter(14, 30)
+        );
+        assert_eq!(
+            grid.period_open_ms(tf(4, TimeUnit::Hour), winter(18, 0)),
+            winter(14, 30)
+        );
+        // November 2026 starts on a Sunday: the month opens on Monday the 2nd.
+        assert_eq!(
+            grid.period_open_ms(Timeframe::MONTH_1, winter(18, 0)),
+            at(2026, 11, 2, 14, 30)
+        );
+        // Summer time: the week of 6 July opens at 13:30 UTC.
+        assert_eq!(
+            grid.period_open_ms(Timeframe::WEEK_1, summer(18, 0)),
+            at(2026, 7, 6, 13, 30)
+        );
+        assert_eq!(
+            Grid::Utc.period_open_ms(Timeframe::DAY_1, winter(18, 0)),
+            day(2026, 11, 24)
+        );
+    }
+
     /// Every minute of the weeks around both clock changes of 2026 (8 March and 1 November) and a
     /// plain one, for lengths that divide the half hour and ones that do not: the buckets tile the
     /// session exactly, whatever the offset.
