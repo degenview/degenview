@@ -1007,6 +1007,39 @@ mod session_grid {
         );
     }
 
+    #[test]
+    fn the_candle_after_a_stocks_bucket_is_the_next_one_that_trades() {
+        let grid = Grid::UsEquities;
+        let following = |timeframe, start| grid.following_end_ms(timeframe, start);
+        // The week of Monday 9 Nov 2026 stops on Friday; the next one on Friday the 20th.
+        assert_eq!(
+            following(Timeframe::WEEK_1, day(2026, 11, 9)),
+            at(2026, 11, 20, 21, 0)
+        );
+        // Friday's day is followed by Monday's, past the weekend.
+        assert_eq!(
+            following(Timeframe::DAY_1, day(2026, 11, 20)),
+            at(2026, 11, 23, 21, 0)
+        );
+        // October 2026 ends on Friday the 30th; November on Monday the 30th.
+        assert_eq!(
+            following(Timeframe::MONTH_1, day(2026, 10, 1)),
+            at(2026, 11, 30, 21, 0)
+        );
+        // Intraday: the next bucket of the session, else the first of the next session.
+        let four_hours = tf(4, TimeUnit::Hour);
+        assert_eq!(following(four_hours, winter(14, 30)), winter(21, 0));
+        assert_eq!(
+            following(Timeframe::HOUR_1, at(2026, 11, 20, 20, 30)),
+            at(2026, 11, 23, 15, 30)
+        );
+        // The UTC grid has no closing hours.
+        assert_eq!(
+            Grid::Utc.following_end_ms(Timeframe::WEEK_1, day(2026, 11, 9)),
+            day(2026, 11, 23)
+        );
+    }
+
     /// Every minute of the weeks around both clock changes of 2026 (8 March and 1 November) and a
     /// plain one, for lengths that divide the half hour and ones that do not: the buckets tile the
     /// session exactly, whatever the offset.

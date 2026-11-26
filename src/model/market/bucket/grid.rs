@@ -74,6 +74,27 @@ impl Grid {
         if close > start_ms { close } else { next }
     }
 
+    /// Where the candle after the bucket that opens at `start_ms` stops trading. On the session grid
+    /// a bucket stops before the next one opens, so this is found from the next bucket that can hold
+    /// a candle: past the night and the weekend. Holidays are not known here and count as weekdays.
+    pub fn following_end_ms(self, timeframe: Timeframe, start_ms: i64) -> i64 {
+        let mut next = self.next_bucket_start_ms(timeframe, start_ms);
+        if self == Self::UsEquities {
+            if !timeframe.is_intraday() {
+                while !has_weekday(next, self.next_bucket_start_ms(timeframe, next)) {
+                    next = self.next_bucket_start_ms(timeframe, next);
+                }
+            } else if !session::is_open(next) {
+                let mut day = session::local_day(start_ms) + 1;
+                while !session::is_weekday(day) {
+                    day += 1;
+                }
+                next = session::open_ms(day);
+            }
+        }
+        self.session_end_ms(timeframe, next)
+    }
+
     /// Whether a candle of `timeframe` can open at `t_ms`: on the session grid an intraday candle
     /// opens inside a session of a weekday, never before the open or from the close on.
     pub fn is_traded(self, timeframe: Timeframe, t_ms: i64) -> bool {
@@ -163,4 +184,9 @@ impl Grid {
         }
         candles
     }
+}
+
+/// Whether any day of `start_ms..end_ms` (UTC days) is a weekday.
+fn has_weekday(start_ms: i64, end_ms: i64) -> bool {
+    (start_ms.div_euclid(DAY_MS)..end_ms.div_euclid(DAY_MS)).any(session::is_weekday)
 }
