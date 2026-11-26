@@ -118,6 +118,7 @@ impl ChartWorkspace {
                     self.add_from_search(&page.recents[index].result(), &ctx);
                 }
                 EmptyStateAction::OpenLayout(id) => self.request_open_saved_view(id, &ctx),
+                EmptyStateAction::ImportTradingView => self.open_tradingview_import(&ctx),
                 EmptyStateAction::OpenSuggestion(source, symbol, display) => {
                     self.add_from_search(
                         &SearchResult {

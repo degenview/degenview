@@ -41,6 +41,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Proxies, VPN "system proxy", `HTTP(S)_PROXY`, building an HTTP agent, WebSocket connections, or Settings ▸ Network | [Network proxy](docs/network-proxy.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
+| Import from TradingView: its app's cache, layouts, drawings, watchlists and scripts, symbol matching | [TradingView import](docs/tradingview-import.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
 | The changelog, `changes/` fragments, release notes, or the sheet an update opens | [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
@@ -223,4 +224,5 @@ old output). Finished worktrees are where the disk goes.
   [Pine debugger](docs/pine-debugger.md), [Pine profiler](docs/pine-profiler.md),
   [Editor themes](docs/editor-themes.md), [User-defined methods](docs/pine-user-methods.md),
   [Pine volume footprints](docs/pine-footprint.md), [AI assistant](docs/ai-assistant.md),
-  [Portfolio page](docs/portfolio-page.md), [Network proxy](docs/network-proxy.md).
+  [Portfolio page](docs/portfolio-page.md), [Network proxy](docs/network-proxy.md),
+  [TradingView import](docs/tradingview-import.md).

@@ -89,6 +89,7 @@ pub enum ToolbarAction {
     CopyLayout,
     RenameLayout,
     OpenLayout(u64),
+    ImportTradingView,
     DeleteLayout(u64),
     ToggleWatchlist,
     ToggleMarketFlow,
@@ -386,6 +387,7 @@ fn layout_popup(
         (tr!("Autosave"), None),
         (tr!("Make a copy"), None),
         (tr!("Rename"), None),
+        (tr!("Import from TradingView…"), None),
     ];
     rows.extend(
         input
@@ -428,6 +430,16 @@ fn layout_popup(
             false,
         ) {
             actions.push(ToolbarAction::RenameLayout);
+            ui.close();
+        }
+        if kit::menu_item(
+            ui,
+            Icon::Download,
+            tr!("Import from TradingView…"),
+            true,
+            false,
+        ) {
+            actions.push(ToolbarAction::ImportTradingView);
             ui.close();
         }
         if !input.layouts.is_empty() {

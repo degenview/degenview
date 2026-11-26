@@ -227,6 +227,10 @@ msgid ""
 "of the chart's last 20 bars."
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "A copy kept in the drawing: later changes to the chart do not move it."
 msgstr ""
@@ -398,6 +402,12 @@ msgstr ""
 #: src/workspace/chart/snapshot/select.rs
 #: src/workspace/chart/snapshot/studio/mod.rs
 msgid "A snapshot is already being made."
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+msgid ""
+"A symbol from an exchange DegenView doesn’t have is matched to the same pair"
+" elsewhere. Change or skip any of them."
 msgstr ""
 
 #: src/ui/drawing/properties/style.rs
@@ -948,6 +958,10 @@ msgstr ""
 
 #: src/pine_studio/editor/diff_view.rs
 msgid "Added lines {first}–{last}"
+msgstr ""
+
+#: src/ui/tradingview/result.rs
+msgid "Added to DegenView"
 msgstr ""
 
 #: src/model/watchlist/text.rs
@@ -2976,6 +2990,10 @@ msgstr ""
 msgid "Chart's scale"
 msgstr ""
 
+#: src/ui/tradingview/preview.rs
+msgid "Charts"
+msgstr ""
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Charts that already use it keep their look."
 msgstr ""
@@ -3055,6 +3073,15 @@ msgstr ""
 
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/result.rs
+msgid "Choose Folder…"
+msgstr ""
+
+#: src/host/tradingview/mod.rs
+msgid "Choose TradingView’s data folder"
 msgstr ""
 
 #: src/host/portfolio/import_flow.rs
@@ -4296,6 +4323,10 @@ msgstr ""
 
 #: src/workspace/tab_link/mod.rs
 msgid "Couldn’t load {symbol}. This tab kept {previous}."
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "Couldn’t reach the exchanges"
 msgstr ""
 
 #: src/workspace/layout/mod.rs
@@ -6792,6 +6823,10 @@ msgstr ""
 msgid "From candle"
 msgstr ""
 
+#: src/ui/tradingview/mod.rs
+msgid "From the TradingView app."
+msgstr ""
+
 #: src/ui/drawing/layer/volume_shapes.rs
 msgid "From the loaded bars only"
 msgstr ""
@@ -7610,6 +7645,10 @@ msgstr ""
 msgid "Import"
 msgstr ""
 
+#: src/ui/tradingview/mod.rs
+msgid "Import Complete"
+msgstr ""
+
 #: src/ui/portfolio/import_preview.rs
 msgid "Import Preview"
 msgstr ""
@@ -7643,6 +7682,16 @@ msgstr ""
 msgid "Import from CoinMarketCap…"
 msgstr ""
 
+#: src/ui/tradingview/mod.rs
+msgid "Import from TradingView"
+msgstr ""
+
+#: src/native_bridge.rs
+#: src/ui/workspace/empty_state/mod.rs
+#: src/ui/workspace/toolbar.rs
+msgid "Import from TradingView…"
+msgstr ""
+
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Import into {name}"
 msgstr ""
@@ -7657,6 +7706,10 @@ msgid "Import {count} Transaction"
 msgid_plural "Import {count} Transactions"
 msgstr[0] ""
 msgstr[1] ""
+
+#: src/ui/tradingview/result.rs
+msgid "Imported layouts are in the toolbar’s layout menu."
+msgstr ""
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Imported “{name}”."
@@ -7819,6 +7872,12 @@ msgstr ""
 msgid "Inside pitchfork"
 msgstr ""
 
+#: src/ui/tradingview/result.rs
+msgid ""
+"Install the TradingView desktop app, sign in, and open the layouts and "
+"watchlists you want to bring over."
+msgstr ""
+
 #: src/model/editor_theme/roles.rs
 msgid "Integer and decimal literals."
 msgstr ""
@@ -7901,6 +7960,10 @@ msgstr ""
 msgid ""
 "Its answers are fixed examples. The balances, orders and fills do not change "
 "when you place, edit or cancel an order, and it has no live prices."
+msgstr ""
+
+#: src/ui/tradingview/preview.rs
+msgid "Its charts had different intervals. A DegenView layout has one:"
 msgstr ""
 
 #: src/host/mcp/confirmation.rs
@@ -8258,6 +8321,11 @@ msgstr ""
 msgid "Layouts"
 msgstr ""
 
+#: src/ui/tradingview/mod.rs
+msgid ""
+"Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Leave replay and return to the live market"
 msgstr ""
@@ -8285,6 +8353,10 @@ msgstr ""
 
 #: src/pine_studio/library/prefs.rs
 msgid "Left of Code"
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+msgid "Left out of the import"
 msgstr ""
 
 #: src/ui/drawing/properties/coordinates.rs
@@ -9118,6 +9190,10 @@ msgstr ""
 
 #: src/ui/pine/logs_view/mod.rs
 msgid "Match case"
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+msgid "Match symbols to markets"
 msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
@@ -9969,6 +10045,10 @@ msgstr ""
 msgid "No entries match these filters."
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "No exchange here lists it"
+msgstr ""
+
 #: src/model/paper/mod.rs
 msgid "No executable market price is available."
 msgstr ""
@@ -10023,6 +10103,12 @@ msgstr ""
 
 #: src/ui/settings/ai.rs
 msgid "No key needed for a local server"
+msgstr ""
+
+#: src/service/tradingview/mod.rs
+msgid ""
+"No layouts, watchlists or scripts were found. Open them in TradingView first, "
+"then try again."
 msgstr ""
 
 #: src/ui/mcp/activity.rs
@@ -10251,6 +10337,10 @@ msgstr ""
 msgid "None"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr ""
+
 #: src/ui/portfolio/cards/top_performers.rs
 msgid "None of the holdings has price history for this range."
 msgstr ""
@@ -10316,6 +10406,10 @@ msgstr ""
 msgid ""
 "Not debugging — press ▶ to run to a breakpoint, or step to start at the "
 "first line"
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "Not found on any exchange"
 msgstr ""
 
 #: src/pine_studio/profiler/marks.rs
@@ -10390,6 +10484,10 @@ msgstr ""
 
 #: src/ui/alert/center.rs
 msgid "Nothing Triggered"
+msgstr ""
+
+#: src/ui/tradingview/result.rs
+msgid "Nothing Was Added"
 msgstr ""
 
 #: src/ui/chart/object_tree/mod.rs
@@ -10479,6 +10577,10 @@ msgstr ""
 
 #: src/ui/market_flow/mod.rs
 msgid "Nothing this size yet"
+msgstr ""
+
+#: src/ui/tradingview/result.rs
+msgid "Nothing to Import Yet"
 msgstr ""
 
 #: src/ui/alert/pine_editor.rs
@@ -10807,6 +10909,12 @@ msgid ""
 " of its transactions out."
 msgstr ""
 
+#: src/ui/tradingview/choose.rs
+msgid ""
+"Only what the TradingView app has opened recently on this computer is here. "
+"Missing something? Open it there, then reload."
+msgstr ""
+
 #: src/ui/drawing/content/sheet.rs
 msgid "Only when you ask, for the one link you chose"
 msgstr ""
@@ -10855,6 +10963,10 @@ msgstr ""
 
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Open File…"
+msgstr ""
+
+#: src/ui/tradingview/result.rs
+msgid "Open Layout"
 msgstr ""
 
 #: src/pine_studio/drawer/figures.rs
@@ -11115,6 +11227,10 @@ msgstr ""
 msgid ""
 "Other computers connect over TLS, with a credential that has remote access "
 "(set on that client)."
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+msgid "Other exchange"
 msgstr ""
 
 #: src/ui/alert/script_list.rs
@@ -11497,6 +11613,10 @@ msgstr ""
 msgid "Percents"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "Perpetuals and futures aren’t available"
+msgstr ""
+
 #: src/ui/replay/bar.rs
 msgid "Pick a date and time to start from"
 msgstr ""
@@ -11507,6 +11627,10 @@ msgstr ""
 
 #: src/ui/portfolio/tab/import.rs
 msgid "Pick the market that matches this CoinMarketCap ticker."
+msgstr ""
+
+#: src/host/tradingview/mod.rs
+msgid "Pick the market that stands in for this TradingView symbol."
 msgstr ""
 
 #: src/ui/replay/date_sheet.rs
@@ -11554,6 +11678,11 @@ msgstr ""
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Pine logs"
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/preview.rs
+msgid "Pine scripts"
 msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
@@ -12314,6 +12443,10 @@ msgstr[1] ""
 msgid "Read {name}'s instructions"
 msgstr ""
 
+#: src/ui/tradingview/result.rs
+msgid "Reading TradingView’s data…"
+msgstr ""
+
 #: src/ui/broker/panel.rs
 msgid "Reading finished orders from the broker."
 msgstr ""
@@ -12484,6 +12617,10 @@ msgstr ""
 
 #: src/ui/settings/about.rs
 msgid "Release candidates preview the next version and may be less stable."
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+msgid "Reload"
 msgstr ""
 
 #: src/pine_studio/library/disk_banner.rs
@@ -13591,6 +13728,10 @@ msgstr ""
 msgid "Saved in your system's secure storage. Type a new one to replace it."
 msgstr ""
 
+#: src/host/tradingview/apply.rs
+msgid "Saved layouts"
+msgstr ""
+
 #: src/ui/chart/settings/templates/mod.rs
 msgid ""
 "Saved looks for charts. Star one to start new charts with it. Presets are "
@@ -13771,6 +13912,10 @@ msgstr ""
 #: src/ui/pine/logs_view/mod.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Search"
+msgstr ""
+
+#: src/ui/tradingview/choose.rs
+msgid "Search Again"
 msgstr ""
 
 #: src/ui/portfolio/asset_picker.rs
@@ -14708,6 +14853,10 @@ msgstr ""
 msgid "Some colors are hard to read"
 msgstr ""
 
+#: src/ui/tradingview/result.rs
+msgid "Some things couldn’t be added"
+msgstr ""
+
 #: src/ui/market_flow/flow.rs
 msgid "Some venues were not connected for all of it."
 msgstr ""
@@ -15006,6 +15155,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Stocks need an Alpaca key"
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "Stocks need an Alpaca key (Settings)"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs
@@ -15492,6 +15645,12 @@ msgstr ""
 msgid "Text color"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/model/editor_theme/roles.rs
 msgid "Text that has no color of its own, and the editor's foreground."
 msgstr ""
@@ -15674,6 +15833,10 @@ msgstr ""
 
 #: src/model/pine/bundled/mod.rs
 msgid "The Stochastic formula applied to RSI."
+msgstr ""
+
+#: src/service/tradingview/mod.rs
+msgid "The TradingView app’s data wasn’t found on this computer."
 msgstr ""
 
 #: src/ui/trade/order_sheet/form.rs
@@ -15887,6 +16050,10 @@ msgstr ""
 
 #: src/ui/settings/pine_studio/mod.rs
 msgid "The colors of the code, the gutter and the editor around them."
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "The comparison with {symbol}: it has no market"
 msgstr ""
 
 #: src/trading/broker/backend.rs
@@ -16450,6 +16617,10 @@ msgstr ""
 msgid "The script has no alert() or alertcondition() calls."
 msgstr ""
 
+#: src/host/tradingview/apply.rs
+msgid "The script library couldn’t be opened."
+msgstr ""
+
 #: src/pine_studio/debug/panel/mod.rs
 msgid ""
 "The script was edited after this session began; it is still running the old "
@@ -16622,8 +16793,20 @@ msgstr ""
 msgid "The whole chart that has the focus"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "The {name} indicator"
+msgstr ""
+
 #: src/ui/alert/center.rs
 msgid "The {symbol} alert is removed. Its trigger history is kept."
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market"
 msgstr ""
 
 #: src/pine_studio/menu_bar/mod.rs
@@ -16845,6 +17028,10 @@ msgstr ""
 
 #: src/mcp/confirm.rs
 msgid "This credential can be used from another machine, so it asks first."
+msgstr ""
+
+#: src/service/tradingview/mod.rs
+msgid "This folder doesn’t hold TradingView’s data."
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -17317,6 +17504,10 @@ msgstr ""
 
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Trading settings"
+msgstr ""
+
+#: src/service/tradingview/mod.rs
+msgid "TradingView’s data couldn’t be read: {error}"
 msgstr ""
 
 #: src/model/chart/kind.rs
@@ -17829,6 +18020,10 @@ msgstr ""
 
 #: src/ui/paper/tables.rs
 msgid "Use BUY or SELL in a chart's header to open one."
+msgstr ""
+
+#: src/host/tradingview/mod.rs
+msgid "Use Market"
 msgstr ""
 
 #: src/ui/settings/sync.rs
@@ -18522,6 +18717,10 @@ msgstr ""
 msgid ""
 "What trading this order is expected to cost. The venue's own check replaces "
 "the estimate once it has run."
+msgstr ""
+
+#: src/ui/tradingview/mod.rs
+msgid "What will be added. Nothing of yours is replaced."
 msgstr ""
 
 #: src/ui/webhook/editor.rs
@@ -19275,6 +19474,10 @@ msgstr ""
 msgid "response exceeds {limit} bytes"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "settings not found: rebuilt from its drawings"
+msgstr ""
+
 #: src/host/mcp/confirmation.rs
 msgid "stop"
 msgstr ""
@@ -19291,8 +19494,18 @@ msgstr ""
 msgid "stopped early: too much to import"
 msgstr ""
 
+#: src/ui/tradingview/choose.rs
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/model/editor_theme/roles.rs
 msgid "ta.sma, plot, input.int and the other functions Pine provides."
+msgstr ""
+
+#: src/host/tradingview/mod.rs
+msgid "the read stopped unexpectedly"
 msgstr ""
 
 #: src/pine_studio/ai/mod.rs
@@ -19588,6 +19801,18 @@ msgid_plural "{count} changes"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/tradingview/words.rs
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} chart · {timeframe}"
 msgid_plural "{count} charts · {timeframe}"
@@ -19646,6 +19871,18 @@ msgstr[1] ""
 #: src/mcp/chart/mod.rs
 msgid "{count} drawing"
 msgid_plural "{count} drawings"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -19951,6 +20188,12 @@ msgstr[1] ""
 msgid "{count} paused"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] ""
+msgstr[1] ""
+
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/drawing/properties/levels.rs
 msgid "{count} place"
@@ -19973,6 +20216,12 @@ msgstr[1] ""
 #: src/ui/portfolio/sheets.rs
 msgid "{count} portfolio · Drag to reorder, click a name to rename."
 msgid_plural "{count} portfolios · Drag to reorder, click a name to rename."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -20054,6 +20303,12 @@ msgstr[1] ""
 #: src/pine_studio/ai/panel.rs
 msgid "{count} step"
 msgid_plural "{count} steps"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -20156,6 +20411,12 @@ msgstr[1] ""
 #: src/ui/kit/time_text.rs
 msgid "{count} yr. ago"
 msgid_plural "{count} yr. ago"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/tradingview/words.rs
+msgid "{count} {tool} drawing: DegenView has no such tool"
+msgid_plural "{count} {tool} drawings: DegenView has no such tool"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -20584,6 +20845,10 @@ msgstr ""
 msgid "{name} has no setting called {key}."
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "{name} is added with its default settings"
+msgstr ""
+
 #: src/ui/trade/order_sheet/mod.rs
 msgid "{name} is not connected"
 msgstr ""
@@ -20654,6 +20919,10 @@ msgstr ""
 
 #: src/ui/settings/provider_card.rs
 msgid "{name}, {state}, {fold}"
+msgstr ""
+
+#: src/host/tradingview/apply.rs
+msgid "{name}: {error}"
 msgstr ""
 
 #: src/ui/drawing/layer/forecast_shapes.rs

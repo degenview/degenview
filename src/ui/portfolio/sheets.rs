@@ -10,9 +10,9 @@ use crate::model::portfolio::{
 use crate::ui::chart::picker_kit::{art, widgets};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::sheet;
+use crate::ui::kit::sheet_parts::{card_background, pill};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::portfolio::empty;
-use crate::ui::portfolio::sheet_parts::{card_background, pill};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Id, Sense, Stroke, Vec2};
 

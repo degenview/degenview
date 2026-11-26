@@ -20473,7 +20473,189 @@ msgctxt "what the image shows"
 msgid "Area"
 msgstr "范围"
 
-#: src/ui/window/chrome.rs
-msgctxt "window button"
-msgid "Minimize"
-msgstr "最小化"
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "DegenView 不支持的图表类型：改用您的默认类型"
+
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "DegenView 未接入的交易所的代码，会匹配到其他交易所的同一交易对。任何一项都可以更改或跳过。"
+
+msgid "Added to DegenView"
+msgstr "已添加到 DegenView"
+
+msgid "Charts"
+msgstr "图表"
+
+msgid "Choose Folder…"
+msgstr "选择文件夹…"
+
+msgid "Choose TradingView’s data folder"
+msgstr "选择 TradingView 的数据文件夹"
+
+msgid "Couldn’t reach the exchanges"
+msgstr "无法连接交易所"
+
+msgid "From the TradingView app."
+msgstr "来自 TradingView 应用。"
+
+msgid "Import Complete"
+msgstr "导入完成"
+
+msgid "Import from TradingView"
+msgstr "从 TradingView 导入"
+
+msgid "Import from TradingView…"
+msgstr "从 TradingView 导入…"
+
+msgid "Imported layouts are in the toolbar’s layout menu."
+msgstr "导入的布局在工具栏的布局菜单中。"
+
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "请安装 TradingView 桌面应用并登录，然后打开想要导入的布局和自选列表。"
+
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "其中各图表的周期不同。DegenView 的一个布局只有一个周期："
+
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "TradingView 应用已加载的布局、绘图、自选列表和脚本。"
+
+msgid "Left out of the import"
+msgstr "不参与导入"
+
+msgid "Match symbols to markets"
+msgstr "将代码匹配到市场"
+
+msgid "No exchange here lists it"
+msgstr "可用的交易所均未上市"
+
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "未找到布局、自选列表或脚本。请先在 TradingView 中打开它们，然后重试。"
+
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "其中没有任何图表匹配到市场，因此不导入"
+
+msgid "Not found on any exchange"
+msgstr "所有交易所均未找到"
+
+msgid "Nothing Was Added"
+msgstr "未添加任何内容"
+
+msgid "Nothing to Import Yet"
+msgstr "暂无可导入的内容"
+
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "这里只有 TradingView 应用最近在本机打开过的内容。缺少什么？请在那里打开，然后重新加载。"
+
+msgid "Open Layout"
+msgstr "打开布局"
+
+msgid "Other exchange"
+msgstr "其他交易所"
+
+msgid "Perpetuals and futures aren’t available"
+msgstr "不支持永续合约和期货"
+
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "选择用于代替此 TradingView 代码的市场。"
+
+msgid "Pine scripts"
+msgstr "Pine 脚本"
+
+msgid "Reading TradingView’s data…"
+msgstr "正在读取 TradingView 数据…"
+
+msgid "Reload"
+msgstr "重新加载"
+
+msgid "Saved layouts"
+msgstr "已保存的布局"
+
+msgid "Search Again"
+msgstr "重新搜索"
+
+msgid "Some things couldn’t be added"
+msgstr "部分内容无法添加"
+
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "股票需要 Alpaca 密钥（设置）"
+
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "{count} 个绘图的文字被截短"
+
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "在本机未找到 TradingView 应用的数据。"
+
+msgid "The comparison with {symbol}: it has no market"
+msgstr "与 {symbol} 的对比：没有对应市场"
+
+msgid "The script library couldn’t be opened."
+msgstr "无法打开脚本库。"
+
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "{interval} 周期在这里不是可用的时间周期"
+
+msgid "The {name} indicator"
+msgstr "{name} 指标"
+
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "{symbol} 图表：该代码没有对应市场"
+
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "此文件夹中没有 TradingView 的数据。"
+
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "无法读取 TradingView 的数据：{error}"
+
+msgid "Use Market"
+msgstr "使用此市场"
+
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "将要添加的内容。不会替换您的任何数据。"
+
+msgid "settings not found: rebuilt from its drawings"
+msgstr "未找到设置：根据绘图重建"
+
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "个代码已匹配"
+
+msgid "the read stopped unexpectedly"
+msgstr "读取意外中断"
+
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} 个图表"
+
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} 个 TradingView 保留但未显示的图表"
+
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{symbol} 上的 {count} 个绘图，该代码没有对应市场"
+
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} 个无法读取的绘图"
+
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} 张图片：TradingView 将其保存在线上"
+
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} 个最小价格单位未知的持仓绘图"
+
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} 个没有对应市场的代码"
+
+msgid "{count} {tool} drawing: DegenView has no such tool"
+msgid_plural "{count} {tool} drawings: DegenView has no such tool"
+msgstr[0] "{count} 个 {tool} 绘图：DegenView 没有此工具"
+
+msgid "{name} is added with its default settings"
+msgstr "{name} 以默认设置添加"
+
+msgid "{name}: {error}"
+msgstr "{name}：{error}"

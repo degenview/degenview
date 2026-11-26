@@ -20648,7 +20648,199 @@ msgctxt "what the image shows"
 msgid "Area"
 msgstr "Área"
 
-#: src/ui/window/chrome.rs
-msgctxt "window button"
-msgid "Minimize"
-msgstr "Minimizar"
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "Un tipo de gráfico que DegenView no dibuja: se usa el habitual"
+
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "Un símbolo de un exchange que DegenView no tiene se empareja con el mismo par en otro. Cambia u omite cualquiera."
+
+msgid "Added to DegenView"
+msgstr "Añadido a DegenView"
+
+msgid "Charts"
+msgstr "Gráficos"
+
+msgid "Choose Folder…"
+msgstr "Elegir carpeta…"
+
+msgid "Choose TradingView’s data folder"
+msgstr "Elige la carpeta de datos de TradingView"
+
+msgid "Couldn’t reach the exchanges"
+msgstr "No se pudo conectar con los exchanges"
+
+msgid "From the TradingView app."
+msgstr "Desde la app de TradingView."
+
+msgid "Import Complete"
+msgstr "Importación completada"
+
+msgid "Import from TradingView"
+msgstr "Importar desde TradingView"
+
+msgid "Import from TradingView…"
+msgstr "Importar desde TradingView…"
+
+msgid "Imported layouts are in the toolbar’s layout menu."
+msgstr "Los diseños importados están en el menú de diseños de la barra de herramientas."
+
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "Instala la app de escritorio de TradingView, inicia sesión y abre los diseños y las listas de seguimiento que quieras traer."
+
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "Sus gráficos tenían intervalos distintos. Un diseño de DegenView tiene uno:"
+
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "Diseños, dibujos, listas de seguimiento y scripts que la app de TradingView ha cargado."
+
+msgid "Left out of the import"
+msgstr "Fuera de la importación"
+
+msgid "Match symbols to markets"
+msgstr "Empareja símbolos con mercados"
+
+msgid "No exchange here lists it"
+msgstr "Ningún exchange disponible lo cotiza"
+
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "No se encontraron diseños, listas de seguimiento ni scripts. Ábrelos primero en TradingView y vuelve a intentarlo."
+
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "Ninguno de sus gráficos tiene mercado, así que no se importa"
+
+msgid "Not found on any exchange"
+msgstr "No se encontró en ningún exchange"
+
+msgid "Nothing Was Added"
+msgstr "No se añadió nada"
+
+msgid "Nothing to Import Yet"
+msgstr "Todavía no hay nada que importar"
+
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "Aquí solo está lo que la app de TradingView ha abierto recientemente en este equipo. ¿Falta algo? Ábrelo allí y recarga."
+
+msgid "Open Layout"
+msgstr "Abrir diseño"
+
+msgid "Other exchange"
+msgstr "Otro exchange"
+
+msgid "Perpetuals and futures aren’t available"
+msgstr "Los perpetuos y los futuros no están disponibles"
+
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "Elige el mercado que sustituirá a este símbolo de TradingView."
+
+msgid "Pine scripts"
+msgstr "Scripts de Pine"
+
+msgid "Reading TradingView’s data…"
+msgstr "Leyendo los datos de TradingView…"
+
+msgid "Reload"
+msgstr "Recargar"
+
+msgid "Saved layouts"
+msgstr "Diseños guardados"
+
+msgid "Search Again"
+msgstr "Buscar de nuevo"
+
+msgid "Some things couldn’t be added"
+msgstr "Algunas cosas no se pudieron añadir"
+
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "Las acciones necesitan una clave de Alpaca (Ajustes)"
+
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "Se acorta el texto de {count} dibujo"
+msgstr[1] "Se acorta el texto de {count} dibujos"
+
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "No se encontraron los datos de la app de TradingView en este equipo."
+
+msgid "The comparison with {symbol}: it has no market"
+msgstr "La comparación con {symbol}: no tiene mercado"
+
+msgid "The script library couldn’t be opened."
+msgstr "No se pudo abrir la biblioteca de scripts."
+
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "El intervalo {interval} no es una temporalidad aquí"
+
+msgid "The {name} indicator"
+msgstr "El indicador {name}"
+
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "El gráfico {symbol}: su símbolo no tiene mercado"
+
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "Esta carpeta no contiene los datos de TradingView."
+
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "No se pudieron leer los datos de TradingView: {error}"
+
+msgid "Use Market"
+msgstr "Usar mercado"
+
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "Lo que se añadirá. No se sustituye nada tuyo."
+
+msgid "settings not found: rebuilt from its drawings"
+msgstr "sin ajustes: reconstruido a partir de sus dibujos"
+
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "símbolo emparejado"
+msgstr[1] "símbolos emparejados"
+
+msgid "the read stopped unexpectedly"
+msgstr "la lectura se detuvo inesperadamente"
+
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} gráfico"
+msgstr[1] "{count} gráficos"
+
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} gráfico que TradingView guarda pero no muestra"
+msgstr[1] "{count} gráficos que TradingView guarda pero no muestra"
+
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{count} dibujo en {symbol}, que no tiene mercado"
+msgstr[1] "{count} dibujos en {symbol}, que no tiene mercado"
+
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} dibujo que no se pudo leer"
+msgstr[1] "{count} dibujos que no se pudieron leer"
+
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} imagen: TradingView la guarda en línea"
+msgstr[1] "{count} imágenes: TradingView las guarda en línea"
+
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} posición con paso de precio desconocido"
+msgstr[1] "{count} posiciones con paso de precio desconocido"
+
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} símbolo sin mercado"
+msgstr[1] "{count} símbolos sin mercado"
+
+msgid "{count} {tool} drawing: DegenView has no such tool"
+msgid_plural "{count} {tool} drawings: DegenView has no such tool"
+msgstr[0] "{count} dibujo {tool}: DegenView no tiene esa herramienta"
+msgstr[1] "{count} dibujos {tool}: DegenView no tiene esa herramienta"
+
+msgid "{name} is added with its default settings"
+msgstr "{name} se añade con sus ajustes predeterminados"
+
+msgid "{name}: {error}"
+msgstr "{name}: {error}"

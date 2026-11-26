@@ -1,4 +1,4 @@
-//! Parts the portfolio sheets share: the card, a pill, the status dot and a tinted problem list.
+//! Parts the larger sheets (portfolios, imports) share: the card, a pill, the status dot and a tinted problem list.
 //! Painter code only, so each sheet keeps its own layout and its rows at fixed heights.
 
 use crate::ui::icons::{self, Icon};
@@ -7,7 +7,7 @@ use crate::ui::theme;
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 /// A card's fill and outline, shared by the import sheets' bands, rows and cards.
-pub(crate) fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
+pub fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
     ui.painter().rect_filled(rect, 12.0, theme::quaternary(0.4));
     ui.painter().rect_stroke(
         rect,
@@ -22,7 +22,7 @@ pub(crate) fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
 
 /// A tinted callout: a glyph, a title, an optional detail line and `lines` as bullets in a
 /// scroll area at most `max_height` tall. The import sheets' errors and warnings.
-pub(crate) fn problem_card(
+pub fn problem_card(
     ui: &mut Ui,
     icon: Icon,
     tint: Color32,
@@ -86,14 +86,14 @@ pub(crate) fn problem_card(
 }
 
 /// A dot and a label, for a footer's status line.
-pub(crate) fn status_dot(ui: &mut Ui, color: Color32, label: &str, weight: f32, text: Color32) {
+pub fn status_dot(ui: &mut Ui, color: Color32, label: &str, weight: f32, text: Color32) {
     let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
     ui.painter().circle_filled(dot.center(), 3.5, color);
     ui.label(kit::text(label, kit::size::BODY, weight, text));
 }
 
 /// A small rounded label at `left`, centred on `middle`; returns its right edge.
-pub(crate) fn pill(ui: &Ui, left: f32, middle: f32, label: &str, tint: Color32) -> f32 {
+pub fn pill(ui: &Ui, left: f32, middle: f32, label: &str, tint: Color32) -> f32 {
     let text = kit::galley(ui, label, kit::size::CAPTION, kit::SEMIBOLD, tint, 200.0);
     let rect = Rect::from_min_size(pos2(left, middle - 9.0), vec2(text.size().x + 14.0, 18.0));
     ui.painter()

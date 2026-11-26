@@ -17,16 +17,19 @@ pub enum Scene {
     Predictions,
     CoinMarketCap,
     Portfolio,
+    /// Charts with their drawings, brought in from elsewhere.
+    ChartImport,
 }
 
 impl Scene {
     #[cfg(test)]
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Crypto,
         Self::Stocks,
         Self::Predictions,
         Self::CoinMarketCap,
         Self::Portfolio,
+        Self::ChartImport,
     ];
 
     fn tint(self) -> Color32 {
@@ -36,6 +39,7 @@ impl Scene {
             Self::Predictions => Color32::from_rgb(191, 90, 242),
             Self::CoinMarketCap => Color32::from_rgb(64, 156, 255),
             Self::Portfolio => Color32::from_rgb(48, 209, 88),
+            Self::ChartImport => Color32::from_rgb(255, 159, 10),
         }
     }
 }
@@ -55,6 +59,7 @@ pub fn paint(ui: &Ui, rect: Rect, scene: Scene) {
         Scene::Predictions => art.predictions(),
         Scene::CoinMarketCap => art.index(),
         Scene::Portfolio => art.portfolio(),
+        Scene::ChartImport => art.chart_import(),
     }
 }
 
@@ -215,6 +220,52 @@ impl Art<'_> {
         let chip = Rect::from_center_size(card.right_bottom() + vec2(-3.0, -1.0), vec2(26.0, 16.0));
         self.chip(chip);
         self.glyph(Icon::Briefcase, chip.center(), 10.0, Color32::WHITE);
+    }
+}
+
+impl Art<'_> {
+    /// Candles with a trend line drawn across them.
+    fn chart_import(&self) {
+        let card = self.scene();
+        let area = card.shrink2(vec2(10.0, 9.0));
+        let candles = [
+            (0.80, 0.62, true),
+            (0.66, 0.74, false),
+            (0.72, 0.50, true),
+            (0.52, 0.58, false),
+            (0.55, 0.34, true),
+            (0.36, 0.22, true),
+        ];
+        let step = area.width() / candles.len() as f32;
+        for (index, (open, close, up)) in candles.into_iter().enumerate() {
+            let x = area.left() + step * (index as f32 + 0.5);
+            let y = |level: f32| area.top() + area.height() * level;
+            let (open, close): (f32, f32) = (open, close);
+            let (top, bottom) = (y(open.min(close)), y(open.max(close)));
+            let color = if up { kit::GREEN } else { kit::RED }.gamma_multiply(0.75);
+            self.painter.line_segment(
+                [pos2(x, top - 4.0), pos2(x, bottom + 4.0)],
+                Stroke::new(1.0, color),
+            );
+            self.painter.rect_filled(
+                Rect::from_min_max(pos2(x - 2.3, top), pos2(x + 2.3, bottom)),
+                1.0,
+                color,
+            );
+        }
+        let ends = [
+            pos2(area.left() + 3.0, area.bottom() - 1.0),
+            pos2(area.right() - 3.0, area.top() + area.height() * 0.3),
+        ];
+        self.painter.line_segment(ends, Stroke::new(1.6, self.tint));
+        for end in ends {
+            self.painter.circle_filled(end, 2.8, theme::chrome());
+            self.painter
+                .circle_stroke(end, 2.8, Stroke::new(1.4, self.tint));
+        }
+        let chip = Rect::from_center_size(card.left_top() + vec2(8.0, 2.0), vec2(26.0, 16.0));
+        self.chip(chip);
+        self.glyph(Icon::Download, chip.center(), 10.0, Color32::WHITE);
     }
 }
 

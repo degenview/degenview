@@ -71,6 +71,7 @@ pub enum EmptyStateAction {
     RemoveRecent(usize),
     ClearRecents,
     ShowFavorites,
+    ImportTradingView,
 }
 
 pub struct EmptyStateOutput {
@@ -104,6 +105,10 @@ pub fn show(ui: &mut Ui, input: &EmptyStateInput, state: &mut EmptyStateState) -
                     ui.add_space(26.0);
                     if launcher(ui).clicked() {
                         frame.actions.push(EmptyStateAction::AddChart);
+                    }
+                    ui.add_space(12.0);
+                    if import_link(ui).clicked() {
+                        frame.actions.push(EmptyStateAction::ImportTradingView);
                     }
                 });
                 ui.add_space(24.0);
@@ -165,6 +170,39 @@ fn centred_line(ui: &mut Ui, text: &str, font: f32, weight: f32, color: Color32)
         galley,
         color,
     );
+}
+
+/// The way in for someone who already has charts elsewhere: a quiet, centred link.
+fn import_link(ui: &mut Ui) -> egui::Response {
+    let text = tr!("Import from TradingView\u{2026}");
+    let galley = kit::galley(
+        ui,
+        text,
+        size::SUBHEADLINE + 1.0,
+        REGULAR,
+        theme::text_secondary(),
+        ui.available_width(),
+    );
+    let (row, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), galley.size().y), Sense::hover());
+    let rect = Rect::from_center_size(row.center(), galley.size());
+    let response = ui
+        .interact(rect, ui.id().with("import-tradingview"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(response, text);
+    let color = if response.hovered() {
+        theme::text_primary()
+    } else {
+        theme::text_secondary()
+    };
+    ui.painter()
+        .galley_with_override_text_color(rect.min, galley, color);
+    ui.painter().hline(
+        rect.x_range(),
+        rect.bottom(),
+        egui::Stroke::new(1.0, color.gamma_multiply(0.5)),
+    );
+    response
 }
 
 /// A search box that is really a button: it opens the symbol picker, where the typing happens.

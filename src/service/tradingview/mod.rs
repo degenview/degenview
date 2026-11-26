@@ -1,0 +1,141 @@
+//! Reads what the TradingView desktop app has on this computer. It is read-only, offline and
+//! narrow: of the app's HTTP cache only the responses with layouts, drawings, watchlists and the
+//! account's own scripts are opened. Cookies and sign-in data are never touched, and addresses
+//! (which carry access tokens) go no further than this module. See
+//! `docs/tradingview-import.md`.
+
+pub mod cache;
+pub mod locate;
+pub mod matcher;
+
+use crate::i18n::tr;
+use crate::model::tradingview::Library;
+use crate::model::tradingview::parse::{self, Document, Fetched};
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, thiserror::Error)]
+pub enum ScanError {
+    #[error("{}", tr!("The TradingView app’s data wasn’t found on this computer."))]
+    NotInstalled,
+    #[error("{}", tr!("This folder doesn’t hold TradingView’s data."))]
+    NotACache,
+    #[error("{}", unreadable(.0))]
+    Unreadable(#[from] std::io::Error),
+    #[error("{}", tr!("No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."))]
+    NothingFound,
+}
+
+// Written where it is shown, in the language in use: the extractor reads a `tr!` whose values are
+// plain expressions.
+fn unreadable(error: &std::io::Error) -> String {
+    tr!(
+        "TradingView’s data couldn’t be read: {error}",
+        error = error
+    )
+}
+
+/// What was found, and where.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scan {
+    pub folder: PathBuf,
+    pub library: Library,
+}
+
+/// Reads the app's data: `chosen`, or where the app keeps it.
+pub fn scan(chosen: Option<&Path>) -> Result<Scan, ScanError> {
+    let folders = match chosen {
+        Some(folder) => vec![folder.to_owned()],
+        None => locate::data_folders(&locate::Environment::current()),
+    };
+    let mut documents = Vec::new();
+    let mut used = None;
+    for folder in folders {
+        let Some(dir) = locate::cache_in(&folder) else {
+            continue;
+        };
+        let responses = cache::read(&dir, &|url| route(url).is_some())?;
+        documents.extend(responses.into_iter().filter_map(|response| {
+            let document = document(&response.url, response.body)?;
+            Some(Fetched {
+                at_ms: response.at_ms,
+                document,
+            })
+        }));
+        used.get_or_insert(folder);
+    }
+    let folder = used.ok_or(if chosen.is_some() {
+        ScanError::NotACache
+    } else {
+        ScanError::NotInstalled
+    })?;
+    let library = parse::library(documents);
+    if library.is_empty() {
+        return Err(ScanError::NothingFound);
+    }
+    Ok(Scan { folder, library })
+}
+
+/// What a response holds, going by its address.
+#[derive(Debug, Eq, PartialEq)]
+enum Route {
+    LayoutPage,
+    Sources(String),
+    Watchlists,
+    Script(String),
+    SavedScripts,
+}
+
+/// The only addresses read.
+fn route(url: &str) -> Option<Route> {
+    let rest = url.strip_prefix("https://")?;
+    let (host, rest) = rest.split_once('/')?;
+    let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    let id = |text: &str| {
+        (!text.is_empty() && text.chars().all(|c| c.is_ascii_alphanumeric()))
+            .then(|| text.to_owned())
+    };
+    // `www.tradingview.com` and the language sites such as `de.tradingview.com`.
+    let site = host == "tradingview.com"
+        || host
+            .strip_suffix(".tradingview.com")
+            .is_some_and(|sub| sub == "www" || sub.len() == 2);
+    match (host, parts.as_slice()) {
+        // The desktop app on Windows opens `/chart/`, the others `/chart/<layout>/`.
+        (_, ["chart"]) if site => Some(Route::LayoutPage),
+        (_, ["chart", layout]) if site => id(layout).map(|_| Route::LayoutPage),
+        (_, ["api", "v1", "symbols_list", rest @ ..])
+            if site && matches!(rest, ["all" | "custom" | "active"] | ["custom", _]) =>
+        {
+            Some(Route::Watchlists)
+        }
+        (
+            "charts-storage.tradingview.com",
+            ["charts-storage", "get", "layout", layout, "sources"],
+        ) => id(layout).map(Route::Sources),
+        ("pine-facade.tradingview.com", ["pine-facade", "get", script, _]) => {
+            let script = script.replace("%3B", ";").replace("%3b", ";");
+            script.starts_with("USER;").then_some(Route::Script(script))
+        }
+        ("pine-facade.tradingview.com", ["pine-facade", "list"])
+            if query.split('&').any(|pair| pair == "filter=saved") =>
+        {
+            Some(Route::SavedScripts)
+        }
+        _ => None,
+    }
+}
+
+fn document(url: &str, body: Vec<u8>) -> Option<Document> {
+    let text = String::from_utf8(body).ok()?;
+    Some(match route(url)? {
+        Route::LayoutPage => Document::LayoutPage { html: text },
+        Route::Sources(layout) => Document::Sources { layout, json: text },
+        Route::Watchlists => Document::Watchlists { json: text },
+        Route::Script(id) => Document::Script { id, json: text },
+        Route::SavedScripts => Document::SavedScripts { json: text },
+    })
+}
+
+#[cfg(test)]
+mod tests;

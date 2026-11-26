@@ -43,6 +43,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 # Oversize sync payloads (a long paper-trading history) are deflated to fit one CloudKit record.
 # Already in the tree through the image crates.
 flate2 = "1"
+# TradingView import: the app's HTTP cache holds brotli and zstd bodies beside gzip.
+brotli-decompressor = "~6.3.1"
+ruzstd = "0.9.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"

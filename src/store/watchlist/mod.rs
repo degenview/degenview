@@ -326,6 +326,23 @@ impl WatchlistStore {
         }
     }
 
+    /// Keeps `list`, built elsewhere (an import), under its own name.
+    pub fn add_list(&mut self, list: Watchlist) -> Result<EntryId, WatchlistError> {
+        if self.load_failed {
+            return Err(WatchlistError::PersistenceUnavailable);
+        }
+        if self.lists.len() >= MAX_LISTS {
+            return Err(WatchlistError::TooManyLists);
+        }
+        let id = list.id;
+        self.lists.push(list);
+        if self.persist() {
+            Ok(id)
+        } else {
+            Err(WatchlistError::SaveFailed)
+        }
+    }
+
     pub fn rename_list(&mut self, id: EntryId, name: &str) -> Result<bool, WatchlistError> {
         let name = Watchlist::validated(name)?;
         self.modify(id, true, |list| {

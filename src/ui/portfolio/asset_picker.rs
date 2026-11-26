@@ -146,6 +146,13 @@ impl AssetPickerState {
         }
     }
 
+    /// Opens on a search already typed, for a caller that knows what is being looked for.
+    pub fn with_query(mut self, query: &str) -> Self {
+        self.query = query.to_owned();
+        self.touch();
+        self
+    }
+
     /// The providers the current section asks.
     pub fn sources(&self) -> Vec<DataSource> {
         match self.tab {
@@ -627,6 +634,14 @@ mod tests {
             state.receive();
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn a_picker_opened_on_a_query_searches_for_it() {
+        let picker = AssetPickerState::new("Match", "", "Use").with_query("BTC");
+        assert!(picker.is_due(Instant::now() + DEBOUNCE));
+        let empty = AssetPickerState::new("Match", "", "Use");
+        assert!(!empty.is_due(Instant::now() + DEBOUNCE));
     }
 
     #[test]

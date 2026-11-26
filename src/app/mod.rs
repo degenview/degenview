@@ -57,6 +57,8 @@ fn open_system_settings(pane: &str) {
 
 #[derive(Clone, Debug, PartialEq)]
 enum AppAction {
+    /// An import added Pine scripts to the library.
+    ScriptsImported,
     /// Quit, after asking about unsaved scripts.
     Quit,
     /// Quit, after asking about unsaved scripts, and open the app again.

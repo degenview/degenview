@@ -111,6 +111,7 @@ impl ChartWorkspace {
                 ToolbarAction::RenameLayout => rename_clicked = true,
                 ToolbarAction::ToggleAutosave => autosave_toggled = true,
                 ToolbarAction::OpenLayout(id) => open_id = Some(id),
+                ToolbarAction::ImportTradingView => self.open_tradingview_import(ctx),
                 ToolbarAction::DeleteLayout(id) => delete_id = Some(id),
                 ToolbarAction::ToggleWatchlist => {
                     self.watchlist_pane.toggle();
