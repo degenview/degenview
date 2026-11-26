@@ -7,9 +7,9 @@ use crate::ui::theme;
 use eframe::egui::{self, Rect, Ui};
 
 /// Between a hint's keycaps and its label, and between its keycaps.
-const KEY_GAP: f32 = 6.0;
+const KEY_GAP: f32 = 4.0;
 /// After each hint.
-const HINT_GAP: f32 = 10.0;
+const HINT_GAP: f32 = 8.0;
 
 /// One hint: the keys to press, and what they do.
 pub struct Hint<'a> {

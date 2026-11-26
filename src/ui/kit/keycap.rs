@@ -21,7 +21,7 @@ fn keycap_icon(key: &str) -> Option<Icon> {
 /// How wide [`keycap`] draws `key`.
 pub(crate) fn keycap_width(ui: &egui::Ui, key: &str) -> f32 {
     if keycap_icon(key).is_some() {
-        return 24.0;
+        return 18.0;
     }
     kit::galley(
         ui,

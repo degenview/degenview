@@ -474,8 +474,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             );
             painter.rect_stroke(outer, round(2.5), stroke, StrokeKind::Middle);
         }
-        Icon::Star => closed(&star_points(6.6, 3.0)),
-        Icon::StarFill => fill_poly(star_points(6.9, 3.2)),
+        Icon::Star => closed(&star_points(6.7, 2.65)),
+        Icon::StarFill => {
+            let pts = star_points(6.7, 2.65);
+            fill_poly(pts.clone());
+            closed(&pts);
+        }
         Icon::Minus => line(&[p(3.0, 8.0), p(13.0, 8.0)]),
         Icon::RectFill => {
             painter.rect_filled(rect_of(p(2.0, 3.5), p(14.0, 12.5)), round(1.8), color);

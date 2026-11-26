@@ -48,6 +48,11 @@ impl ChartWorkspace {
             .lock()
             .map(|store| store.pinned_timeframes_cached())
             .unwrap_or_default();
+        let favorites = self
+            .store
+            .lock()
+            .map(|store| store.favorite_timeframes_cached())
+            .unwrap_or_default();
         let sources: Vec<DataSource> = self
             .charts
             .iter()
@@ -57,6 +62,7 @@ impl ChartWorkspace {
         let input = toolbar::ToolbarInput {
             timeframe: self.timeframe,
             pinned: &pinned,
+            favorites: &favorites,
             sources: &sources,
             layout_name: self.layout.active_view_name().unwrap_or(tr!("Unnamed")),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
@@ -105,6 +111,9 @@ impl ChartWorkspace {
                     self.set_timeframe(timeframe, ctx);
                 }
                 ToolbarAction::UnpinTimeframe(timeframe) => self.unpin_timeframe(timeframe),
+                ToolbarAction::ToggleFavoriteTimeframe(timeframe) => {
+                    self.toggle_favorite_timeframe(timeframe);
+                }
                 ToolbarAction::OpenSymbolSearch => self.open_symbol_picker(),
                 ToolbarAction::SaveLayout => save_clicked = true,
                 ToolbarAction::CopyLayout => copy_clicked = true,
@@ -183,6 +192,12 @@ impl ChartWorkspace {
     fn unpin_timeframe(&self, timeframe: Timeframe) {
         if let Ok(store) = self.store.lock() {
             let _ = store.unpin_timeframe(timeframe);
+        }
+    }
+
+    fn toggle_favorite_timeframe(&self, timeframe: Timeframe) {
+        if let Ok(store) = self.store.lock() {
+            let _ = store.toggle_favorite_timeframe(timeframe);
         }
     }
 

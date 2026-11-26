@@ -105,6 +105,9 @@ pub(crate) struct FrameCaches {
     webhook_summaries: ChangeCachedMap<u64, Option<(usize, usize)>>,
     /// The timeframe picker's pinned list, which every chart toolbar and Pine Studio bar shows.
     pinned_timeframes: ChangeCached<Vec<Timeframe>>,
+    /// The timeframe picker's favorites list, shown directly on the toolbar and starred in the
+    /// picker.
+    favorite_timeframes: ChangeCached<Vec<Timeframe>>,
     /// The starred drawing tools and cursors, which every flyout row, the cursor menu and the
     /// favorites bar show.
     drawing_favorites: ChangeCached<Vec<Favorite>>,
@@ -155,6 +158,13 @@ impl Store {
         self.frame_caches
             .pinned_timeframes
             .get(self.change_stamp(), || self.pinned_timeframes())
+    }
+
+    /// `favorite_timeframes`, read again only after a write.
+    pub fn favorite_timeframes_cached(&self) -> Arc<Vec<Timeframe>> {
+        self.frame_caches
+            .favorite_timeframes
+            .get(self.change_stamp(), || self.favorite_timeframes())
     }
 
     /// `drawing_favorites`, read again only after a write.

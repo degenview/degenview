@@ -40,6 +40,8 @@ struct BarState {
     market: preview::Summary,
     /// The custom timeframes pinned in the picker.
     pinned: Vec<Timeframe>,
+    /// The favorite timeframes starred in the picker.
+    favorites: Vec<Timeframe>,
 }
 
 fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
@@ -86,16 +88,23 @@ fn items(state: &BarState) -> (Vec<BarItem>, Vec<BarItem>) {
 
 impl PineStudio {
     pub(super) fn show_bar(&mut self, ui: &mut Ui) {
+        let (pinned, favorites) = self
+            .shared
+            .lock()
+            .map(|store| {
+                (
+                    store.pinned_timeframes_cached().to_vec(),
+                    store.favorite_timeframes_cached().to_vec(),
+                )
+            })
+            .unwrap_or_default();
         let state = BarState {
             script_name: self.open.as_ref().map(|open| open.name.clone()),
             picker_open: self.picker.is_open(),
             chart_visible: self.prefs.chart_visible,
             market: self.preview.summary(),
-            pinned: self
-                .shared
-                .lock()
-                .map(|store| store.pinned_timeframes_cached().to_vec())
-                .unwrap_or_default(),
+            pinned,
+            favorites,
         };
         let (left, right) = items(&state);
         let preview = &mut self.preview;
@@ -116,6 +125,7 @@ impl PineStudio {
                     let input = timeframe_picker::TimeframePickerInput {
                         current: state.market.timeframe,
                         pinned: &state.pinned,
+                        favorites: &state.favorites,
                         sources: &[state.market.source],
                     };
                     if let Some(pick) = timeframe_picker::show(ui, response, &input) {
@@ -135,6 +145,9 @@ impl PineStudio {
                 }
                 BarAction::Timeframe(TimeframePick::Unpin(timeframe)) => {
                     self.with_pins(|store| store.unpin_timeframe(timeframe));
+                }
+                BarAction::Timeframe(TimeframePick::ToggleFavorite(timeframe)) => {
+                    self.with_pins(|store| store.toggle_favorite_timeframe(timeframe));
                 }
             }
         }
@@ -173,6 +186,7 @@ mod tests {
                 source: DataSource::Binance,
             },
             pinned: Vec::new(),
+            favorites: Vec::new(),
         }
     }
 

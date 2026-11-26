@@ -197,6 +197,7 @@ impl Harness {
         TimeframePickerInput {
             current: Timeframe::HOUR_1,
             pinned,
+            favorites: &[],
             sources,
         }
     }
@@ -410,6 +411,21 @@ fn a_click_on_a_chip_charts_it_and_closes_the_picker() {
     );
     harness.frame(Vec::new(), &input);
     assert!(!harness.is_open());
+}
+
+#[test]
+fn a_click_on_a_star_toggles_favorite_and_keeps_picker_open() {
+    let input = Harness::input(&[], &[]);
+    let mut harness = Harness::new();
+    harness.open(&input);
+    let chip_rect = harness.labels["15m"];
+    let star_pos = pos2(chip_rect.right() - 12.0, chip_rect.center().y);
+    assert_eq!(
+        harness.click(star_pos, &input),
+        Some(TimeframePick::ToggleFavorite(Timeframe::MINUTE_15))
+    );
+    harness.frame(Vec::new(), &input);
+    assert!(harness.is_open(), "picker remains open after clicking star");
 }
 
 #[test]
