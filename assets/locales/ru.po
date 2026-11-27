@@ -10006,6 +10006,10 @@ msgstr "Нет точек останова"
 msgid "No call stack"
 msgstr "Нет стека вызовов"
 
+#: src/ui/chart/symbol_picker/detail/chart.rs
+msgid "No chart for this market"
+msgstr "Для этого рынка нет графика"
+
 #: src/ui/settings/mcp/clients.rs
 msgid "No clients yet. Generate a credential above to connect one."
 msgstr ""
@@ -12925,6 +12929,10 @@ msgstr "Заменить"
 #: src/ui/settings/ai.rs src/ui/settings/api_keys.rs
 msgid "Replace API Key"
 msgstr "Заменить API-ключ"
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Replace chart"
+msgstr "Заменить график"
 
 #: src/ui/drawing/layer/menu.rs src/ui/drawing/properties/content.rs
 msgid "Replace image…"

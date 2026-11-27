@@ -9311,6 +9311,10 @@ msgstr "Keine Haltepunkte"
 msgid "No call stack"
 msgstr "Keine Aufrufliste"
 
+#: src/ui/chart/symbol_picker/detail/chart.rs
+msgid "No chart for this market"
+msgstr "Kein Chart für diesen Markt"
+
 #: src/ui/settings/mcp/clients.rs
 msgid "No clients yet. Generate a credential above to connect one."
 msgstr "Noch keine Clients. Erzeuge oben Zugangsdaten, um einen zu verbinden."
@@ -12068,6 +12072,10 @@ msgstr "Ersetzen"
 #: src/ui/settings/ai.rs src/ui/settings/api_keys.rs
 msgid "Replace API Key"
 msgstr "API-Schlüssel ersetzen"
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Replace chart"
+msgstr "Chart ersetzen"
 
 #: src/ui/drawing/layer/menu.rs src/ui/drawing/properties/content.rs
 msgid "Replace image…"

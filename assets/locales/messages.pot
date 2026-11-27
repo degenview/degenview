@@ -145,7 +145,7 @@ msgstr ""
 msgid "24h %"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "24h volume"
 msgstr ""
 
@@ -440,7 +440,7 @@ msgstr ""
 msgid "ABCD pattern"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "ABOUT"
 msgstr ""
 
@@ -458,7 +458,7 @@ msgstr ""
 msgid "AI Assistant"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/related.rs
 msgid "ALSO TRADES AS"
 msgstr ""
 
@@ -733,6 +733,7 @@ msgstr ""
 msgid "Add as New Chart"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/list.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add as new chart"
@@ -742,10 +743,12 @@ msgstr ""
 msgid "Add broker…"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add card"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Add chart"
 msgstr ""
@@ -871,10 +874,11 @@ msgstr ""
 
 #: src/ui/chart/card/header.rs
 #: src/ui/chart/symbol_picker/list.rs
+#: src/ui/chart/symbol_picker/mod.rs
 msgid "Add to watchlist"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Add to {list}"
 msgstr ""
 
@@ -902,7 +906,7 @@ msgstr ""
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 msgid ""
 "Add your Oanda credentials in Settings to search and chart forex, metals and "
 "index CFDs."
@@ -912,7 +916,7 @@ msgstr ""
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
 msgstr ""
 
@@ -920,7 +924,7 @@ msgstr ""
 msgid "Add your {provider} API key to start"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Add {count} choice"
 msgid_plural "Add {count} choices"
 msgstr[0] ""
@@ -930,7 +934,7 @@ msgstr[1] ""
 msgid "Add {market} to this tab"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Add {market} to {list}"
 msgstr ""
 
@@ -956,7 +960,7 @@ msgid_plural "Added {count} symbols"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Added {market}"
 msgstr ""
 
@@ -1090,7 +1094,7 @@ msgstr ""
 msgid "All Assets"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/tabs.rs
 #: src/ui/portfolio/overview/hero.rs
 #: src/ui/portfolio/tab/bar.rs
 #: src/ui/portfolio/tab/mod.rs
@@ -1121,7 +1125,7 @@ msgstr ""
 msgid "All timeframes"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/tabs.rs
 msgid "All venues"
 msgstr ""
 
@@ -1288,7 +1292,7 @@ msgstr ""
 msgid "Already in Watchlist"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Already in {list}"
 msgstr ""
 
@@ -2723,7 +2727,7 @@ msgstr ""
 msgid "Cash"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Category"
 msgstr ""
 
@@ -2957,7 +2961,7 @@ msgstr ""
 msgid "Chart type: {chart_type}"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Chart {count} choice"
 msgid_plural "Chart {count} choices"
 msgstr[0] ""
@@ -3330,7 +3334,7 @@ msgstr ""
 #: src/pine_studio/editor/diff_view.rs
 #: src/pine_studio/editor/find.rs
 #: src/ui/chart/indicator_picker/mod.rs
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/kit/dialog/mod.rs
 #: src/ui/paper/tables.rs
 #: src/ui/snapshot_studio/window/mod.rs
@@ -3599,6 +3603,7 @@ msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 #: src/ui/chart/settings/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/list.rs
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Compare"
@@ -3620,8 +3625,8 @@ msgstr ""
 msgid "Compare or add symbol"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/list.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Compare with {market}"
 msgstr ""
 
@@ -4515,7 +4520,7 @@ msgstr ""
 msgid "Crypto"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr ""
 
@@ -5066,6 +5071,7 @@ msgstr ""
 msgid "Describe a change to {script}."
 msgstr ""
 
+#: src/ui/chart/symbol_picker/results.rs
 #: src/ui/webhook/editor.rs
 msgid "Description"
 msgstr ""
@@ -5822,7 +5828,7 @@ msgstr ""
 msgid "Endpoints"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Ends"
 msgstr ""
 
@@ -6490,11 +6496,11 @@ msgstr ""
 msgid "Filter by Flag"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/tabs.rs
 msgid "Filter by exchange"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/tabs.rs
 msgid "Filter by portfolio"
 msgstr ""
 
@@ -7147,7 +7153,7 @@ msgstr ""
 msgid "Hide all drawings"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Hide choices"
 msgstr ""
 
@@ -7941,7 +7947,7 @@ msgstr ""
 msgid "Kagi"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "Kalshi cannot list its busiest markets. Search for one, or pick a topic."
 msgstr ""
 
@@ -8626,7 +8632,7 @@ msgstr ""
 msgid "Liquidations"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Liquidity"
 msgstr ""
 
@@ -8760,7 +8766,7 @@ msgstr ""
 msgid "Loading prices…"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Loading price…"
 msgstr ""
 
@@ -9056,7 +9062,7 @@ msgid "Market"
 msgstr ""
 
 #: src/model/watchlist/quote.rs
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Market closed"
 msgstr ""
 
@@ -9070,7 +9076,7 @@ msgstr ""
 msgid "Market indices"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Market open"
 msgstr ""
 
@@ -9354,6 +9360,7 @@ msgid "More Fibonacci and Gann tools"
 msgstr ""
 
 #: src/ui/alert/center.rs
+#: src/ui/chart/symbol_picker/detail/action.rs
 #: src/ui/paper/tables.rs
 msgid "More actions"
 msgstr ""
@@ -9574,7 +9581,7 @@ msgstr ""
 msgid "Namespaces"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Navigate"
 msgstr ""
 
@@ -9911,6 +9918,10 @@ msgstr ""
 msgid "No call stack"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/detail/chart.rs
+msgid "No chart for this market"
+msgstr ""
+
 #: src/ui/settings/mcp/clients.rs
 msgid "No clients yet. Generate a credential above to connect one."
 msgstr ""
@@ -9989,7 +10000,7 @@ msgstr ""
 msgid "No gaps on this market"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "No index or portfolio view matches “{query}”."
 msgstr ""
 
@@ -10037,7 +10048,7 @@ msgstr ""
 msgid "No market matches “{query}”"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid ""
 "No market matches “{query}”. Searched: {searched}. Try a topic like "
 "Bitcoin or the Fed."
@@ -10151,7 +10162,7 @@ msgid "No quote"
 msgstr ""
 
 #: src/model/watchlist/quote.rs
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "No quotes for this market"
 msgstr ""
 
@@ -10160,7 +10171,7 @@ msgid "No report"
 msgstr ""
 
 #: src/pine_studio/editor/find.rs
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "No results"
 msgstr ""
 
@@ -10217,7 +10228,7 @@ msgstr ""
 msgid "No volume data"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "No watchlist markets yet"
 msgstr ""
 
@@ -10408,7 +10419,7 @@ msgstr ""
 msgid "Nothing here."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "Nothing in your watchlists matches “{query}”."
 msgstr ""
 
@@ -10440,7 +10451,7 @@ msgstr ""
 msgid "Nothing matches the current search and filters."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "Nothing matches “{query}”. Searched: {searched}."
 msgstr ""
 
@@ -10837,11 +10848,11 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Open 24/5"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Open 24/7"
 msgstr ""
 
@@ -10874,7 +10885,7 @@ msgstr ""
 #: src/pine_studio/preview/market_picker.rs
 #: src/ui/alert/center.rs
 #: src/ui/broker/panel.rs
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Open Settings"
 msgstr ""
@@ -10918,7 +10929,7 @@ msgstr ""
 msgid "Open in new tab"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Open interest"
 msgstr ""
 
@@ -11708,7 +11719,7 @@ msgstr ""
 msgid "Popular US stocks and ETFs · free IEX feed"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 #: src/ui/portfolio/asset_picker.rs
 msgid "Popular topics"
 msgstr ""
@@ -11762,7 +11773,7 @@ msgid ""
 "Portfolio views appear here once you create a portfolio in the Portfolio tab."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "Portfolio · {scope}"
 msgstr ""
 
@@ -12843,6 +12854,10 @@ msgstr ""
 msgid "Replace API Key"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Replace chart"
+msgstr ""
+
 #: src/ui/drawing/layer/menu.rs
 #: src/ui/drawing/properties/content.rs
 msgid "Replace image…"
@@ -12860,8 +12875,8 @@ msgstr ""
 msgid "Replace password"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/list.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Replace {market}"
 msgstr ""
 
@@ -13845,7 +13860,7 @@ msgstr ""
 msgid "Search scripts"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "Search stocks and crypto"
 msgstr ""
 
@@ -13861,7 +13876,7 @@ msgstr ""
 msgid "Search symbol…"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/tabs.rs
 msgid "Search to add to {list}…"
 msgstr ""
 
@@ -14205,11 +14220,11 @@ msgstr ""
 msgid "Set up"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 msgid "Set up Alpaca to open a stock"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 msgid "Set up Oanda to search forex"
 msgstr ""
 
@@ -14381,7 +14396,7 @@ msgstr ""
 msgid "Show candle bodies."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Show choices"
 msgstr ""
 
@@ -14988,7 +15003,7 @@ msgstr ""
 msgid "Stocks"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 msgid "Stocks could not be searched"
 msgstr ""
 
@@ -14996,7 +15011,7 @@ msgstr ""
 msgid "Stocks need Alpaca market data"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/notice.rs
 msgid "Stocks need an Alpaca key"
 msgstr ""
 
@@ -15239,7 +15254,7 @@ msgstr ""
 msgid "Switch paper account"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/footer.rs
 msgid "Switch tab"
 msgstr ""
 
@@ -15255,6 +15270,7 @@ msgstr ""
 #: src/model/chart/object_tree.rs
 #: src/model/watchlist/mod.rs
 #: src/ui/chart/object_tree/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 #: src/ui/paper/tables.rs
 #: src/ui/watchlist/rows.rs
 #: src/ui/watchlist/sidebar/detail.rs
@@ -17523,7 +17539,7 @@ msgstr ""
 msgid "Type a message; until then the breakpoint stops as usual."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "Type a ticker, a company or a pair: BTC, AAPL, ETHUSDT."
 msgstr ""
 
@@ -18063,6 +18079,7 @@ msgstr ""
 msgid "Variance"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/results.rs
 #: src/ui/market_flow/flow.rs
 msgid "Venue"
 msgstr ""
@@ -18184,7 +18201,7 @@ msgstr ""
 #: src/model/chart/table.rs
 #: src/model/indicators/mod.rs
 #: src/model/watchlist/mod.rs
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 #: src/ui/drawing/properties/forecast_pages.rs
 #: src/ui/watchlist/sidebar/detail.rs
 msgid "Volume"
@@ -18929,15 +18946,15 @@ msgstr ""
 msgid "cancel requested"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "chance"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "chance of {symbol}"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "chance of {symbol} · {count} choice"
 msgid_plural "chance of {symbol} · {count} choices"
 msgstr[0] ""
@@ -20712,7 +20729,7 @@ msgstr ""
 msgid "{prefix} isn't supported · matches from other venues"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "{prefix} isn't supported. Searched: {searched}."
 msgstr ""
 
@@ -21092,15 +21109,15 @@ msgstr ""
 msgid "{value} is not a choice for {title}."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "{venue} could not be searched"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/results.rs
 msgid "{venue} has no markets under {tab}. Try another tab."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/detail.rs
+#: src/ui/chart/symbol_picker/detail/mod.rs
 msgid "{venue} · {kind}"
 msgstr ""
 

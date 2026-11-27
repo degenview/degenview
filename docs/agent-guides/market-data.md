@@ -10,6 +10,9 @@
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
+   Pass the provider's asset names with `SearchResult::named` when its search lists them, and decide
+   in `service::market::names::Directory` what describes its markets otherwise
+   ([Asset names](../symbol-picker.md#asset-names)).
 5. `SourceLogo` under `assets/source_logos/`, the `ui::kit::source_logo::source` arm, attribution in
    `docs/source-logos.md`.
 

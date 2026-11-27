@@ -118,7 +118,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent daily closes for sparklines) |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent closes: days for sparklines, the last day for the symbol picker's chart), `coin_index` (top coins by market cap: artwork and names), `names` (what a market's assets are called) |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart`, `agent` (`FollowingAgent`) and `proxy/` (the proxy setting, its resolution, OS readers and the live-feed tunnel) |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |

@@ -9275,6 +9275,10 @@ msgstr "没有断点"
 msgid "No call stack"
 msgstr "没有调用栈"
 
+#: src/ui/chart/symbol_picker/detail/chart.rs
+msgid "No chart for this market"
+msgstr "该市场暂无图表"
+
 #: src/ui/settings/mcp/clients.rs
 msgid "No clients yet. Generate a credential above to connect one."
 msgstr "还没有客户端。在上方生成凭据即可连接一个。"
@@ -12025,6 +12029,10 @@ msgstr "替换"
 #: src/ui/settings/ai.rs src/ui/settings/api_keys.rs
 msgid "Replace API Key"
 msgstr "替换 API 密钥"
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Replace chart"
+msgstr "替换图表"
 
 #: src/ui/drawing/layer/menu.rs src/ui/drawing/properties/content.rs
 msgid "Replace image…"
