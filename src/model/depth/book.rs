@@ -51,6 +51,9 @@ pub struct Snapshot {
 /// Changes to the book, covering the update ids `first..=last`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Delta {
+    /// The last update id of the diff before this one, where the exchange chains them (Binance
+    /// futures' `pu`).
+    pub previous: Option<u64>,
     pub first: u64,
     pub last: u64,
     pub levels: Levels,

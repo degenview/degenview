@@ -64,6 +64,9 @@ pub(in crate::service) struct Pair {
     symbol: String,
     base: String,
     quote: String,
+    /// The smallest step the price moves in, as written.
+    #[serde(default)]
+    tick: Option<String>,
 }
 
 /// Forgets the lists held in memory (after the disk cache was cleared).
@@ -95,6 +98,36 @@ fn download_pairs_with(
 ) -> Result<Vec<Pair>, ProviderError> {
     let body = get(endpoints.exchange_info_url, EXCHANGE_INFO_MAX_BYTES)?;
     parse_pairs(&body, endpoints.lists)
+}
+
+fn price_step(entry: &Value) -> Option<String> {
+    entry
+        .get("filters")?
+        .as_array()?
+        .iter()
+        .find(|filter| filter.get("filterType").and_then(Value::as_str) == Some("PRICE_FILTER"))?
+        .get("tickSize")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// The price step of `pair` on `market`, from its list of markets; `None` for a pair the list
+/// does not hold.
+pub(in crate::service) fn tick_size(
+    market: Market,
+    pair: &str,
+) -> Result<Option<String>, ProviderError> {
+    let endpoints = endpoints(market);
+    let pairs = endpoints.catalog.get(|| download_pairs(endpoints))?;
+    Ok(step_of(&pairs, pair))
+}
+
+fn step_of(pairs: &[Pair], symbol: &str) -> Option<String> {
+    pairs
+        .iter()
+        .find(|pair| pair.symbol == symbol)?
+        .tick
+        .clone()
 }
 
 pub(super) fn is_trading(entry: &Value) -> bool {
@@ -133,6 +166,7 @@ fn parse_pairs(body: &str, lists: fn(&Value) -> bool) -> Result<Vec<Pair>, Provi
                 symbol: symbol.get("symbol")?.as_str()?.to_owned(),
                 base: symbol.get("baseAsset")?.as_str()?.to_owned(),
                 quote: symbol.get("quoteAsset")?.as_str()?.to_owned(),
+                tick: price_step(symbol),
             })
         })
         .collect())
@@ -149,11 +183,13 @@ mod tests {
                 symbol: "BTCUSDT".into(),
                 base: "BTC".into(),
                 quote: "USDT".into(),
+                tick: None,
             },
             Pair {
                 symbol: "ETHBTC".into(),
                 base: "ETH".into(),
                 quote: "BTC".into(),
+                tick: None,
             },
         ];
         for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
@@ -227,6 +263,7 @@ mod tests {
             symbol: "BTCUSDT".into(),
             base: "BTC".into(),
             quote: "USDT".into(),
+            tick: None,
         }];
         for query in ["btc", "btcusdt", "BTCUSDT.P", "btc/usdt"] {
             let found = matching_pairs(&pairs, &normalize(query), Market::Perpetual);
@@ -251,6 +288,17 @@ mod tests {
         let pairs = parse_pairs(body, is_trading_perpetual).expect("pairs");
         let symbols: Vec<&str> = pairs.iter().map(|pair| pair.symbol.as_str()).collect();
         assert_eq!(symbols, ["BTCUSDT", "TSLAUSDT", "SUSDT"]);
+    }
+
+    #[test]
+    fn the_price_step_is_the_named_markets_own() {
+        let body = r#"{"symbols":[
+            {"symbol":"ETHUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"ETH","quoteAsset":"USDT","filters":[{"filterType":"PRICE_FILTER","tickSize":"0.01"}]},
+            {"symbol":"BTCUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"USDT","filters":[{"filterType":"LOT_SIZE"},{"filterType":"PRICE_FILTER","tickSize":"0.10"}]}
+        ]}"#;
+        let pairs = parse_pairs(body, is_trading_perpetual).expect("pairs");
+        assert_eq!(step_of(&pairs, "BTCUSDT").as_deref(), Some("0.10"));
+        assert_eq!(step_of(&pairs, "NOPEUSDT"), None);
     }
 
     #[test]

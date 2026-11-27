@@ -12,7 +12,7 @@ use serde_json::Value;
 mod catalog;
 mod endpoints;
 
-pub(in crate::service) use catalog::clear_catalog;
+pub(in crate::service) use catalog::{clear_catalog, tick_size};
 pub(in crate::service) use endpoints::{Endpoints, endpoints};
 
 pub struct Binance;

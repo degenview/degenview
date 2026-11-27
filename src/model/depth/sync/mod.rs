@@ -8,7 +8,7 @@ mod bybit;
 #[cfg(test)]
 mod tests;
 
-pub use binance::DiffStream;
+pub use binance::{ChainedDiffStream, DiffStream};
 pub use bybit::SnapshotAndDeltas;
 
 use super::BookEvent;

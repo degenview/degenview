@@ -197,7 +197,7 @@ fn the_mode_says_what_is_missing_instead_of_an_empty_ladder() {
 fn the_footnote_says_where_the_book_is_from_and_since_when_it_traded() {
     let depth = live_depth(first_view());
     let note = footnote_text(feed(&depth));
-    assert!(note.starts_with("BTCUSDT spot, Binance."), "{note}");
+    assert!(note.starts_with("BTCUSDT, Binance spot."), "{note}");
     assert!(note.contains("Traded since "), "{note}");
     let quiet = waiting_depth(crate::model::depth::Link::Live);
     assert!(footnote_text(feed(&quiet)).contains("No trades yet."));

@@ -19835,12 +19835,12 @@ msgid "{symbol} rises by {price}"
 msgstr "{symbol} steigt um {price}"
 
 #: src/ui/market_flow/book/mod.rs
-msgid "{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
-msgstr "{symbol} Spot, {exchange}. Mengen in der Basiswährung. Noch keine Trades. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
+msgid "{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}, {venue}. Mengen in der Basiswährung. Noch keine Trades. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
 
 #: src/ui/market_flow/book/mod.rs
-msgid "{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
-msgstr "{symbol} Spot, {exchange}. Mengen in der Basiswährung. Gehandelt seit {time}. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
+msgid "{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}, {venue}. Mengen in der Basiswährung. Gehandelt seit {time}. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
 
 #: src/ui/shortcut.rs
 msgid "{text} ({shortcut})"

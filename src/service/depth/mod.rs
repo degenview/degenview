@@ -20,6 +20,7 @@ pub use venue::DepthVenue;
 use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::depth::{BookEvent, DepthMarket, DepthRecord, Event, Price, SyncOutcome};
+use crate::service::net::ws::Session;
 use crate::service::stream::{Stream, Worker};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -31,7 +32,7 @@ const SNAPSHOT_RETRY_AFTER: Duration = Duration::from_secs(2);
 
 /// An empty record of `market`, judging its exchange's book updates by that exchange's rules.
 pub fn new_record(market: &DepthMarket) -> DepthRecord {
-    DepthRecord::new(venue::for_exchange(market.venue.exchange).book_sync())
+    DepthRecord::new(venue::for_venue(market.venue).book_sync())
 }
 
 /// The running socket of one market; dropping it closes it.
@@ -48,8 +49,21 @@ impl DepthFeed {
         lease: Lease,
         repaint: Repaint,
     ) -> Self {
-        let venue = venue::for_exchange(market.venue.exchange);
+        let venue = venue::for_venue(market.venue);
         let stream = Stream::new(lease, repaint);
+        if let Some(trades) = venue.sessions(&market.symbol).trades {
+            let venue = venue::for_venue(market.venue);
+            let (symbol, record) = (market.symbol.clone(), Arc::clone(&record));
+            stream.spawn(move |worker| {
+                Follower {
+                    worker,
+                    venue: venue.as_ref(),
+                    symbol: &symbol,
+                    record: &record,
+                }
+                .follow_trades(&trades);
+            });
+        }
         stream.spawn(move |worker| {
             Follower {
                 worker,
@@ -84,7 +98,7 @@ impl Follower<'_> {
         };
         lock(self.record).set_tick(tick);
         self.worker.wake();
-        let session = self.venue.session(self.symbol);
+        let session = self.venue.sessions(self.symbol).book;
         self.worker.run_linked(
             &session,
             |up| {
@@ -101,6 +115,16 @@ impl Follower<'_> {
                 true
             },
         );
+    }
+
+    /// Follows a socket that carries only trades: whether it is up says nothing of the book.
+    fn follow_trades(&self, session: &Session) {
+        self.worker.run(session, |text| {
+            if self.take(text) {
+                self.worker.wake();
+            }
+            true
+        });
     }
 
     /// The market's tick size, or `None` to try again; a market the exchange does not list says

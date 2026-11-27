@@ -187,6 +187,7 @@ pub(in crate::ui::market_flow) fn live_book() -> DepthRecord {
     }
     // Two seconds ago: bid size stacked at three prices and an offer pulled at two.
     let change = Delta {
+        previous: None,
         first: 101,
         last: 101,
         levels: Levels {
@@ -219,7 +220,10 @@ pub(in crate::ui::market_flow) fn waiting_depth(link: crate::model::depth::Link)
 
 pub(in crate::ui::market_flow) fn feed(snapshot: &DepthSnapshot) -> BookFeed<'_> {
     BookFeed {
-        exchange: "Binance",
+        venue: Venue {
+            exchange: Exchange::Binance,
+            market: crate::model::exchange::Market::Spot,
+        },
         symbol: "BTCUSDT",
         snapshot,
     }

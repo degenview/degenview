@@ -1,6 +1,7 @@
 //! Which markets have an order book to show.
 
-use crate::model::exchange::{Exchange, Market, Venue};
+use crate::model::exchange::{Exchange, Venue};
+use crate::model::market::binance::split_market;
 use crate::model::{DataSource, InstrumentId};
 
 /// A market on an exchange whose book can be followed: the key of one feed.
@@ -11,8 +12,7 @@ pub struct DepthMarket {
     pub symbol: String,
 }
 
-/// The book of the market a chart shows, when it is a spot market of an exchange that sends
-/// books. A perpetual has none yet: its spot pair's book would be another market's.
+/// The book of the market a chart shows, when its exchange is one that sends books.
 pub fn market_of(source: DataSource, symbol: &str) -> Option<DepthMarket> {
     let exchange = match source {
         DataSource::Binance => Exchange::Binance,
@@ -20,14 +20,17 @@ pub fn market_of(source: DataSource, symbol: &str) -> Option<DepthMarket> {
         _ => return None,
     };
     let instrument = InstrumentId::new(source, symbol);
-    if instrument.market() != Market::Spot {
-        return None;
-    }
+    let canonical = instrument.canonical_symbol();
+    // The exchange's own name of the pair: Binance's APIs do not take the app's suffix.
+    let name = match exchange {
+        Exchange::Binance => split_market(&canonical).0,
+        Exchange::Bybit => &canonical,
+    };
     Some(DepthMarket {
         venue: Venue {
             exchange,
-            market: Market::Spot,
+            market: instrument.market(),
         },
-        symbol: instrument.canonical_symbol(),
+        symbol: name.to_owned(),
     })
 }

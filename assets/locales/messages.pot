@@ -21472,14 +21472,14 @@ msgstr ""
 
 #: src/ui/market_flow/book/mod.rs
 msgid ""
-"{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is"
-" size added or taken away over the last 10 seconds."
+"{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size "
+"added or taken away over the last 10 seconds."
 msgstr ""
 
 #: src/ui/market_flow/book/mod.rs
 msgid ""
-"{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. "
-"Stack is size added or taken away over the last 10 seconds."
+"{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is "
+"size added or taken away over the last 10 seconds."
 msgstr ""
 
 #: src/ui/shortcut.rs
