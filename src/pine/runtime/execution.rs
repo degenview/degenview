@@ -214,9 +214,6 @@ impl ExecutionController {
                 BarPhase::RealtimeTick { is_new: false }
             };
             ran |= self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
-            if phase.is_confirmed() {
-                self.live_open_time = None;
-            }
         } else {
             if self.live_open_time == Some(old_last.open_time) {
                 let closed = bars
@@ -231,7 +228,6 @@ impl ExecutionController {
                     &mut alerts,
                     &mut error,
                 );
-                self.live_open_time = None;
             }
             if error.is_none() {
                 if is_closed(&new_last, now_ms) {
@@ -248,10 +244,12 @@ impl ExecutionController {
                         &mut alerts,
                         &mut error,
                     );
-                    self.live_open_time = Some(new_last.open_time);
                 }
             }
         }
+        // Which bar is forming is a fact about the snapshot, whether or not the script ran it: a
+        // stopped script must not look like new history on the next tick, which would replay it.
+        self.live_open_time = (!is_closed(&new_last, now_ms)).then_some(new_last.open_time);
         self.bars = bars.to_vec();
         if ran {
             self.last_error = error.clone();
@@ -275,20 +273,24 @@ impl ExecutionController {
         let seed = bars
             .last()
             .map(|bar| (bar.close_time - bar.open_time).max(0) as f64 / 1000.0);
-        if let Err(run_error) = self.session.load_history(history, live_open, seed) {
-            error = script_error(run_error);
-        } else if last_is_live {
-            let live = bars.last().cloned().expect("live bar");
-            self.execute_event(
-                live.clone(),
-                BarPhase::RealtimeTick { is_new: true },
-                &mut alerts,
-                &mut error,
-            );
-            self.live_open_time = Some(live.open_time);
-        } else {
-            self.live_open_time = None;
+        let replayed = self.session.load_history(history, live_open, seed);
+        // A replay interrupted between bars leaves a partial state that only another replay can
+        // continue from; one that finished, or stopped the script, takes ticks.
+        let takes_ticks = replayed.is_ok() || self.session.is_halted();
+        match replayed {
+            Err(run_error) => error = script_error(run_error),
+            Ok(_) => {
+                if let Some(live) = bars.last().filter(|_| last_is_live) {
+                    self.execute_event(
+                        live.clone(),
+                        BarPhase::RealtimeTick { is_new: true },
+                        &mut alerts,
+                        &mut error,
+                    );
+                }
+            }
         }
+        self.live_open_time = live_open.filter(|_| takes_ticks);
         self.bars = bars.to_vec();
         self.last_error = error.clone();
         self.result(alerts, error, true)
@@ -533,6 +535,42 @@ mod tests {
             Some("late")
         );
         assert_eq!(closed.output.bar_count, 3);
+    }
+
+    /// A new tick of the same forming bar is not new history: nothing is replayed, so nothing can
+    /// start the stopped script again.
+    fn assert_stays_stopped(controller: &mut ExecutionController, mut bars: Vec<Kline>, now: i64) {
+        for tick in 0..2 {
+            bars.last_mut().expect("forming bar").close += 0.1;
+            let update = controller.update(&bars, None, now + tick);
+            assert!(!update.rebuilt, "tick {tick}");
+            assert!(update.error.is_some(), "tick {tick}");
+            assert!(update.alerts.is_empty(), "tick {tick}");
+        }
+    }
+
+    #[test]
+    fn a_script_that_fails_when_a_live_bar_closes_does_not_start_again() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\nalert(\"hi\", alert.freq_all)\n\
+            if barstate.isrealtime and barstate.isconfirmed\n    runtime.error(\"on close\")",
+        );
+        let mut bars = history(4);
+        assert!(controller.update(&bars, None, 200_000).error.is_none());
+        // The forming bar closes as the next one arrives.
+        bars.push(bar(4 * 60_000, 14.0));
+        assert!(controller.update(&bars, None, 250_000).error.is_some());
+        assert_stays_stopped(&mut controller, bars, 260_000);
+    }
+
+    #[test]
+    fn a_script_that_failed_on_history_is_not_replayed_by_a_live_tick() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\nif bar_index == 1\n    runtime.error(\"early\")",
+        );
+        let bars = history(4);
+        assert!(controller.update(&bars, None, 200_000).error.is_some());
+        assert_stays_stopped(&mut controller, bars, 210_000);
     }
 
     #[test]
