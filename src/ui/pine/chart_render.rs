@@ -250,6 +250,15 @@ impl PineLayer<'_> {
         (self.price_y)(price)
     }
 
+    /// `gap` points under `candle`'s low, or over its high: where what hangs off a bar sits.
+    fn off_candle(&self, candle: &Kline, below: bool, gap: f32) -> f32 {
+        if below {
+            self.y_of_price(candle.low) + gap
+        } else {
+            self.y_of_price(candle.high) - gap
+        }
+    }
+
     fn point_bar(&self, bar: i64, price: f64) -> Pos2 {
         Pos2::new(self.x_bar(bar), self.y(price))
     }
@@ -989,11 +998,7 @@ impl PineLayer<'_> {
             self.count(),
         );
         let candle = self.candles.get(usize::try_from(slot).ok()?)?;
-        Some(if below {
-            self.y_of_price(candle.low) + MARKER_OFFSET
-        } else {
-            self.y_of_price(candle.high) - MARKER_OFFSET
-        })
+        Some(self.off_candle(candle, below, MARKER_OFFSET))
     }
 
     // MARK: Markers
@@ -1129,12 +1134,7 @@ impl PineLayer<'_> {
                 self.plot.min.y + gap
             };
         }
-        let candle = &self.candles[i];
-        if location.is_below() {
-            self.y(candle.low) + gap
-        } else {
-            self.y(candle.high) - gap
-        }
+        self.off_candle(&self.candles[i], location.is_below(), gap)
     }
 
     /// Where a marker's centre sits vertically. A marker that hangs off a bar keeps its near edge
@@ -1162,12 +1162,7 @@ impl PineLayer<'_> {
                 self.plot.min.y + offset
             };
         }
-        let candle = &self.candles[i];
-        if location.is_below() {
-            self.y_of_price(candle.low) + offset
-        } else {
-            self.y_of_price(candle.high) - offset
-        }
+        self.off_candle(&self.candles[i], location.is_below(), offset)
     }
 
     // MARK: Strategy trades
