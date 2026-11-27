@@ -88,7 +88,8 @@
     fields by the held name and every builtin table (`market`, `flags`, `builtins::color`/`constant`,
     libraries, named constants, enums, `ta.*` variables, `line.all`) by `rename::display_text`, so
     `color.red` is the constant where `color` is a local without that field. The debugger applies the
-    same rule to a watch, condition or logpoint (`DebugExpression::in_scope`). A new builtin family
+    builtin part of that rule to a watch, condition or logpoint (`DebugExpression::in_scope`); it
+    refuses constructors and the script's functions. A new builtin family
     must be a `Route` or listed in `is_by_value`; `every_registered_function_is_a_builtin_call` fails
     otherwise.
   - Anything that shows a name uses `rename::display_name` (`level#42` → `level`). The debugger builds
