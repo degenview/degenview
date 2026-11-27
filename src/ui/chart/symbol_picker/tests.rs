@@ -2,6 +2,8 @@ use super::*;
 use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
 use crate::service::EventInfo;
+use crate::service::market::coin_index::CoinIndex;
+use crate::service::market::names::Listed;
 use crate::service::net::http;
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
@@ -121,7 +123,21 @@ const STUB: Backend = Backend {
     search: stub_search,
     related: stub_related,
     trending: stub_trending,
+    coin_names: stub_coin_names,
+    listed_names: stub_listed_names,
 };
+
+fn stub_coin_names() -> Arc<CoinIndex> {
+    Arc::new(CoinIndex::of(&[
+        ("bitcoin", "btc", "Bitcoin"),
+        ("ethereum", "eth", "Ethereum"),
+        ("tether", "usdt", "Tether"),
+    ]))
+}
+
+fn stub_listed_names() -> Arc<Listed> {
+    Arc::new(Listed::default())
+}
 
 fn press(key: Key, modifiers: Modifiers) -> egui::Event {
     egui::Event::Key {

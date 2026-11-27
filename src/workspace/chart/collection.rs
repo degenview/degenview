@@ -742,6 +742,7 @@ mod tests {
             event: None,
             base: None,
             quote: None,
+            names: Default::default(),
         };
 
         workspace.add_from_search(&result, &ctx);

@@ -240,6 +240,9 @@ mod tests {
             symbol: symbol.into(),
             full_symbol: symbol.into(),
             source: DataSource::Binance,
+            base: None,
+            quote: None,
+            names: Default::default(),
         }
     }
 

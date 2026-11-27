@@ -11,12 +11,15 @@
 use super::PickMode;
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::service::market::coin_index::CoinIndex;
+use crate::service::market::names::{self, Listed};
 use crate::service::market::search_rank::{self, is_dollar_quote};
 use crate::service::work_queue::{self, Pending};
 use crate::service::{self, ProviderError, SearchResult};
 use crate::ui::chart::picker_kit::suggestions::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
 use eframe::egui;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// How long the box waits after a keystroke before it asks.
@@ -200,6 +203,10 @@ pub struct Backend {
     pub related: fn(&str) -> Vec<SearchResult>,
     /// The busiest prediction markets, for the Predictions tab while the box is empty.
     pub trending: fn(DataSource, usize) -> Result<Vec<SearchResult>, ProviderError>,
+    /// The top coins, for the names of markets whose exchange lists none.
+    pub coin_names: fn() -> Arc<CoinIndex>,
+    /// The names the exchanges that publish them list.
+    pub listed_names: fn() -> Arc<Listed>,
 }
 
 impl Backend {
@@ -207,6 +214,8 @@ impl Backend {
         search: service::search,
         related: related_markets,
         trending: service::trending,
+        coin_names: names::load_coins,
+        listed_names: names::load_listed,
     };
 }
 

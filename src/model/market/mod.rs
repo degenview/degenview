@@ -1,5 +1,6 @@
 //! Markets and their data: instruments, sources, timeframes, candles and prediction-market series.
 
+pub mod asset_name;
 pub mod bucket;
 pub mod cmc;
 pub mod feed;

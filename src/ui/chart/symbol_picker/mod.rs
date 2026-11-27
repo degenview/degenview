@@ -10,6 +10,7 @@
 //! of the same asset is one keystroke away. See `docs/symbol-picker.md`.
 
 pub mod dashboards;
+mod describe;
 mod detail;
 mod footer;
 mod list;
@@ -36,6 +37,7 @@ use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use dashboards::{Tile, TilePick};
+use describe::Names;
 use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use list::RowState;
 use lookup::Lookup;
@@ -195,6 +197,8 @@ pub struct SymbolPicker {
     /// The portfolio the Dashboards tab's cards cover; `None` covers them all.
     card_scope: Option<u64>,
     search: SymbolSearch,
+    /// What the markets' assets are called.
+    names: Names,
     /// The prediction events listed, and which show their choices.
     events: predictions::Events,
     /// The choices ticked to chart together, as the pick that charts them.
@@ -236,6 +240,7 @@ impl SymbolPicker {
             venue: None,
             card_scope: None,
             search: SymbolSearch::new(backend),
+            names: Names::default(),
             events: predictions::Events::default(),
             ticked: None,
             trending: predictions::Trending::new(backend.trending),
@@ -289,7 +294,9 @@ impl SymbolPicker {
 
     fn open_for(&mut self, current: &str, mode: PickMode) {
         let store = self.store.clone();
+        let names = std::mem::take(&mut self.names).reopened();
         *self = Self::with_backend(store, self.backend);
+        self.names = names;
         self.recents = self
             .store
             .lock()
@@ -354,6 +361,7 @@ impl SymbolPicker {
         }
         let search_id = Id::new("symbol_picker_search");
         self.claim_keys(ctx, search_id);
+        self.names.poll(ctx, self.backend);
         let keys = Keys::read(ctx);
 
         let listing = self.listing(ctx);

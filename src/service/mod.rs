@@ -24,6 +24,7 @@ pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
 pub use market::oanda::test_connection as oanda_test_connection;
 
+use crate::model::market::asset_name::AssetNames;
 use crate::model::{DataSource, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
@@ -45,6 +46,8 @@ pub struct SearchResult {
     pub base: Option<String>,
     /// What the pair is priced in (`USDT`, `USD`).
     pub quote: Option<String>,
+    /// What the provider calls the two sides (`Bitcoin`, `Tether`), when it says.
+    pub names: AssetNames,
 }
 
 /// What separates an equity's ticker from its company name in [`SearchResult::symbol`].
@@ -65,7 +68,14 @@ impl SearchResult {
             event: None,
             base: None,
             quote: None,
+            names: AssetNames::default(),
         }
+    }
+
+    /// The provider's own names for the market's two sides.
+    pub fn named(mut self, base: Option<&str>, quote: Option<&str>) -> Self {
+        self.names = AssetNames::new(base, quote);
+        self
     }
 
     pub fn pair(mut self, base: impl Into<String>, quote: impl Into<String>) -> Self {

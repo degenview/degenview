@@ -305,6 +305,9 @@ mod tests {
             symbol: "ETHUSDT".into(),
             full_symbol: "ETHUSDT".into(),
             source: DataSource::Binance,
+            base: None,
+            quote: None,
+            names: Default::default(),
         }
     }
 

@@ -337,6 +337,7 @@ impl MarketSource for CoinMarketCap {
                 event: None,
                 base: None,
                 quote: None,
+                names: Default::default(),
             })
             .collect())
     }

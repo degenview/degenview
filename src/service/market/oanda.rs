@@ -222,10 +222,21 @@ fn parse_candle(row: &Value, bar: Timeframe) -> Result<Kline, ProviderError> {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Instrument {
     name: String,
+    /// How Oanda writes it for people: `Germany 30`, `Gold`, or just the pair (`EUR/USD`).
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+impl Instrument {
+    /// The display name, unless it only repeats the id with other punctuation.
+    fn described(&self) -> Option<&str> {
+        let name = self.display_name.as_deref()?;
+        (normalize(name) != normalize(&self.name)).then_some(name)
+    }
 }
 
 /// The instrument list belongs to the account whose credentials downloaded it.
-static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda");
+static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda_v2");
 
 pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
@@ -254,6 +265,10 @@ fn parse_instruments(body: &str) -> Result<Vec<Instrument>, ProviderError> {
         .filter_map(|instrument| {
             Some(Instrument {
                 name: instrument.get("name")?.as_str()?.to_owned(),
+                display_name: instrument
+                    .get("displayName")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
             })
         })
         .collect())
@@ -269,7 +284,8 @@ fn matching_instruments(instruments: &[Instrument], needle: &str) -> Vec<SearchR
                 DataSource::Oanda,
                 instrument.name.clone(),
                 instrument.name.clone(),
-            );
+            )
+            .named(instrument.described(), None);
             // Oanda names a market `BASE_QUOTE`.
             match instrument.name.split_once('_') {
                 Some((base, quote)) if !base.is_empty() && !quote.is_empty() => {
@@ -461,12 +477,15 @@ mod tests {
         let instruments = vec![
             Instrument {
                 name: "EUR_USD".into(),
+                display_name: None,
             },
             Instrument {
                 name: "XAU_USD".into(),
+                display_name: None,
             },
             Instrument {
                 name: "SPX500_USD".into(),
+                display_name: None,
             },
         ];
         for query in ["eurusd", "EUR/USD", "eur_usd", "EUR USD"] {
