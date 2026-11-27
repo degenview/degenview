@@ -7,11 +7,12 @@
 use crate::model::chart::canvas::Window;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape,
-    PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation,
-    index_is_known,
+    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle,
+    MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical,
+    YLocation, index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
+use std::cmp::Ordering;
 
 // MARK: Colour and size
 
@@ -821,8 +822,20 @@ fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     values
 }
 
-/// The bars a box or line covers: from its first anchor to its last, run on without end towards
-/// the side `extend` pushes it to.
+/// A line's extension by position on the chart, `left` toward older bars. As written it follows
+/// the line's own direction (see [`extended_line`]): a line written from right to left swaps
+/// sides, and an upright one runs up or down, over no further bars. A box's sides are already by
+/// position.
+fn sides_by_position(line: &LineOutput) -> LineExtend {
+    match line.x1.cmp(&line.x2) {
+        Ordering::Less => line.extend,
+        Ordering::Greater => line.extend.mirrored(),
+        Ordering::Equal => LineExtend::None,
+    }
+}
+
+/// The bars a box or line covers: from one anchor to the other, run on without end towards the
+/// side `extend`, by position, pushes it to.
 fn covered_bars(a: i64, b: i64, extend: LineExtend) -> (i64, i64) {
     (
         if extend.extends_left() {
@@ -856,10 +869,12 @@ pub fn drawing_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     }
     for item in pine.lines.iter().filter(|l| l.is_complete()) {
         // TradingView fits the axis to a line's extension only when the line is a level: the
-        // price a sloped line reaches far from its anchors does not move the axis. A vertical
-        // line never extends.
-        let level = item.y1 == item.y2 && item.x1 != item.x2;
-        let extend = if level { item.extend } else { LineExtend::None };
+        // price a sloped line reaches far from its anchors does not move the axis.
+        let extend = if item.y1 == item.y2 {
+            sides_by_position(item)
+        } else {
+            LineExtend::None
+        };
         if in_view(covered_bars(item.x1, item.x2, extend)) {
             values.extend([item.y1, item.y2]);
         }
@@ -1030,8 +1045,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, LineOutput, MISSING_INDEX,
-        PlotOutput, PolylineOutput, PolylinePoint,
+        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, MISSING_INDEX, PlotOutput,
+        PolylineOutput, PolylinePoint,
     };
 
     fn plot(values: Vec<Option<f64>>, style: PlotStyle) -> PlotOutput {
@@ -1926,6 +1941,31 @@ mod tests {
         ] {
             let over = output_with_line(80, 10.0, 90, 20.0, extend);
             assert_eq!(in_window_60_to_99(&over), [10.0, 20.0], "{extend:?}");
+        }
+    }
+
+    #[test]
+    fn a_level_counts_where_it_is_drawn_whichever_way_it_is_written() {
+        // Bars 60-99 on screen; x is the bar here, so the drawn ends say what is shown.
+        let plot = Rect::from_min_max(Pos2::new(60.0, 0.0), Pos2::new(99.0, 100.0));
+        for (x1, x2) in [(10, 20), (20, 10), (250, 260), (260, 250), (250, 250)] {
+            for extend in [
+                LineExtend::None,
+                LineExtend::Left,
+                LineExtend::Right,
+                LineExtend::Both,
+            ] {
+                let (from, to) = extended_line(
+                    Pos2::new(x1 as f32, 50.0),
+                    Pos2::new(x2 as f32, 50.0),
+                    extend,
+                    plot,
+                );
+                let drawn = from.x.min(to.x) <= 99.0 && from.x.max(to.x) >= 60.0;
+                let counted =
+                    !in_window_60_to_99(&output_with_line(x1, 10.0, x2, 10.0, extend)).is_empty();
+                assert_eq!(counted, drawn, "{x1} to {x2}, {extend:?}");
+            }
         }
     }
 

@@ -126,7 +126,8 @@ edge, and the empty slots on screen past the newest bar). Series values and draw
 labels, polylines) outside those bars add nothing. A pane is drawn across the whole plot, margin
 included, so a drawing in the empty slots on screen counts for the pane as for the main chart. A
 box that extends, or a horizontal line that does, runs the plot's width: it counts when it crosses
-the bars shown (measured on TradingView, which widens its axis for both). A sloped line counts by
+the bars shown (a line's `extend.left` runs past its first point and `extend.right` past its
+second, so one written right to left swaps sides) (measured on TradingView, which widens its axis for both). A sloped line counts by
 its anchors alone, extended or not: TradingView does not widen the axis for the price it reaches
 far from them, at any slope, and a vertical line never extends. The live chart, the
 Screenshot Studio, Select portion and the MCP snapshot all read this through
