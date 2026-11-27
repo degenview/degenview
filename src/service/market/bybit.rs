@@ -4,8 +4,8 @@
 //! volume, turnover]`, and pages back with an `end` cursor. Failures arrive as HTTP 200 with a
 //! `retCode` other than 0; some regions are refused with HTTP 403.
 
-use super::candles::plan;
 use super::catalog::Catalog;
+use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::market::bucket::next_bucket_start_ms;
@@ -61,6 +61,29 @@ pub(crate) fn symbol_id(symbol: &str) -> String {
     InstrumentId::new(DataSource::Bybit, symbol).canonical_symbol()
 }
 
+/// Bybit's `/market/kline` endpoint.
+struct Klines;
+
+impl KlineEndpoint for Klines {
+    const SOURCE: DataSource = DataSource::Bybit;
+    const PAGING: Paging = PAGING;
+
+    fn id(&self, symbol: &str) -> String {
+        symbol_id(symbol)
+    }
+
+    fn page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        // `end` includes the candle that opens at it; `before` is exclusive.
+        fetch_page(id, base, limit, before.map(|before| before - 1))
+    }
+}
+
 impl MarketSource for Bybit {
     fn fetch_klines(
         &self,
@@ -68,15 +91,7 @@ impl MarketSource for Bybit {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Bybit, timeframe)?;
-        let requested = PAGING.requested(plan, limit as usize);
-        if requested > PAGING.page {
-            // More base candles than one request holds: page back from now.
-            let end_ms = crate::clock::now_ms() + 1;
-            return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
-        }
-        let rows = fetch_page(&symbol_id(symbol), plan.base(), requested, None)?;
-        Ok(plan.shape(rows, requested, limit as usize))
+        kline_endpoint::latest(&Klines, symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -87,14 +102,7 @@ impl MarketSource for Bybit {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Bybit, timeframe)?;
-        let requested = PAGING.requested(plan, max);
-        let id = symbol_id(symbol);
-        let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
-            // `end` includes the candle that opens at it; `after` is exclusive.
-            fetch_page(&id, plan.base(), wanted, Some(after - 1))
-        })?;
-        Ok(plan.shape(candles, requested, max))
+        kline_endpoint::range(&Klines, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -281,6 +289,7 @@ fn parse_pairs(body: &str) -> Result<(Vec<Pair>, Option<String>), ProviderError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::candles::plan;
 
     #[test]
     fn every_native_has_its_interval_and_nothing_else_does() {
@@ -314,16 +323,6 @@ mod tests {
         assert_eq!(base_of("3D"), ("D".to_owned(), 501 * 3));
         assert_eq!(base_of("3M"), ("M".to_owned(), 501 * 3));
         assert_eq!(base_of("1Y"), ("M".to_owned(), 501 * 12));
-    }
-
-    #[test]
-    fn a_request_wider_than_the_paging_is_capped_before_it_is_folded() {
-        // 500 candles of 1,439 minutes (nothing larger folds from one-minute bars) is 720,939
-        // base candles; paging reaches 60,000.
-        let plan = plan(DataSource::Bybit, Timeframe::parse("1439m").unwrap()).unwrap();
-        assert_eq!(PAGING.requested(plan, 500), PAGING.max_candles);
-        let hour = super::plan(DataSource::Bybit, Timeframe::HOUR_1).unwrap();
-        assert_eq!(PAGING.requested(hour, 500), 500);
     }
 
     #[test]

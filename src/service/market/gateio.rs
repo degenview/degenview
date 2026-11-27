@@ -4,11 +4,11 @@
 //! high, low, open, base volume, window closed]`, all strings, and pages back with a `to` cursor
 //! (inclusive, in seconds). Failures are HTTP 4xx with a JSON label; some regions get 403.
 
-use super::candles::plan;
 use super::catalog::Catalog;
+use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
-use crate::model::market::bucket::{FoldPlan, next_bucket_start_ms};
+use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
@@ -41,36 +41,46 @@ fn reach_left(now_ms: i64, after_ms: i64, base: Timeframe) -> usize {
     PAGING.max_candles.saturating_sub(points_ago)
 }
 
-/// The newest `max` candles of `plan`'s target that open in `[start_ms, end_ms)`, paged back from
-/// `end_ms`. `fetch(to, limit)` answers up to `limit` base candles that open at `to` (seconds) or
-/// before, oldest first.
-fn collect(
-    plan: FoldPlan,
+/// Gate.io's `/spot/candlesticks` endpoint, as of `now_ms`: where its reach ends moves with it.
+struct Klines {
     now_ms: i64,
-    start_ms: i64,
-    end_ms: i64,
-    max: usize,
-    mut fetch: impl FnMut(i64, usize) -> Result<Vec<Kline>, ProviderError>,
-) -> Result<Vec<Kline>, ProviderError> {
-    // What cannot be reached is not asked for: an answer that fills this is one the reach cut
-    // short, so its oldest fold is dropped as a fragment; a shorter one is the market's start.
-    let requested = PAGING
-        .requested(plan, max)
-        .min(reach_left(now_ms, end_ms, plan.base()));
-    if requested == 0 {
-        return Ok(Vec::new());
-    }
-    let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
-        // A gap in the candles moves `after` back past what was counted: never ask Gate.io for
-        // more than it reaches (HTTP 400), the end of history is an empty answer.
-        let wanted = wanted.min(reach_left(now_ms, after, plan.base()));
-        if wanted == 0 {
-            return Ok(Vec::new());
+}
+
+impl Klines {
+    fn now() -> Self {
+        Self {
+            now_ms: crate::clock::now_ms(),
         }
-        // `to` includes the candle that opens at it, in seconds; `after` is exclusive.
-        fetch((after - 1) / 1_000, wanted)
-    })?;
-    Ok(plan.shape(candles, requested, max))
+    }
+}
+
+impl KlineEndpoint for Klines {
+    const SOURCE: DataSource = DataSource::Gate;
+    const PAGING: Paging = PAGING;
+
+    fn id(&self, symbol: &str) -> String {
+        pair_id(symbol)
+    }
+
+    fn page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        fetch_page(id, base, limit, before.map(cursor_s))
+    }
+
+    fn reach(&self, base: Timeframe, before_ms: i64) -> usize {
+        reach_left(self.now_ms, before_ms, base)
+    }
+}
+
+/// The `to` cursor, in seconds, of a page of the candles that open before `before_ms`: `to`
+/// includes the candle that opens at it.
+fn cursor_s(before_ms: i64) -> i64 {
+    (before_ms - 1) / 1_000
 }
 
 /// Gate.io's `interval` for a candle length it serves itself: `10s`, `1m`, `4h`, `1d`, `7d` (weeks,
@@ -109,15 +119,7 @@ impl MarketSource for Gate {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Gate, timeframe)?;
-        let requested = PAGING.requested(plan, limit as usize);
-        if requested > PAGING.page {
-            // More base candles than one request holds: page back from now.
-            let end_ms = crate::clock::now_ms() + 1;
-            return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
-        }
-        let rows = fetch_page(&pair_id(symbol), plan.base(), requested, None)?;
-        Ok(plan.shape(rows, requested, limit as usize))
+        kline_endpoint::latest(&Klines::now(), symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -128,16 +130,7 @@ impl MarketSource for Gate {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Gate, timeframe)?;
-        let id = pair_id(symbol);
-        collect(
-            plan,
-            crate::clock::now_ms(),
-            start_ms,
-            end_ms,
-            max,
-            |to_s, limit| fetch_page(&id, plan.base(), limit, Some(to_s)),
-        )
+        kline_endpoint::range(&Klines::now(), symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn asset_names(&self) -> Vec<(String, String)> {
@@ -294,6 +287,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::candles::plan;
 
     #[test]
     fn every_native_has_its_interval_and_nothing_else_does() {
@@ -333,15 +327,6 @@ mod tests {
     }
 
     #[test]
-    fn a_request_wider_than_the_paging_is_capped_before_it_is_folded() {
-        // 500 candles of 1,439 minutes is 720,939 one-minute candles; paging reaches 8,900.
-        let wide = plan(DataSource::Gate, Timeframe::parse("1439m").unwrap()).unwrap();
-        assert_eq!(PAGING.requested(wide, 500), PAGING.max_candles);
-        let hour = plan(DataSource::Gate, Timeframe::HOUR_1).unwrap();
-        assert_eq!(PAGING.requested(hour, 500), 500);
-    }
-
-    #[test]
     fn a_request_stops_where_gate_stops_reaching_back() {
         let hour = 3_600_000;
         let now = 100_000 * hour;
@@ -361,11 +346,11 @@ mod tests {
     const MINUTE: i64 = 60_000;
 
     /// A fake Gate.io: a market whose one-minute candles (volume 1) reach back `depth` minutes
-    /// from the forming one, answering `fetch(to, limit)` as the API does and refusing, as the
-    /// real service does with a 400, a request that reaches 9,000 points back from now.
+    /// from the forming one, answering a page as the API does and refusing, as the real service
+    /// does with a 400, a request that reaches 9,000 points back from now.
     struct Fake {
+        gate: Klines,
         depth: i64,
-        now: i64,
         asked: std::cell::Cell<usize>,
     }
 
@@ -377,17 +362,17 @@ mod tests {
         /// The same market `now` milliseconds into the day: where the reach ends moves with it.
         fn at(depth: i64, now: i64) -> Self {
             Self {
+                gate: Klines { now_ms: now },
                 depth,
-                now,
                 asked: std::cell::Cell::new(0),
             }
         }
 
         fn answer(&self, to_s: i64, limit: usize) -> Result<Vec<Kline>, ProviderError> {
             self.asked.set(self.asked.get() + 1);
-            let newest = self.now / MINUTE * MINUTE;
+            let newest = self.gate.now_ms / MINUTE * MINUTE;
             let oldest = newest - (self.depth - 1) * MINUTE;
-            let points_ago = (self.now - to_s * 1_000) / MINUTE + limit as i64;
+            let points_ago = (self.gate.now_ms - to_s * 1_000) / MINUTE + limit as i64;
             assert!(
                 points_ago <= 9_000,
                 "Gate.io refuses: too long ago ({points_ago})"
@@ -410,6 +395,30 @@ mod tests {
         }
     }
 
+    impl KlineEndpoint for Fake {
+        const SOURCE: DataSource = DataSource::Gate;
+        const PAGING: Paging = PAGING;
+
+        fn id(&self, symbol: &str) -> String {
+            self.gate.id(symbol)
+        }
+
+        fn page(
+            &self,
+            id: &str,
+            _base: Timeframe,
+            limit: usize,
+            before: Option<i64>,
+        ) -> Result<Vec<Kline>, ProviderError> {
+            assert_eq!(id, "BTC_USDT");
+            self.answer(before.map_or(self.gate.now_ms / 1_000, cursor_s), limit)
+        }
+
+        fn reach(&self, base: Timeframe, before_ms: i64) -> usize {
+            self.gate.reach(base, before_ms)
+        }
+    }
+
     /// Whether `candle` holds every minute of its bucket: nothing was cut off it.
     fn is_whole(candle: &Kline, base: Timeframe) -> bool {
         (candle.volume * MINUTE as f64) as i64
@@ -419,15 +428,12 @@ mod tests {
     #[test]
     fn a_22_minute_chart_cut_short_by_the_reach_drops_its_partial_first_candle() {
         let target = Timeframe::parse("22m").unwrap();
-        let plan = plan(DataSource::Gate, target).unwrap();
         // Where the reach ends against the 22-minute grid depends on the minute it is asked in.
         for minute in 0..22 {
             let now = NOW_MS + minute * MINUTE;
             let market = Fake::at(20_000, now);
-            let shown = collect(plan, now, 0, now + 1, 500, |to, limit| {
-                market.answer(to, limit)
-            })
-            .expect("candles");
+            let shown = kline_endpoint::range(&market, "btc_usdt", target, 0, now + 1, 500)
+                .expect("candles");
             assert!(shown.len() > 300, "{}", shown.len());
             assert!(
                 is_whole(&shown[0], target),
@@ -441,23 +447,18 @@ mod tests {
     #[test]
     fn an_older_page_near_the_reach_is_cut_short_and_the_one_after_it_is_empty() {
         let target = Timeframe::parse("22m").unwrap();
-        let plan = plan(DataSource::Gate, target).unwrap();
         let market = Fake::new(20_000);
         let newest = NOW_MS / MINUTE * MINUTE;
         let end = newest - 8_400 * MINUTE;
-        let page = collect(plan, NOW_MS, 0, end, 1_000, |to, limit| {
-            market.answer(to, limit)
-        })
-        .expect("an older page");
+        let page = kline_endpoint::range(&market, "btc_usdt", target, 0, end, 1_000)
+            .expect("an older page");
         assert!(!page.is_empty());
         assert!(is_whole(&page[0], target), "{}", page[0].volume);
 
         let asked = market.asked.get();
         let end = newest - 8_899 * MINUTE;
-        let past = collect(plan, NOW_MS, 0, end, 1_000, |to, limit| {
-            market.answer(to, limit)
-        })
-        .expect("nothing past the reach");
+        let past = kline_endpoint::range(&market, "btc_usdt", target, 0, end, 1_000)
+            .expect("nothing past the reach");
         assert!(past.is_empty());
         assert_eq!(
             market.asked.get(),
@@ -469,23 +470,24 @@ mod tests {
     #[test]
     fn a_market_that_began_inside_the_reach_keeps_its_first_candle_as_it_is() {
         let target = Timeframe::parse("22m").unwrap();
-        let plan = plan(DataSource::Gate, target).unwrap();
         let market = Fake::new(3_000);
-        let shown = collect(plan, NOW_MS, 0, NOW_MS + 1, 500, |to, limit| {
-            market.answer(to, limit)
-        })
-        .expect("candles");
+        let shown = kline_endpoint::range(&market, "btc_usdt", target, 0, NOW_MS + 1, 500)
+            .expect("candles");
         // Listed 3,000 minutes ago: its first bucket is genuinely short.
         assert!(!is_whole(&shown[0], target), "{}", shown[0].volume);
     }
 
     #[test]
     fn a_native_length_reaches_as_far_back_as_gate_lets_it() {
-        let one = plan(DataSource::Gate, Timeframe::MINUTE_1).unwrap();
         let market = Fake::new(20_000);
-        let all = collect(one, NOW_MS, 0, NOW_MS + 1, 8_900, |to, limit| {
-            market.answer(to, limit)
-        })
+        let all = kline_endpoint::range(
+            &market,
+            "btc_usdt",
+            Timeframe::MINUTE_1,
+            0,
+            NOW_MS + 1,
+            8_900,
+        )
         .expect("candles");
         assert_eq!(all.len(), 8_899);
         assert!(
@@ -500,6 +502,13 @@ mod tests {
         assert_eq!(pair_id("eth-usdc"), "ETH_USDC");
         assert_eq!(pair_id("ETH_BTC"), "ETH_BTC");
         assert_eq!(pair_id("sol"), "SOL_USDT");
+    }
+
+    #[test]
+    fn a_cursor_is_the_last_second_the_page_may_open_in() {
+        // `to` includes the candle that opens at it, and a page ends before `before_ms`.
+        assert_eq!(cursor_s(1_700_000_000_000), 1_699_999_999);
+        assert_eq!(cursor_s(1_700_000_000_001), 1_700_000_000);
     }
 
     // The close is the third field and the open the sixth; the base volume is the seventh.

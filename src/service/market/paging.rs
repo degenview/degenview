@@ -1,5 +1,6 @@
-//! Paging a market's candles back from now, for the exchanges whose candle request holds a fixed
-//! number of rows and takes an end cursor (OKX, Bybit).
+//! How an exchange's candles are paged back from now, for the exchanges whose candle request holds
+//! a fixed number of rows and takes an end cursor: the arithmetic every one shares (the cap before
+//! the fold and the pager), which [`super::kline_endpoint`] puts to work.
 
 use crate::model::Kline;
 use crate::model::market::bucket::FoldPlan;
@@ -149,26 +150,6 @@ mod tests {
         assert_eq!(error, Err(ProviderError::other("down")));
     }
 
-    const MINUTE: i64 = 60_000;
-
-    /// `count` one-minute candles of volume 1 that end at `end_ms`, oldest first.
-    fn minutes_ending(end_ms: i64, count: usize) -> Vec<Kline> {
-        (0..count as i64)
-            .rev()
-            .map(|index| {
-                let open_time = end_ms - (index + 1) * MINUTE;
-                Kline {
-                    open_time,
-                    close_time: open_time + MINUTE - 1,
-                    ..candle(open_time)
-                }
-            })
-            .collect()
-    }
-
-    /// Noon UTC on 2026-11-16.
-    const NOON: i64 = 1_794_830_400_000;
-
     fn okx_plan(text: &str) -> FoldPlan {
         plan(DataSource::Okx, Timeframe::parse(text).unwrap()).unwrap()
     }
@@ -178,26 +159,5 @@ mod tests {
         assert_eq!(PAGING.requested(okx_plan("79m"), 500), PAGING.max_candles);
         assert_eq!(PAGING.requested(okx_plan("1h"), 500), 500);
         assert_eq!(PAGING.requested(okx_plan("22m"), 500), 501 * 22);
-    }
-
-    #[test]
-    fn an_answer_cut_by_the_paging_cap_loses_its_first_fragment() {
-        // 500 candles of 79 minutes is 39,579 one-minute candles; paging reaches 36,000. The
-        // oldest of them, at 12:00, is nine minutes into a bucket that began at 11:51.
-        let plan = okx_plan("79m");
-        let candles = minutes_ending(NOON, PAGING.max_candles);
-        let shown = plan.shape(candles, PAGING.requested(plan, 500), 500);
-        assert_eq!(shown.first().map(|candle| candle.volume), Some(79.0));
-        // The last bucket of each day (18 minutes) and the one forming at noon are short by design.
-        assert!(shown.iter().all(|candle| candle.volume <= 79.0));
-    }
-
-    #[test]
-    fn a_market_that_began_inside_the_cap_keeps_its_first_candle_as_it_is() {
-        let plan = okx_plan("79m");
-        // Listed at 12:00 with a thousand minutes of history: the first bucket is genuinely short.
-        let candles = minutes_ending(NOON + 1_000 * MINUTE, 1_000);
-        let shown = plan.shape(candles, PAGING.requested(plan, 500), 500);
-        assert!(shown.first().is_some_and(|candle| candle.volume < 79.0));
     }
 }

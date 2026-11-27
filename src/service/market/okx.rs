@@ -5,8 +5,8 @@
 //! paged back with `/market/history-candles` and an `after` cursor. Failures arrive as HTTP 200
 //! with a `code` other than `"0"`.
 
-use super::candles::plan;
 use super::catalog::Catalog;
+use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::market::bucket::next_bucket_start_ms;
@@ -52,6 +52,28 @@ pub(crate) fn instrument_id(symbol: &str) -> String {
     InstrumentId::new(DataSource::Okx, symbol).canonical_symbol()
 }
 
+/// OKX's candle endpoints.
+struct Klines;
+
+impl KlineEndpoint for Klines {
+    const SOURCE: DataSource = DataSource::Okx;
+    const PAGING: Paging = PAGING;
+
+    fn id(&self, symbol: &str) -> String {
+        instrument_id(symbol)
+    }
+
+    fn page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        fetch_page(id, base, limit, before)
+    }
+}
+
 impl MarketSource for Okx {
     fn fetch_klines(
         &self,
@@ -59,21 +81,7 @@ impl MarketSource for Okx {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Okx, timeframe)?;
-        let requested = PAGING.requested(plan, limit as usize);
-        if requested > PAGING.page {
-            // More base candles than one request holds: page back from now.
-            let end_ms = crate::clock::now_ms() + 1;
-            return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
-        }
-        let rows = fetch_page(
-            "candles",
-            &instrument_id(symbol),
-            plan.base(),
-            requested,
-            None,
-        )?;
-        Ok(plan.shape(rows, requested, limit as usize))
+        kline_endpoint::latest(&Klines, symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -84,13 +92,7 @@ impl MarketSource for Okx {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Okx, timeframe)?;
-        let requested = PAGING.requested(plan, max);
-        let id = instrument_id(symbol);
-        let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
-            fetch_page("history-candles", &id, plan.base(), wanted, Some(after))
-        })?;
-        Ok(plan.shape(candles, requested, max))
+        kline_endpoint::range(&Klines, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -105,17 +107,23 @@ impl MarketSource for Okx {
     }
 }
 
+/// A page of candles: the newest 300 from `/market/candles`, those opening before `before` from
+/// `/market/history-candles`, which takes the `after` cursor.
 fn fetch_page(
-    endpoint: &str,
     id: &str,
     base: Timeframe,
     limit: usize,
-    after: Option<i64>,
+    before: Option<i64>,
 ) -> Result<Vec<Kline>, ProviderError> {
     let bar = bar(base).ok_or_else(|| ProviderError::unsupported(DataSource::Okx, base))?;
+    let endpoint = if before.is_some() {
+        "history-candles"
+    } else {
+        "candles"
+    };
     let mut url = format!("{BASE_URL}/market/{endpoint}?instId={id}&bar={bar}&limit={limit}");
-    if let Some(after) = after {
-        url.push_str(&format!("&after={after}"));
+    if let Some(before) = before {
+        url.push_str(&format!("&after={before}"));
     }
     let body = http::get_text(&url, &[], http::Retry::Transient)?;
     parse_candles(&body, base)
@@ -230,6 +238,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::candles::plan;
 
     #[test]
     fn every_native_has_its_bar_and_nothing_else_does() {
