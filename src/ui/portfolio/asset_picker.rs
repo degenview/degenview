@@ -5,6 +5,7 @@
 
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::exchange::Market;
 use crate::model::market::well_known;
 use crate::service::work_queue::{self, PendingAll};
 use crate::service::{ProviderError, SearchResult};
@@ -282,7 +283,11 @@ impl AssetPickerState {
             .map(|(source, result)| {
                 (
                     source,
-                    result.map(|hits| crate::service::rank_results(hits, &query)),
+                    // A perpetual is a contract, not an asset a portfolio can hold.
+                    result.map(|mut hits| {
+                        hits.retain(|hit| hit.market() == Market::Spot);
+                        crate::service::rank_results(hits, &query)
+                    }),
                 )
             })
             .collect();

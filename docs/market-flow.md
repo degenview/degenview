@@ -97,9 +97,9 @@ markets on four venues are followed: Binance spot and USDⓈ-M perpetual, Bybit 
 ## Order book
 
 The DOM: the focused chart's market on **its own exchange**, as the exchange's book and trades.
-Read-only: nothing here places an order. Charts are spot, so these are spot books of **Binance** and
-**Bybit**; any other chart shows "No order book". `market_of(source, symbol)` decides, through
-`InstrumentId::api_symbol()`.
+Read-only: nothing here places an order. These are the spot books of **Binance** and **Bybit**; any
+other chart, a Binance perpetual (`BTCUSDT.P`) included, shows "No order book".
+`market_of(source, symbol)` decides, from the `InstrumentId`.
 
 ### Layers
 
@@ -205,7 +205,7 @@ The footnote says what a size is: the base coin, price × size taken as dollars 
 - Liquidations on the chart, a per-asset filter, Bybit inverse, and an MCP tool.
 - Taker flow for the quote currencies other than USDT, for OKX, and for the whole market (the
   exchanges have no all-markets trade stream, so it is one asset at a time).
-- The order book for perpetual markets (charts are spot only), for the other exchanges (OKX, Kraken,
+- The order book for perpetual markets, for the other exchanges (OKX, Kraken,
   Coinbase, Gate.io, MEXC), and any click-to-trade.
   Binance's book depth beyond 2,000 levels is dropped, and the pull/stack figures are not checked
   against a second source.

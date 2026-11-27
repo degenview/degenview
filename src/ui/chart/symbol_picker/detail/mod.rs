@@ -501,7 +501,7 @@ fn listing_line(ui: &Ui, line: Rect, result: &SearchResult, quote: Option<&Watch
 
 /// `Binance · Spot`.
 fn venue_text(result: &SearchResult) -> String {
-    let kind = match trading_kind(result.source) {
+    let kind = match trading_kind(result) {
         "" => market_kind(result.source),
         kind => kind,
     };

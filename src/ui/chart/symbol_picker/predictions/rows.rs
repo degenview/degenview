@@ -1,6 +1,7 @@
 //! How prediction events are drawn in the list: a header per event, its choices under it with a
 //! checkbox each, and the topic chips offered while the box is empty.
 
+use super::super::search::market_kind;
 use super::{EventHead, Tick};
 use crate::i18n::{tr, tr_n};
 use crate::service::SearchResult;
@@ -92,7 +93,7 @@ pub fn event_header(
         Vec2::splat(HEADER_ART),
     );
     prediction_icon(ui, art, &head.title, head.image_url.as_deref());
-    venue_block(ui, rect, columns, head.source());
+    venue_block(ui, rect, columns, head.source(), market_kind(head.source()));
     let text_left = rect.left() + TEXT_LEFT;
     let text_width = (rect.left() + columns.venue - 12.0 - text_left).max(40.0);
     two_lines(

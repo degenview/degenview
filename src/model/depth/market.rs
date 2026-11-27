@@ -11,19 +11,23 @@ pub struct DepthMarket {
     pub symbol: String,
 }
 
-/// The book of the market a chart shows, when its exchange is one that sends books. Charts are
-/// spot, so these are spot books.
+/// The book of the market a chart shows, when it is a spot market of an exchange that sends
+/// books. A perpetual has none yet: its spot pair's book would be another market's.
 pub fn market_of(source: DataSource, symbol: &str) -> Option<DepthMarket> {
     let exchange = match source {
         DataSource::Binance => Exchange::Binance,
         DataSource::Bybit => Exchange::Bybit,
         _ => return None,
     };
+    let instrument = InstrumentId::new(source, symbol);
+    if instrument.market() != Market::Spot {
+        return None;
+    }
     Some(DepthMarket {
         venue: Venue {
             exchange,
             market: Market::Spot,
         },
-        symbol: InstrumentId::new(source, symbol).canonical_symbol(),
+        symbol: instrument.canonical_symbol(),
     })
 }

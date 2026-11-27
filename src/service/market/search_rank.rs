@@ -14,9 +14,11 @@
 //! 5. the rest.
 //!
 //! Inside a tier the order is the order the providers were asked in, then the quote
-//! (the exchange's main dollar quote, then USD, USDT, USDC), then the provider's own order.
+//! (the exchange's main dollar quote, then USD, USDT, USDC), then a pair before its perpetual, then
+//! the provider's own order.
 
 use crate::model::DataSource;
+use crate::model::exchange::Market;
 use crate::service::SearchResult;
 
 /// Quotes that read as US dollars, in the order they sort.
@@ -76,6 +78,7 @@ struct Key {
     tier: u8,
     group: usize,
     quote: usize,
+    perpetual: bool,
     offset: usize,
 }
 
@@ -90,6 +93,7 @@ impl Key {
             tier,
             group,
             quote,
+            perpetual: result.market() == Market::Perpetual,
             offset,
         }
     }
@@ -190,6 +194,27 @@ mod tests {
                 "BTCUSDT", "BTCUSDC", "BTC-USD", "BTCTRY", "BTCEUR", "BTC-EUR", "BTCBUSDT",
                 "ABTCUSDT"
             ]
+        );
+    }
+
+    #[test]
+    fn a_perpetual_follows_its_pair_before_the_next_quote() {
+        let perp = |base: &str, quote: &str| {
+            let symbol = format!("{base}{quote}.P");
+            SearchResult::new(Binance, symbol.clone(), symbol).pair(base, quote)
+        };
+        let results = merge_ranked(
+            vec![vec![
+                perp("BTC", "USDC"),
+                perp("BTC", "USDT"),
+                binance("BTC", "USDC"),
+                binance("BTC", "USDT"),
+            ]],
+            "btc",
+        );
+        assert_eq!(
+            symbols(&results),
+            ["BTCUSDT", "BTCUSDT.P", "BTCUSDC", "BTCUSDC.P"]
         );
     }
 

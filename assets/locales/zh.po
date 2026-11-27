@@ -13907,6 +13907,10 @@ msgid "Spend an amount of {unit}"
 msgstr "按 {unit} 金额下单"
 
 #: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
+msgstr "永续"
+
+#: src/ui/chart/symbol_picker/search.rs
 msgid "Spot"
 msgstr "现货"
 

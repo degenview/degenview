@@ -11722,6 +11722,11 @@ msgstr ""
 msgid "Percents"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/columns.rs
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
+msgstr ""
+
 #: src/ui/tradingview/words.rs
 msgid "Perpetuals and futures aren’t available"
 msgstr ""
@@ -20747,6 +20752,7 @@ msgid "{exchange} does not list {symbol}."
 msgstr ""
 
 #: src/model/exchange/mod.rs
+#: src/model/market/listing.rs
 msgid "{exchange} perp"
 msgstr ""
 

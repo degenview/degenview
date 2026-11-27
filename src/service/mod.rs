@@ -25,6 +25,7 @@ pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
 pub use market::oanda::test_connection as oanda_test_connection;
 
+use crate::model::exchange::Market;
 use crate::model::market::asset_name::AssetNames;
 use crate::model::{DataSource, InstrumentId, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
@@ -84,6 +85,11 @@ impl SearchResult {
         self.base = Some(base.into());
         self.quote = Some(quote.into());
         self
+    }
+
+    /// Which of the source's markets the hit is.
+    pub fn market(&self) -> Market {
+        InstrumentId::new(self.source, self.full_symbol.as_str()).market()
     }
 
     /// The market's own name, without a company: `AAPL` for `AAPL — Apple Inc.`.

@@ -11,6 +11,7 @@
 use super::PickMode;
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::exchange::Market;
 use crate::model::market::well_known;
 use crate::service::market::coin_index::CoinIndex;
 use crate::service::market::names::{self, Listed};
@@ -172,6 +173,14 @@ pub fn market_kind(source: DataSource) -> &'static str {
     }
 }
 
+/// [`market_kind`] of one hit: a perpetual says that it is one.
+pub fn hit_kind(result: &SearchResult) -> &'static str {
+    match result.market() {
+        Market::Perpetual => tr!("Perpetual"),
+        Market::Spot => market_kind(result.source),
+    }
+}
+
 /// The category a venue is listed under in the venue pull-down.
 pub fn venue_group(source: DataSource) -> &'static str {
     match source {
@@ -190,8 +199,11 @@ pub fn venue_group(source: DataSource) -> &'static str {
 }
 
 /// How a market trades, for the "also trades as" column.
-pub fn trading_kind(source: DataSource) -> &'static str {
-    match source {
+pub fn trading_kind(result: &SearchResult) -> &'static str {
+    if result.market() == Market::Perpetual {
+        return tr!("Perpetual");
+    }
+    match result.source {
         DataSource::Binance
         | DataSource::Coinbase
         | DataSource::Okx

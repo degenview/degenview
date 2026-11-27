@@ -15,6 +15,7 @@
 //! provider for are reported as skipped, never guessed at.
 
 use crate::i18n::{tr, tr_n};
+use crate::model::market::binance::split_market;
 use crate::model::market::venue::{self, VenueQuery};
 use crate::model::watchlist::{
     MAX_NAME_CHARS, Watchlist, WatchlistEntry, WatchlistError, WatchlistInstrument,
@@ -254,7 +255,18 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
     };
 
     match source {
-        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
+        DataSource::Binance => {
+            let symbol = rest.to_uppercase();
+            let pair = split_market(&symbol).0;
+            if !(3..=20).contains(&pair.len()) || !pair.chars().all(is_upper_alphanumeric) {
+                return Err(
+                    "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+                        .to_owned(),
+                );
+            }
+            Ok(item(source, &symbol, &symbol, &symbol))
+        }
+        DataSource::Bybit | DataSource::Mexc => {
             let symbol = rest.to_uppercase();
             if !(3..=20).contains(&symbol.len()) || !symbol.chars().all(is_upper_alphanumeric) {
                 return Err(format!(
@@ -537,9 +549,24 @@ mod tests {
     }
 
     #[test]
+    fn a_binance_perpetual_is_imported_and_exported_as_it_is_written() {
+        let parsed = parse("BINANCE:BTCUSDT.P\nbinance:ethusdt.p\nBYBIT:BTCUSDT.P");
+        let symbols: Vec<String> = parsed
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Instrument(item) => Some(line_for(item)),
+                Row::Section(_) => None,
+            })
+            .collect();
+        assert_eq!(symbols, ["BINANCE:BTCUSDT.P", "BINANCE:ETHUSDT.P"]);
+        assert_eq!(parsed.skipped.len(), 1, "only Binance lists perpetuals");
+    }
+
+    #[test]
     fn unsupported_rows_are_reported_with_their_line_and_never_block_good_ones() {
         let parsed = parse(
-            "BINANCE:BTCUSDT\nCME:ES1!\nBTC\nBINANCE:BTCUSDT.P\nCOINBASE:BTCUSD\nPOLYMARKET:9\n\
+            "BINANCE:BTCUSDT\nCME:ES1!\nBTC\nBINANCE:BTCUSDT_261225\nCOINBASE:BTCUSD\nPOLYMARKET:9\n\
              CMC:fear\nNASDAQ:TOOLONGX\nBINANCE:\n\nBINANCE:ETHUSDT",
         );
         assert_eq!(parsed.rows.len(), 2);
@@ -555,7 +582,7 @@ mod tests {
                 (3, "Missing exchange prefix, expected SOURCE:SYMBOL"),
                 (
                     4,
-                    "Not a Binance spot symbol (perpetuals and futures aren't supported)"
+                    "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
                 ),
                 (5, "Coinbase products are written BASE-QUOTE, like BTC-USD"),
                 (

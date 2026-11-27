@@ -118,7 +118,7 @@ fn row(ui: &mut Ui, result: &SearchResult, width: f32, separated: bool) -> bool 
         ui,
         kind_left,
         KIND - 8.0,
-        trading_kind(result.source),
+        trading_kind(result),
         REGULAR,
         theme::text_secondary(),
     );

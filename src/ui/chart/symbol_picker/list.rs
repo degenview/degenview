@@ -5,7 +5,7 @@
 use super::columns::{self, Columns, END, ICON, MARK, PAD, VENUE_GAP, VENUE_LOGO};
 use super::describe;
 use super::offer::{Offer, Overlay, Primary};
-use super::search::market_kind;
+use super::search::hit_kind;
 use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::model::market::asset_name::AssetNames;
@@ -119,7 +119,7 @@ pub fn row(
         "{}, {}, {}",
         result.symbol,
         result.source.display_name(),
-        market_kind(result.source)
+        hit_kind(result)
     );
     let response = crate::ui::accessibility::label(response, label);
     out.opened_menu = response.secondary_clicked();
@@ -139,7 +139,7 @@ pub fn row(
         Vec2::splat(ICON),
     );
     result_icon(ui, icon, result);
-    venue_block(ui, rect, columns, result.source);
+    venue_block(ui, rect, columns, result.source, hit_kind(result));
 
     // A prediction market's name is a sentence: it takes the description's column too, and its
     // chance stands before the exchange.
@@ -311,14 +311,8 @@ pub fn marks(ui: &mut Ui, rect: Rect, result: &SearchResult, state: RowState, ou
 }
 
 /// The venue column of a row: the exchange's logo and name over what it lists.
-pub fn venue_block(ui: &Ui, rect: Rect, columns: &Columns, source: DataSource) {
-    venue_lines(
-        ui,
-        rect,
-        columns,
-        source.display_name(),
-        market_kind(source),
-    );
+pub fn venue_block(ui: &Ui, rect: Rect, columns: &Columns, source: DataSource, kind: &str) {
+    venue_lines(ui, rect, columns, source.display_name(), kind);
     let logo = Rect::from_center_size(
         pos2(
             rect.left() + columns.venue + VENUE_LOGO / 2.0,

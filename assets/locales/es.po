@@ -13956,6 +13956,10 @@ msgid "Spend an amount of {unit}"
 msgstr "Gastar una cantidad de {unit}"
 
 #: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
+msgstr "Perpetuo"
+
+#: src/ui/chart/symbol_picker/search.rs
 msgid "Spot"
 msgstr "Spot"
 
