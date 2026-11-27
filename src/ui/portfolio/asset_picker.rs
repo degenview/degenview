@@ -5,13 +5,12 @@
 
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::well_known;
 use crate::service::work_queue::{self, PendingAll};
 use crate::service::{ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::chart::picker_kit::recents::{self, RecentMarket};
-use crate::ui::chart::picker_kit::suggestions::{
-    self, CRYPTO_SUGGESTIONS, Chip, STOCK_SUGGESTIONS, prediction_topics,
-};
+use crate::ui::chart::picker_kit::suggestions::{self, Chip, prediction_topics};
 use crate::ui::chart::picker_kit::{self, art, results, widgets};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -473,22 +472,22 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
             match state.tab {
                 PickerTab::Crypto => {
                     let items =
-                        CRYPTO_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Binance));
+                        well_known::COINS.map(|coin| Chip::Logo(coin.ticker, DataSource::Binance));
                     if let Some(index) =
                         suggestions::suggestion_grid(ui, tr!("Suggestions"), &items)
                     {
-                        search = Some(CRYPTO_SUGGESTIONS[index]);
+                        search = Some(well_known::COINS[index].ticker);
                     }
                 }
                 PickerTab::Stocks => {
-                    let items =
-                        STOCK_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Alpaca));
+                    let items = well_known::STOCKS
+                        .map(|stock| Chip::Logo(stock.ticker, DataSource::Alpaca));
                     if let Some(index) = suggestions::suggestion_grid(
                         ui,
                         tr!("Popular US stocks and ETFs · free IEX feed"),
                         &items,
                     ) {
-                        search = Some(STOCK_SUGGESTIONS[index]);
+                        search = Some(well_known::STOCKS[index].ticker);
                     }
                 }
                 PickerTab::Predictions => {
@@ -594,6 +593,7 @@ mod tests {
             event: None,
             base: None,
             quote: None,
+            names: Default::default(),
         }
     }
 

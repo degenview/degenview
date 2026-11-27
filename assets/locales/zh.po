@@ -685,10 +685,6 @@ msgstr "再添加一个副本"
 msgid "Add as New Chart"
 msgstr "添加为新图表"
 
-#: src/ui/chart/symbol_picker/list.rs src/ui/chart/symbol_picker/mod.rs
-msgid "Add as new chart"
-msgstr "添加为新图表"
-
 #: src/ui/trade/venue_pill.rs
 msgid "Add broker…"
 msgstr "添加券商…"
@@ -815,6 +811,12 @@ msgstr "添加到收藏"
 msgid "Add to the URL as ?token="
 msgstr "以 ?token= 添加到 URL"
 
+#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/list.rs
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Add to this tab"
+msgstr "添加到此标签页"
+
 #: src/ui/chart/card/header.rs src/ui/chart/symbol_picker/list.rs
 msgid "Add to watchlist"
 msgstr "添加到自选列表"
@@ -847,19 +849,17 @@ msgstr "在设置中添加你的 Alpaca API 密钥。"
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "在设置 ▸ 快照中添加 ImgBB API 密钥后即可分享。"
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid ""
-"Add your Oanda credentials in Settings to search and chart forex, metals and "
-"index CFDs."
-msgstr "在设置中添加 Oanda 凭据，即可搜索外汇、金属和指数差价合约并绘制图表。"
-
 #: src/service/watchlist_quotes/provider.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr "在设置中添加 Oanda 凭据，即可查看 Oanda 报价"
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
-msgstr "在设置中添加你的免费 Alpaca API 密钥，即可搜索美股并绘制图表。"
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your Oanda credentials to search forex, metals and index CFDs."
+msgstr "添加 Oanda 凭据，即可搜索外汇、金属和指数差价合约。"
+
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your free Alpaca API keys to search and chart US stocks."
+msgstr "添加你的免费 Alpaca API 密钥，即可搜索美股并绘制图表。"
 
 #: src/pine_studio/ai/host.rs
 msgid "Add your {provider} API key to start"
@@ -4235,6 +4235,10 @@ msgstr "加密货币"
 msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr "添加到自选列表的加密货币和股票会显示在这里。"
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Crypto exchanges"
+msgstr "加密货币交易所"
+
 #: src/ui/alert/editor.rs src/ui/paper/account_sheet.rs
 msgid "Currency"
 msgstr "币种"
@@ -4336,6 +4340,10 @@ msgstr "D"
 #: src/ui/chart/symbol_picker/search.rs
 msgid "DEX"
 msgstr "DEX"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "DEX & aggregators"
+msgstr "DEX 与聚合器"
 
 #: src/ui/chart/object_tree/mod.rs
 msgid "DRAWINGS"
@@ -9283,6 +9291,10 @@ msgstr "没有断点"
 msgid "No call stack"
 msgstr "没有调用栈"
 
+#: src/ui/chart/symbol_picker/detail/chart.rs
+msgid "No chart for this market"
+msgstr "该市场暂无图表"
+
 #: src/ui/settings/mcp/clients.rs
 msgid "No clients yet. Generate a credential above to connect one."
 msgstr "还没有客户端。在上方生成凭据即可连接一个。"
@@ -12034,6 +12046,10 @@ msgstr "替换"
 msgid "Replace API Key"
 msgstr "替换 API 密钥"
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Replace chart"
+msgstr "替换图表"
+
 #: src/ui/drawing/layer/menu.rs src/ui/drawing/properties/content.rs
 msgid "Replace image…"
 msgstr "替换图片…"
@@ -14049,6 +14065,10 @@ msgstr "股票K线来自 Alpaca。在设置中添加密钥后即可在股票上�
 #: src/ui/chart/symbol_picker/search.rs src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
 msgstr "股票"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Stocks & forex"
+msgstr "股票与外汇"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Stocks could not be searched"

@@ -450,6 +450,7 @@ mod tests {
             event: None,
             base: None,
             quote: None,
+            names: Default::default(),
         }
     }
 

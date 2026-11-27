@@ -1,5 +1,6 @@
 //! Markets and their data: instruments, sources, timeframes, candles and prediction-market series.
 
+pub mod asset_name;
 pub mod bucket;
 pub mod cmc;
 pub mod feed;
@@ -17,3 +18,4 @@ pub(in crate::model) mod source;
 pub(in crate::model) mod timeframe;
 pub mod trend;
 pub mod venue;
+pub mod well_known;

@@ -5,7 +5,7 @@ use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
-const BASE_URL: &str = "https://api.coingecko.com/api/v3";
+pub(in crate::service) const BASE_URL: &str = "https://api.coingecko.com/api/v3";
 
 pub struct CoinGecko;
 
@@ -59,11 +59,10 @@ impl MarketSource for CoinGecko {
             ) else {
                 continue;
             };
-            results.push(SearchResult::new(
-                crate::model::DataSource::CoinGecko,
-                symbol.to_uppercase(),
-                id,
-            ));
+            results.push(
+                SearchResult::new(DataSource::CoinGecko, symbol.to_uppercase(), id)
+                    .named(coin.get("name").and_then(Value::as_str), None),
+            );
         }
         Ok(results.into_iter().take(20).collect())
     }

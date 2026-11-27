@@ -303,6 +303,7 @@ impl MarketSource for Kalshi {
                         }),
                         base: None,
                         quote: None,
+                        names: Default::default(),
                     });
                 }
             }
