@@ -6,6 +6,7 @@
 //! A drawing that names none is dropped on reading.
 
 use super::{DRAWING_FORMAT, Drawing, lenient};
+use crate::model::InstrumentId;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -81,6 +82,7 @@ impl<'de> Deserialize<'de> for MarketDrawings {
             let Some(market) = market_of(&value) else {
                 continue;
             };
+            let market = InstrumentId::current_key(&market).unwrap_or(market);
             drawings
                 .sets
                 .entry(market)
@@ -133,6 +135,24 @@ fn filed(market: &str, drawing: &Drawing) -> Result<Value, serde_json::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drawings_a_release_filed_under_a_requoted_pair_come_back_on_the_pairs_market() {
+        let mut stored = MarketDrawings::default();
+        stored.put("BINANCE:SUSDTUSDT", vec![line(1)]);
+        stored.put("BINANCE:SUSDT", vec![line(2)]);
+        stored.put("BINANCE:BTCUSDT", vec![line(3)]);
+
+        let back: MarketDrawings =
+            serde_json::from_value(serde_json::to_value(&stored).unwrap()).unwrap();
+
+        assert_eq!(back.get("BINANCE:SUSDT").len(), 2);
+        assert!(back.get("BINANCE:SUSDTUSDT").is_empty());
+        assert_eq!(back.get("BINANCE:BTCUSDT").len(), 1);
+        // Saved again, each names the market it is filed under.
+        let saved = serde_json::to_string(&back).unwrap();
+        assert!(!saved.contains("SUSDTUSDT"), "{saved}");
+    }
     use crate::model::drawings::{Anchor, Tool};
     use serde_json::json;
 

@@ -7,12 +7,13 @@
 //! fires it by accident.
 
 use crate::i18n::tr;
+use crate::model::InstrumentId;
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::pine::Diagnostic;
 use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::pine::builtins::alert::frequency::AlertFrequency;
 use crate::pine::compiler::program::InputValue;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 /// Where a subscription stands.
@@ -91,6 +92,12 @@ pub struct ChartKey {
     pub chart_id: u64,
 }
 
+/// A stored `symbol_key`, spelled as the market's key is now (`InstrumentId::current_key`).
+fn symbol_key_now<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let key = String::deserialize(deserializer)?;
+    Ok(InstrumentId::current_key(&key).unwrap_or(key))
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PineAlertSubscription {
     pub id: u64,
@@ -114,6 +121,7 @@ pub struct PineAlertSubscription {
     #[serde(default)]
     pub inputs: HashMap<String, StoredInput>,
     /// `"<source>:<ticker>"`, matching the dataset's symbol key.
+    #[serde(deserialize_with = "symbol_key_now")]
     pub symbol_key: String,
     pub timeframe: String,
     pub source_hash: String,
@@ -294,6 +302,18 @@ mod tests {
             title: title.map(str::to_owned),
             message: message.map(str::to_owned),
         }
+    }
+
+    #[test]
+    fn a_subscription_a_release_saved_under_a_requoted_pair_watches_the_pairs_chart() {
+        let mut stored = subscription();
+        stored.symbol_key = "BINANCE:SUSDTUSDT".into();
+
+        let back: PineAlertSubscription =
+            serde_json::from_value(serde_json::to_value(&stored).unwrap()).unwrap();
+
+        assert_eq!(back.symbol_key, "BINANCE:SUSDT");
+        assert!(back.watches("BINANCE:SUSDT", &back.timeframe));
     }
 
     fn subscription() -> PineAlertSubscription {

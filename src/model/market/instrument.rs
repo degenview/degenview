@@ -100,6 +100,21 @@ impl InstrumentId {
         Some(Self::new(source, symbol).key())
     }
 
+    /// `key` as it is spelled now, when it is a stored key releases up to 0.6.0-rc.37 made for a
+    /// market by quoting its pair in USDT again (`BINANCE:SUSDTUSDT` for `SUSDT`): they did not
+    /// read the pair and took it for a bare asset. Drawings and script alerts are filed by key,
+    /// and read theirs through this.
+    pub fn current_key(key: &str) -> Option<String> {
+        let (slug, symbol) = key.split_once(':')?;
+        let source = DataSource::from_watchlist_slug(slug)?;
+        if !matches!(source, DataSource::Binance | DataSource::Bybit) {
+            return None;
+        }
+        let pair = symbol.strip_suffix("USDT")?;
+        let instrument = Self::new(source, pair);
+        (!released_as_pair(pair) && instrument.api_symbol() == pair).then(|| instrument.key())
+    }
+
     fn normalized(symbol: &str, source: DataSource) -> String {
         match source {
             DataSource::Binance
@@ -116,9 +131,52 @@ impl InstrumentId {
     }
 }
 
+/// The quotes releases up to 0.6.0-rc.37 read in Binance and Bybit ids. Keys they stored were
+/// spelled by this list, so it does not change.
+const RELEASED_QUOTES: [&str; 16] = [
+    "FDUSD", "USDT", "USDC", "BUSD", "TUSD", "USDP", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY",
+    "USD", "BTC", "ETH", "BNB",
+];
+
+/// Whether those releases read `symbol` as a pair, and so left it as it was.
+fn released_as_pair(symbol: &str) -> bool {
+    RELEASED_QUOTES
+        .iter()
+        .find_map(|quote| symbol.strip_suffix(quote).filter(|base| !base.is_empty()))
+        .is_some_and(|base| base.len() > 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_key_a_release_made_by_quoting_a_pair_again_is_read_as_the_pairs() {
+        for source in ["BINANCE", "BYBIT"] {
+            let current = |symbol: &str| InstrumentId::current_key(&format!("{source}:{symbol}"));
+            for (stored, pair) in [("SUSDTUSDT", "SUSDT"), ("AUSD1USDT", "AUSD1")] {
+                assert_eq!(
+                    current(stored),
+                    Some(format!("{source}:{pair}")),
+                    "{stored}"
+                );
+            }
+            // Keys that name a USDT market, as the releases and this build both spell it.
+            for kept in [
+                "BTCUSDT",
+                "WBTCUSDT",
+                "TUSDUSDT",
+                "BUSDUSDT",
+                "XBUSDUSDT",
+                "SUSDT",
+                "ETHBTC",
+            ] {
+                assert_eq!(current(kept), None, "{kept}");
+            }
+        }
+        assert_eq!(InstrumentId::current_key("COINBASE:SUSDTUSDT"), None);
+        assert_eq!(InstrumentId::current_key("nonsense"), None);
+    }
 
     #[test]
     fn identity_is_source_qualified_and_case_normalized() {
