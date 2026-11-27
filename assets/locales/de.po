@@ -1284,6 +1284,10 @@ msgstr "Ein EMA mit Bändern im Abstand eines Vielfachen der ATR."
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr "Ein HTTP-Proxy, der CONNECT erlaubt, wie die meisten."
 
+#: src/ui/settings/api_keys.rs
+msgid "An access token works only in the environment it was generated in."
+msgstr "Ein Zugriffstoken funktioniert nur in der Umgebung, in der es erzeugt wurde."
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from anywhere else is refused as if the token were wrong."
 msgstr "Eine Adresse oder ein Bereich, etwa 192.168.1.20 oder 10.0.0.0/8. Eine Anfrage von anderswo wird abgelehnt, als wäre das Token falsch."
@@ -5605,6 +5609,10 @@ msgstr "Einstieg"
 #: src/ui/mcp/activity.rs
 msgid "Entry id: {id}"
 msgstr "Eintrags-ID: {id}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Environment"
+msgstr "Umgebung"
 
 #: src/ui/settings/window.rs
 msgid "Ephemeral"
@@ -20034,6 +20042,16 @@ msgstr "Abgebrochen"
 msgctxt "MCP call"
 msgid "Done"
 msgstr "Erledigt"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Live"
+msgstr "Live"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Practice"
+msgstr "Demo"
 
 #: src/model/chart/object_tree.rs
 msgctxt "a numbered drawing, such as Trend Line 3"

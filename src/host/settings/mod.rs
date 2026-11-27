@@ -558,7 +558,12 @@ impl SettingsHost {
             self.secrets.set_secret(target_id, &result.secret)
         };
         match secret_written {
-            Ok(()) => self.state.webhooks.save_succeeded(),
+            Ok(()) => {
+                // A test, in flight or finished, was of the endpoint as it was.
+                self.tests.retain(|(id, _)| *id != target_id);
+                self.state.webhooks.forget(target_id);
+                self.state.webhooks.save_succeeded();
+            }
             Err(error) => {
                 let _ = store.replace_webhook_endpoints(&original);
                 self.state.webhooks.save_failed(error.0);

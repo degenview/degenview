@@ -45,6 +45,68 @@ fn a_test_runs_off_the_ui_thread_and_its_result_lands_later() {
 }
 
 #[test]
+fn saving_an_endpoint_drops_what_was_tested_before() {
+    let store = Store::open_in_memory().unwrap();
+    let endpoint = WebhookEndpoint::new("Hook", "not a url", 0);
+    store
+        .replace_webhook_endpoints(std::slice::from_ref(&endpoint))
+        .unwrap();
+    let mut host = SettingsHost::default();
+    let test = |host: &mut SettingsHost| {
+        host.apply_webhook(
+            WebhookSettingsAction::Test {
+                endpoint: Box::new(endpoint.clone()),
+                message: "{}".into(),
+            },
+            &store,
+            std::slice::from_ref(&endpoint),
+            0,
+            &mut Vec::new(),
+        );
+    };
+    let save = |host: &mut SettingsHost| {
+        host.save(
+            crate::ui::webhook::editor::WebhookEditorResult {
+                id: Some(endpoint.id),
+                name: "Hook".into(),
+                description: String::new(),
+                url: "https://example.com/new".into(),
+                method: WebhookHttpMethod::Post,
+                headers: Vec::new(),
+                secret: String::new(),
+                is_enabled: true,
+            },
+            &store,
+            std::slice::from_ref(&endpoint),
+            1,
+        );
+    };
+
+    // In flight.
+    test(&mut host);
+    save(&mut host);
+    assert!(host.tests.is_empty());
+
+    // Finished.
+    test(&mut host);
+    let ctx = egui::Context::default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !host.tests.is_empty() && Instant::now() < deadline {
+        host.collect_test_results(&ctx);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_ne!(
+        host.state.webhooks.test_state(endpoint.id),
+        WebhookTestState::NotTested
+    );
+    save(&mut host);
+    assert_eq!(
+        host.state.webhooks.test_state(endpoint.id),
+        WebhookTestState::NotTested
+    );
+}
+
+#[test]
 fn failed_delete_keeps_the_secret_and_reference_action() {
     let path = std::env::temp_dir().join(format!(
         "degenview-webhook-delete-{}.sqlite",

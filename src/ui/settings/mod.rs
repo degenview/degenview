@@ -8,6 +8,7 @@ pub mod art;
 pub mod broker_words;
 pub mod brokers;
 pub mod card;
+pub mod connection_test;
 pub mod mcp;
 pub mod network;
 pub mod pine_studio;

@@ -1389,6 +1389,10 @@ msgstr "EMA с полосами на расстоянии, кратном ATR."
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr "HTTP-прокси с поддержкой метода CONNECT."
 
+#: src/ui/settings/api_keys.rs
+msgid "An access token works only in the environment it was generated in."
+msgstr "Токен доступа работает только в той среде, в которой он был создан."
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid ""
 "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from "
@@ -6015,6 +6019,10 @@ msgstr "Вход"
 #: src/ui/mcp/activity.rs
 msgid "Entry id: {id}"
 msgstr "ID записи: {id}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Environment"
+msgstr "Среда"
 
 #: src/ui/settings/window.rs
 msgid "Ephemeral"
@@ -21709,6 +21717,16 @@ msgstr "Отменено"
 msgctxt "MCP call"
 msgid "Done"
 msgstr "Готово"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Live"
+msgstr "Реальная"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Practice"
+msgstr "Демо"
 
 #: src/model/chart/object_tree.rs
 msgctxt "a numbered drawing, such as Trend Line 3"

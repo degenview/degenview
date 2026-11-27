@@ -108,6 +108,14 @@ watchlists.
   | Polymarket, Kalshi | lines: `model::market::line` | any timeframe: a point per timeframe (a week at most) over 60 candles, between a month and a year, at most 1,000 points (a 1m line reaches back 16 hours). Polymarket: the shortest `prices-history` window that holds the span and allows `fidelity` = the point spacing (`1w` allows 5 minutes, `1m` 10, `max` is the whole history only from 12 hours; where none holds the span and allows the fidelity the line is shorter). Kalshi: the longest of 1, 60 and 1,440 minutes that is no longer than a point, over at most 1,000 of it |
   | CoinMarketCap | none | ignores the timeframe |
 
+- **Oanda has two environments** (`model::market::oanda::OandaEnvironment`), live
+  (`api-fxtrade.oanda.com`) and practice (`api-fxpractice.oanda.com`), and a token works only on its
+  own: the other answers 401. The choice is saved with the account id and token (items without it are
+  live), `DEGENVIEW_OANDA_ENVIRONMENT=practice` goes with the other environment variables, and every
+  request is built by `service::market::oanda::api_request`, which takes the host from the login that
+  signs it. Do not build an Oanda URL anywhere else. One answer uses one login: it is looked up once
+  and passed down (`klines_range`), never per page, and what is kept between answers (the watchlist's
+  day-ago references) is kept per environment.
 - **Oanda history** uses UTC-aligned midpoint candles. Range reads feed `to` and `count` into
   the shared backward pager so a market closure consumes no page slots. The adapter requests an
   extra row and drops any candle at the exclusive end cursor. A history request is capped at

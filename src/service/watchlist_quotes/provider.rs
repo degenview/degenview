@@ -5,9 +5,11 @@
 use super::engine::Outcome;
 use crate::i18n::tr;
 use crate::lock::lock;
+use crate::model::market::oanda::OandaEnvironment;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::ProviderError;
+use crate::service::keychain::api_keys::OandaCredentials;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -89,9 +91,8 @@ pub fn chunk_size(source: DataSource) -> usize {
 // MARK: Live provider
 
 pub struct LiveProvider {
-    /// Each Oanda instrument's reference for a given cutoff hour. Oanda's
-    /// pricing answer carries no 24h figure; one hourly candle per instrument supplies it.
-    oanda_day_ago: Arc<Mutex<HashMap<String, DayAgoReference>>>,
+    /// Oanda's pricing answer carries no 24h figure; one hourly candle per instrument supplies it.
+    oanda_day_ago: Arc<Mutex<DayAgoReferences>>,
     /// Set while a background refresh of those prices runs, so rounds do not stack them.
     oanda_refreshing: Arc<AtomicBool>,
 }
@@ -99,7 +100,7 @@ pub struct LiveProvider {
 impl Default for LiveProvider {
     fn default() -> Self {
         Self {
-            oanda_day_ago: Arc::new(Mutex::new(HashMap::new())),
+            oanda_day_ago: Arc::default(),
             oanda_refreshing: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -398,10 +399,10 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
 /// one slow candle request cannot stall the quote round for every provider.
 fn oanda(
     requests: &[QuoteRequest],
-    day_ago: &Arc<Mutex<HashMap<String, DayAgoReference>>>,
+    day_ago: &Arc<Mutex<DayAgoReferences>>,
     refreshing: &Arc<AtomicBool>,
 ) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
+    let Some(login) = crate::service::keychain::api_keys::oanda_credentials() else {
         return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
     };
     let symbols = requests
@@ -409,30 +410,37 @@ fn oanda(
         .map(|request| request.symbol.to_uppercase())
         .collect::<Vec<_>>()
         .join(",");
-    let url = format!(
-        "{}/accounts/{account_id}/pricing?instruments={symbols}",
-        crate::service::market::oanda::BASE_URL
+    let request = crate::service::market::oanda::api_request(
+        &login,
+        &format!(
+            "/accounts/{}/pricing?instruments={symbols}",
+            login.account_id
+        ),
     );
-    let auth = format!("Bearer {token}");
-    let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())])?;
+    let body = get(
+        DataSource::Oanda,
+        &request.url,
+        &[("Authorization", request.authorization.as_str())],
+    )?;
     let mut quotes = parse_oanda_pricing(&body, requests)?;
     let now = crate::clock::now_ms();
+    let environment = login.environment;
     let stale = {
-        let cache = lock(day_ago);
-        fill_day_ago(&mut quotes, requests, &cache, now);
-        stale_instruments(requests, &cache, now)
+        let references = lock(day_ago);
+        references.fill(environment, &mut quotes, requests, now);
+        references.stale(environment, requests, now)
     };
     if !stale.is_empty()
         && refreshing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     {
-        let cache = Arc::clone(day_ago);
+        let references = Arc::clone(day_ago);
         let flag = Arc::clone(refreshing);
         crate::service::work_queue::submit_for(DataSource::Oanda, move || {
             for instrument in stale {
-                if let Ok(reference) = oanda_day_ago_price(&instrument, now) {
-                    lock(&cache).insert(instrument, reference);
+                if let Ok(reference) = oanda_day_ago_price(&login, &instrument, now) {
+                    lock(&references).insert(environment, instrument, reference);
                 }
             }
             flag.store(false, Ordering::Release);
@@ -453,53 +461,82 @@ fn day_ago_hour(now: i64) -> i64 {
     (now - 24 * HOUR_MS).div_euclid(HOUR_MS) * HOUR_MS
 }
 
-/// Attach references already obtained for the current cutoff hour.
-fn fill_day_ago(
-    quotes: &mut HashMap<String, SourceQuote>,
-    requests: &[QuoteRequest],
-    cache: &HashMap<String, DayAgoReference>,
-    now: i64,
-) {
-    let hour = day_ago_hour(now);
-    for request in requests {
-        if let Some(quote) = quotes.get_mut(&request.symbol)
-            && let Some(reference) = cache.get(&request.symbol.to_uppercase())
-            && reference.hour == hour
-        {
-            quote.previous_day_price = reference.price;
+/// Each Oanda instrument's reference for a given cutoff hour, apart by environment: a practice
+/// quote is never measured against a live candle, nor the other way round.
+#[derive(Default)]
+struct DayAgoReferences(HashMap<(OandaEnvironment, String), DayAgoReference>);
+
+impl DayAgoReferences {
+    fn current(
+        &self,
+        environment: OandaEnvironment,
+        instrument: &str,
+        now: i64,
+    ) -> Option<DayAgoReference> {
+        self.0
+            .get(&(environment, instrument.to_uppercase()))
+            .copied()
+            .filter(|reference| reference.hour == day_ago_hour(now))
+    }
+
+    /// Attach references already obtained for the current cutoff hour.
+    fn fill(
+        &self,
+        environment: OandaEnvironment,
+        quotes: &mut HashMap<String, SourceQuote>,
+        requests: &[QuoteRequest],
+        now: i64,
+    ) {
+        for request in requests {
+            if let Some(quote) = quotes.get_mut(&request.symbol)
+                && let Some(reference) = self.current(environment, &request.symbol, now)
+            {
+                quote.previous_day_price = reference.price;
+            }
         }
     }
-}
 
-fn stale_instruments(
-    requests: &[QuoteRequest],
-    cache: &HashMap<String, DayAgoReference>,
-    now: i64,
-) -> Vec<String> {
-    let hour = day_ago_hour(now);
-    requests
-        .iter()
-        .map(|request| request.symbol.to_uppercase())
-        .filter(|instrument| {
-            cache
-                .get(instrument)
-                .is_none_or(|reference| reference.hour != hour)
-        })
-        .collect()
+    /// The instruments that have no reference for the current cutoff hour.
+    fn stale(
+        &self,
+        environment: OandaEnvironment,
+        requests: &[QuoteRequest],
+        now: i64,
+    ) -> Vec<String> {
+        requests
+            .iter()
+            .map(|request| request.symbol.to_uppercase())
+            .filter(|instrument| self.current(environment, instrument, now).is_none())
+            .collect()
+    }
+
+    fn insert(
+        &mut self,
+        environment: OandaEnvironment,
+        instrument: String,
+        reference: DayAgoReference,
+    ) {
+        self.0.insert((environment, instrument), reference);
+    }
 }
 
 /// The opening midpoint of the candle covering 24 hours ago. A closed market
 /// has no reference for that hour.
-fn oanda_day_ago_price(instrument: &str, now: i64) -> Result<DayAgoReference, ProviderError> {
+fn oanda_day_ago_price(
+    login: &OandaCredentials,
+    instrument: &str,
+    now: i64,
+) -> Result<DayAgoReference, ProviderError> {
     day_ago_reference(now, |start, end| {
-        crate::service::fetch_klines_range(
-            DataSource::Oanda,
+        crate::service::market::oanda::klines_range(
+            login,
             instrument,
             Timeframe::HOUR_1,
             start,
             end,
             1,
         )
+        .map(crate::service::normalize)
     })
 }
 
@@ -1697,8 +1734,13 @@ mod tests {
         let now = crate::format::parse_iso8601("2026-11-29T23:00:00Z").unwrap();
         let reference = day_ago_reference(now, |_, _| Ok(Vec::new())).unwrap();
         assert_eq!(reference.price, None);
-        let cache = HashMap::from([("EUR_USD".to_owned(), reference)]);
-        assert!(stale_instruments(&[request("EUR_USD")], &cache, now + 1).is_empty());
+        let mut references = DayAgoReferences::default();
+        references.insert(OandaEnvironment::Live, "EUR_USD".to_owned(), reference);
+        assert!(
+            references
+                .stale(OandaEnvironment::Live, &[request("EUR_USD")], now + 1)
+                .is_empty()
+        );
     }
 
     fn quote(price: f64) -> SourceQuote {
@@ -1723,34 +1765,59 @@ mod tests {
             .map(|request| (request.symbol.clone(), quote(1.0)))
             .collect();
         let now = 25 * HOUR_MS - 1;
-        let cache = HashMap::from([(
+        let live = OandaEnvironment::Live;
+        let mut references = DayAgoReferences::default();
+        references.insert(
+            live,
             "EUR_USD".to_owned(),
             DayAgoReference {
                 hour: day_ago_hour(now),
                 price: Some(1.05),
             },
-        )]);
-        fill_day_ago(&mut quotes, &requests, &cache, now);
+        );
+        references.fill(live, &mut quotes, &requests, now);
         assert_eq!(quotes["EUR_USD"].previous_day_price, Some(1.05));
         assert_eq!(
             quotes["SPX500_USD"].previous_day_price, None,
             "no network read on the publication path"
         );
         assert_eq!(
-            stale_instruments(&requests, &cache, now),
+            references.stale(live, &requests, now),
             ["SPX500_USD", "NOQUOTE"],
             "the instruments to refresh in the background"
         );
         // Once the entry ages out it is stale too, and a fresh quote is left without a change.
         let aged = now + 1;
         assert_eq!(
-            stale_instruments(&requests, &cache, aged),
+            references.stale(live, &requests, aged),
             ["EUR_USD", "SPX500_USD", "NOQUOTE"]
         );
         let mut fresh: HashMap<String, SourceQuote> =
             HashMap::from([(request("EUR_USD").symbol, quote(1.1))]);
-        fill_day_ago(&mut fresh, &requests, &cache, aged);
+        references.fill(live, &mut fresh, &requests, aged);
         assert_eq!(fresh["EUR_USD"].previous_day_price, None);
+    }
+
+    #[test]
+    fn a_reference_serves_only_the_environment_it_was_read_from() {
+        let now = 25 * HOUR_MS;
+        let requests = vec![request("EUR_USD")];
+        let mut references = DayAgoReferences::default();
+        references.insert(
+            OandaEnvironment::Live,
+            "EUR_USD".to_owned(),
+            DayAgoReference {
+                hour: day_ago_hour(now),
+                price: Some(1.05),
+            },
+        );
+        let mut quotes = HashMap::from([(requests[0].symbol.clone(), quote(1.1))]);
+        references.fill(OandaEnvironment::Practice, &mut quotes, &requests, now);
+        assert_eq!(quotes["EUR_USD"].previous_day_price, None);
+        assert_eq!(
+            references.stale(OandaEnvironment::Practice, &requests, now),
+            ["EUR_USD"]
+        );
     }
 
     #[test]
