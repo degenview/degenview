@@ -6,12 +6,12 @@ use crate::i18n::{tr, tr_n};
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::prediction_icon;
 use crate::ui::chart::picker_kit::suggestions::prediction_topics;
+use crate::ui::chart::symbol_picker::columns::{Columns, PAD};
 use crate::ui::chart::symbol_picker::list::{
-    PAD, RowOutput, RowState, SUBTITLE_SIZE, TITLE_SIZE, chance_label, content_right, marks,
-    paint_background, venue_block,
+    RowOutput, RowState, chance_label, marks, paint_background, two_lines, venue_block,
 };
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::kit::{self, MEDIUM};
 use crate::ui::theme;
 use eframe::egui::{
     self, Color32, Galley, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
@@ -21,8 +21,8 @@ use std::sync::Arc;
 const HEADER_HEIGHT: f32 = 56.0;
 const CHOICE_HEIGHT: f32 = 36.0;
 const CHOICE_PAD: f32 = 8.0;
-/// Right-hand room a choice keeps free for its chance and the plus.
-const CHOICE_RESERVED: f32 = 120.0;
+/// Room a choice keeps for its chance, before the venue column.
+const CHANCE_ROOM: f32 = 72.0;
 const CHEVRON: f32 = 12.0;
 const CHECKBOX: f32 = 14.0;
 const HEADER_ART: f32 = 36.0;
@@ -39,8 +39,9 @@ pub fn event_header(
     ui: &mut Ui,
     head: &EventHead,
     highlighted: bool,
-    width: f32,
+    columns: &Columns,
 ) -> (Response, RowOutput) {
+    let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(vec2(width, HEADER_HEIGHT), Sense::click());
     let label = tr_n!(
         head.choices,
@@ -91,33 +92,16 @@ pub fn event_header(
         Vec2::splat(HEADER_ART),
     );
     prediction_icon(ui, art, &head.title, head.image_url.as_deref());
-    let venue_left = venue_block(ui, rect, content_right(rect), head.source());
+    venue_block(ui, rect, columns, head.source());
     let text_left = rect.left() + TEXT_LEFT;
-    let text_width = (venue_left - 16.0 - text_left).max(40.0);
-    let title = kit::galley(
+    let text_width = (rect.left() + columns.venue - 12.0 - text_left).max(40.0);
+    two_lines(
         ui,
+        rect,
+        text_left,
+        text_width,
         &head.title,
-        TITLE_SIZE,
-        SEMIBOLD,
-        theme::text_primary(),
-        text_width,
-    );
-    let summary = kit::galley(
-        ui,
         &head.summary(),
-        SUBTITLE_SIZE,
-        REGULAR,
-        theme::text_secondary(),
-        text_width,
-    );
-    let top = rect.center().y - (title.size().y + 2.0 + summary.size().y) / 2.0;
-    let summary_top = top + title.size().y + 2.0;
-    ui.painter()
-        .galley(pos2(text_left, top), title, theme::text_primary());
-    ui.painter().galley(
-        pos2(text_left, summary_top),
-        summary,
-        theme::text_secondary(),
     );
     (response, out)
 }
@@ -129,17 +113,18 @@ pub fn choice(
     result: &SearchResult,
     ticked: bool,
     state: RowState,
-    width: f32,
+    columns: &Columns,
 ) -> (Response, RowOutput) {
+    let width = ui.available_width();
     let text_left = TEXT_LEFT;
-    // Room kept at the right for the chance and the plus.
+    // The chance ends where the venue column starts; the label wraps before it.
     let label = kit::galley_rows(
         ui,
         &result.symbol,
         14.0,
         MEDIUM,
         theme::text_primary(),
-        (width - text_left - CHOICE_RESERVED).max(40.0),
+        (columns.venue - CHANCE_ROOM - text_left).max(40.0),
         2,
     );
     let height = (label.size().y + 2.0 * CHOICE_PAD).max(CHOICE_HEIGHT);
@@ -171,10 +156,10 @@ pub fn choice(
         checkbox,
         if ticked { Tick::All } else { Tick::None },
     );
-    let content_right = marks(ui, rect, result, state, &mut out);
+    marks(ui, rect, result, state, &mut out);
     out.pick |= response.clicked() && !out.add && !tick.clicked();
     if let Some(chance) = result.price {
-        chance_label(ui, rect, content_right, chance);
+        chance_label(ui, rect, rect.left() + columns.venue - 12.0, chance);
     }
     ui.painter().galley(
         pos2(

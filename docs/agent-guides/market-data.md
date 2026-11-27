@@ -10,6 +10,10 @@
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
+   Pass the provider's asset names with `SearchResult::named` when its search lists them, return
+   them from `MarketSource::asset_names` when they describe assets other venues leave unnamed, and decide
+   in `service::market::names::Directory` what describes its markets otherwise
+   ([Asset names](../symbol-picker.md#asset-names)).
 5. `SourceLogo` under `assets/source_logos/`, the `ui::kit::source_logo::source` arm, attribution in
    `docs/source-logos.md`.
 
@@ -25,7 +29,7 @@ watchlists.
 
 - Name a market as its exchange does (`BTCUSDT`, `BTC-USD`); `DataSource::display_symbol` only
   upper-cases. Never rebuild `BTC/USDT` labels. Asset: `DataSource::base_asset` /
-  `SearchResult::base_asset`; pair: `SearchResult::base`/`quote`.
+  `SearchResult::base_asset`; pair: `SearchResult::base`/`quote_asset()`.
 - Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
   (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use

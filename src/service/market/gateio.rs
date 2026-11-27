@@ -140,6 +140,16 @@ impl MarketSource for Gate {
         )
     }
 
+    fn asset_names(&self) -> Vec<(String, String)> {
+        let Ok(pairs) = CATALOG.get(download_pairs) else {
+            return Vec::new();
+        };
+        pairs
+            .iter()
+            .filter_map(|pair| Some((pair.base.to_uppercase(), pair.base_name.clone()?)))
+            .collect()
+    }
+
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // `BTC_USDT`, `btc/usdt` and `BTCUSDT` are one query.
         let needle = normalize(query);
@@ -232,6 +242,7 @@ fn matching_pairs(pairs: &[Pair], needle: &str) -> Vec<SearchResult> {
         .map(|pair| {
             SearchResult::new(DataSource::Gate, pair.id.clone(), pair.id.clone())
                 .pair(pair.base.clone(), pair.quote.clone())
+                .named(pair.base_name.as_deref(), pair.quote_name.as_deref())
         })
         .collect()
 }
@@ -242,10 +253,14 @@ struct Pair {
     id: String,
     base: String,
     quote: String,
+    #[serde(default)]
+    base_name: Option<String>,
+    #[serde(default)]
+    quote_name: Option<String>,
 }
 
 /// Every spot market that is tradable, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_gateio");
+static CATALOG: Catalog<Pair> = Catalog::new("catalog_gateio_v2");
 
 /// Forgets the list held in memory (after the disk cache was cleared).
 pub(in crate::service) fn clear_catalog() {
@@ -269,6 +284,8 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
                 id: field("id")?.to_owned(),
                 base: field("base")?.to_owned(),
                 quote: field("quote")?.to_owned(),
+                base_name: field("base_name").map(str::to_owned),
+                quote_name: field("quote_name").map(str::to_owned),
             })
         })
         .collect())
@@ -563,11 +580,15 @@ mod tests {
                 id: "BTC_USDT".into(),
                 base: "BTC".into(),
                 quote: "USDT".into(),
+                base_name: None,
+                quote_name: None,
             },
             Pair {
                 id: "ETH_BTC".into(),
                 base: "ETH".into(),
                 quote: "BTC".into(),
+                base_name: None,
+                quote_name: None,
             },
         ];
         for query in ["btcusdt", "BTC_USDT", "btc/usdt", "BTC USDT", "btc-usdt"] {

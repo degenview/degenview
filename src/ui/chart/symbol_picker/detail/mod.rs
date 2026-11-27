@@ -1,16 +1,23 @@
-//! The panel beside the symbol list: the highlighted market's name, its price and change, whether
-//! it is trading, the exchange it is listed on, and the other dollar markets of the same asset.
-//! A prediction market shows its chance instead, and an index or a portfolio view says what it
-//! charts.
+//! The panel beside the symbol list: the highlighted market's name, its price and change, its
+//! last day on a chart, whether it is trading, the exchange it is listed on, the other dollar
+//! markets of the same asset and the button that uses it. A prediction market shows its chance
+//! instead of a price, and an index or a portfolio view says what it charts.
+
+pub mod action;
+mod chart;
+mod layout;
+mod related;
 
 use super::dashboards::{Tile, TilePick};
-use super::list::{related_row, subtitle};
+use super::describe;
 use super::search::{market_kind, trading_kind};
-use super::{Item, predictions};
+use super::{Item, PickKind, predictions};
 use crate::format;
 use crate::i18n::{tr, tr_n};
-use crate::model::DataSource;
+use crate::model::market::asset_name::AssetNames;
+use crate::model::session_stats::MarketHours;
 use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
+use crate::model::{DataSource, InstrumentId};
 use crate::service::EventStats;
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::{prediction_icon, result_icon};
@@ -18,136 +25,127 @@ use crate::ui::icons;
 use crate::ui::kit::time_text::date_text;
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD, galley_rows};
 use crate::ui::{kit::source_logo, theme};
-use eframe::egui::{
-    self, Align, Color32, Layout, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
-};
+use action::Actions;
+pub use chart::PreviewChart;
+use eframe::egui::{Color32, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2};
+use layout::PAD;
 
-const PAD: f32 = 24.0;
-const ICON: f32 = 64.0;
+/// The artwork of a prediction market, and of a crypto or stock market.
+const ICON: f32 = 40.0;
+const MARKET_ICON: f32 = 30.0;
+/// Between where a market is listed and whether it trades.
+const STATUS_GAP: f32 = 14.0;
+/// The room a logo or the trading dot takes before its words.
+const LOGO_ROOM: f32 = 20.0;
+const DOT_ROOM: f32 = 14.0;
+/// The chart of a prediction market, under its chance.
+const PREDICTION_CHART: f32 = 64.0;
+/// The height one figure of an event takes.
+const STAT_LINE: f32 = 25.0;
 
 /// What the panel shows.
 pub struct Detail<'a> {
     pub item: &'a Item,
+    /// What the shown market's assets are called.
+    pub names: AssetNames,
     pub quote: Option<&'a WatchlistQuote>,
     /// Other markets of the asset; `None` while they are being looked up.
     pub related: Option<&'a [SearchResult]>,
+    /// The button at the foot; `None` for a row that cannot be used as it is.
+    pub actions: Option<Actions>,
 }
 
-/// Draws the panel into `area` and returns the related market clicked, if any.
-pub fn show(ui: &mut Ui, area: Rect, detail: &Detail) -> Option<SearchResult> {
+/// What the panel was asked for.
+#[derive(Default)]
+pub struct DetailOutput {
+    /// Another market of the asset was clicked.
+    pub related: Option<SearchResult>,
+    /// The button or its menu was used.
+    pub action: Option<PickKind>,
+}
+
+/// Draws the panel into `area`.
+pub fn show(ui: &mut Ui, area: Rect, detail: &Detail, chart: &mut PreviewChart) -> DetailOutput {
+    let mut out = DetailOutput::default();
+    // The button keeps the foot of the panel; the rest is laid out above it.
+    let above = match &detail.actions {
+        Some(actions) => {
+            let button = layout::button(area);
+            out.action = action::show(ui, button, actions);
+            Rect::from_min_max(area.min, pos2(area.right(), button.top()))
+        }
+        None => area,
+    };
+    let mut body = ui.new_child(UiBuilder::new().max_rect(above));
+    body.set_clip_rect(above.intersect(ui.clip_rect()));
     match detail.item {
         Item::Market(result) if !result.source.is_prediction_market() => {
-            market(ui, area, result, detail)
+            out.related = market(&mut body, area, result, detail, chart);
         }
         Item::Market(result) | Item::Choice(result) => {
-            prediction(ui, area, result, None);
-            None
+            prediction(&mut body, above, result, None, detail, chart);
         }
         Item::Event(head) => {
-            prediction(ui, area, &head.lead, Some(head));
-            None
+            prediction(&mut body, above, &head.lead, Some(head), detail, chart);
         }
-        Item::Tile(tile) => {
-            tile_panel(ui, area, tile);
-            None
-        }
+        Item::Tile(tile) => tile_panel(&mut body, above, tile),
     }
+    out
 }
 
-/// A crypto or stock market: price, whether it trades, where, and the same asset elsewhere.
-fn market(ui: &mut Ui, area: Rect, result: &SearchResult, detail: &Detail) -> Option<SearchResult> {
-    let mut clicked = None;
-    let inner = area.shrink2(vec2(PAD, PAD));
+fn instrument(result: &SearchResult) -> InstrumentId {
+    InstrumentId::new(result.source, &result.full_symbol)
+}
 
-    let icon = Rect::from_min_size(inner.min, Vec2::splat(ICON));
-    result_icon(ui, icon, result);
-    let text_left = icon.right() + 16.0;
-    let width = inner.right() - text_left;
-    let title = kit::galley(
-        ui,
-        result.ticker(),
-        24.0,
-        BOLD,
-        theme::text_primary(),
-        width,
+/// A crypto or stock market: price, whether it trades, where, its last day and the same asset
+/// elsewhere. `area` is the whole panel, whose height decides what fits.
+fn market(
+    ui: &mut Ui,
+    area: Rect,
+    result: &SearchResult,
+    detail: &Detail,
+    chart: &mut PreviewChart,
+) -> Option<SearchResult> {
+    let related = detail.related.filter(|related| !related.is_empty());
+    let fit = layout::market(area, detail.actions.is_some(), related.is_some());
+
+    let icon = Rect::from_center_size(
+        pos2(fit.header.left() + MARKET_ICON / 2.0, fit.header.center().y),
+        Vec2::splat(MARKET_ICON),
     );
-    let sub = subtitle(result);
-    let sub = kit::galley(ui, &sub, 14.0, REGULAR, theme::text_secondary(), width);
-    let block = title.size().y + 4.0 + sub.size().y;
-    let top = icon.center().y - block / 2.0;
-    let sub_top = top + title.size().y + 4.0;
-    ui.painter()
-        .galley(pos2(text_left, top), title, theme::text_primary());
-    ui.painter()
-        .galley(pos2(text_left, sub_top), sub, theme::text_secondary());
-
-    // Price and change.
-    let mut y = icon.bottom() + 22.0;
-    y += price_line(
+    result_icon(ui, icon, result);
+    super::list::two_lines_sized(
         ui,
-        pos2(inner.left(), y),
-        inner.width(),
+        fit.header.with_min_x(icon.right() + 10.0),
+        (result.ticker(), 16.0, BOLD),
+        &describe::headline(result, &detail.names),
+    );
+
+    price_line(
+        ui,
+        fit.price.min,
+        fit.price.width(),
         result.source,
         detail.quote,
-    ) + 12.0;
+    );
 
-    // Whether it trades now, and where.
-    y += status_line(ui, pos2(inner.left(), y), result, detail.quote) + 6.0;
-    y += venue_line(ui, pos2(inner.left(), y), result) + 22.0;
+    listing_line(ui, fit.status, result, detail.quote);
 
-    ui.painter()
-        .hline(area.x_range(), y, Stroke::new(1.0, theme::separator()));
-    y += 22.0;
+    chart.show(ui, fit.chart, &instrument(result), detail.quote);
 
-    // Other markets of the same asset.
-    match detail.related {
-        Some([]) | None => {}
-        Some(related) => {
-            let heading = kit::galley(
-                ui,
-                tr!("ALSO TRADES AS"),
-                11.5,
-                SEMIBOLD,
-                theme::text_tertiary(),
-                inner.width(),
-            );
-            ui.painter().galley(
-                pos2(inner.left(), y),
-                heading.clone(),
-                theme::text_tertiary(),
-            );
-            y += heading.size().y + 8.0;
-            // The rows scroll inside what is left of the panel instead of running over its edge.
-            let room = Rect::from_min_max(pos2(inner.left() - 8.0, y), area.max);
-            let mut list = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(room)
-                    .layout(Layout::top_down(Align::Min)),
-            );
-            list.set_clip_rect(room.intersect(ui.clip_rect()));
-            egui::ScrollArea::vertical()
-                .id_salt("symbol_picker_related")
-                .auto_shrink([false, false])
-                .show(&mut list, |list| {
-                    list.spacing_mut().item_spacing = Vec2::ZERO;
-                    for hit in related {
-                        if related_row(list, hit, inner.width() + 16.0) {
-                            clicked = Some(hit.clone());
-                        }
-                    }
-                });
-        }
-    }
-    clicked
+    related::show(ui, area, fit.related?, related?)
 }
 
-/// A prediction market: the event, the chance of the choice, and where it is listed. An event with
-/// several choices shows its likeliest.
+/// A prediction market: the event, the chance of the choice, where it is listed, how that chance
+/// moved over the last day and the event's figures. An event with several choices shows its
+/// likeliest.
 fn prediction(
     ui: &mut Ui,
     area: Rect,
     result: &SearchResult,
     head: Option<&predictions::EventHead>,
+    detail: &Detail,
+    chart: &mut PreviewChart,
 ) {
     let inner = area.shrink2(vec2(PAD, PAD));
     let icon = Rect::from_min_size(inner.min, Vec2::splat(ICON));
@@ -172,22 +170,20 @@ fn prediction(
         |head| head.image_url.as_deref(),
     );
     prediction_icon(ui, icon, title, artwork);
-    let text_left = icon.right() + 16.0;
+    let text_left = icon.right() + 12.0;
     let width = inner.right() - text_left;
-    let title = galley_rows(ui, title, 20.0, BOLD, theme::text_primary(), width, 3);
-    let top = icon.center().y - title.size().y.min(ICON) / 2.0;
-    ui.painter().galley(
-        pos2(text_left, top.max(inner.top())),
-        title,
-        theme::text_primary(),
-    );
+    let title = galley_rows(ui, title, 16.0, BOLD, theme::text_primary(), width, 3);
+    let height = title.size().y;
+    let top = (icon.center().y - height / 2.0).max(inner.top());
+    ui.painter()
+        .galley(pos2(text_left, top), title, theme::text_primary());
 
-    let mut y = icon.bottom() + 22.0;
+    let mut y = icon.bottom().max(top + height) + 14.0;
     if let Some(chance) = result.price {
         let galley = kit::digits(
             ui,
             &format::headline(chance, true),
-            34.0,
+            30.0,
             SEMIBOLD,
             theme::text_primary(),
             inner.width(),
@@ -195,7 +191,7 @@ fn prediction(
         let height = galley.size().y;
         ui.painter()
             .galley(pos2(inner.left(), y), galley, theme::text_primary());
-        y += height + 4.0;
+        y += height + 2.0;
         let caption = match head {
             Some(head) => tr_n!(
                 head.choices,
@@ -219,20 +215,34 @@ fn prediction(
         let height = galley.size().y;
         ui.painter()
             .galley(pos2(inner.left(), y), galley, theme::text_secondary());
-        y += height + 18.0;
+        y += height + 10.0;
     }
-    y += venue_line(ui, pos2(inner.left(), y), result) + 22.0;
+    y += venue_line(ui, pos2(inner.left(), y), result, inner.width()).y + 14.0;
 
     let stats = result.event.as_ref().map(|event| &event.stats);
+    // The chart comes before what the event says about itself, but never pushes a figure out.
+    let figures = stats.map_or(0.0, |stats| {
+        stat_rows(stats).len() as f32 * STAT_LINE + 14.0
+    });
+    if inner.bottom() - y >= PREDICTION_CHART + 14.0 + figures {
+        chart.show(
+            ui,
+            Rect::from_min_size(pos2(inner.left(), y), vec2(inner.width(), PREDICTION_CHART)),
+            &instrument(result),
+            detail.quote,
+        );
+        y += PREDICTION_CHART + 14.0;
+    }
+
     if let Some(stats) = stats.filter(|stats| !stats.is_empty()) {
         ui.painter()
             .hline(area.x_range(), y, Stroke::new(1.0, theme::separator()));
-        y += 20.0;
+        y += 14.0;
         for (label, value) in stat_rows(stats) {
-            y += stat_row(ui, pos2(inner.left(), y), inner.width(), label, &value) + 10.0;
+            y += stat_row(ui, pos2(inner.left(), y), inner.width(), label, &value) + 8.0;
         }
         if let Some(about) = &stats.about {
-            y += 12.0;
+            y += 8.0;
             about_text(ui, area, inner, y, about);
         }
     }
@@ -305,10 +315,8 @@ fn about_text(ui: &Ui, area: Rect, inner: Rect, top: f32, about: &str) {
         theme::text_tertiary(),
         inner.width(),
     );
-    let heading_height = heading.size().y;
-    ui.painter()
-        .galley(pos2(inner.left(), top), heading, theme::text_tertiary());
-    let top = top + heading_height + 8.0;
+    let heading_top = top;
+    let top = top + heading.size().y + 8.0;
     let text = about.split_whitespace().collect::<Vec<_>>().join(" ");
     let layout = |rows| {
         galley_rows(
@@ -322,10 +330,16 @@ fn about_text(ui: &Ui, area: Rect, inner: Rect, top: f32, about: &str) {
         )
     };
     let line = layout(1).size().y;
-    let rows = (((area.bottom() - PAD - top) / line).floor() as usize).min(8);
+    let rows = (((area.bottom() - 8.0 - top) / line).floor() as usize).min(8);
+    // No caption over nothing.
     if rows == 0 {
         return;
     }
+    ui.painter().galley(
+        pos2(inner.left(), heading_top),
+        heading,
+        theme::text_tertiary(),
+    );
     let galley = layout(rows);
     ui.painter()
         .galley(pos2(inner.left(), top), galley, theme::text_secondary());
@@ -334,13 +348,13 @@ fn about_text(ui: &Ui, area: Rect, inner: Rect, top: f32, about: &str) {
 /// An index or a portfolio view: what it charts and where it comes from.
 fn tile_panel(ui: &mut Ui, area: Rect, tile: &Tile) {
     let inner = area.shrink2(vec2(PAD, PAD));
-    let icon = Rect::from_min_size(inner.min + vec2(0.0, 12.0), Vec2::splat(40.0));
+    let icon = Rect::from_min_size(inner.min + vec2(0.0, 4.0), Vec2::splat(32.0));
     icons::paint(ui.painter(), icon, tile.icon, theme::text_secondary());
-    let mut y = icon.bottom() + 20.0;
+    let mut y = icon.bottom() + 16.0;
     let title = kit::galley(
         ui,
         &tile.title,
-        24.0,
+        20.0,
         BOLD,
         theme::text_primary(),
         inner.width(),
@@ -363,7 +377,7 @@ fn tile_panel(ui: &mut Ui, area: Rect, tile: &Tile) {
     y += height + 22.0;
     match &tile.pick {
         TilePick::Gauge(result) => {
-            venue_line(ui, pos2(inner.left(), y), result);
+            venue_line(ui, pos2(inner.left(), y), result, inner.width());
         }
         TilePick::Card(_) => {
             let scope = tile.scope.as_deref().unwrap_or_default();
@@ -405,7 +419,7 @@ fn price_line(
     let price = kit::digits(
         ui,
         &amount(source, last),
-        34.0,
+        30.0,
         SEMIBOLD,
         theme::text_primary(),
         width,
@@ -420,80 +434,107 @@ fn price_line(
         let room = (width - price_width - 12.0).max(40.0);
         let moved = quote.change.map(|change| signed(change, last, source));
         let text = change_text(moved, &signed_percent(percent), |text| {
-            kit::digits(ui, text, 17.0, MEDIUM, color, f32::INFINITY)
+            kit::digits(ui, text, 15.0, MEDIUM, color, f32::INFINITY)
                 .size()
                 .x
                 <= room
         });
-        let galley = kit::digits(ui, &text, 17.0, MEDIUM, color, room);
-        let baseline = at.y + height - galley.size().y - 6.0;
+        let galley = kit::digits(ui, &text, 15.0, MEDIUM, color, room);
+        let baseline = at.y + height - galley.size().y - 5.0;
         ui.painter()
             .galley(pos2(at.x + price_width + 12.0, baseline), galley, color);
     }
     height
 }
 
-/// A dot and a line: crypto trades around the clock; a share says whether its market is open.
-fn status_line(ui: &Ui, at: Pos2, result: &SearchResult, quote: Option<&WatchlistQuote>) -> f32 {
-    let (text, open) = match result.source {
-        DataSource::Alpaca => match quote.map(|quote| quote.freshness) {
-            Some(Freshness::Live) => (tr!("Market open"), true),
-            Some(Freshness::MarketClosed) => (tr!("Market closed"), false),
-            _ => return 0.0,
-        },
+/// Whether the market trades now: crypto around the clock, a share when its market is open.
+/// `None` while a share's market has not said.
+fn status(result: &SearchResult, quote: Option<&WatchlistQuote>) -> Option<(&'static str, bool)> {
+    if MarketHours::for_source(result.source) == MarketHours::UsStock {
+        return match quote.map(|quote| quote.freshness) {
+            Some(Freshness::Live) => Some((tr!("Market open"), true)),
+            Some(Freshness::MarketClosed) => Some((tr!("Market closed"), false)),
+            _ => None,
+        };
+    }
+    Some(match result.source {
         // Forex and the CFDs on it rest over the weekend.
         DataSource::Oanda => (tr!("Open 24/5"), true),
         _ => (tr!("Open 24/7"), true),
+    })
+}
+
+/// Where the market is listed and, after it, whether it trades now, on one line across `line`. A
+/// long exchange name gives way: whether it trades is never cut.
+fn listing_line(ui: &Ui, line: Rect, result: &SearchResult, quote: Option<&WatchlistQuote>) {
+    let trading = status(result, quote).map(|(text, open)| {
+        let color = theme::text_secondary();
+        (
+            kit::galley(ui, text, 13.0, REGULAR, color, f32::INFINITY),
+            open,
+        )
+    });
+    let taken = trading
+        .as_ref()
+        .map_or(0.0, |(words, _)| STATUS_GAP + DOT_ROOM + words.size().x);
+    let listed = venue_line(ui, line.min, result, line.width() - taken);
+    let Some((words, open)) = trading else {
+        return;
     };
-    let galley = kit::galley(
-        ui,
-        text,
-        14.0,
-        REGULAR,
-        theme::text_secondary(),
-        f32::INFINITY,
-    );
+    let left = line.left() + listed.x + STATUS_GAP;
     let dot = if open {
         theme::UP
     } else {
         theme::text_tertiary()
     };
-    ui.painter()
-        .circle_filled(pos2(at.x + 6.0, at.y + galley.size().y / 2.0), 4.5, dot);
-    let height = galley.size().y;
-    ui.painter()
-        .galley(pos2(at.x + 20.0, at.y), galley, theme::text_secondary());
-    height
+    ui.painter().circle_filled(
+        pos2(left + 4.0, line.top() + words.size().y / 2.0),
+        4.0,
+        dot,
+    );
+    ui.painter().galley(
+        pos2(left + DOT_ROOM, line.top()),
+        words,
+        theme::text_secondary(),
+    );
 }
 
-/// The exchange the market is listed on, with its logo and what it trades there.
-fn venue_line(ui: &Ui, at: Pos2, result: &SearchResult) -> f32 {
+/// `Binance · Spot`.
+fn venue_text(result: &SearchResult) -> String {
     let kind = match trading_kind(result.source) {
         "" => market_kind(result.source),
         kind => kind,
     };
-    let text = tr!(
+    tr!(
         "{venue} · {kind}",
         venue = result.source.display_name(),
         kind = kind
-    );
+    )
+}
+
+/// The exchange the market is listed on, with its logo and what it trades there, in at most
+/// `width`. Returns the size used.
+fn venue_line(ui: &Ui, at: Pos2, result: &SearchResult, width: f32) -> Vec2 {
     let galley = kit::galley(
         ui,
-        &text,
-        14.0,
+        &venue_text(result),
+        13.0,
         REGULAR,
         theme::text_secondary(),
-        f32::INFINITY,
+        width - LOGO_ROOM,
     );
     let logo = Rect::from_min_size(
-        pos2(at.x, at.y + galley.size().y / 2.0 - 8.0),
-        Vec2::splat(16.0),
+        pos2(at.x - 1.0, at.y + galley.size().y / 2.0 - 7.0),
+        Vec2::splat(14.0),
     );
     source_logo::paint(ui, result.source, logo);
-    let height = galley.size().y;
-    ui.painter()
-        .galley(pos2(at.x + 24.0, at.y), galley, theme::text_secondary());
-    height
+    let used = vec2(LOGO_ROOM + galley.size().x, galley.size().y);
+    ui.painter().galley(
+        pos2(at.x + LOGO_ROOM, at.y),
+        galley,
+        theme::text_secondary(),
+    );
+    used
 }
 
 fn change_color(change: f64) -> Color32 {

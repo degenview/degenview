@@ -100,6 +100,16 @@ pub fn paint(painter: &Painter, rect: Rect, trend: Option<&Trend>) {
     }
 }
 
+/// Draws `closes` as a chart filling `rect`: a line in `color` with a soft fade under it.
+pub fn paint_area(painter: &Painter, rect: Rect, closes: &[f32], color: Color32) {
+    if closes.len() < 2 {
+        return;
+    }
+    let line = points(closes, rect);
+    fade_fill(painter, &line, rect.bottom(), color, FILL_ALPHA, |_| 1.0);
+    painter.add(Shape::line(line, Stroke::new(1.5, color)));
+}
+
 /// How faint the oldest close of a trail is, against the newest at full strength.
 const TRAIL_START_ALPHA: f32 = 0.18;
 /// Radius of the dot on a trail's newest close.

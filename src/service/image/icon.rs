@@ -21,7 +21,8 @@
 use crate::lock::lock;
 use crate::model::DataSource;
 use crate::service::cache::lookup::{self, Hit, LookupCache};
-use serde::{Deserialize, Serialize};
+use crate::service::market::coin_index;
+use crate::service::market::coingecko::BASE_URL;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -30,29 +31,20 @@ use std::time::{Duration, Instant};
 const STATIC_CDN: &str =
     "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color";
 const STOCK_CDN: &str = "https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons";
-const COINGECKO: &str = "https://api.coingecko.com/api/v3";
 const DEXSCREENER: &str = "https://api.dexscreener.com/latest/dex";
 
-/// Persisted answers: `(source, ticker) → artwork URL`, and the top-coins snapshot.
+/// Persisted answers: `(source, ticker) → artwork URL`.
 const URL_NAMESPACE: &str = "icon_url";
-const COIN_INDEX_NAMESPACE: &str = "coin_index";
-const SNAPSHOT_KEY: &str = "top";
 /// The lookup namespaces this module reads on its first frame; `cache::control::launch` loads
 /// them before then.
-pub const NAMESPACES: [&str; 2] = [URL_NAMESPACE, COIN_INDEX_NAMESPACE];
+pub const NAMESPACES: [&str; 2] = [URL_NAMESPACE, coin_index::NAMESPACE];
 /// How long a found artwork is trusted before it is re-resolved in the background.
 const URL_TTL: Duration = Duration::from_secs(30 * 86_400);
-/// How long the persisted top-coins snapshot is used without being fetched again.
-const SNAPSHOT_TTL: Duration = Duration::from_secs(86_400);
 /// How long an exhausted lookup is remembered before the chain runs again.
 const NEGATIVE_TTL: Duration = Duration::from_secs(86_400);
 /// How soon a lookup that *failed* (offline, rate-limited) is tried again. A clean miss waits
 /// out `NEGATIVE_TTL`; a failure says nothing about whether the coin has artwork.
 const FAILURE_RETRY: Duration = Duration::from_secs(180);
-/// Coins pulled into the market snapshot.
-const MAX_COINS: usize = 250;
-/// Minimum spacing between snapshot attempts: a failed refresh must not re-fire for every card.
-const REFRESH_RETRY: Duration = Duration::from_secs(300);
 /// Longest string still plausibly a ticker; anything longer is a contract address.
 const MAX_SYMBOL_LENGTH: usize = 12;
 
@@ -185,9 +177,7 @@ pub fn clear_memory() {
     if let Ok(mut lookups) = symbol_lookups().lock() {
         lookups.clear();
     }
-    if let Ok(mut state) = snapshot_state().lock() {
-        *state = SnapshotState::new();
-    }
+    coin_index::clear();
 }
 
 /// The symbol reduced to its base asset, used by the symbol-keyed steps of the chain.
@@ -226,17 +216,14 @@ fn resolve(source: DataSource, ticker: &str, base: &str) -> (Option<String>, boo
     let mut failed = false;
 
     // 1. Market snapshot: Binance/Coinbase base symbols and top-ranked coin ids.
-    let (snapshot, snapshot_failed) = snapshot();
-    failed |= snapshot_failed;
+    let (coins, coins_failed) = coin_index::load();
+    failed |= coins_failed;
     let by_source = match source {
-        DataSource::CoinGecko => snapshot
-            .by_id
-            .get(&ticker.to_lowercase())
-            .or_else(|| snapshot.by_symbol.get(&symbol)),
-        _ => snapshot.by_symbol.get(&symbol),
+        DataSource::CoinGecko => coins.by_id(ticker).or_else(|| coins.by_symbol(&symbol)),
+        _ => coins.by_symbol(&symbol),
     };
-    if let Some(url) = by_source {
-        return (Some(url.clone()), false);
+    if let Some(coin) = by_source {
+        return (Some(coin.image.clone()), false);
     }
 
     // 2. Source-specific lookups.
@@ -257,8 +244,8 @@ fn resolve(source: DataSource, ticker: &str, base: &str) -> (Option<String>, boo
                     && !resolved.is_empty()
                 {
                     symbol = resolved.to_lowercase();
-                    if let Some(url) = snapshot.by_symbol.get(&symbol) {
-                        return (Some(url.clone()), false);
+                    if let Some(coin) = coins.by_symbol(&symbol) {
+                        return (Some(coin.image.clone()), false);
                     }
                 }
             }
@@ -338,7 +325,7 @@ fn resolve_symbol(symbol: &str) -> (Option<String>, bool) {
 /// those, the best-ranked coin, so "btc" resolves to bitcoin rather than a same-ticker copycat.
 fn coingecko_search_icon(base: &str) -> Result<Option<String>, ()> {
     crate::service::net::rate_limit::coingecko().wait_for_slot();
-    let url = format!("{COINGECKO}/search?query={base}");
+    let url = format!("{BASE_URL}/search?query={base}");
     let body =
         crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
             .map_err(|_| ())?;
@@ -391,159 +378,13 @@ fn verified(url: String) -> Option<String> {
     (crate::service::net::http::head_status(&url).ok()? == 200).then_some(url)
 }
 
-// MARK: Market snapshot
-
-/// One coin of the market-cap ranking, as stored. The `name` is kept with the rest so a name for
-/// a ticker symbol never needs a second request.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct Coin {
-    id: String,
-    symbol: String,
-    name: String,
-    image: String,
-}
-
-#[derive(Clone, Default)]
-struct Snapshot {
-    by_symbol: HashMap<String, String>,
-    by_id: HashMap<String, String>,
-}
-
-impl Snapshot {
-    /// The coins are in market-cap order, so the first coin of a symbol keeps it: "btc" is
-    /// bitcoin, not batcat.
-    fn from_coins(coins: &[Coin]) -> Self {
-        let mut snapshot = Self::default();
-        for coin in coins {
-            snapshot
-                .by_symbol
-                .entry(coin.symbol.to_lowercase())
-                .or_insert_with(|| coin.image.clone());
-            snapshot
-                .by_id
-                .insert(coin.id.to_lowercase(), coin.image.clone());
-        }
-        snapshot
-    }
-}
-
-struct SnapshotState {
-    data: Snapshot,
-    loaded: bool,
-    last_attempt: Option<Instant>,
-}
-
-impl SnapshotState {
-    fn new() -> Self {
-        Self {
-            data: Snapshot::default(),
-            loaded: false,
-            last_attempt: None,
-        }
-    }
-}
-
-fn snapshot_state() -> &'static Mutex<SnapshotState> {
-    static STATE: OnceLock<Mutex<SnapshotState>> = OnceLock::new();
-    STATE.get_or_init(|| Mutex::new(SnapshotState::new()))
-}
-
-/// Serialises refreshes: the first caller fetches, the rest wait on the lock and find the
-/// snapshot loaded.
-fn snapshot_refresh() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-/// The top coins by market cap, indexed by symbol and by id, and whether the fetch failed.
-/// Used from storage while it is under a day old, fetched otherwise (once per launch, a failure
-/// retried no sooner than `REFRESH_RETRY` later), and kept in storage for the next launch. A
-/// stored snapshot of any age still stands in when the fetch fails.
-fn snapshot() -> (Snapshot, bool) {
-    if let Ok(state) = snapshot_state().lock()
-        && state.loaded
-    {
-        return (state.data.clone(), false);
-    }
-    let _refreshing = snapshot_refresh().lock();
-    let stored =
-        lookup::shared().get::<Vec<Coin>>(COIN_INDEX_NAMESPACE, SNAPSHOT_KEY, SNAPSHOT_TTL);
-    {
-        let Ok(mut state) = snapshot_state().lock() else {
-            return (Snapshot::default(), true);
-        };
-        if state.loaded {
-            return (state.data.clone(), false);
-        }
-        if let Some(hit) = stored.as_ref().filter(|hit| hit.fresh) {
-            state.data = Snapshot::from_coins(&hit.value);
-            state.loaded = true;
-            return (state.data.clone(), false);
-        }
-        if state
-            .last_attempt
-            .is_some_and(|at| at.elapsed() < REFRESH_RETRY)
-        {
-            return (state.data.clone(), true);
-        }
-        state.last_attempt = Some(Instant::now());
-    }
-    let fetched = fetch_coins();
-    let Ok(mut state) = snapshot_state().lock() else {
-        return (Snapshot::default(), true);
-    };
-    match (fetched, stored) {
-        (Some(coins), _) => {
-            lookup::shared().put(COIN_INDEX_NAMESPACE, SNAPSHOT_KEY, &coins);
-            state.data = Snapshot::from_coins(&coins);
-            state.loaded = true;
-            (state.data.clone(), false)
-        }
-        (None, Some(stale)) => {
-            state.data = Snapshot::from_coins(&stale.value);
-            state.loaded = true;
-            (state.data.clone(), false)
-        }
-        (None, None) => (state.data.clone(), true),
-    }
-}
-
-fn fetch_coins() -> Option<Vec<Coin>> {
-    crate::service::net::rate_limit::coingecko().wait_for_slot();
-    let url = format!(
-        "{COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page={MAX_COINS}&sparkline=false"
-    );
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-            .ok()?;
-    parse_coins(&body)
-}
-
-/// The coins of a `/coins/markets` response that have an id, a symbol and artwork.
-fn parse_coins(body: &str) -> Option<Vec<Coin>> {
-    let coins: Vec<Value> = serde_json::from_str(body).ok()?;
-    let coins: Vec<Coin> = coins
-        .iter()
-        .filter_map(|coin| {
-            let text = |field: &str| coin.get(field).and_then(Value::as_str);
-            Some(Coin {
-                id: text("id")?.to_owned(),
-                symbol: text("symbol")?.to_owned(),
-                name: text("name").unwrap_or_default().to_owned(),
-                image: text("image")?.to_owned(),
-            })
-        })
-        .collect();
-    (!coins.is_empty()).then_some(coins)
-}
-
 // MARK: Source-specific
 
 /// A coin's artwork by CoinGecko id, for ids outside the snapshot.
 fn coingecko_icon_by_id(id: &str) -> Result<Option<String>, ()> {
     crate::service::net::rate_limit::coingecko().wait_for_slot();
     let url = format!(
-        "{COINGECKO}/coins/markets?vs_currency=usd&ids={}&per_page=1&sparkline=false",
+        "{BASE_URL}/coins/markets?vs_currency=usd&ids={}&per_page=1&sparkline=false",
         id.to_lowercase()
     );
     let body =
@@ -766,32 +607,6 @@ mod tests {
         assert_eq!(base_symbol(DataSource::Bybit, "SEIUSDT"), "sei");
         assert_eq!(base_symbol(DataSource::Gate, "SEI_USDT"), "sei");
         assert_eq!(base_symbol(DataSource::Mexc, "SEIUSDT"), "sei");
-    }
-
-    fn parse_snapshot(body: &str) -> Option<Snapshot> {
-        parse_coins(body).map(|coins| Snapshot::from_coins(&coins))
-    }
-
-    #[test]
-    fn the_snapshot_is_indexed_by_symbol_and_id_and_the_biggest_coin_owns_a_symbol() {
-        let body = r#"[
-            {"id":"bitcoin","symbol":"btc","name":"Bitcoin","image":"https://x/bitcoin.png"},
-            {"id":"sei-network","symbol":"sei","name":"Sei","image":"https://x/sei.png"},
-            {"id":"batcat","symbol":"btc","name":"Batcat","image":"https://x/batcat.png"},
-            {"id":"broken"}
-        ]"#;
-        let snapshot = parse_snapshot(body).expect("snapshot");
-        assert_eq!(snapshot.by_symbol["btc"], "https://x/bitcoin.png");
-        assert_eq!(snapshot.by_symbol["sei"], "https://x/sei.png");
-        assert_eq!(snapshot.by_id["sei-network"], "https://x/sei.png");
-        assert_eq!(snapshot.by_id["batcat"], "https://x/batcat.png");
-        assert!(!snapshot.by_id.contains_key("broken"));
-        // The names ride along into the stored snapshot.
-        let coins = parse_coins(body).expect("coins");
-        assert_eq!(coins[0].name, "Bitcoin");
-        assert_eq!(coins[1].name, "Sei");
-        assert!(parse_snapshot("[]").is_none());
-        assert!(parse_snapshot("not json").is_none());
     }
 
     #[test]

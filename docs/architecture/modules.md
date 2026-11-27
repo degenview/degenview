@@ -91,7 +91,7 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 | `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications, the `draft` the sheet and MCP build) and webhook endpoints and policy |
 | `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
 | `chart/` | One chart: appearance, canvas, viewport, price scale, kind, countdown to the bar's close (`countdown/`), layout, templates, context menu, linked-chart sync, snapshots (`snapshot/`: limits, file names, hosting and prefs, plus the Screenshot Studio's `studio`, `framing`, `composition` and `selection`), replay (the clock and what an agent asks of it), constructed bars (`synthetic/`) |
-| `market/` | Instruments, sources, timeframes (`timeframe/`), candle buckets on the UTC or the US session grid, folds and gap filling (`bucket/`), the regular US equity session in New York time (`session/`), candles, live-kline folding (`live`), history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`) |
+| `market/` | Instruments, sources, timeframes (`timeframe/`), candle buckets on the UTC or the US session grid, folds and gap filling (`bucket/`), the regular US equity session in New York time (`session/`), candles, live-kline folding (`live`), history paging, prediction-market series, CoinMarketCap chart keys and titles (`cmc`), asset and company names (`asset_name`), the coins and stocks offered before anything is searched (`well_known`) |
 | `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
 | `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart, script value types (`script`) and the Pine indicators bundled with the app (`bundled/`) |
 | `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
@@ -118,7 +118,7 @@ mistakes, on an import that points up a layer, and on drawing code outside the v
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent daily closes for sparklines) |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), symbol `catalog`, `search_rank`, `fx_rates`, `trend` (recent closes: days for sparklines, the last day for the symbol picker's chart), `coin_index` (top coins by market cap: artwork and names), `names` (what a market's assets are called) |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart`, `agent` (`FollowingAgent`) and `proxy/` (the proxy setting, its resolution, OS readers and the live-feed tunnel) |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |

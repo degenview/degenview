@@ -1,8 +1,9 @@
 //! The Dashboards tab: CoinMarketCap's market-wide indices and views of the user's portfolios.
 //! Nothing is searched; the query filters what is listed.
 
+use super::columns::{Columns, ICON, PAD};
 use super::list::{
-    PAD, RowOutput, RowState, SUBTITLE_SIZE, TITLE_SIZE, marks, paint_background, venue_block,
+    ROW_HEIGHT, RowOutput, RowState, marks, paint_background, two_lines, venue_block, venue_lines,
 };
 use crate::i18n::tr;
 use crate::model::DataSource;
@@ -12,12 +13,8 @@ use crate::model::portfolio::card::{CardKind, PortfolioCard};
 use crate::service::SearchResult;
 use crate::service::market::search_rank::normalize;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{Rect, Response, Sense, Ui, Vec2, pos2, vec2};
-
-const ROW_HEIGHT: f32 = 56.0;
-const ICON: f32 = 20.0;
 
 /// Icon and description per entry of [`CHART_TYPES`], in the same order.
 fn gauge_details() -> [(Icon, &'static str); 4] {
@@ -105,7 +102,8 @@ pub fn groups(portfolios: &[Portfolio], scope: Option<u64>, query: &str) -> Vec<
 
 /// What a tile adds to the tab: a bare icon, its title over what it shows, and where it comes
 /// from at the right.
-pub fn row(ui: &mut Ui, tile: &Tile, state: RowState, width: f32) -> (Response, RowOutput) {
+pub fn row(ui: &mut Ui, tile: &Tile, state: RowState, columns: &Columns) -> (Response, RowOutput) {
+    let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
     let response = crate::ui::accessibility::label(response, tile.title.clone());
     let mut out = RowOutput {
@@ -123,76 +121,36 @@ pub fn row(ui: &mut Ui, tile: &Tile, state: RowState, width: f32) -> (Response, 
             SearchResult::new(DataSource::CoinMarketCap, &tile.title, card.key())
         }
     };
-    let content_right = marks(ui, rect, &anchor, state, &mut out);
+    marks(ui, rect, &anchor, state, &mut out);
     out.pick |= response.clicked() && !out.add;
 
     let icon = Rect::from_center_size(
-        pos2(rect.left() + PAD + 18.0, rect.center().y),
-        Vec2::splat(ICON),
+        pos2(rect.left() + PAD + ICON / 2.0, rect.center().y),
+        Vec2::splat(20.0),
     );
     icons::paint(ui.painter(), icon, tile.icon, theme::text_secondary());
-    let right = match (&tile.pick, &tile.scope) {
-        (TilePick::Gauge(result), _) => venue_block(ui, rect, content_right, result.source),
-        (TilePick::Card(_), scope) => scope_block(
-            ui,
-            rect,
-            content_right,
-            scope.as_deref().unwrap_or_default(),
-        ),
-    };
-    let text_left = icon.right() + 18.0;
-    let text_width = (right - 16.0 - text_left).max(40.0);
-    let title = kit::galley(
+    match &tile.pick {
+        TilePick::Gauge(result) => venue_block(ui, rect, columns, result.source),
+        // A card's venue column names the portfolio it covers.
+        TilePick::Card(_) => {
+            venue_lines(
+                ui,
+                rect,
+                columns,
+                tile.scope.as_deref().unwrap_or_default(),
+                tr!("Portfolio"),
+            );
+        }
+    }
+    two_lines(
         ui,
+        rect,
+        rect.left() + columns.symbol,
+        columns.title_width(),
         &tile.title,
-        TITLE_SIZE,
-        SEMIBOLD,
-        theme::text_primary(),
-        text_width,
-    );
-    let summary = kit::galley(
-        ui,
         &tile.summary,
-        SUBTITLE_SIZE,
-        REGULAR,
-        theme::text_secondary(),
-        text_width,
-    );
-    let top = rect.center().y - (title.size().y + 2.0 + summary.size().y) / 2.0;
-    ui.painter()
-        .galley(pos2(text_left, top), title.clone(), theme::text_primary());
-    ui.painter().galley(
-        pos2(text_left, top + title.size().y + 2.0),
-        summary,
-        theme::text_secondary(),
     );
     (response, out)
-}
-
-/// A card's right-hand block: the portfolio it covers over "Portfolio". Returns its left edge.
-fn scope_block(ui: &Ui, rect: Rect, right: f32, scope: &str) -> f32 {
-    let name = kit::galley(ui, scope, 14.0, MEDIUM, theme::text_primary(), 180.0);
-    let kind = kit::galley(
-        ui,
-        tr!("Portfolio"),
-        SUBTITLE_SIZE,
-        REGULAR,
-        theme::text_secondary(),
-        180.0,
-    );
-    let top = rect.center().y - (name.size().y + 2.0 + kind.size().y) / 2.0;
-    let left = right - name.size().x.max(kind.size().x);
-    ui.painter().galley(
-        pos2(right - name.size().x, top),
-        name.clone(),
-        theme::text_primary(),
-    );
-    ui.painter().galley(
-        pos2(right - kind.size().x, top + name.size().y + 2.0),
-        kind,
-        theme::text_secondary(),
-    );
-    left
 }
 
 #[cfg(test)]

@@ -235,6 +235,7 @@ fn event_results(event: &Value) -> Vec<SearchResult> {
             }),
             base: None,
             quote: None,
+            names: Default::default(),
         });
     }
     results
