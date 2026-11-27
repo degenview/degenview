@@ -11,6 +11,7 @@ pub mod message;
 pub mod notification;
 pub mod pine;
 
+use crate::model::exchange::Market;
 use crate::model::watchlist::new_id;
 use crate::model::{DataSource, InstrumentId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -565,6 +566,9 @@ pub enum AlertNotificationPermission {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AlertProviderHealth {
     pub source: DataSource,
+    /// Which of the source's markets this is about: they are separate APIs, which fail apart.
+    #[serde(default)]
+    pub market: Market,
     #[serde(default)]
     pub last_successful_quote_ms: Option<i64>,
     #[serde(default)]

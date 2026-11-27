@@ -323,36 +323,26 @@ impl Engine {
 
     pub fn provider_health(&self) -> Vec<AlertProviderHealth> {
         let wanted = self.wanted();
-        let mut sources: Vec<DataSource> = wanted.values().map(|value| value.source).collect();
-        sources.sort_by_key(|source| source_order(*source));
-        sources.dedup();
-        sources
+        let mut listings: Vec<Listing> = wanted.values().map(InstrumentId::listing).collect();
+        listings.sort_by_key(|listing| listing_order(*listing));
+        listings.dedup();
+        listings
             .into_iter()
-            .map(|source| {
-                // Reported by source: what any of its markets last heard, said and waits for.
-                let states = || {
-                    self.sources
-                        .iter()
-                        .filter(|(listing, _)| listing.source == source)
-                        .map(|(_, state)| state)
-                };
+            .map(|listing| {
+                let state = self.sources.get(&listing).cloned().unwrap_or_default();
                 let has_data_gap = wanted.iter().any(|(key, instrument)| {
-                    instrument.source == source
+                    instrument.listing() == listing
                         && self
                             .known
                             .get(key)
                             .is_none_or(|quote| !quote.freshness.is_current())
                 });
                 AlertProviderHealth {
-                    source,
-                    last_successful_quote_ms: states()
-                        .filter_map(|state| state.last_successful_quote_ms)
-                        .max(),
-                    last_error: states().find_map(|state| state.last_error.clone()),
-                    retry_at_ms: states()
-                        .map(|state| state.next_allowed_ms)
-                        .filter(|at| *at > 0)
-                        .max(),
+                    source: listing.source,
+                    market: listing.market,
+                    last_successful_quote_ms: state.last_successful_quote_ms,
+                    last_error: state.last_error,
+                    retry_at_ms: (state.next_allowed_ms > 0).then_some(state.next_allowed_ms),
                     has_data_gap,
                 }
             })
@@ -554,10 +544,7 @@ impl Engine {
                 chain: self.chains.get(key).cloned(),
             };
             by_listing
-                .entry((
-                    source_order(listing.source),
-                    listing.market == Market::Perpetual,
-                ))
+                .entry(listing_order(listing))
                 .or_insert_with(|| Planned {
                     listing,
                     requests: Vec::new(),
@@ -780,6 +767,14 @@ impl Engine {
         }
         self.book.apply(latest);
     }
+}
+
+/// A stable order for listings: by source, a spot market before its perpetuals.
+fn listing_order(listing: Listing) -> (u8, bool) {
+    (
+        source_order(listing.source),
+        listing.market == Market::Perpetual,
+    )
 }
 
 /// A stable order for sources, so rounds are deterministic.
@@ -1163,6 +1158,14 @@ mod tests {
         );
         assert_eq!(last(&book, &spot), Some(100.0));
         assert_eq!(last(&book, &perp), None);
+
+        // Health is per listing, so the failing API is named and spot reads as healthy.
+        let health: Vec<(Market, bool)> = lock(&engine)
+            .provider_health()
+            .into_iter()
+            .map(|health| (health.market, health.last_error.is_some()))
+            .collect();
+        assert_eq!(health, [(Market::Spot, false), (Market::Perpetual, true)]);
 
         // Only the perpetual's API backs off: spot is asked again at its own interval.
         let again = T0 + refresh_interval_secs(DataSource::Binance) as i64 * 1_000;

@@ -240,7 +240,7 @@ pub fn fetch_klines(
             .fetch_klines(symbol, timeframe, limit)
             .map(normalize)
     };
-    match cache::policy(source, timeframe) {
+    match cache::policy(InstrumentId::new(source, symbol).listing(), timeframe) {
         Some(policy) => cache::fetch(source, symbol, timeframe, limit, policy, fetch),
         None => fetch(limit),
     }

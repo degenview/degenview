@@ -3,6 +3,7 @@
 //! which market a chart's instrument is (`InstrumentId::market`).
 
 use crate::i18n::tr;
+use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
@@ -24,8 +25,9 @@ impl Exchange {
 }
 
 /// Spot or the perpetual contract of the same asset.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Market {
+    #[default]
     Spot,
     Perpetual,
 }

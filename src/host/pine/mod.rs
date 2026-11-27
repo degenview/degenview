@@ -12,7 +12,7 @@ use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
 use crate::model::market::bucket::{FoldPlan, Grid};
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::runtime::session::{RunError, Session};
@@ -67,7 +67,8 @@ impl KlineSecurityDataProvider {
         };
         // The candles the source itself has that `target` folds from, so a length it serves only
         // by folding (30 s on Gate.io, from its 10 s) is asked for in a length it can answer.
-        let Some(plan) = source.plan(target) else {
+        let listing = InstrumentId::new(source, symbol.as_str()).listing();
+        let Some(plan) = listing.plan(target) else {
             return Ok(None);
         };
         let base_ms = plan.base().nominal_ms();

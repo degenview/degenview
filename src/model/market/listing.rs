@@ -46,9 +46,9 @@ impl Listing {
 
     /// As [`DataSource::natives`].
     pub fn natives(self) -> &'static [Timeframe] {
-        match self.market {
-            Market::Spot => self.source.natives(),
-            Market::Perpetual => &BINANCE_PERPETUAL,
+        match (self.source, self.market) {
+            (DataSource::Binance, Market::Perpetual) => &BINANCE_PERPETUAL,
+            _ => self.source.natives(),
         }
     }
 
@@ -59,9 +59,9 @@ impl Listing {
 
     /// As [`DataSource::serves`].
     pub fn serves(self, timeframe: Timeframe) -> bool {
-        match self.market {
-            Market::Spot => self.source.serves(timeframe),
-            Market::Perpetual => self.plan(timeframe).is_some(),
+        match (self.source, self.market) {
+            (DataSource::Binance, Market::Perpetual) => self.plan(timeframe).is_some(),
+            _ => self.source.serves(timeframe),
         }
     }
 }
