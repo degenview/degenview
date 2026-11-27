@@ -4,6 +4,36 @@ What changed for people who use DegenView, release by release, newest first. `to
 each section from the fragments in `changes/` when it cuts the release, and the app shows the
 sections between your version and the one on offer before it updates.
 
+## 0.6.0-rc.38 (2026-11-27)
+
+### New
+
+- Binance USDⓈ-M perpetual futures can be charted, such as BTCUSDT.P, with live candles and their own order book.
+- The symbol picker names each market's asset in its own column and shows a chart of its last day beside the price.
+- Import your layouts, drawings, watchlists and Pine scripts from the TradingView desktop app; DegenView offers to when it first finds it.
+
+### Fixed
+
+- Delete, Backspace, Enter and the replay keys no longer act on what is behind an open dialog.
+- A new script no longer replaces a script file whose name differs only in how its accents are stored.
+- Binance and Bybit markets such as SUSDT, STRY or BTCMXN now load, with live prices.
+- A Pine script that runs too long on a method call now says so instead of reporting an unknown function.
+- A history (`[1]`) of `ta.tr`, `hlcc4`, `dayofweek` and the other builtin variables the engine computes now reads the requested series' previous bar inside `request.security`, as on TradingView, instead of `na`.
+- Pine scripts can read objects stored in maps and matrices returned from another symbol or timeframe without losing their values.
+- A script alert whose script no longer compiles, or stops with a runtime error, now says so, with the error, instead of showing as active and never firing.
+- A script alert on a tab that is not on screen now fires, instead of showing as active while nothing reaches it.
+- A script alert is no longer switched off by the charts of another tab.
+- Re-arm on a script alert now arms it on the script as its chart has it now, instead of switching straight back to "Script changed".
+- A script name with characters like | or ? is saved with - in their place instead of being refused or failing on Windows.
+- A script that stops with a runtime error on a live bar stays stopped, instead of starting over on the next price update.
+- A connection test in Settings no longer shows its result after you change what it tested.
+- A Pine strategy that passes its own state (strategy.equity, strategy.position_size and the like), or anything computed from it, to request.security or another request is now refused with an error, as on TradingView, instead of silently reading an empty account.
+
+### Fixed in release candidates
+
+- The language list in Settings shows 简体中文 instead of empty boxes when the app is in another language.
+- Oanda practice accounts connect: choose Live or Practice in Settings ▸ Oanda.
+
 ## 0.6.0-rc.37 (2026-11-27)
 
 ### New
