@@ -568,8 +568,11 @@ impl Chart {
                     live_open,
                     CANDLE_LIMIT as usize,
                 );
-                self.candles =
-                    market::history::with_older(&self.candles, fresh, self.older.keeps_older());
+                let refreshed = market::history::refreshed(self.source, &self.candles, fresh);
+                if refreshed.restarted {
+                    self.reset_history();
+                }
+                self.candles = refreshed.candles;
                 if !self.pm_series.is_empty() {
                     self.chart
                         .set_series(SeriesLine::build(&self.pm_series, fetched.series));
@@ -602,6 +605,8 @@ pub(super) fn displayed_candles(candles: &[Kline], replay_ms: Option<i64>) -> &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::compiler::NoLibraries;
+    use crate::pine::runtime::execution::ExecutionController;
     use crate::workspace::test_support::candle;
 
     /// A chart holding `times`, with a request for older candles outstanding that answers `page`.
@@ -757,34 +762,84 @@ mod tests {
         assert!(chart.older_inbox.is_none());
 
         // The next refresh brings only the newest candles.
-        let (sender, receiver) = mpsc::channel();
-        sender
-            .send(Ok(Fetched {
-                candles: vec![candle(11, 2.0), candle(12, 2.0), candle(13, 2.0)],
-                bars: Vec::new(),
-                series: Vec::new(),
-            }))
-            .unwrap();
-        chart.inbox = Some(receiver);
-        chart.receive_fetch(Timeframe::HOUR_1);
+        refresh(
+            &mut chart,
+            vec![candle(11, 2.0), candle(12, 2.0), candle(13, 2.0)],
+        );
         assert_eq!(open_times(&chart), vec![7, 8, 10, 11, 12, 13]);
     }
 
-    #[test]
-    fn a_refresh_replaces_the_candles_while_no_older_page_was_loaded() {
-        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
-        chart.candles = vec![candle(1, 1.0), candle(2, 1.0)];
+    /// Delivers `candles` to `chart` as the answer to a refresh.
+    fn refresh(chart: &mut Chart, candles: Vec<Kline>) {
         let (sender, receiver) = mpsc::channel();
         sender
             .send(Ok(Fetched {
-                candles: vec![candle(2, 2.0), candle(3, 2.0)],
+                candles,
                 bars: Vec::new(),
                 series: Vec::new(),
             }))
             .unwrap();
         chart.inbox = Some(receiver);
         chart.receive_fetch(Timeframe::HOUR_1);
-        assert_eq!(open_times(&chart), vec![2, 3]);
+    }
+
+    #[test]
+    fn a_refresh_keeps_the_candles_it_did_not_bring() {
+        let mut chart = Chart::blank(1, "bitcoin", DataSource::CoinGecko);
+        refresh(&mut chart, vec![candle(1, 1.0), candle(2, 1.0)]);
+        refresh(&mut chart, vec![candle(2, 2.0), candle(3, 2.0)]);
+        assert_eq!(open_times(&chart), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn a_refresh_that_leaves_a_gap_starts_the_history_again() {
+        let mut chart = chart_awaiting_older(&[10, 11], Ok(Vec::new()));
+        chart.receive_older(Timeframe::HOUR_1);
+        assert!(!chart.older.should_request(true, true, 2, Instant::now()));
+        refresh(&mut chart, vec![candle(20, 1.0), candle(21, 1.0)]);
+        assert_eq!(open_times(&chart), vec![20, 21]);
+        assert!(
+            chart.older.should_request(true, true, 2, Instant::now()),
+            "what was behind the old candles says nothing about these"
+        );
+    }
+
+    /// A source that answers a window of its newest candles leaves one out for each that opens.
+    /// The scripts must go on running over the same history: a replay raises no alert, and it
+    /// takes the new bar's `alert()`, once per bar unless the script says otherwise, with it.
+    #[test]
+    fn a_new_bar_raises_its_alert_while_the_source_slides_its_window() {
+        const HOUR: i64 = 3_600_000;
+        let window = |from: i64| -> Vec<Kline> {
+            (from..from + 5)
+                .map(|hour| Kline {
+                    close_time: (hour + 1) * HOUR - 1,
+                    ..candle(hour * HOUR, 1.0)
+                })
+                .collect()
+        };
+        let mut script = ExecutionController::new(
+            "//@version=6\nindicator(\"S\")\nalert(\"hi\")",
+            Default::default(),
+            Default::default(),
+            None,
+            Default::default(),
+            &NoLibraries,
+            None,
+            None,
+        )
+        .expect("compiles")
+        .with_alert_mode();
+        let mut chart = Chart::blank(1, "bitcoin", DataSource::CoinGecko);
+        refresh(&mut chart, window(0));
+        script.update(&chart.candles, None, 4 * HOUR + 1);
+        // The app ticks several times a second: one passes the close before the next candle comes.
+        script.update(&chart.candles, None, 5 * HOUR);
+
+        refresh(&mut chart, window(1));
+        let update = script.update(&chart.candles, None, 5 * HOUR + 5_000);
+        assert!(!update.rebuilt, "the same history, one candle longer");
+        assert_eq!(update.alerts.len(), 1);
     }
 
     /// A chart holding live bar 2 (closing 9.0), refreshing since `begun` with a fetch that

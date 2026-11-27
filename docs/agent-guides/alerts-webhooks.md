@@ -31,6 +31,17 @@
   Settings" is an outcome (`OpenWebhookSettings`) the host acts on; the sheet stays open. Pictures:
   `cargo test --lib gallery_of_the_script_alert -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
 
+- When a script alert takes a bar as closed is the feed's to say, not the clock's: the newest bar
+  stays live until a newer one arrives, or until `DataSource::settle_delay_ms` has passed since its
+  close (30 s on streamed exchanges, minutes where bars come late, never for CoinGecko). A value
+  that arrives after the close is then a tick of that bar; committed at the close, it would be
+  rewritten history, and the replay raises nothing. A correction to an older bar still within that
+  time (Coinbase's servers disagree for minutes) is no new history either: the script keeps what it
+  saw. So a bar-close alert fires when the next bar
+  arrives, or after the delay on a market that has gone quiet. Price-based chart bars are finished
+  by construction and close by the clock. `request.*` candles are also judged by the clock, so just
+  after a close a request can read a candle as confirmed while the chart bar is not. Chart script runs still close by
+  the clock: they recompute and raise nothing.
 - A chart id alone names no chart (every tab starts at 1): anything keyed by a chart across tabs
   takes `model::alert::pine::ChartKey`.
 

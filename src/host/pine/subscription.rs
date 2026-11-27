@@ -9,6 +9,7 @@
 //! script again, or a replay that gets through, brings the alert back by itself.
 
 use crate::host::pine::KlineSecurityDataProvider;
+use crate::model::DataSource;
 use crate::model::alert::pine::{
     ChartKey, PineAlertState, PineAlertSubscription, RearmBlock, ScriptFailure,
 };
@@ -492,6 +493,14 @@ impl PineSubscriptionHost {
                     None,
                 )
                 .map(ExecutionController::with_alert_mode)
+                // A price-based chart's bar is finished by how it is built, so it closes by
+                // the clock whatever its source may still send.
+                .map(|controller| match source_of(symbol_key) {
+                    Some(source) if chart.construction.is_none() => {
+                        controller.with_settle_delay(source.settle_delay_ms())
+                    }
+                    _ => controller,
+                })
                 .map(|controller| match chart.timeframe_seconds {
                     Some(seconds) => controller.with_timeframe_seconds(seconds),
                     None => controller,
@@ -525,6 +534,13 @@ impl PineSubscriptionHost {
     }
 }
 
+/// The source a subscription's `"<source>:<ticker>"` key names.
+fn source_of(symbol_key: &str) -> Option<DataSource> {
+    symbol_key
+        .split_once(':')
+        .and_then(|(prefix, _)| crate::model::market::venue::source_for_prefix(prefix))
+}
+
 /// Builds the `SymbolInfo` a subscription's `"<source>:<ticker>"` key implies. Ticker id is the
 /// full key; the base currency is left `None` (the runtime treats it as a non-pair).
 pub fn symbol_info(symbol_key: &str) -> SymbolInfo {
@@ -532,9 +548,7 @@ pub fn symbol_info(symbol_key: &str) -> SymbolInfo {
         .split_once(':')
         .map(|(_, symbol)| symbol)
         .unwrap_or(symbol_key);
-    let source = symbol_key
-        .split_once(':')
-        .and_then(|(prefix, _)| crate::model::market::venue::source_for_prefix(prefix));
+    let source = source_of(symbol_key);
     SymbolInfo {
         ticker: ticker.to_owned(),
         ticker_id: symbol_key.to_owned(),
@@ -664,7 +678,35 @@ mod tests {
             host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW + 1)
                 .is_empty()
         );
-        let fired = host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, 18_000_000);
+        // The clock reaches the close, but the exchange may still be sending the bar.
+        assert!(
+            host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, 18_000_000)
+                .is_empty()
+        );
+        // With nothing newer, the bar is final once the exchange has had its settling time.
+        let fired = host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, 18_030_000);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].1.message, "done");
+    }
+
+    #[test]
+    fn close_frequency_fires_as_soon_as_the_next_bar_arrives() {
+        let source =
+            "//@version=6\nindicator(\"S\")\nalert(\"done\", alert.freq_once_per_bar_close)";
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_pine_subscriptions(&[subscription(1, source)])
+            .expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        let applied = [instance(source)];
+        let mut data = bars();
+        host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, LIVE_NOW);
+        data.push(Kline {
+            open_time: 5 * 3_600_000,
+            close_time: 6 * 3_600_000,
+            ..data[4].clone()
+        });
+        let fired = host.run_active(1, "binance:BTCUSDT", "1h", &data, &applied, 18_000_500);
         assert_eq!(fired.len(), 1);
         assert_eq!(fired[0].1.message, "done");
     }
@@ -1333,5 +1375,74 @@ mod tests {
         store.replace_pine_subscriptions(&[paused]).expect("write");
         host.reload(&store);
         assert_eq!(host.failure(1), None);
+    }
+
+    /// A source that is minutes behind delivers a bar after its close and finishes it later still.
+    /// The bar is live until the next one arrives: the script closes it then, on the values it
+    /// ended with, and nothing is replayed.
+    #[test]
+    fn a_bar_a_late_source_finishes_after_its_close_is_closed_on_its_final_values() {
+        const FIVE_MINUTES: i64 = 300_000;
+        let source = "//@version=6\nindicator(\"S\")\n\
+            alert(\"close \" + str.tostring(close), alert.freq_once_per_bar_close)\n\
+            alert(\"bar\")";
+        let mut armed = subscription(1, source);
+        armed.symbol_key = "COINGECKO:bitcoin".into();
+        armed.timeframe = "5m".into();
+        let store = Store::open_in_memory().expect("open");
+        store.replace_pine_subscriptions(&[armed]).expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        let applied = [instance(source)];
+        let bar = |index: i64, close: f64| Kline {
+            open_time: index * FIVE_MINUTES,
+            close_time: (index + 1) * FIVE_MINUTES - 1,
+            open: 100.0,
+            high: 110.0,
+            low: 90.0,
+            close,
+            volume: 0.0,
+        };
+        let mut run = |bars: &[Kline], now: i64| -> Vec<String> {
+            host.run_active(1, "COINGECKO:bitcoin", "5m", bars, &applied, now)
+                .into_iter()
+                .map(|(_, alert)| alert.message)
+                .collect()
+        };
+        let first = [bar(0, 100.0), bar(1, 101.0)];
+        assert!(
+            run(&first, FIVE_MINUTES + 1).is_empty(),
+            "history is silent"
+        );
+        // The clock passes the close; the source has said nothing more.
+        assert!(run(&first, 2 * FIVE_MINUTES + 90_000).is_empty());
+        // Its last word on the bar comes with the next one, itself already past its close.
+        let next = [bar(0, 100.0), bar(1, 105.0), bar(2, 106.0)];
+        assert_eq!(run(&next, 3 * FIVE_MINUTES + 90_000), ["close 105", "bar"]);
+    }
+
+    /// A price-based chart's bar is finished by how it is built, not by what its source may still
+    /// send: with nothing after it, it would wait for the next brick, hours on a quiet market.
+    #[test]
+    fn a_constructed_bar_closes_by_the_clock_whatever_its_source() {
+        let source =
+            "//@version=6\nindicator(\"S\")\nalert(\"done\", alert.freq_once_per_bar_close)";
+        let mut armed = subscription(1, source);
+        armed.symbol_key = "COINGECKO:bitcoin".into();
+        let store = Store::open_in_memory().expect("open");
+        store.replace_pine_subscriptions(&[armed]).expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        let applied = [instance(source)];
+        let chart = ChartRun {
+            construction: Some(Construction::LineBreak { lines: 3 }),
+            bar_seconds: Some(3_600.0),
+            timeframe_seconds: Some(3_600.0),
+        };
+        let feed = ChartFeed {
+            symbol_key: "COINGECKO:bitcoin".into(),
+            ..feed(&bars(), &chart, &applied)
+        };
+        let mut run = |now: i64| host.run_active_on(&feed, now).len();
+        assert_eq!(run(LIVE_NOW), 0);
+        assert_eq!(run(18_000_000), 1);
     }
 }

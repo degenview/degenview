@@ -1,6 +1,6 @@
 use super::candles::plan;
 use crate::model::market::bucket::{self, FoldPlan};
-use crate::model::market::natives::GECKOTERMINAL_PAGE;
+use crate::model::market::natives::{GECKOTERMINAL_HISTORY_DAYS, GECKOTERMINAL_PAGE};
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::ProviderError;
 use serde_json::Value;
@@ -57,18 +57,29 @@ pub fn fetch_klines(
     if raw.is_empty() {
         return Err(ProviderError::other("No chart data for this pool"));
     }
-    let mut candles = shape(raw, &window, crate::clock::now_ms());
+    let now = crate::clock::now_ms();
+    let mut candles = shape(raw, &window, reach_ms(now), now);
     let skip = candles.len().saturating_sub(limit as usize);
     candles.drain(..skip);
     Ok(candles)
 }
 
+/// The oldest instant the free API serves candles of, as of `now_ms`.
+fn reach_ms(now_ms: i64) -> i64 {
+    now_ms - GECKOTERMINAL_HISTORY_DAYS * 86_400_000
+}
+
 /// Native buckets with their gaps filled, folded to the timeframe when that is coarser, oldest
-/// first.
-fn shape(mut raw: Vec<Kline>, window: &Window, now_ms: i64) -> Vec<Kline> {
+/// first. A first fold the answer cannot hold whole is left out: the request stopped inside it, by
+/// its count or because the API serves nothing before `reach_ms`. Kept, it would be a different
+/// candle in every later answer, with less of its bucket in it.
+fn shape(mut raw: Vec<Kline>, window: &Window, reach_ms: i64, now_ms: i64) -> Vec<Kline> {
     raw.sort_by_key(|candle| candle.open_time);
     raw.dedup_by_key(|candle| candle.open_time);
-    let truncated = raw.len() >= window.fetch_limit;
+    let truncated = raw.len() >= window.fetch_limit
+        || raw.first().is_some_and(|first| {
+            bucket::bucket_start_ms(window.plan.target(), first.open_time) < reach_ms
+        });
     let filled = bucket::fill_gaps(raw, window.bucket_ms(), now_ms);
     window.plan.fold(filled, truncated)
 }
@@ -143,7 +154,7 @@ pub fn fetch_klines_range(
         Err(Fetch::Failed(error)) => return Err(error),
     };
     // Filled up to the slot before `end_ms`, so no gap opens between this page and what is held.
-    let mut candles = shape(raw, &window, end_ms - 1);
+    let mut candles = shape(raw, &window, reach_ms(crate::clock::now_ms()), end_ms - 1);
     candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
     let skip = candles.len().saturating_sub(max);
     Ok(candles.split_off(skip))
@@ -401,7 +412,7 @@ mod tests {
         let monday = crate::format::days_from_civil(2024, 1, 1) * 86_400_000;
         let raw = daily(monday, &[0, 1, 4, 5, 6, 7, 8, 9, 10]);
         let now = monday + 10 * 86_400_000 + 1_000;
-        let weeks = shape(raw, &window("1w", 500), now);
+        let weeks = shape(raw, &window("1w", 500), monday, now);
         assert_eq!(weeks.len(), 2);
         assert_eq!(weeks[0].open_time, monday);
         assert_eq!(weeks[0].close_time, monday + 7 * 86_400_000 - 1);
@@ -411,11 +422,28 @@ mod tests {
         assert_eq!(weeks[0].high, 18.0);
     }
 
+    /// The free API serves the last 180 days, so the week it begins inside loses a day each day:
+    /// shown, it would change under a chart that already holds it whole.
+    #[test]
+    fn a_week_the_free_api_cannot_serve_whole_is_left_out() {
+        let monday = crate::format::days_from_civil(2024, 1, 1) * 86_400_000;
+        let wednesday = monday + 2 * 86_400_000;
+        let raw = daily(wednesday, &[0, 1, 2, 3, 4, 5, 6, 7]);
+        let now = wednesday + 7 * 86_400_000 + 1_000;
+        let weeks = shape(raw.clone(), &window("1w", 500), wednesday, now);
+        assert_eq!(weeks.len(), 1);
+        assert_eq!(weeks[0].open_time, monday + 7 * 86_400_000);
+        // A pool that began that Wednesday has all of its first week.
+        let weeks = shape(raw, &window("1w", 500), monday - 86_400_000, now);
+        assert_eq!(weeks.len(), 2);
+        assert_eq!(weeks[0].open_time, monday);
+    }
+
     #[test]
     fn empty_days_are_filled_up_to_today() {
         let start = crate::format::days_from_civil(2024, 1, 1) * 86_400_000;
         let now = start + 6 * 86_400_000 + 5;
-        let days = shape(daily(start, &[0, 1, 4]), &window("1d", 500), now);
+        let days = shape(daily(start, &[0, 1, 4]), &window("1d", 500), start, now);
         assert_eq!(days.len(), 7);
         assert_eq!(days[2].volume, 0.0);
         assert_eq!(days[2].open, 11.0);

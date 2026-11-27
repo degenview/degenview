@@ -29,9 +29,12 @@ impl MarketSource for CoinGecko {
             crate::service::net::http::Retry::Never,
         )?;
         let prices = parse_prices(&body)?;
-        let candles = fold_prices(&prices, timeframe);
-        let start = candles.len().saturating_sub(limit as usize);
-        Ok(candles[start..].to_vec())
+        Ok(newest_candles(
+            &prices,
+            timeframe,
+            limit,
+            samples::spacing_ms(days),
+        ))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -97,14 +100,44 @@ fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
     Ok(prices)
 }
 
-/// Fold a price series into candles of `target`, one candle per calendar bucket.
+/// The last sample is the price now, off the sampling grid. It can have passed a boundary whose own
+/// sample is not published yet; until that one is, this price stands in for it. Filed past it, the
+/// candle ending there would be missing, or closed without its last price.
+fn stand_in_for_unpublished(prices: &mut [(i64, f64)], spacing: i64) {
+    if let [.., (published, _), (now, _)] = prices
+        && *now - *published > spacing
+    {
+        *now = *published + spacing;
+    }
+}
+
+/// The newest `limit` candles of a window of price samples. A candle opens where the one before it
+/// closed, which the window does not say of its first bucket: that one is left out, unless it is all
+/// there is.
+fn newest_candles(
+    prices: &[(i64, f64)],
+    timeframe: Timeframe,
+    limit: u32,
+    spacing: i64,
+) -> Vec<Kline> {
+    let mut prices = prices.to_vec();
+    stand_in_for_unpublished(&mut prices, spacing);
+    let candles = fold_prices(&prices, timeframe);
+    let unanchored = usize::from(candles.len() > 1);
+    let start = candles.len().saturating_sub(limit as usize).max(unanchored);
+    candles[start..].to_vec()
+}
+
+/// Fold a price series into candles of `target`, one candle per calendar bucket. A sample is the
+/// price at its instant, so it belongs to the bucket that was running just before it: the one on a
+/// boundary closes the candle that ends there.
 ///
 /// Each candle opens at the previous one's close, so the series is continuous and a bucket holding
 /// a single sample still gets a body (and a colour); only the first opens at its own first sample.
 fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
     let mut out: Vec<Kline> = Vec::new();
     for &(ms, price) in prices {
-        let bucket = bucket_start_ms(target, ms);
+        let bucket = bucket_start_ms(target, ms - 1);
         match out.last_mut() {
             Some(last) if last.open_time == bucket => {
                 last.high = last.high.max(price);
@@ -151,6 +184,83 @@ mod tests {
                 ProviderError::unsupported(DataSource::CoinGecko, timeframe)
             );
         }
+    }
+
+    /// The window the samples cover moves on with time: two answers a bucket apart must say the
+    /// same of every candle both have, or a chart takes the older one for changed history.
+    #[test]
+    fn answers_a_bucket_apart_agree_on_the_candles_they_share() {
+        let samples: Vec<(i64, f64)> = (0..6)
+            .map(|index| (index * 300_000, 10.0 + index as f64))
+            .collect();
+        let before = newest_candles(&samples[..5], Timeframe::MINUTE_5, 500, 300_000);
+        let after = newest_candles(&samples[1..], Timeframe::MINUTE_5, 500, 300_000);
+        let shared: Vec<&Kline> = after
+            .iter()
+            .filter(|candle| before.iter().any(|old| old.open_time == candle.open_time))
+            .collect();
+        assert_eq!(shared.len(), 3);
+        for candle in shared {
+            assert!(before.contains(candle), "{candle:?}");
+        }
+    }
+
+    /// A sample is the price at its instant, so the one at a bucket's end is that candle's close,
+    /// not the first of the next.
+    #[test]
+    fn the_sample_on_a_boundary_closes_the_candle_that_ends_there() {
+        let samples = [(0, 10.0), (300_000, 11.0), (600_000, 12.0), (660_000, 13.0)];
+        let candles = newest_candles(&samples, Timeframe::MINUTE_5, 500, 300_000);
+        let seen: Vec<(i64, f64, f64)> = candles
+            .iter()
+            .map(|candle| (candle.open_time, candle.open, candle.close))
+            .collect();
+        // The window's first sample closes a candle it does not hold the start of.
+        assert_eq!(
+            seen,
+            [
+                (0, 10.0, 11.0),
+                (300_000, 11.0, 12.0),
+                (600_000, 12.0, 13.0)
+            ][..]
+        );
+    }
+
+    /// The price now can pass a boundary before CoinGecko publishes that boundary's sample
+    /// (seen 2026-11-27: 16:00 and 17:00:50, no 17:00). The candle ending there is still the
+    /// newest one, and no candle but the newest changes once the sample arrives.
+    #[test]
+    fn a_boundary_not_yet_published_leaves_its_candle_forming() {
+        const HOUR: i64 = 3_600_000;
+        let early = [
+            (14 * HOUR, 10.0),
+            (15 * HOUR, 11.0),
+            (16 * HOUR, 12.0),
+            (17 * HOUR + 50_000, 13.0),
+        ];
+        let answer = |samples: &[(i64, f64)]| newest_candles(samples, Timeframe::HOUR_1, 500, HOUR);
+        let before = answer(&early);
+        assert_eq!(
+            before
+                .iter()
+                .map(|bar| bar.open_time / HOUR)
+                .collect::<Vec<_>>(),
+            [14, 15, 16]
+        );
+        assert_eq!(before[2].close, 13.0, "the price now stands in");
+
+        let mut published = early[..3].to_vec();
+        published.extend([(17 * HOUR, 12.5), (17 * HOUR + 120_000, 14.0)]);
+        let after = answer(&published);
+        assert_eq!(after[..2], before[..2]);
+        assert_eq!((after[2].open_time, after[2].close), (16 * HOUR, 12.5));
+        assert_eq!((after[3].open_time, after[3].close), (17 * HOUR, 14.0));
+    }
+
+    #[test]
+    fn a_history_of_one_candle_is_that_candle() {
+        let candles = newest_candles(&[(0, 10.0)], Timeframe::MINUTE_5, 500, 300_000);
+        assert_eq!(candles.len(), 1);
     }
 
     #[test]

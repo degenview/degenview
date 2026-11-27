@@ -36,6 +36,8 @@ pub struct ExecutionController {
     bars: Vec<Kline>,
     visible_range: Option<(i64, i64)>,
     live_open_time: Option<i64>,
+    /// How long after its close the newest bar is still live; `None`: until a newer one arrives.
+    settle_delay_ms: Option<i64>,
     /// How the script last failed, until it runs again and succeeds. An update that changes nothing
     /// does not run the script, so it must still say the script is failing: otherwise a failure
     /// would be reported once and then read as a success.
@@ -87,6 +89,7 @@ impl ExecutionController {
             bars: Vec::new(),
             visible_range,
             live_open_time: None,
+            settle_delay_ms: Some(0),
             last_error: None,
         })
     }
@@ -107,6 +110,14 @@ impl ExecutionController {
     /// Makes the run an alert's: `runtime.calculation.mode` reads as the alert mode.
     pub fn with_alert_mode(mut self) -> Self {
         self.session.alert_mode = true;
+        self
+    }
+
+    /// Says how long the feed may still be changing a bar after its close, see
+    /// [`DataSource::settle_delay_ms`](crate::model::DataSource::settle_delay_ms). Without it a bar
+    /// closes by the clock, on the values it has then.
+    pub fn with_settle_delay(mut self, delay_ms: Option<i64>) -> Self {
+        self.settle_delay_ms = delay_ms;
         self
     }
 
@@ -176,8 +187,8 @@ impl ExecutionController {
     ) -> ExecutionUpdate {
         self.session.logs.set_clock(now_ms);
         self.session.now_ms = Some(now_ms);
-        let live_bar_has_closed =
-            self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
+        let live_bar_has_closed = self.live_open_time.is_some()
+            && bars.last().is_some_and(|bar| self.has_settled(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
             let standing = self.last_error.clone();
             return self.result(Vec::new(), standing, false);
@@ -197,7 +208,7 @@ impl ExecutionController {
         let stays_stopped = self.session.is_halted() && has_same_history(&self.bars, bars);
         let must_rebuild = self.bars.is_empty()
             || self.visible_range != visible_range
-            || !(stays_stopped || self.can_apply_incrementally(bars));
+            || !(stays_stopped || self.can_apply_incrementally(bars, now_ms));
         self.visible_range = visible_range;
         self.session.visible_range = visible_range;
         if must_rebuild {
@@ -211,12 +222,16 @@ impl ExecutionController {
         let old_last = self.bars.last().cloned().expect("non-empty snapshot");
         let new_last = bars.last().cloned().expect("non-empty snapshot");
         if old_last.open_time == new_last.open_time {
-            let phase = if is_closed(&new_last, now_ms) {
-                BarPhase::RealtimeClose { is_new: false }
-            } else {
-                BarPhase::RealtimeTick { is_new: false }
-            };
-            ran |= self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
+            // A correction to a finished bar alone is nothing happening to the newest one: the
+            // script has no tick to run.
+            if new_last != old_last || live_bar_has_closed {
+                let phase = if self.has_settled(&new_last, now_ms) {
+                    BarPhase::RealtimeClose { is_new: false }
+                } else {
+                    BarPhase::RealtimeTick { is_new: false }
+                };
+                ran |= self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
+            }
         } else {
             if self.live_open_time == Some(old_last.open_time) {
                 let closed = bars
@@ -233,7 +248,7 @@ impl ExecutionController {
                 );
             }
             if error.is_none() {
-                if is_closed(&new_last, now_ms) {
+                if self.has_settled(&new_last, now_ms) {
                     ran |= self.execute_event(
                         new_last.clone(),
                         BarPhase::Historical,
@@ -252,7 +267,7 @@ impl ExecutionController {
         }
         // Which bar is forming is a fact about the snapshot, whether or not the script ran it: a
         // stopped script must not look like new history on the next tick, which would replay it.
-        self.live_open_time = (!is_closed(&new_last, now_ms)).then_some(new_last.open_time);
+        self.live_open_time = (!self.has_settled(&new_last, now_ms)).then_some(new_last.open_time);
         self.bars = bars.to_vec();
         if ran {
             self.last_error = error.clone();
@@ -265,7 +280,9 @@ impl ExecutionController {
     fn rebuild(&mut self, bars: &[Kline], now_ms: i64) -> ExecutionUpdate {
         let mut alerts = Vec::new();
         let mut error = None;
-        let last_is_live = bars.last().is_some_and(|bar| !is_closed(bar, now_ms));
+        let last_is_live = bars
+            .last()
+            .is_some_and(|bar| !self.has_settled(bar, now_ms));
         let history_len = bars.len().saturating_sub(usize::from(last_is_live));
         // The live bar's own open, not an estimate from the history: a calendar bar has no fixed length.
         let live_open = bars
@@ -299,22 +316,45 @@ impl ExecutionController {
         self.result(alerts, error, true)
     }
 
-    fn can_apply_incrementally(&self, next: &[Kline]) -> bool {
+    /// Whether a closed bar is still within the time its feed takes to be done with it. A bar that
+    /// has not closed is not one: a price-based chart's bars built from the forming candle close at
+    /// no set time, and can be taken back.
+    fn may_still_change(&self, bar: &Kline, now_ms: i64) -> bool {
+        bar.close_time <= now_ms && self.settle_delay_ms.is_some() && !self.has_settled(bar, now_ms)
+    }
+
+    /// Whether the newest bar, with nothing newer to go by, is finished.
+    fn has_settled(&self, bar: &Kline, now_ms: i64) -> bool {
+        self.settle_delay_ms
+            .is_some_and(|delay| bar.close_time.saturating_add(delay) <= now_ms)
+    }
+
+    fn can_apply_incrementally(&self, next: &[Kline], now_ms: i64) -> bool {
         if self.bars.is_empty() || next.is_empty() {
             return false;
         }
         let old_last = self.bars.last().expect("old last");
         let new_last = next.last().expect("new last");
+        let before_old_last = self.bars.len() - 1;
         if old_last.open_time == new_last.open_time {
             return self.bars.len() == next.len()
-                && self.bars[..self.bars.len() - 1] == next[..next.len() - 1]
+                && self.agrees_with(&next[..before_old_last], now_ms)
                 && self.live_open_time == Some(old_last.open_time);
         }
         next.len() == self.bars.len() + 1
-            && self.bars[..self.bars.len() - 1] == next[..self.bars.len() - 1]
+            && self.agrees_with(&next[..before_old_last], now_ms)
             && next[next.len() - 2].open_time == old_last.open_time
             && (self.live_open_time == Some(old_last.open_time)
                 || next[next.len() - 2] == *old_last)
+    }
+
+    /// Whether `next` has the bars this run saw, as far as it goes. A bar the feed may still be
+    /// correcting counts whatever its values: the script keeps what it saw of it, as it would on a
+    /// chart left open, instead of starting over.
+    fn agrees_with(&self, next: &[Kline], now_ms: i64) -> bool {
+        self.bars.iter().zip(next).all(|(seen, now)| {
+            seen == now || (seen.open_time == now.open_time && self.may_still_change(seen, now_ms))
+        })
     }
 
     fn execute_event(
@@ -379,10 +419,6 @@ fn has_same_history(seen: &[Kline], next: &[Kline]) -> bool {
     next.len() >= seen.len()
         && seen.first().map(|bar| bar.open_time) == next.first().map(|bar| bar.open_time)
         && seen[..settled] == next[..settled]
-}
-
-fn is_closed(bar: &Kline, now_ms: i64) -> bool {
-    bar.close_time <= now_ms
 }
 
 #[cfg(test)]
@@ -466,6 +502,48 @@ mod tests {
         (0..count)
             .map(|i| bar(i * 60_000, 10.0 + i as f64))
             .collect()
+    }
+
+    /// A feed that corrects bars for a while after they closed: the script keeps what it saw,
+    /// as it would on a chart left open, and nothing is replayed. Past the feed's settling time a
+    /// different bar is a different history.
+    #[test]
+    fn a_late_correction_to_a_bar_not_yet_settled_is_not_new_history() {
+        let mut controller =
+            controller("//@version=6\nindicator(\"T\")\nalert(\"bar\", alert.freq_all)")
+                .with_settle_delay(Some(120_000));
+        let mut bars = history(3);
+        controller.update(&bars, None, 150_000);
+        // The next bar arrives, and with it other values for the two before the last.
+        bars.push(bar(180_000, 13.0));
+        bars[1].low -= 0.5;
+        bars[2].low -= 0.5;
+        let update = controller.update(&bars, None, 185_000);
+        assert!(!update.rebuilt);
+        // One for the bar that closed, one for the one that opened.
+        assert_eq!(update.alerts.len(), 2);
+        // A correction between two bars is no replay either, and no tick of the forming one.
+        bars[2].low -= 0.5;
+        let update = controller.update(&bars, None, 190_000);
+        assert!(!update.rebuilt);
+        assert!(update.alerts.is_empty());
+        // The first bar closed over two minutes ago: that one is history.
+        bars[0].low -= 0.5;
+        assert!(controller.update(&bars, None, 200_000).rebuilt);
+    }
+
+    /// A price-based chart's bars built from the forming candle close at no set time, and one can
+    /// be taken back: that is another series, not a late correction.
+    #[test]
+    fn a_retracted_constructed_bar_is_replayed() {
+        let mut controller = controller("//@version=6\nindicator(\"T\")\nplot(close)");
+        let mut bars = history(4);
+        for forming in &mut bars[2..] {
+            forming.close_time = crate::model::chart::synthetic::UNCONFIRMED_CLOSE_TIME;
+        }
+        controller.update(&bars, None, 200_000);
+        bars[2].close = 5.0;
+        assert!(controller.update(&bars, None, 210_000).rebuilt);
     }
 
     const AFTER: i64 = 1_000_000_000;
