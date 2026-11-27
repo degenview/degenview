@@ -20,7 +20,9 @@ use crate::pine::outputs::{
     MarkerOutput, MarkerShape, PlotOutput, PlotStyle, Size, TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
-use crate::ui::chart::series::{WICK_WIDTH, candle_half_width, snap_candle, snap_rows};
+use crate::ui::chart::series::{
+    WICK_WIDTH, candle_half_width, snap_candle, snap_column, snap_rows,
+};
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, band_triangles,
     block_font_size, box_text_placement, candle_index_for_bar, dash_pattern, extended_box,
@@ -426,11 +428,7 @@ impl PineLayer<'_> {
             self.draw_area(painter, point, color, base);
             return;
         }
-        let width = if output.style == PlotStyle::Columns {
-            (self.slot_width * 0.8).max(1.0)
-        } else {
-            (self.slot_width * 0.35).max(1.0)
-        };
+        let ppp = painter.ctx().pixels_per_point();
         let size = output.line_width.max(1) as f32;
         let mut mesh = Mesh::default();
         for i in 0..self.count() {
@@ -441,9 +439,15 @@ impl PineLayer<'_> {
             let tint = rgba(color(i));
             match output.style {
                 PlotStyle::Histogram | PlotStyle::Columns => {
+                    let (left, right) = if output.style == PlotStyle::Columns {
+                        snap_column(p.x, self.slot_width, ppp)
+                    } else {
+                        let half = (self.slot_width * 0.35).max(1.0) / 2.0;
+                        (p.x - half, p.x + half)
+                    };
                     let rect = Rect::from_min_size(
-                        Pos2::new(p.x - width / 2.0, p.y.min(base)),
-                        Vec2::new(width, (base - p.y).abs().max(1.0)),
+                        Pos2::new(left, p.y.min(base)),
+                        Vec2::new(right - left, (base - p.y).abs().max(1.0)),
                     );
                     mesh.add_colored_rect(rect, tint);
                 }

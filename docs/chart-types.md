@@ -79,9 +79,23 @@ from a price-based type rebuilds them against the other series. A source that dr
 is unavailable on a source that reports no volume, with the reason in the menu. A saved type the
 source cannot show falls back to candles on screen and is kept for when it can.
 
+## Bar widths
+
+Measured on TradingView's canvas (BTCUSDT, 1h and 1D, 2x display). A bar's width depends only on
+its slot, never on the timeframe, and has no upper limit.
+
+* **Candles** (`series::candle_half_width`): the body takes `1 - 0.2 * atan(slot - 4) / (pi / 2)`
+  of the slot (slot in points, 4 at least), so nearly all of a narrow slot and about four fifths of
+  a wide one, rounded down to whole pixels.
+* **Columns** (`series::snap_column`): volume bars, the Columns chart type and a script's
+  `plot.style_columns` fill the slot, one point apart.
+* Bricks and Volume Candles keep their own share of the slot (0.92 at most), also without a limit.
+  They, OHLC and HLC bars and `plot.style_histogram` were not compared with TradingView; neither was
+  a 1x display.
+
 ## Candle geometry
 
-One width rule, `series::candle_half_width`, serves the chart's candles, a script's `plotcandle()`
+The width rule above serves the chart's candles, a script's `plotcandle()`
 and the drawing tools' ghost and bars-pattern candles. `series::snap_candle` (columns) and
 `series::snap_rows` (rows) lay every one of them on whole physical pixels, so all three painters agree:
 

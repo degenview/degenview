@@ -165,8 +165,27 @@ impl SeriesFrame<'_> {
 // MARK: Candles
 
 /// Half the width of a plain candle's body for a slot.
+///
+/// TradingView's proportions at every zoom (`docs/chart-types.md`, Bar widths): a narrow slot is
+/// filled but for the gap [`snap_candle`] keeps, and a wide one tends to four fifths. There is no
+/// widest candle, or bars would drift apart as the chart zooms in.
 pub fn candle_half_width(slot_width: f32) -> f32 {
-    (slot_width * 0.34).clamp(1.0, 8.0)
+    let past_narrow = (slot_width - 4.0).max(0.0);
+    let share = 1.0 - 0.2 * past_narrow.atan() / std::f32::consts::FRAC_PI_2;
+    slot_width * share / 2.0
+}
+
+/// The left and right edges (points) of a column centred on `x` that fills its slot: volume and
+/// column plots. Laid on the physical pixel grid, neighbours are one point apart at any phase;
+/// a slot too narrow for that leaves one pixel.
+pub fn snap_column(x: f32, slot_width: f32, pixels_per_point: f32) -> (f32, f32) {
+    let ppp = sane_pixels_per_point(pixels_per_point);
+    let gap = ppp.round().max(1.0);
+    let lead = (gap / 2.0).floor();
+    let boundary = |at: f32| (at * ppp).round();
+    let left = boundary(x - slot_width / 2.0) + lead;
+    let right = (boundary(x + slot_width / 2.0) - (gap - lead)).max(left + 1.0);
+    (left / ppp, right / ppp)
 }
 
 /// How wide a candle's wick is, in points.
@@ -201,7 +220,7 @@ fn wick_column(x: f32, wick_px: f32, ppp: f32) -> f32 {
 ///
 /// A fractional centre and half width otherwise land each candle on a different sub-pixel phase:
 /// the same body shows 5 px wide in one slot and 6 in the next, and the wick is off-centre. The
-/// body gets the width nearest to `2 * half_width` that has the wick's parity (an odd body for a
+/// body gets the widest width within `2 * half_width` that has the wick's parity (an odd body for a
 /// one-pixel wick), which is what lets the wick be exactly centred.
 ///
 /// A body is never wider than the slot less one pixel, so neighbours keep a gap: centres are
@@ -216,23 +235,12 @@ pub fn snap_candle(
 ) -> SnappedCandle {
     let ppp = sane_pixels_per_point(pixels_per_point);
     let wick_px = wick_pixels(wick_width, ppp);
-    let ideal = 2.0 * half_width * ppp;
-    let mut body_px = ideal.round().max(wick_px);
-    if (body_px - wick_px) % 2.0 != 0.0 {
-        let down = body_px - 1.0;
-        let up = body_px + 1.0;
-        body_px = if down >= wick_px && (ideal - down).abs() < (up - ideal).abs() {
-            down
-        } else {
-            up
-        };
-    }
+    // The nudge keeps a whole number of pixels whole through float error.
+    let ideal = (2.0 * half_width * ppp + 1e-3).floor();
     let room = (slot_width * ppp).floor() - 1.0;
-    if body_px > room {
-        body_px = room.max(wick_px);
-        if (body_px - wick_px) % 2.0 != 0.0 {
-            body_px -= 1.0;
-        }
+    let mut body_px = ideal.min(room).max(wick_px);
+    if (body_px - wick_px) % 2.0 != 0.0 {
+        body_px -= 1.0;
     }
     let wick_left = wick_column(x, wick_px, ppp);
     let body_left = wick_left - (body_px - wick_px) / 2.0;
@@ -274,9 +282,9 @@ pub fn snap_rows(
     }
 }
 
-/// Bricks and lines fill more of their slot than a candle does.
+/// The share of its slot a brick, or the widest volume candle, takes: 0.92 at every zoom.
 fn brick_half_width(slot_width: f32) -> f32 {
-    (slot_width * 0.46).clamp(1.0, 24.0)
+    (slot_width * 0.46).max(1.0)
 }
 
 /// A candle ready to paint: where it sits, how wide it is and how it looks.
@@ -326,7 +334,7 @@ fn candles(frame: &SeriesFrame) {
         };
         let half = match frame.chart_type {
             ChartType::VolumeCandles => {
-                let full = (frame.slot_width * 0.46).clamp(1.0, 24.0);
+                let full = brick_half_width(frame.slot_width);
                 (full * volume_width_fraction(bar.volume, max_volume) as f32).max(1.0)
             }
             _ if brick => brick_half_width(frame.slot_width),
@@ -720,7 +728,7 @@ fn columns(frame: &SeriesFrame) {
     let settings = frame.style.columns;
     let up = color(settings.up.unwrap_or(frame.palette.up));
     let down = color(settings.down.unwrap_or(frame.palette.down));
-    let half = (frame.slot_width * 0.4).clamp(0.75, 20.0);
+    let ppp = frame.painter.ctx().pixels_per_point();
     let foot = frame.plot.bottom();
     for (index, bar) in frame.bars.iter().enumerate() {
         let value = settings.source.value(bar);
@@ -744,10 +752,10 @@ fn columns(frame: &SeriesFrame) {
             None if rising => up,
             None => down,
         };
-        let x = (frame.x_for)(index);
+        let (left, right) = snap_column((frame.x_for)(index), frame.slot_width, ppp);
         let top = frame.y(value).min(foot - 1.0);
         frame.painter.rect_filled(
-            Rect::from_min_max(Pos2::new(x - half, top), Pos2::new(x + half, foot)),
+            Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, foot)),
             0.0,
             tint,
         );
@@ -1211,6 +1219,55 @@ mod tests {
                     upper.rect.min.x + upper.rect.max.x,
                     body.rect.min.x + body.rect.max.x
                 );
+            }
+        }
+    }
+
+    /// Pixel widths read off TradingView's canvas on a 2x display: slot, candle body, column.
+    const TRADINGVIEW_WIDTHS: [(f32, f32, f32); 7] = [
+        (7.0, 6.0, 5.0),
+        (8.0, 6.0, 6.0),
+        (13.0, 10.0, 11.0),
+        (25.0, 20.0, 23.0),
+        (47.0, 36.0, 45.0),
+        (83.0, 66.0, 81.0),
+        (120.0, 96.0, 118.0),
+    ];
+
+    #[test]
+    fn candles_and_columns_are_as_wide_as_tradingviews() {
+        for (slot_px, body_px, column_px) in TRADINGVIEW_WIDTHS {
+            let slot = slot_px / 2.0;
+            let candle = snap_candle(100.0, candle_half_width(slot), WICK_WIDTH, slot, 2.0);
+            let column = snap_column(100.0, slot, 2.0);
+            assert_eq!(
+                (candle.body.1 - candle.body.0) * 2.0,
+                body_px,
+                "slot {slot_px}"
+            );
+            assert_eq!((column.1 - column.0) * 2.0, column_px, "slot {slot_px}");
+        }
+    }
+
+    #[test]
+    fn neighbouring_columns_stay_one_point_apart_at_every_phase() {
+        for ppp in [1.0_f32, 2.0, 3.0] {
+            for step in 0..200 {
+                let slot = 4.0 + step as f32 * 0.37;
+                let x = 100.0 + step as f32 * 0.173;
+                let here = snap_column(x, slot, ppp);
+                let next = snap_column(x + slot, slot, ppp);
+                for edge in [here.0, here.1, next.0, next.1] {
+                    assert!(on_grid(edge, ppp), "ppp {ppp} slot {slot}: {edge}");
+                }
+                // Two boundaries rounded apart by float error may give or take a pixel.
+                let gap = (next.0 - here.1) * ppp;
+                assert!(
+                    (gap - ppp).abs() <= 1.0 + 1e-3,
+                    "ppp {ppp} slot {slot}: {gap}"
+                );
+                assert!(gap >= 1.0 - 1e-3, "ppp {ppp} slot {slot}: touching");
+                assert!(((here.0 + here.1) / 2.0 - x).abs() * ppp <= 1.0 + 1e-3);
             }
         }
     }
