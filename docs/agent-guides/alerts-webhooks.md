@@ -11,9 +11,15 @@
   fields out of `sync::record::project`'s alert projection.
 - Unseen count comes from `alerts.lastSeenAt`, never an event flag (snapshot replacement rewrites
   events). `ui::alert::banner` shows over every workspace.
-- Whether a script alert's script compiles is runtime knowledge, never stored:
-  `PineSubscriptionHost` keeps the diagnostic with the run (`compile_error`), and the Scripts tab
-  shows "Script doesn't compile" with it. A build that accepts the script again needs no re-arm.
+- Whether a script alert's script can run is runtime knowledge, never stored:
+  `PineSubscriptionHost::failure` answers a `ScriptFailure` from the run it holds (the compile
+  diagnostic, or the error the controller's script stopped with). The Scripts tab shows "Script
+  doesn't compile" or "Script stopped with an error" with it, and `degenview_list_pine_alerts`
+  reports it as `cannot_run`. A build that accepts the script again needs no re-arm. A script
+  stopped by a runtime error stays stopped, as on TradingView, until its history is replayed
+  (older bars or inputs changed, a restart,
+  Pause then Re-arm), and a replay that gets through clears it. The feed finishing its newest bars,
+  or adding to them, replays nothing.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
   save/webhook actions back as `WorkspaceAction`s; only Alerts-window edits host the sheet there.
 - An open sheet holds `alert_editor::quote_owner` demand and gets the current quote each frame,
@@ -24,6 +30,9 @@
   summary + Cancel/Create footer. Neutral controls only (`kit::sheet_button`, gray badges). "Add in
   Settings" is an outcome (`OpenWebhookSettings`) the host acts on; the sheet stays open. Pictures:
   `cargo test --lib gallery_of_the_script_alert -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
+
+- A chart id alone names no chart (every tab starts at 1): anything keyed by a chart across tabs
+  takes `model::alert::pine::ChartKey`.
 
 ## Webhooks
 

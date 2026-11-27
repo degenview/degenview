@@ -162,6 +162,11 @@ impl Session {
         }
     }
 
+    /// Whether the script failed and stays stopped until the session is reset.
+    pub fn is_halted(&self) -> bool {
+        self.halted.is_some()
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn execute(
         &mut self,

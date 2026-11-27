@@ -340,7 +340,7 @@ impl DegenViewApp {
         let chart_info = self
             .focused_pine_target()
             .map(|target| crate::pine_studio::ChartInfo {
-                chart_id: target.chart_id,
+                on: target.on,
                 title: target
                     .instrument
                     .source

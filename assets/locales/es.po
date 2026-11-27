@@ -724,6 +724,10 @@ msgstr "Añadir imagen"
 msgid "Add in Settings"
 msgstr "Añadir en Ajustes"
 
+#: src/model/alert/pine.rs
+msgid "Add its script to the chart to re-arm it"
+msgstr "Añade su script al gráfico para rearmarla"
+
 #: src/ui/drawing/properties/fib_pages.rs src/ui/drawing/properties/tests.rs
 msgid "Add level"
 msgstr "Añadir nivel"
@@ -6251,8 +6255,8 @@ msgid "Fires once, then waits until you turn it back on."
 msgstr "Se dispara una vez y espera hasta que la reactives."
 
 #: src/ui/alert/pine_editor.rs
-msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Editing the script pauses the alert until you re-arm it."
-msgstr "Solo se dispara mientras este gráfico muestra este símbolo y marco temporal y su feed en vivo está activo. Editar el script pausa la alerta hasta que la rearmes."
+msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Taking the indicator off the chart stops the alert until you add its script again and re-arm it."
+msgstr "Solo se dispara mientras este gráfico muestra este símbolo y marco temporal y su feed en vivo está activo. Si quitas el indicador del gráfico, la alerta se detiene hasta que vuelvas a añadir su script y la rearmes."
 
 #: src/ui/replay/bar.rs
 msgid "First Bar"
@@ -7485,6 +7489,10 @@ msgstr "Su opacidad define la intensidad del relleno."
 #: src/ui/chart/card/overlay_card.rs src/ui/chart/settings/overlay.rs
 msgid "Its own scale"
 msgstr "Escala propia"
+
+#: src/model/alert/pine.rs
+msgid "Its script is on the chart more than once. Remove the extra copies to re-arm it."
+msgstr "Su script está más de una vez en el gráfico. Quita las copias sobrantes para rearmarla."
 
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Its symbols stay in your other watchlists. Charts, drawings and alerts are not affected."
@@ -10320,7 +10328,7 @@ msgstr "Abrir en pestaña nueva"
 msgid "Open interest"
 msgstr "Interés abierto"
 
-#: src/ui/alert/script_list.rs
+#: src/model/alert/pine.rs
 msgid "Open its chart on the same market to re-arm it"
 msgstr "Abre su gráfico en el mismo mercado para rearmarla"
 
@@ -12961,6 +12969,7 @@ msgstr "Las alertas de script se crean a partir de llamadas a alert() en tus scr
 msgid "Script changed — re-arm"
 msgstr "Script modificado — rearmar"
 
+#: src/model/alert/pine.rs
 #: src/ui/alert/script_list.rs
 msgid "Script deleted"
 msgstr "Script eliminado"
@@ -12968,6 +12977,10 @@ msgstr "Script eliminado"
 #: src/ui/alert/script_list.rs
 msgid "Script doesn't compile"
 msgstr "El script no compila"
+
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr "El script se detuvo por un error"
 
 #: src/pine_studio/sheets.rs
 msgid "Script name"

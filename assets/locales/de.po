@@ -724,6 +724,10 @@ msgstr "Bild hinzufügen"
 msgid "Add in Settings"
 msgstr "In Einstellungen hinzufügen"
 
+#: src/model/alert/pine.rs
+msgid "Add its script to the chart to re-arm it"
+msgstr "Füge sein Skript zum Chart hinzu, um ihn zu reaktivieren"
+
 #: src/ui/drawing/properties/fib_pages.rs src/ui/drawing/properties/tests.rs
 msgid "Add level"
 msgstr "Level hinzufügen"
@@ -6251,8 +6255,8 @@ msgid "Fires once, then waits until you turn it back on."
 msgstr "Löst einmal aus und wartet dann, bis du ihn wieder einschaltest."
 
 #: src/ui/alert/pine_editor.rs
-msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Editing the script pauses the alert until you re-arm it."
-msgstr "Löst nur aus, solange dieser Chart dieses Symbol und diese Zeiteinheit zeigt und sein Live-Feed läuft. Wird das Skript bearbeitet, pausiert der Alarm, bis du ihn reaktivierst."
+msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Taking the indicator off the chart stops the alert until you add its script again and re-arm it."
+msgstr "Löst nur aus, solange dieser Chart dieses Symbol und diese Zeiteinheit zeigt und sein Live-Feed läuft. Wird der Indikator vom Chart entfernt, ruht der Alarm, bis du sein Skript wieder hinzufügst und ihn reaktivierst."
 
 #: src/ui/replay/bar.rs
 msgid "First Bar"
@@ -7485,6 +7489,10 @@ msgstr "Die Deckkraft bestimmt, wie kräftig die Füllung ist."
 #: src/ui/chart/card/overlay_card.rs src/ui/chart/settings/overlay.rs
 msgid "Its own scale"
 msgstr "Eigene Skala"
+
+#: src/model/alert/pine.rs
+msgid "Its script is on the chart more than once. Remove the extra copies to re-arm it."
+msgstr "Sein Skript ist mehrfach auf dem Chart. Entferne die überzähligen Kopien, um ihn zu reaktivieren."
 
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Its symbols stay in your other watchlists. Charts, drawings and alerts are not affected."
@@ -10320,7 +10328,7 @@ msgstr "In neuem Tab öffnen"
 msgid "Open interest"
 msgstr "Open Interest"
 
-#: src/ui/alert/script_list.rs
+#: src/model/alert/pine.rs
 msgid "Open its chart on the same market to re-arm it"
 msgstr "Öffne seinen Chart mit demselben Markt, um ihn zu reaktivieren"
 
@@ -12961,6 +12969,7 @@ msgstr "Skript-Alarme entstehen aus alert()-Aufrufen in deinen Skripten."
 msgid "Script changed — re-arm"
 msgstr "Skript geändert — reaktivieren"
 
+#: src/model/alert/pine.rs
 #: src/ui/alert/script_list.rs
 msgid "Script deleted"
 msgstr "Skript gelöscht"
@@ -12968,6 +12977,10 @@ msgstr "Skript gelöscht"
 #: src/ui/alert/script_list.rs
 msgid "Script doesn't compile"
 msgstr "Skript kompiliert nicht"
+
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr "Skript mit Fehler gestoppt"
 
 #: src/pine_studio/sheets.rs
 msgid "Script name"

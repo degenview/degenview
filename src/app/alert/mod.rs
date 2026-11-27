@@ -16,7 +16,7 @@ use super::tabs::TabContent;
 use crate::host::alert::AlertHost;
 use crate::host::alert::runtime::{AlertRuntimeRunner, GuiRuntimeDecision};
 use crate::lock::lock;
-use crate::model::alert::pine::PineAlertSubscription;
+use crate::model::alert::pine::{ChartKey, PineAlertSubscription};
 use crate::model::alert::{AlertCurrency, AlertRuntimeOwner, AlertServiceState, AlertState};
 use crate::pine::runtime::state::AlertEvent;
 use crate::service::alert::background_service::BackgroundAlertService;
@@ -93,7 +93,7 @@ impl AlertCoordinator {
     }
 
     /// What each open chart shows, for the Alerts window's script alerts.
-    pub(super) fn set_chart_datasets(&self, datasets: HashMap<u64, (String, String)>) {
+    pub(super) fn set_chart_datasets(&self, datasets: HashMap<ChartKey, (String, String)>) {
         self.window.set_chart_datasets(datasets);
     }
 

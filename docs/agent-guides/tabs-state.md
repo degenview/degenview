@@ -4,7 +4,9 @@
 
 - Each tab owns one `ChartWorkspace`, never app-global. The app's `TabState` owns `TabSlot`s holding
   a workspace, portfolio tab, or Pine Studio; window callbacks reach them through `SharedTabs`.
-- Live feeds/refreshes follow the workspace window's visibility/occlusion; hidden tabs suspend.
+- Live feeds/refreshes follow the workspace window's visibility/occlusion; hidden tabs suspend,
+  except a tab with an armed script alert, which the app keeps current from its own loop
+  (`ChartWorkspace::update_market_data`). Fetching never belongs in `ui` alone.
   Stores and portfolio/paper/alert/webhook/Pine hosts are shared `Arc<Mutex>`; presentation state is
   per tab/window.
 - Layout dirty state is a `LayoutSnapshot` fingerprint, not a flag: timeframe, chart configs,

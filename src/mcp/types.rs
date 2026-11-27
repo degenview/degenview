@@ -85,6 +85,8 @@ wire_words! {
     TradeDirection { Long, Short }
     /// Where a script alert subscription stands.
     ScriptAlertState { Active, Paused, ScriptChanged, ScriptDeleted }
+    /// Where an active script alert's script fails.
+    PineAlertFailureStage { Compile, Runtime }
     /// Which edit a script edit was.
     EditAction { UpdateDraft, Save }
     /// What a script edit did.
@@ -588,6 +590,14 @@ pub struct PineReportResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct PineAlertFailureInfo {
+    /// `compile` (the script does not compile) or `runtime` (it stopped with an error, on history
+    /// or on a live bar).
+    pub stage: PineAlertFailureStage,
+    pub diagnostic: PineDiagnosticInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineAlertInfo {
     pub subscription_id: String,
     pub script_id: Option<String>,
@@ -597,7 +607,14 @@ pub struct PineAlertInfo {
     pub timeframe: String,
     /// `active`, `paused`, `script_changed` or `script_deleted`.
     pub state: ScriptAlertState,
+    /// Set when an `active` alert's script cannot run, so the alert does not fire. Known only for
+    /// alerts the app has run since it started: absent says nothing about one whose chart has not
+    /// been open.
+    pub cannot_run: Option<PineAlertFailureInfo>,
     pub note: String,
+    /// The tab holding the chart; with `chart_id` it names the chart. Null for an alert saved
+    /// before alerts named their tab, until its chart is open.
+    pub workspace_id: Option<String>,
     pub chart_id: String,
     pub instance_id: Option<String>,
     pub source_hash: String,

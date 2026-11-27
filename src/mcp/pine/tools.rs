@@ -618,7 +618,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_list_pine_alerts",
-        description = "List the alert subscriptions of Pine scripts: script, market, timeframe, state (active, paused, script_changed, script_deleted) and note. DegenView keeps no log of fired script alerts, so no history is returned (event_history_available is false); reading never runs a script or sends anything.",
+        description = "List the alert subscriptions of Pine scripts: script, market, timeframe, state (active, paused, script_changed, script_deleted) and note. cannot_run is set on an active alert that does not fire because its script does not compile or stopped with a runtime error, with the diagnostic; it is known only once the alert's chart has been open since DegenView started. DegenView keeps no log of fired script alerts, so no history is returned (event_history_available is false); reading never runs a script or sends anything.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

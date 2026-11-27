@@ -1,29 +1,32 @@
 use super::alert::MAX_ALERTS;
 use super::alert::alerts_unavailable;
 use crate::host::mcp::{McpTabs, confirmation};
+use crate::host::pine::subscription::PineSubscriptionHost;
 use crate::mcp::bridge::{McpError, McpReply};
 use crate::mcp::confirm::Summary;
-use crate::mcp::pine::{InputArgs, PineCommand, ScriptToApply};
+use crate::mcp::pine::{InputArgs, PineCommand, ScriptToApply, diagnostic_info};
 use crate::mcp::state::McpShared;
 use crate::mcp::types::{
     AppliedPineDetail, AppliedPineInfo, AppliedPineList, CommissionKind, EditStatus,
-    InstanceStatus, PineAlertInfo, PineAlertsResult, PineEditResult, PineInstanceChangeResult,
-    PineOpenTradeInfo, PineReportContext, PineReportMetrics, PineReportResult,
-    PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult,
-    PineTradeInfo, QuantityKind, ReportSource, RunStatus, ScriptAlertState, ScriptStatus,
-    TradeDirection,
+    InstanceStatus, PineAlertFailureInfo, PineAlertFailureStage, PineAlertInfo, PineAlertsResult,
+    PineEditResult, PineInstanceChangeResult, PineOpenTradeInfo, PineReportContext,
+    PineReportMetrics, PineReportResult, PineStrategySettingsInfo, PineStyleOverridesInfo,
+    PineStyleRowInfo, PineStylesResult, PineTradeInfo, QuantityKind, ReportSource, RunStatus,
+    ScriptAlertState, ScriptStatus, TradeDirection,
 };
-use crate::model::alert::pine::PineAlertSubscription;
+use crate::model::alert::pine::{ChartKey, PineAlertSubscription, ScriptFailure};
 use crate::store::SharedStore;
 use crate::workspace::{ChartWorkspace, PineInstanceView};
+use std::sync::Mutex;
 
 /// Runs a Pine command on the app thread: on the chart it names, or on a script and the Pine
 /// Studio editor that has it open. `store` holds the script alert subscriptions a change must not
-/// disturb; `shared` reaches the script library.
+/// disturb and `alert_runs` knows which of them cannot run; `shared` reaches the script library.
 pub fn run(
     command: PineCommand,
     tabs: &impl McpTabs,
     store: &SharedStore,
+    alert_runs: &Mutex<PineSubscriptionHost>,
     shared: &McpShared,
 ) -> Result<McpReply, McpError> {
     use PineCommand as P;
@@ -66,7 +69,14 @@ pub fn run(
             )
             .map(|report| McpReply::PineReport(Box::new(report)))
         }),
-        P::ListAlerts => Ok(McpReply::PineAlerts(pine_alerts(&subscriptions(store)?))),
+        P::ListAlerts => {
+            let subscriptions = subscriptions(store)?;
+            let alert_runs = alert_runs.lock().map_err(|_| alerts_unavailable())?;
+            Ok(McpReply::PineAlerts(pine_alerts(
+                &subscriptions,
+                &alert_runs,
+            )))
+        }
         P::AddInstance {
             workspace_id,
             chart_id,
@@ -243,7 +253,7 @@ pub(super) fn applied_info(view: &PineInstanceView) -> AppliedPineInfo {
             } else {
                 RunStatus::Ok
             },
-            run.error.as_ref().map(crate::mcp::pine::diagnostic_info),
+            run.error.as_ref().map(diagnostic_info),
             Some(run.is_strategy),
         ),
     };
@@ -370,16 +380,14 @@ pub fn add_pine_instance(
 /// have their own (deferred) permissions. The person can still do it in the app.
 pub(super) fn guard_armed_alerts(
     subscriptions: &[PineAlertSubscription],
-    chart_id: u64,
+    chart: ChartKey,
     instance_id: u64,
     what: &str,
 ) -> Result<(), McpError> {
     let armed: Vec<String> = subscriptions
         .iter()
         .filter(|alert| {
-            alert.is_active()
-                && alert.chart_id == chart_id
-                && alert.instance_id == Some(instance_id)
+            alert.is_active() && alert.is_on(chart) && alert.instance_id == Some(instance_id)
         })
         .map(|alert| alert.id.to_string())
         .collect();
@@ -417,7 +425,15 @@ pub fn update_pine_instance(
         .as_ref()
         .is_some_and(|inputs| *inputs != view.instance.input_values())
     {
-        guard_armed_alerts(subscriptions, chart_id, instance_id, "changing its inputs")?;
+        guard_armed_alerts(
+            subscriptions,
+            ChartKey {
+                workspace_id: workspace.id(),
+                chart_id,
+            },
+            instance_id,
+            "changing its inputs",
+        )?;
     }
     let changed = workspace
         .change_pine_instance(chart_id, instance_id, inputs.as_ref(), visible)
@@ -442,7 +458,15 @@ pub fn remove_pine_instance(
     subscriptions: &[PineAlertSubscription],
 ) -> Result<PineInstanceChangeResult, McpError> {
     pine_views(workspace, chart_id, Some(instance_id), false)?;
-    guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
+    guard_armed_alerts(
+        subscriptions,
+        ChartKey {
+            workspace_id: workspace.id(),
+            chart_id,
+        },
+        instance_id,
+        "removing it",
+    )?;
     workspace.remove_pine_instance_from(chart_id, instance_id);
     instance_change(workspace, chart_id, instance_id, InstanceStatus::Removed)
 }
@@ -716,10 +740,12 @@ pub(super) fn report_of(
     }
 }
 
-/// The scripts' alert subscriptions as stored. DegenView keeps no log of what they fired, so no
-/// history is invented: reading never runs a script or sends anything.
+/// The scripts' alert subscriptions as stored, each with why it cannot run if the app found that
+/// it cannot. DegenView keeps no log of what they fired, so no history is invented: reading never
+/// runs a script or sends anything.
 pub fn pine_alerts(
-    subscriptions: &[crate::model::alert::pine::PineAlertSubscription],
+    subscriptions: &[PineAlertSubscription],
+    alert_runs: &PineSubscriptionHost,
 ) -> PineAlertsResult {
     use crate::model::alert::pine::PineAlertState;
     PineAlertsResult {
@@ -739,7 +765,12 @@ pub fn pine_alerts(
                     PineAlertState::ScriptChanged => ScriptAlertState::ScriptChanged,
                     PineAlertState::ScriptDeleted => ScriptAlertState::ScriptDeleted,
                 },
+                cannot_run: alert_runs
+                    .failure(subscription.id)
+                    .filter(|_| subscription.is_active())
+                    .map(|failure| failure_info(&failure)),
                 note: subscription.note.clone(),
+                workspace_id: subscription.workspace_id.map(|id| id.to_string()),
                 chart_id: subscription.chart_id.to_string(),
                 instance_id: subscription.instance_id.map(|id| id.to_string()),
                 source_hash: subscription.source_hash.clone(),
@@ -749,5 +780,15 @@ pub fn pine_alerts(
             .collect(),
         event_history_available: false,
         recent_events: Vec::new(),
+    }
+}
+
+fn failure_info(failure: &ScriptFailure) -> PineAlertFailureInfo {
+    PineAlertFailureInfo {
+        stage: match failure {
+            ScriptFailure::Compile(_) => PineAlertFailureStage::Compile,
+            ScriptFailure::Runtime(_) => PineAlertFailureStage::Runtime,
+        },
+        diagnostic: diagnostic_info(failure.diagnostic()),
     }
 }

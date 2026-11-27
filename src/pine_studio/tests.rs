@@ -1106,7 +1106,10 @@ fn create_alert_needs_a_chart_then_opens_the_sheet_for_the_script() {
     manager.error = None;
 
     manager.chart = Some(ChartInfo {
-        chart_id: 3,
+        on: crate::model::alert::pine::ChartKey {
+            workspace_id: 1,
+            chart_id: 3,
+        },
         title: "BTC/USDT".into(),
         source_name: "Binance".into(),
         timeframe: "1h".into(),

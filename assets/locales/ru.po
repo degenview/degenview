@@ -11,6 +11,18 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
+#: src/model/alert/pine.rs
+msgid "Add its script to the chart to re-arm it"
+msgstr "Добавьте его скрипт на график, чтобы снова включить оповещение"
+
+#: src/ui/alert/pine_editor.rs
+msgid "Fires only while this chart shows this symbol and timeframe and its live feed is running. Taking the indicator off the chart stops the alert until you add its script again and re-arm it."
+msgstr "Срабатывает только пока на этом графике открыты этот символ и таймфрейм с активным потоком данных. Если убрать индикатор с графика, оповещение остановится, пока вы снова не добавите его скрипт и не включите оповещение."
+
+#: src/model/alert/pine.rs
+msgid "Its script is on the chart more than once. Remove the extra copies to re-arm it."
+msgstr "Его скрипт добавлен на график несколько раз. Уберите лишние копии, чтобы снова включить оповещение."
+
 #: src/ui/alert/script_list.rs
 msgid "Line {line}: {message}"
 msgstr "Строка {line}: {message}"
@@ -18,6 +30,10 @@ msgstr "Строка {line}: {message}"
 #: src/ui/alert/script_list.rs
 msgid "Script doesn't compile"
 msgstr "Скрипт не компилируется"
+
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr "Скрипт остановлен из-за ошибки"
 
 #: src/model/editor_theme/codec/mod.rs
 msgid "\"fontFamily\" is not a usable font name."
@@ -6696,15 +6712,6 @@ msgstr "Срабатывает на живых барах {chart} · {timeframe}
 #: src/ui/alert/editor.rs
 msgid "Fires once, then waits until you turn it back on."
 msgstr "Срабатывает один раз, затем ждёт повторного включения."
-
-#: src/ui/alert/pine_editor.rs
-msgid ""
-"Fires only while this chart shows this symbol and timeframe and its live "
-"feed is running. Editing the script pauses the alert until you re-arm it."
-msgstr ""
-"Срабатывает только пока на этом графике открыты этот символ и таймфрейм с "
-"активным потоком данных. Редактирование скрипта ставит оповещение на паузу, "
-"пока вы не включите его снова."
 
 #: src/ui/replay/bar.rs
 msgid "First Bar"

@@ -247,12 +247,8 @@ impl PineStudio {
             .lock()
             .map(|store| {
                 let duplicate = store.pine_subscriptions().iter().any(|s| {
-                    s.is_active()
-                        && s.chart_id == chart.chart_id
-                        && s.instance_id == Some(instance.id)
-                        && s.source_hash == hash
-                        && s.symbol_key == chart.symbol_key
-                        && s.timeframe == chart.timeframe
+                    s.source_hash == hash
+                        && s.arms(chart.on, instance.id, &chart.symbol_key, &chart.timeframe)
                 });
                 (store.webhook_endpoints(), duplicate)
             })

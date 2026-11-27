@@ -4,8 +4,10 @@ pub(in crate::workspace) mod logs;
 
 use super::ChartWorkspace;
 use super::chart::Chart;
+use crate::host::pine::subscription::{ChartFeed, ChartRun};
+use crate::model::alert::pine::ChartKey;
 use crate::model::pine::bundled::{self, BundledIndicator};
-use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Kline, Timeframe};
+use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Timeframe};
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
 use eframe::egui;
@@ -13,7 +15,7 @@ use std::collections::HashMap;
 
 /// The focused chart's identity, read by the Pine integration (alert subscription + tick loop).
 pub struct PineChartTarget {
-    pub chart_id: u64,
+    pub on: ChartKey,
     pub instrument: InstrumentId,
     pub timeframe: Timeframe,
     pub instances: Vec<crate::model::pine::instance::PineInstance>,
@@ -69,18 +71,6 @@ pub enum IndicatorError {
     NoParameters,
     /// An EMA period outside `EMA_PERIODS`.
     InvalidEmaPeriod,
-}
-
-/// What the Pine alert runtime needs from one chart: its market, the bars its scripts run over
-/// and the scripts. Those are the market's candles, or the bars the chart type constructs from
-/// them, so a script's alert sees what the chart shows.
-pub struct ChartFeed {
-    pub chart_id: u64,
-    pub symbol_key: String,
-    pub timeframe: String,
-    pub bars: Vec<Kline>,
-    pub run: crate::host::pine::subscription::ChartRun,
-    pub instances: Vec<crate::model::pine::instance::PineInstance>,
 }
 
 impl ChartWorkspace {
@@ -438,22 +428,29 @@ impl ChartWorkspace {
         let id = self.resolved_focused_id()?;
         let chart = self.charts.iter().find(|chart| chart.id == id)?;
         Some(PineChartTarget {
-            chart_id: chart.id,
+            on: self.chart_key(chart.id),
             instrument: InstrumentId::new(chart.source, &chart.symbol),
             timeframe: self.timeframe,
             instances: chart.chart.pine_instances().to_vec(),
         })
     }
 
-    /// Each chart's `(chart_id, symbol_key, timeframe)`, so script alerts can say whether their
+    fn chart_key(&self, chart_id: u64) -> ChartKey {
+        ChartKey {
+            workspace_id: self.id(),
+            chart_id,
+        }
+    }
+
+    /// Each chart's `(key, symbol_key, timeframe)`, so script alerts can say whether their
     /// chart is open and still on their market.
-    pub fn pine_datasets(&self) -> Vec<(u64, String, String)> {
+    pub fn pine_datasets(&self) -> Vec<(ChartKey, String, String)> {
         self.charts
             .iter()
             .filter(|chart| chart.is_market())
             .map(|chart| {
                 (
-                    chart.id,
+                    self.chart_key(chart.id),
                     InstrumentId::new(chart.source, &chart.symbol).key(),
                     self.timeframe.interval().to_owned(),
                 )
@@ -471,14 +468,14 @@ impl ChartWorkspace {
             .iter()
             .filter(|chart| chart.is_market())
             .map(|chart| {
-                let (bars, run) = crate::host::pine::subscription::ChartRun::feed(
+                let (bars, run) = ChartRun::feed(
                     chart.chart.construction(chart.source),
                     &chart.candles,
                     self.timeframe,
                     now_ms,
                 );
                 ChartFeed {
-                    chart_id: chart.id,
+                    on: self.chart_key(chart.id),
                     symbol_key: InstrumentId::new(chart.source, &chart.symbol).key(),
                     timeframe: self.timeframe.interval().to_owned(),
                     bars,

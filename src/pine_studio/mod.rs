@@ -26,6 +26,7 @@ mod workspace;
 use crate::clock::now_ms;
 use crate::host::editor_theme::EditorThemeHost;
 use crate::i18n::tr;
+use crate::model::alert::pine::ChartKey;
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::model::pine::script::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine::compiler;
@@ -58,7 +59,7 @@ pub enum PineStudioAction {
     },
     /// Create a Pine alert subscription on the focused chart.
     CreateAlert {
-        chart_id: u64,
+        on: ChartKey,
         instance_id: u64,
         script_id: Option<String>,
         script_name: String,
@@ -82,7 +83,7 @@ pub enum PineStudioAction {
 /// The focused chart a script alert would watch: its market and timeframe.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChartInfo {
-    pub chart_id: u64,
+    pub on: ChartKey,
     /// "BTC/USDT".
     pub title: String,
     /// "Binance".

@@ -251,7 +251,9 @@ impl DegenViewApp {
         match command {
             McpCommand::Chart(command) => mcp::chart::run(command, &self.tabs, ctx),
             McpCommand::Alert(command) => mcp::alert::run(command, &self.alert_access(), ctx),
-            McpCommand::Pine(command) => mcp::pine::run(command, &self.tabs, &self.store, shared),
+            McpCommand::Pine(command) => {
+                mcp::pine::run(command, &self.tabs, &self.store, &self.pine_host, shared)
+            }
             McpCommand::Paper(command) => {
                 mcp::paper::run(command, &self.paper, &self.mcp.orders, ctx)
             }
