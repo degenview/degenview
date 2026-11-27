@@ -546,6 +546,47 @@ fn evaluation_enforces_deadlines_and_cooperative_cancellation() {
     assert_eq!(cancelled.category, DiagnosticCategory::Cancellation);
 }
 
+/// A method call evaluates its receiver first, so a limit can be reached exactly there. It has to
+/// stop the script as that limit, not read as a function the engine does not know.
+#[test]
+fn a_limit_reached_at_a_method_receiver_keeps_its_own_error() {
+    let source = "//@version=6\nindicator(\"T\")\n\
+        levels = array.new_int(0)\n\
+        levels.push(1)\n\
+        line gone = na\n\
+        gone.delete()\n\
+        plot(levels.size())";
+    let program = crate::pine::compiler::compile(
+        source,
+        Limits::default(),
+        &crate::pine::compiler::NoLibraries,
+    );
+    let mut stopped = 0;
+    for instructions_per_bar in 0..100 {
+        let mut session = Session::new(
+            program.clone(),
+            HashMap::new(),
+            Limits {
+                instructions_per_bar,
+                ..Limits::default()
+            },
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        match session.evaluate(&[hourly(0)]) {
+            Ok(_) => {}
+            Err(RunError::Script(error)) => {
+                assert_eq!(error.code, "PINE8004", "{instructions_per_bar}: {error:?}");
+                stopped += 1;
+            }
+            Err(RunError::Rejection) => panic!("not a rejection"),
+        }
+    }
+    assert!(stopped > 0, "no limit in the sweep stopped the script");
+}
+
 #[test]
 fn strategy_readings_follow_the_broker_and_keep_a_history() {
     let source = "//@version=6\nstrategy(\"T\")\n\
