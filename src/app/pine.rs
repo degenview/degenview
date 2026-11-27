@@ -5,6 +5,7 @@ use super::tabs::TabSlot;
 use crate::lock::lock;
 use crate::pine_studio::PineStudio;
 use eframe::egui;
+use std::collections::HashSet;
 
 impl DegenViewApp {
     /// The focused tab's Pine Studio, if that is what has the keyboard, for the Edit menu.
@@ -73,7 +74,9 @@ impl DegenViewApp {
         None
     }
 
-    pub(super) fn tick_pine(&mut self) {
+    /// Runs the script alerts. A tab holding an armed one keeps its data current from here, on
+    /// screen or not; other tabs fetch only while they are drawn.
+    pub(super) fn tick_pine(&mut self, ctx: &egui::Context) {
         let store = lock(&self.store);
         let now = now_ms();
         let mut fired = Vec::new();
@@ -87,12 +90,25 @@ impl DegenViewApp {
                 }
             }
         }
+        let watched: HashSet<u64> = self.pine_host.lock().map_or_else(
+            |_| HashSet::new(),
+            |host| {
+                datasets
+                    .iter()
+                    .filter(|(chart, (key, timeframe))| host.is_watched(**chart, key, timeframe))
+                    .map(|(chart, _)| chart.workspace_id)
+                    .collect()
+            },
+        );
         self.alerts.set_chart_datasets(datasets);
         let mut feeds = Vec::new();
         for tab in self.tabs.slots() {
-            if let Ok(content) = tab.content.lock()
-                && let TabContent::Chart(workspace) = &*content
+            if let Ok(mut content) = tab.content.lock()
+                && let TabContent::Chart(workspace) = &mut *content
             {
+                if watched.contains(&workspace.id()) {
+                    workspace.update_market_data(ctx);
+                }
                 feeds.extend(workspace.charts_candles());
             }
         }

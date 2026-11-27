@@ -273,6 +273,16 @@ impl PineSubscriptionHost {
         self.drop_stopped_runs();
     }
 
+    /// Whether an active alert watches this chart on this market, so its candles are needed
+    /// whether or not anyone is looking at it.
+    pub fn is_watched(&self, chart: ChartKey, symbol_key: &str, timeframe: &str) -> bool {
+        self.subscriptions.iter().any(|subscription| {
+            subscription.is_active()
+                && subscription.is_on(chart)
+                && subscription.watches(symbol_key, timeframe)
+        })
+    }
+
     /// Why a subscription's script cannot run, once its chart has fed it. `None` while it runs,
     /// and before its chart has shown the market it watches.
     pub fn failure(&self, subscription_id: u64) -> Option<ScriptFailure> {
@@ -936,6 +946,23 @@ mod tests {
         host.run_active_on(&live, LIVE_NOW);
         live.bars[4].close += 1.0;
         assert_eq!(host.run_active_on(&live, LIVE_NOW + 1).len(), 1);
+    }
+
+    #[test]
+    fn only_a_chart_with_an_active_alert_on_its_market_is_watched() {
+        let on = |workspace_id| ChartKey {
+            workspace_id,
+            chart_id: 1,
+        };
+        let mut paused = subscription(2, "x");
+        paused.workspace_id = Some(2);
+        paused.state = PineAlertState::Paused;
+        let (_store, host) = host_of(&[subscription(1, "x"), paused]);
+        assert!(host.is_watched(on(1), "binance:BTCUSDT", "1h"));
+        assert!(!host.is_watched(on(1), "binance:BTCUSDT", "1d"));
+        assert!(!host.is_watched(on(1), "binance:ETHUSDT", "1h"));
+        assert!(!host.is_watched(on(2), "binance:BTCUSDT", "1h"), "paused");
+        assert!(!host.is_watched(on(3), "binance:BTCUSDT", "1h"));
     }
 
     const SAYS_OLD: &str = "//@version=6\nindicator(\"S\")\nalert(\"old\", alert.freq_all)";

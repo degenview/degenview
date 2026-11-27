@@ -443,7 +443,7 @@ impl eframe::App for DegenViewApp {
         self.sync_alerts_viewport(ctx);
         self.tick_alerts();
         // Runs once per frame (not in `ui`, which also fires for the root viewport).
-        self.tick_pine();
+        self.tick_pine(ctx);
         self.tick_mcp(ctx);
         self.updates.tick(ctx);
         if self.import_offer.poll() {

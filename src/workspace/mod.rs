@@ -574,19 +574,7 @@ impl ChartWorkspace {
         let ctx = ui.ctx().clone();
         // Everything below the tab strip: the favorites bar may be moved over all of it.
         let window = ui.max_rect();
-        let timeframe = self.timeframe;
-        for chart in &mut self.charts {
-            chart.receive_fetch(timeframe);
-            chart.receive_older(timeframe);
-            chart.request_older(timeframe, &ctx);
-            if chart.refresh_due() {
-                chart.fetch(timeframe, &ctx);
-            }
-        }
-
-        self.tick_link_probation(&ctx);
-        self.tick_overlays(&ctx);
-        self.update_live_feeds(&ctx);
+        self.update_market_data(&ctx);
         {
             let mut host = lock(paper);
             self.sync_paper_quotes(&mut host);

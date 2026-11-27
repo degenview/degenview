@@ -1,5 +1,5 @@
-//! The live candle feeds: one per streamed source on the workspace, folding its candles into the
-//! charts.
+//! Keeping the charts' candles current: fetches, and the live candle feeds, one per streamed
+//! source on the workspace, folding its candles into the charts.
 
 use crate::model::market::live::LiveMark;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
@@ -9,7 +9,25 @@ use eframe::egui;
 use std::time::Instant;
 
 impl ChartWorkspace {
-    pub(in crate::workspace) fn update_live_feeds(&mut self, ctx: &egui::Context) {
+    /// Brings the charts' data up to date: takes finished fetches, starts the ones due and reads
+    /// the live feeds. Needs no window, so it serves a tab that is drawn and one that is only
+    /// watched (a script alert on a tab that is not on screen).
+    pub fn update_market_data(&mut self, ctx: &egui::Context) {
+        let timeframe = self.timeframe;
+        for chart in &mut self.charts {
+            chart.receive_fetch(timeframe);
+            chart.receive_older(timeframe);
+            chart.request_older(timeframe, ctx);
+            if chart.refresh_due() {
+                chart.fetch(timeframe, ctx);
+            }
+        }
+        self.tick_link_probation(ctx);
+        self.tick_overlays(ctx);
+        self.update_live_feeds(ctx);
+    }
+
+    fn update_live_feeds(&mut self, ctx: &egui::Context) {
         for source in DataSource::CANDLE_STREAMS {
             self.update_live_feed(source, ctx);
         }
@@ -105,6 +123,28 @@ mod tests {
     use super::*;
     use crate::workspace::chart::Chart;
     use crate::workspace::test_support::{candle, empty_workspace};
+
+    /// A tab that is not on screen is never drawn; its data must arrive all the same.
+    #[test]
+    fn a_fetch_reaches_a_chart_that_is_never_drawn() {
+        let mut workspace = empty_workspace(1);
+        // A source without a live stream or older pages, so nothing here reaches the network.
+        let mut chart = Chart::blank(1, "pair", DataSource::DexScreener);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender
+            .send(Ok(crate::workspace::chart::Fetched {
+                candles: vec![candle(0, 5.0)],
+                bars: Vec::new(),
+                series: Vec::new(),
+            }))
+            .expect("send");
+        chart.inbox = Some(receiver);
+        workspace.charts.push(chart);
+
+        workspace.update_market_data(&egui::Context::default());
+
+        assert_eq!(workspace.charts[0].candles.len(), 1);
+    }
 
     #[test]
     fn every_chart_of_the_symbol_takes_the_live_bar() {
