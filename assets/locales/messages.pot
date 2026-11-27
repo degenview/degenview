@@ -11733,10 +11733,6 @@ msgstr ""
 msgid "Perpetual"
 msgstr ""
 
-#: src/ui/tradingview/words.rs
-msgid "Perpetuals and futures aren’t available"
-msgstr ""
-
 #: src/ui/replay/bar.rs
 msgid "Pick a date and time to start from"
 msgstr ""
@@ -17277,6 +17273,10 @@ msgstr[1] ""
 #: src/ui/settings/sync.rs
 msgid ""
 "This permanently removes what DegenView synced to your private iCloud storage."
+msgstr ""
+
+#: src/ui/tradingview/words.rs
+msgid "This perpetual or future isn’t available"
 msgstr ""
 
 #: src/pine_studio/profiler/ui.rs

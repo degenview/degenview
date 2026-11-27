@@ -20879,8 +20879,8 @@ msgid "Other exchange"
 msgstr "Andere Börse"
 
 #: src/ui/tradingview/words.rs
-msgid "Perpetuals and futures aren’t available"
-msgstr "Perpetuals und Futures sind nicht verfügbar"
+msgid "This perpetual or future isn’t available"
+msgstr "Dieser Perpetual oder Future ist nicht verfügbar"
 
 #: src/host/tradingview/mod.rs
 msgid "Pick the market that stands in for this TradingView symbol."

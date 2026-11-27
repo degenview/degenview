@@ -107,8 +107,9 @@ most of its drawings were made on.
 ## How it maps
 
 - **Symbols** (`service::tradingview::matcher`): the same market on its own exchange, else the same
-  base **and quote** on another (badge "Other exchange"). Only an exact name matches; derivatives and
-  formulas are never mapped. An exchange that does not answer is not replaced by another: the symbol
+  base **and quote** on another (badge "Other exchange"). Only an exact name matches. Binance's USDⓈ-M
+  perpetuals (`BINANCE:BTCUSDT.P`) match as themselves and nothing stands in for one; other
+  derivatives and formulas are never mapped. An exchange that does not answer is not replaced by another: the symbol
   stays unmatched, with Search Again. A match the search made can be changed or skipped, one the
   user made changed or reset (`ui::kit::matching` draws these rows and the CoinMarketCap import's).
   Nothing is dropped for being unreadable: every stored chart keeps its grid place.

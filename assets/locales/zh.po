@@ -20672,8 +20672,8 @@ msgstr "打开布局"
 msgid "Other exchange"
 msgstr "其他交易所"
 
-msgid "Perpetuals and futures aren’t available"
-msgstr "不支持永续合约和期货"
+msgid "This perpetual or future isn’t available"
+msgstr "不支持该永续合约或期货"
 
 msgid "Pick the market that stands in for this TradingView symbol."
 msgstr "选择用于代替此 TradingView 代码的市场。"

@@ -72,7 +72,7 @@ pub fn usage(exchange: &str, usage: Usage) -> String {
 
 pub fn unmatched(why: Unmatched) -> &'static str {
     match why {
-        Unmatched::Derivative => tr!("Perpetuals and futures aren\u{2019}t available"),
+        Unmatched::Derivative => tr!("This perpetual or future isn\u{2019}t available"),
         Unmatched::Venue => tr!("No exchange here lists it"),
         Unmatched::NotFound => tr!("Not found on any exchange"),
         Unmatched::Expression => tr!("A formula, not a single market"),

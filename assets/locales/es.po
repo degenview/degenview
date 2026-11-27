@@ -20847,8 +20847,8 @@ msgstr "Abrir diseño"
 msgid "Other exchange"
 msgstr "Otro exchange"
 
-msgid "Perpetuals and futures aren’t available"
-msgstr "Los perpetuos y los futuros no están disponibles"
+msgid "This perpetual or future isn’t available"
+msgstr "Este perpetuo o futuro no está disponible"
 
 msgid "Pick the market that stands in for this TradingView symbol."
 msgstr "Elige el mercado que sustituirá a este símbolo de TradingView."

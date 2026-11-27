@@ -22555,8 +22555,8 @@ msgid "Other exchange"
 msgstr "Другая биржа"
 
 #: src/ui/tradingview/words.rs
-msgid "Perpetuals and futures aren’t available"
-msgstr "Бессрочные контракты и фьючерсы недоступны"
+msgid "This perpetual or future isn’t available"
+msgstr "Этот бессрочный контракт или фьючерс недоступен"
 
 #: src/host/tradingview/mod.rs
 msgid "Pick the market that stands in for this TradingView symbol."
