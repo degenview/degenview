@@ -30,7 +30,14 @@ pub use chart::PreviewChart;
 use eframe::egui::{Color32, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2};
 use layout::PAD;
 
+/// The artwork of a prediction market, and of a crypto or stock market.
 const ICON: f32 = 40.0;
+const MARKET_ICON: f32 = 30.0;
+/// Between where a market is listed and whether it trades.
+const STATUS_GAP: f32 = 14.0;
+/// The room a logo or the trading dot takes before its words.
+const LOGO_ROOM: f32 = 20.0;
+const DOT_ROOM: f32 = 14.0;
 /// The chart of a prediction market, under its chance.
 const PREDICTION_CHART: f32 = 64.0;
 /// The height one figure of an event takes.
@@ -102,18 +109,15 @@ fn market(
     let related = detail.related.filter(|related| !related.is_empty());
     let fit = layout::market(area, detail.actions.is_some(), related.is_some());
 
-    let icon = Rect::from_min_size(
-        pos2(
-            fit.header.left(),
-            fit.header.center().y - ICON.min(fit.header.height()) / 2.0,
-        ),
-        Vec2::splat(ICON.min(fit.header.height())),
+    let icon = Rect::from_center_size(
+        pos2(fit.header.left() + MARKET_ICON / 2.0, fit.header.center().y),
+        Vec2::splat(MARKET_ICON),
     );
     result_icon(ui, icon, result);
     super::list::two_lines_sized(
         ui,
-        fit.header.with_min_x(icon.right() + 12.0),
-        (result.ticker(), 19.0, BOLD),
+        fit.header.with_min_x(icon.right() + 10.0),
+        (result.ticker(), 16.0, BOLD),
         &describe::headline(result, &detail.names),
     );
 
@@ -125,14 +129,7 @@ fn market(
         detail.quote,
     );
 
-    match fit.venue {
-        Some(venue) => {
-            status_line(ui, fit.status.min, result, detail.quote);
-            venue_line(ui, venue.min, result);
-        }
-        // Whether it trades, and where, on the one line there is room for.
-        None => venue_status_line(ui, fit.status.min, result, detail.quote),
-    }
+    listing_line(ui, fit.status, result, detail.quote);
 
     chart.show(ui, fit.chart, &instrument(result), detail.quote);
 
@@ -220,7 +217,7 @@ fn prediction(
             .galley(pos2(inner.left(), y), galley, theme::text_secondary());
         y += height + 10.0;
     }
-    y += venue_line(ui, pos2(inner.left(), y), result) + 14.0;
+    y += venue_line(ui, pos2(inner.left(), y), result, inner.width()).y + 14.0;
 
     let stats = result.event.as_ref().map(|event| &event.stats);
     // The chart comes before what the event says about itself, but never pushes a figure out.
@@ -380,7 +377,7 @@ fn tile_panel(ui: &mut Ui, area: Rect, tile: &Tile) {
     y += height + 22.0;
     match &tile.pick {
         TilePick::Gauge(result) => {
-            venue_line(ui, pos2(inner.left(), y), result);
+            venue_line(ui, pos2(inner.left(), y), result, inner.width());
         }
         TilePick::Card(_) => {
             let scope = tile.scope.as_deref().unwrap_or_default();
@@ -467,46 +464,39 @@ fn status(result: &SearchResult, quote: Option<&WatchlistQuote>) -> Option<(&'st
     })
 }
 
-/// A dot and a line saying whether the market trades now.
-fn status_line(ui: &Ui, at: Pos2, result: &SearchResult, quote: Option<&WatchlistQuote>) -> f32 {
-    let Some((text, open)) = status(result, quote) else {
-        return 0.0;
+/// Where the market is listed and, after it, whether it trades now, on one line across `line`. A
+/// long exchange name gives way: whether it trades is never cut.
+fn listing_line(ui: &Ui, line: Rect, result: &SearchResult, quote: Option<&WatchlistQuote>) {
+    let trading = status(result, quote).map(|(text, open)| {
+        let color = theme::text_secondary();
+        (
+            kit::galley(ui, text, 13.0, REGULAR, color, f32::INFINITY),
+            open,
+        )
+    });
+    let taken = trading
+        .as_ref()
+        .map_or(0.0, |(words, _)| STATUS_GAP + DOT_ROOM + words.size().x);
+    let listed = venue_line(ui, line.min, result, line.width() - taken);
+    let Some((words, open)) = trading else {
+        return;
     };
-    dotted_line(ui, at, text, open)
-}
-
-/// The exchange and kind behind the trading dot, for a panel with room for one line.
-fn venue_status_line(ui: &Ui, at: Pos2, result: &SearchResult, quote: Option<&WatchlistQuote>) {
-    match status(result, quote) {
-        Some((_, open)) => {
-            dotted_line(ui, at, &venue_text(result), open);
-        }
-        None => {
-            venue_line(ui, at, result);
-        }
-    }
-}
-
-fn dotted_line(ui: &Ui, at: Pos2, text: &str, open: bool) -> f32 {
-    let galley = kit::galley(
-        ui,
-        text,
-        13.0,
-        REGULAR,
-        theme::text_secondary(),
-        f32::INFINITY,
-    );
+    let left = line.left() + listed.x + STATUS_GAP;
     let dot = if open {
         theme::UP
     } else {
         theme::text_tertiary()
     };
-    ui.painter()
-        .circle_filled(pos2(at.x + 6.0, at.y + galley.size().y / 2.0), 4.0, dot);
-    let height = galley.size().y;
-    ui.painter()
-        .galley(pos2(at.x + 20.0, at.y), galley, theme::text_secondary());
-    height
+    ui.painter().circle_filled(
+        pos2(left + 4.0, line.top() + words.size().y / 2.0),
+        4.0,
+        dot,
+    );
+    ui.painter().galley(
+        pos2(left + DOT_ROOM, line.top()),
+        words,
+        theme::text_secondary(),
+    );
 }
 
 /// `Binance · Spot`.
@@ -522,25 +512,29 @@ fn venue_text(result: &SearchResult) -> String {
     )
 }
 
-/// The exchange the market is listed on, with its logo and what it trades there.
-fn venue_line(ui: &Ui, at: Pos2, result: &SearchResult) -> f32 {
+/// The exchange the market is listed on, with its logo and what it trades there, in at most
+/// `width`. Returns the size used.
+fn venue_line(ui: &Ui, at: Pos2, result: &SearchResult, width: f32) -> Vec2 {
     let galley = kit::galley(
         ui,
         &venue_text(result),
         13.0,
         REGULAR,
         theme::text_secondary(),
-        f32::INFINITY,
+        width - LOGO_ROOM,
     );
     let logo = Rect::from_min_size(
         pos2(at.x - 1.0, at.y + galley.size().y / 2.0 - 7.0),
         Vec2::splat(14.0),
     );
     source_logo::paint(ui, result.source, logo);
-    let height = galley.size().y;
-    ui.painter()
-        .galley(pos2(at.x + 20.0, at.y), galley, theme::text_secondary());
-    height
+    let used = vec2(LOGO_ROOM + galley.size().x, galley.size().y);
+    ui.painter().galley(
+        pos2(at.x + LOGO_ROOM, at.y),
+        galley,
+        theme::text_secondary(),
+    );
+    used
 }
 
 fn change_color(change: f64) -> Color32 {

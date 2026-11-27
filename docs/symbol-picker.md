@@ -118,18 +118,19 @@ menu offers them: not for a market already on the chart, nor for an add that Ret
   Watchlists. A list too narrow for 110 pt of description drops that column and says the description
   under the symbol instead. Prediction, index and portfolio rows run their titles across Symbol and
   Description and share the Venue column.
-- **Detail panel** (300 to 344 pt; hidden when the *sheet* is narrower than 760 pt): artwork, ticker
-  and what it trades, price and change from the quote feed (the percent at two decimals, with the
-  amount beside it, trimmed of trailing zeros, only while both fit), "Open 24/7" for crypto or the
-  stock's market state, the exchange, the **last day's chart** (below), "Also trades as" (the other
-  dollar markets of the asset on Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and MEXC,
-  `SymbolSearch::related`; clicking one uses it) and a **button** doing what Return does
-  ("Replace chart", "Add chart", "Compare", "Add to watchlist", "Add card"), with a chevron for the
-  other actions. It is greyed when Compare or a watchlist already has the market, and an event header
-  has none. `detail/layout.rs` places every part (the renderer only draws into its rects): other markets are dropped first, and under 360 pt
-  the status and exchange lines merge. A prediction market shows the event's artwork and title, its
-  chance, the provider, its chance's last day when there is room, and what the provider says about
-  the event (`EventStats`); an index or a card says what it charts.
+- **Detail panel** (300 to 344 pt; hidden when the *sheet* is narrower than 760 pt): small artwork,
+  ticker and what it trades, price and change from the quote feed (the percent at two decimals, with
+  the amount beside it, trimmed of trailing zeros, only while both fit), one line with the exchange
+  and, to its right, "Open 24/7" for crypto or the stock's market state (a long exchange name is cut
+  before that is), the **last day's chart** (below), "Also trades as" (the other dollar markets of
+  the asset on Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and MEXC, `SymbolSearch::related`;
+  clicking one uses it) and a **button** doing what Return does ("Replace chart", "Add chart",
+  "Compare", "Add to watchlist", "Add card"), with a chevron for the other actions. It is greyed
+  when Compare or a watchlist already has the market, and an event header has none.
+  `detail/layout.rs` places every part (the renderer only draws into its rects): other markets are
+  dropped first, and under 360 pt the padding tightens. A prediction market shows the event's artwork
+  and title, its chance, the provider, its chance's last day when there is room, and what the
+  provider says about the event (`EventStats`); an index or a card says what it charts.
 - **The chart** (`detail/chart.rs`) is the last 24 hours in 15-minute closes (a stock's last session),
   ending at the quoted price and coloured as the change is. It is fetched through
   `service::market::trend::TrendLoader::last_day` only once the highlight has rested 200 ms, and a

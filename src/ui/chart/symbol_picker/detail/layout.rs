@@ -15,10 +15,12 @@ const BUTTON_FOOT: f32 = 16.0;
 const BUTTON_GAP: f32 = 10.0;
 const CHART_MAX: f32 = 112.0;
 const CHART_MIN: f32 = 48.0;
-/// Below this height the panel tightens up and says whether it trades and where on one line.
+/// Below this height the panel tightens up.
 const COMPACT_BELOW: f32 = 360.0;
-/// The second of the two status lines, from the top of the first.
-const VENUE_LINE: f32 = 21.0;
+/// The name and what it trades, beside the artwork.
+const HEADER: f32 = 36.0;
+/// Where it is listed and whether it trades.
+const STATUS: f32 = 18.0;
 /// "Also trades as": from the chart to its hairline, from the hairline to its caption, the
 /// caption, and one row.
 pub const RELATED_RULE: f32 = 12.0;
@@ -41,9 +43,8 @@ pub fn button(panel: Rect) -> Rect {
 pub struct Market {
     pub header: Rect,
     pub price: Rect,
-    /// Whether it trades now; also where, when there is no `venue` line.
+    /// Where it is listed and whether it trades now.
     pub status: Rect,
-    pub venue: Option<Rect>,
     pub chart: Rect,
     /// The room for the other markets of the asset, when there is enough.
     pub related: Option<Rect>,
@@ -52,10 +53,10 @@ pub struct Market {
 /// Shares `panel` out for a market with or without a button and other markets to list.
 pub fn market(panel: Rect, has_button: bool, has_related: bool) -> Market {
     let compact = panel.height() < COMPACT_BELOW;
-    let (pad, header, price, lines, gap) = if compact {
-        (14.0, 36.0, 36.0, 18.0, 8.0)
+    let (pad, price, gap) = if compact {
+        (14.0, 36.0, 8.0)
     } else {
-        (20.0, 40.0, 40.0, 40.0, 14.0)
+        (20.0, 40.0, 14.0)
     };
     let bottom = if has_button {
         button(panel).top() - BUTTON_GAP
@@ -71,9 +72,9 @@ pub fn market(panel: Rect, has_button: bool, has_related: bool) -> Market {
         y += height + after;
         rect
     };
-    let header = take(header, gap);
+    let header = take(HEADER, gap);
     let price = take(price, gap / 2.0);
-    let status = take(lines, gap);
+    let status = take(STATUS, gap);
     let free = bottom - status.bottom() - gap;
     let (chart, related) = if has_related && free >= CHART_MIN + 16.0 + RELATED_MIN {
         let chart = (free - RELATED_MIN).min(CHART_MAX);
@@ -87,7 +88,6 @@ pub fn market(panel: Rect, has_button: bool, has_related: bool) -> Market {
         header,
         price,
         status,
-        venue: (!compact).then(|| status.with_min_y(status.top() + VENUE_LINE)),
         chart,
         related,
     }
@@ -119,8 +119,12 @@ mod tests {
         let fit = market(panel, true, true);
         assert_stacked(panel, &fit);
         assert_eq!(fit.chart.height(), CHART_MAX);
-        assert!(fit.related.is_some_and(|rect| rect.height() >= RELATED_MIN));
-        assert!(fit.venue.is_some());
+        // Room for the caption and four other markets.
+        let four = RELATED_MIN + 2.0 * RELATED_ROW;
+        assert!(
+            fit.related.is_some_and(|rect| rect.height() >= four),
+            "{fit:?}"
+        );
     }
 
     #[test]
@@ -137,7 +141,7 @@ mod tests {
         let panel = panel(246.0);
         let fit = market(panel, true, true);
         assert_stacked(panel, &fit);
-        assert_eq!((fit.venue, fit.related), (None, None));
+        assert_eq!(fit.related, None);
         assert!(fit.chart.height() >= CHART_MIN);
     }
 }

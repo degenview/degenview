@@ -44,7 +44,7 @@ pub const COINS: [Coin; 10] = [
     coin("LINK", "Chainlink"),
 ];
 
-pub const STOCKS: [Stock; 10] = [
+pub const STOCKS: [Stock; 12] = [
     stock("AAPL", "Apple", "Apple Inc."),
     stock("MSFT", "Microsoft", "Microsoft Corporation"),
     stock("NVDA", "NVIDIA", "NVIDIA Corporation"),
@@ -55,22 +55,16 @@ pub const STOCKS: [Stock; 10] = [
     stock("SPY", "S&P 500", "SPDR S&P 500 ETF Trust"),
     stock("QQQ", "Nasdaq 100", "Invesco QQQ Trust"),
     stock("AMD", "AMD", "Advanced Micro Devices, Inc."),
-];
-
-/// Companies known by ticker without being offered.
-const OTHER_COMPANIES: [(&str, &str); 2] = [
-    ("MSTR", "Strategy Inc"),
-    ("SPCX", "Space Exploration Technologies Corp."),
+    stock("MSTR", "Strategy", "Strategy Inc"),
+    stock("SPCX", "SpaceX", "Space Exploration Technologies Corp."),
 ];
 
 /// The company listed under `ticker`, in any case, if it is a well-known one.
 pub fn company(ticker: &str) -> Option<&'static str> {
     STOCKS
         .iter()
-        .map(|stock| (stock.ticker, stock.company))
-        .chain(OTHER_COMPANIES)
-        .find(|(known, _)| known.eq_ignore_ascii_case(ticker))
-        .map(|(_, company)| company)
+        .find(|stock| stock.ticker.eq_ignore_ascii_case(ticker))
+        .map(|stock| stock.company)
 }
 
 #[cfg(test)]
@@ -78,7 +72,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_company_is_known_whether_or_not_its_stock_is_offered() {
+    fn a_well_known_stock_names_its_company_in_any_case() {
         assert_eq!(company("aapl"), Some("Apple Inc."));
         assert_eq!(company("MSTR"), Some("Strategy Inc"));
         assert_eq!(
@@ -86,6 +80,5 @@ mod tests {
             Some("Space Exploration Technologies Corp.")
         );
         assert_eq!(company("ZZZZ"), None);
-        assert!(STOCKS.iter().all(|stock| stock.ticker != "MSTR"));
     }
 }

@@ -318,6 +318,7 @@ mod tests {
 
     #[test]
     fn suggestions_always_include_stocks() {
+        use crate::model::market::well_known;
         let trends = HashMap::new();
         let input = EmptyStateInput {
             favorites: &[],
@@ -326,7 +327,9 @@ mod tests {
             layouts: &[],
             trends: &trends,
         };
-        assert_eq!(wanted(&input, Tab::Suggestions), 20);
+        // Every starter coin and stock asks for its week.
+        let starters = well_known::COINS.len() + well_known::STOCKS.len();
+        assert_eq!(wanted(&input, Tab::Suggestions), starters);
     }
 
     #[test]
