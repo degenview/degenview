@@ -18,7 +18,7 @@ pub(in crate::service) struct Endpoints {
     pub stream_host: &'static str,
     pub ticker_url: &'static str,
     /// How many symbols the 24-hour ticker takes by name in one request; `None` for an API that
-    /// ignores a list and is asked for every market.
+    /// ignores a list: it takes one name, or none and answers every market.
     pub ticker_batch: Option<usize>,
 }
 

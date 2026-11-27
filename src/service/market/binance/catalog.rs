@@ -107,7 +107,7 @@ pub(super) fn is_trading(entry: &Value) -> bool {
 }
 
 /// A trading perpetual, of a coin or of a traditional asset, not a dated future. One whose name
-/// the app would read as something else (a quote it does not know, like `BTCU`) is left out
+/// the app would read as something else (a quote it does not know) is left out
 /// rather than offered and then asked for under another name.
 pub(super) fn is_trading_perpetual(entry: &Value) -> bool {
     let perpetual = matches!(
@@ -251,7 +251,7 @@ mod tests {
             {"symbol":"SUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"S","quoteAsset":"USDT"},
             {"symbol":"BTCUSDT_261225","status":"TRADING","contractType":"CURRENT_QUARTER","baseAsset":"BTC","quoteAsset":"USDT"},
             {"symbol":"LUNAUSDT","status":"SETTLING","contractType":"PERPETUAL","baseAsset":"LUNA","quoteAsset":"USDT"},
-            {"symbol":"BTCU","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"U"}
+            {"symbol":"BTCXYZ","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"XYZ"}
         ]}"#;
         let pairs = parse_pairs(body, is_trading_perpetual).expect("pairs");
         let symbols: Vec<&str> = pairs.iter().map(|pair| pair.symbol.as_str()).collect();

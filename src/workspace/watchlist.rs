@@ -222,7 +222,8 @@ impl ChartWorkspace {
                     WatchlistAction::CreateAlert(item) => {
                         self.alerts.request(AlertRequest::market(AlertAsset::new(
                             item.instrument.clone(),
-                            crate::ui::watchlist::rows::icon_base_symbol(&item),
+                            item.instrument
+                                .short_name(&crate::ui::watchlist::rows::icon_base_symbol(&item)),
                             item.name.clone(),
                         )));
                     }

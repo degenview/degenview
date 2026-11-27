@@ -44,6 +44,12 @@ impl InstrumentId {
         Listing::new(self.source, self.market())
     }
 
+    /// The short name of this market, given `asset`, the name of what it trades: `BTC`, or
+    /// `BTC.P` for a perpetual, which is not to be read as the asset's spot market.
+    pub fn short_name(&self, asset: &str) -> String {
+        join_market(asset, self.market())
+    }
+
     /// The one spelling of the market the app stores and compares, which a provider's answers
     /// are named by again. A bare Binance asset (`BTC`) is quoted in USDT, Coinbase ids are
     /// `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in USDT); Kraken's are
@@ -344,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn a_one_letter_base_is_an_asset_before_a_dollar_stablecoin_only() {
+    fn a_one_letter_base_is_an_asset_before_money_only() {
         for source in [DataSource::Binance, DataSource::Bybit] {
             for (typed, api) in [
                 ("SUSDT", "SUSDT"),
@@ -369,6 +375,50 @@ mod tests {
             assert_eq!(source.quote_asset("SUSDT").as_deref(), Some("USDT"));
             assert_eq!(source.quote_asset("WBTC"), None);
         }
+    }
+
+    #[test]
+    fn a_listed_pair_keeps_its_name_whatever_it_is_priced_in() {
+        let canonical = |source, symbol: &str| InstrumentId::new(source, symbol).canonical_symbol();
+        for source in [DataSource::Binance, DataSource::Bybit] {
+            for pair in [
+                "BTCARS",
+                "BTCMXN",
+                "BTCCOP",
+                "USDTZAR",
+                "BTCIDR",
+                "BTCTHB",
+                "USDTKZT",
+                "USDTAED",
+                "BTCPLN",
+                "BTCUSDS",
+                "BTCUSDE",
+                "BTCRLUSD",
+                "EUREURI",
+                "BTCU",
+                "TRXXRP",
+                "BNSOLSOL",
+                "PENGUUSDT",
+                "STRY",
+                "SEUR",
+                "UIDR",
+                "UUSD",
+            ] {
+                assert_eq!(canonical(source, pair), pair, "{source:?}");
+            }
+            // Bare assets that end like a quote, or are one letter before a coin or `U`.
+            for asset in [
+                "PENGU", "XAU", "TRU", "BNSOL", "WBETH", "STETH", "PYUSD", "SUSD", "GUSD", "MU",
+                "WBTC", "WSOL", "WXRP",
+            ] {
+                assert_eq!(
+                    canonical(source, asset),
+                    format!("{asset}USDT"),
+                    "{source:?}"
+                );
+            }
+        }
+        assert_eq!(canonical(DataSource::Binance, "btcu.p"), "BTCU.P");
     }
 
     #[test]

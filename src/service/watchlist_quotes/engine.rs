@@ -114,8 +114,8 @@ pub struct Outcome {
     pub quotes: HashMap<String, SourceQuote>,
     pub rejected: HashSet<String>,
     pub failed: Vec<(Vec<String>, QuoteFailure)>,
-    /// The provider answered with everything it lists, so a refused symbol is refused even when
-    /// no neighbour of it was asked for.
+    /// The refusals are the provider's own word about those symbols (a list of everything it has,
+    /// or a symbol asked for by name), so they hold even when no neighbour of them was asked for.
     pub complete: bool,
 }
 
@@ -1128,6 +1128,25 @@ mod tests {
             Some(100.0),
             "price/previous-1 with previous = price/2"
         );
+    }
+
+    #[test]
+    fn a_perpetual_refused_by_name_is_unknown_and_does_not_back_its_market_off() {
+        use crate::service::watchlist_quotes::provider::binance_refusal;
+        let (engine, book, _) = setup();
+        let gone = id(DataSource::Binance, "GONEUSDT.P");
+        lock(&engine).update(1, vec![gone.clone()], true, T0);
+        let planned = lock(&engine).plan(T0).remove(0);
+        let requests: Vec<QuoteRequest> = planned
+            .requests
+            .iter()
+            .map(|(_, request)| request.clone())
+            .collect();
+        let refused = QuoteFailure::Rejected("HTTP 400".to_owned());
+        let outcome = binance_refusal(Market::Perpetual, &requests, refused).expect("settled");
+        lock(&engine).apply(&planned, &outcome, T0);
+        assert_eq!(book.get(&gone).unwrap().freshness, Freshness::Unavailable);
+        assert_eq!(lock(&engine).provider_health()[0].last_error, None);
     }
 
     #[test]

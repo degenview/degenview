@@ -1,1 +1,1 @@
-fixed: Binance and Bybit markets with a one-letter name, such as SUSDT, now load.
+fixed: Binance and Bybit markets such as SUSDT, STRY or BTCMXN now load, with live prices.

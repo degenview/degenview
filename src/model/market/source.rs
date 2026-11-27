@@ -231,11 +231,13 @@ pub fn kraken_asset(asset: &str) -> String {
     }
 }
 
-/// Quote assets Binance pairs end in, longest first so BTCFDUSD is BTC/FDUSD instead of
-/// BTCFD/USD. Matches Swift's MarketSymbol quote list, plus `USD1`.
-const BINANCE_QUOTES: [&str; 17] = [
-    "FDUSD", "USDT", "USDC", "USD1", "BUSD", "TUSD", "USDP", "DAI", "EUR", "GBP", "TRY", "BRL",
-    "JPY", "USD", "BTC", "ETH", "BNB",
+/// Quote assets Binance and Bybit pairs end in. The first that ends an id decides, so a longer
+/// quote stands before a shorter one inside it (`BTCFDUSD` is BTC/FDUSD, not BTCFD/USD). One that
+/// is missing here makes the app ask for another market (`BTCMXN` as `BTCMXNUSDT`).
+const BINANCE_QUOTES: [&str; 33] = [
+    "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS", "BUSD", "TUSD", "USDP", "EURI",
+    "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP", "ZAR", "IDR", "THB", "KZT",
+    "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
 ];
 
 /// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
@@ -243,13 +245,30 @@ const MEXC_QUOTES: [&str; 9] = [
     "USDT", "USDC", "USD1", "USDE", "USDF", "EUR", "BRL", "ETH", "BTC",
 ];
 
-/// Quotes before which a one-letter base is a real asset (`SUSDT` is S/USDT). Before any other
-/// it is part of the asset's own name: `WBTC` is not W/BTC, `TUSD` not T/USD.
-const ONE_LETTER_BASE_QUOTES: [&str; 6] = ["FDUSD", "USDT", "USDC", "USD1", "USDE", "USDF"];
+/// Quotes before which a one-letter base is a real asset (`SUSDT` is S/USDT, `STRY` S/TRY):
+/// dollar stablecoins and fiat currencies. Before any other it is part of the asset's own name:
+/// `WBTC` is not W/BTC, `TUSD` not T/USD.
+const ONE_LETTER_BASE_QUOTES: [&str; 21] = [
+    "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDF", "USD", "EUR", "GBP", "TRY", "BRL", "JPY",
+    "ARS", "MXN", "COP", "ZAR", "IDR", "THB", "KZT", "AED", "PLN",
+];
+
+/// Assets whose names end like a quote, so that only a list tells them from a pair: `PENGU` is
+/// not PENG/U, `SUSD` not S/USD. Those Binance and Bybit have listed, and the other dollar tokens
+/// of one letter before `USD`.
+const ASSETS_READING_AS_PAIRS: [&str; 39] = [
+    "ACU", "AEUR", "AGPU", "AUSD", "BBSOL", "BFUSD", "BGBP", "BIDR", "BNSOL", "CUSD", "DUSD",
+    "EDU", "FUSD", "GUSD", "HUSD", "HYUNDAI", "KORU", "KUAISHOU", "LUSD", "MSTU", "MUSD", "MUU",
+    "NEIROETH", "OUSD", "PENGU", "PUMPBTC", "PYUSD", "RAYSOL", "RENBTC", "RWUSD", "SKUU", "STETH",
+    "SUSD", "TRU", "USDBRL", "WBETH", "XAU", "XUSD", "ZHIPU",
+];
 
 /// Splits an upper-case id that writes base and quote together. The first of `quotes` that ends
 /// it decides: a shorter quote inside it (`USD` in `BUSD`) is never tried.
 fn split_joined<'a>(symbol: &'a str, quotes: &[&'static str]) -> Option<(&'a str, &'static str)> {
+    if ASSETS_READING_AS_PAIRS.contains(&symbol) {
+        return None;
+    }
     let (base, quote) = quotes
         .iter()
         .find_map(|quote| Some((symbol.strip_suffix(quote)?, *quote)))?;

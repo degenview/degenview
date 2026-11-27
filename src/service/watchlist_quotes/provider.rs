@@ -209,11 +209,18 @@ pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
 /// The 24-hour ticker URL of `market` for `requests`. Spot takes a list: `symbols` is a JSON
 /// array, so its brackets and quotes are percent-encoded: sent raw they are not valid in a URL,
 /// the HTTP client refuses the request, and every Binance quote in every watchlist stays empty.
-/// The futures API ignores a list, so it is asked for every market.
+/// The futures API ignores a list: one market is asked for by name, more as the whole exchange.
 pub fn binance_url(market: Market, requests: &[QuoteRequest]) -> String {
     let endpoints = binance::endpoints(market);
     if endpoints.ticker_batch.is_none() {
-        return endpoints.ticker_url.to_owned();
+        return match requests {
+            [one] => format!(
+                "{}?symbol={}",
+                endpoints.ticker_url,
+                encode_component(&binance_pair(&one.symbol))
+            ),
+            _ => endpoints.ticker_url.to_owned(),
+        };
     }
     let list = requests
         .iter()
@@ -232,12 +239,33 @@ fn binance_pair(symbol: &str) -> String {
 }
 
 fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
-    let body = get(DataSource::Binance, &binance_url(market, requests), &[])?;
-    binance_outcome(market, &body, requests)
+    match get(DataSource::Binance, &binance_url(market, requests), &[]) {
+        Ok(body) => binance_outcome(market, &body, requests),
+        Err(failure) => binance_refusal(market, requests, failure),
+    }
 }
 
-/// The quotes of an answer. One that lists every market also says which of the asked ones do not
-/// exist: a spot request for an unknown one is refused instead, and found by halving.
+/// What a failed request says. A futures market asked for by name and refused is one the exchange
+/// does not list; a refused spot batch is left to be halved.
+pub fn binance_refusal(
+    market: Market,
+    requests: &[QuoteRequest],
+    failure: QuoteFailure,
+) -> Result<Outcome, QuoteFailure> {
+    match (failure, requests) {
+        (QuoteFailure::Rejected(_), [one]) if binance::endpoints(market).ticker_batch.is_none() => {
+            Ok(Outcome {
+                rejected: HashSet::from([one.symbol.clone()]),
+                complete: true,
+                ..Outcome::default()
+            })
+        }
+        (failure, _) => Err(failure),
+    }
+}
+
+/// The quotes of an answer. A futures answer also says which of the asked markets do not exist,
+/// those it lacks: a spot request for an unknown one is refused instead, and found by halving.
 pub fn binance_outcome(
     market: Market,
     body: &str,
@@ -245,8 +273,8 @@ pub fn binance_outcome(
 ) -> Result<Outcome, QuoteFailure> {
     let mut outcome = Outcome::from_quotes(parse_binance(body, requests)?);
     if binance::endpoints(market).ticker_batch.is_none() {
-        let listed: HashSet<String> = json(body)?
-            .as_array()
+        let answer = json(body)?;
+        let listed: HashSet<String> = binance_tickers(&answer)
             .into_iter()
             .flatten()
             .filter_map(|ticker| Some(ticker.get("symbol")?.as_str()?.to_uppercase()))
@@ -720,6 +748,17 @@ const DOLLAR_QUOTES: [&str; 8] = [
     "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "USD",
 ];
 
+/// The tickers of a `/ticker/24hr` answer: a list, or the one object of a market asked for alone.
+fn binance_tickers(answer: &Value) -> Option<&[Value]> {
+    match answer {
+        Value::Array(tickers) => Some(tickers),
+        Value::Object(ticker) if ticker.contains_key("symbol") => {
+            Some(std::slice::from_ref(answer))
+        }
+        _ => None,
+    }
+}
+
 /// `/ticker/24hr?type=MINI`: `openPrice` is the rolling 24h open, a truer day-change
 /// reference than a candle picked from the last 25 hours.
 pub fn parse_binance(
@@ -727,8 +766,7 @@ pub fn parse_binance(
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let value = json(body)?;
-    let tickers: HashMap<String, &Value> = value
-        .as_array()
+    let tickers: HashMap<String, &Value> = binance_tickers(&value)
         .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Binance response").to_owned()))?
         .iter()
         .filter_map(|ticker| Some((ticker.get("symbol")?.as_str()?.to_uppercase(), ticker)))
@@ -1188,15 +1226,23 @@ pub fn parse_alpaca_snapshots(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn the_futures_ticker_is_asked_whole_and_spot_by_name() {
+    fn one_futures_market_is_asked_by_name_and_more_as_the_whole_list() {
         let ask = |symbol: &str| QuoteRequest {
             symbol: symbol.to_owned(),
             chain: None,
         };
         assert_eq!(
             binance_url(Market::Perpetual, &[ask("BTCUSDT.P")]),
+            "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT"
+        );
+        assert_eq!(
+            binance_url(Market::Perpetual, &[ask("BTCUSDT.P"), ask("ETHUSDT.P")]),
             "https://fapi.binance.com/fapi/v1/ticker/24hr"
         );
+        let one = r#"{"symbol":"BTCUSDT","lastPrice":"2","openPrice":"1","quoteVolume":"5"}"#;
+        let outcome = binance_outcome(Market::Perpetual, one, &[ask("BTCUSDT.P")]).expect("parsed");
+        assert_eq!(outcome.quotes["BTCUSDT.P"].price, 2.0);
+        assert!(outcome.rejected.is_empty());
         let body = r#"[{"symbol":"BTCUSDT","lastPrice":"2","openPrice":"1","quoteVolume":"5"}]"#;
         let quotes = parse_binance(body, &[ask("BTCUSDT.P")]).expect("parsed");
         assert_eq!(quotes["BTCUSDT.P"].price, 2.0);
