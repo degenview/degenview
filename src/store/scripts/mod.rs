@@ -252,7 +252,7 @@ impl ScriptStore {
         } else {
             let clean = script_name::portable(requested)?;
             if self.is_name_taken(&clean, Some(id)) {
-                disambiguated(&clean, &self.taken_names(Some(id)))
+                script_name::numbered(&clean, &self.taken_names(Some(id)))
             } else {
                 clean
             }
@@ -687,7 +687,7 @@ impl ScriptStore {
     ) -> Result<String> {
         loop {
             let name = if disambiguating {
-                disambiguated(base, &taken)
+                script_name::numbered(base, &taken)
             } else {
                 base.to_owned()
             };
@@ -697,7 +697,7 @@ impl ScriptStore {
                 Ok(_) => return Ok(name),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     // A name already in `taken` coming back would never end.
-                    if !disambiguating || !taken.insert(name.to_lowercase()) {
+                    if !disambiguating || !taken.insert(script_name::key(&name)) {
                         return Err(ScriptStoreError::NameConflict);
                     }
                 }
@@ -725,8 +725,9 @@ impl ScriptStore {
             return Ok(());
         }
         let new_file_name = file_name_of(&destination).unwrap_or_default();
-        if old_name.to_lowercase() == new_file_name.to_lowercase() {
-            // A case-only rename on a case-insensitive volume: the destination "exists".
+        if script_name::key(&old_name) == script_name::key(&new_file_name) {
+            // Only case or the spelling of an accent changes: where the volume takes the two
+            // for one file, the destination "exists".
             let temporary = self.scripts_dir.join(format!(".renaming-{id}"));
             fs::rename(&source, &temporary)?;
             fs::rename(&temporary, &destination)?;
@@ -766,20 +767,20 @@ impl ScriptStore {
 
     // MARK: Names
 
-    /// The names no new script can have, lowercased: those of the files in the library, from the
-    /// folder's listing alone, without reading any of them.
+    /// The names no new script can have, as [`script_name::key`]s: those of the files in the
+    /// library, from the folder's listing alone, without reading any of them.
     pub fn names_in_use(&self) -> HashSet<String> {
         self.taken_names(None)
     }
 
-    /// Lowercased names in use: catalog scripts plus every file on disk (files not yet in the
+    /// The keys of the names in use: catalog scripts plus every file on disk (files not yet in the
     /// catalog still occupy their names).
     fn taken_names(&self, excluding: Option<&str>) -> HashSet<String> {
         let mut taken: HashSet<String> = self
             .metadata
             .values()
             .filter(|s| Some(s.id.as_str()) != excluding)
-            .map(|s| s.name.to_lowercase())
+            .map(|s| script_name::key(&s.name))
             .collect();
         let own = excluding.and_then(|id| self.file_names.get(id));
         for entry in fs::read_dir(&self.scripts_dir)
@@ -789,14 +790,15 @@ impl ScriptStore {
         {
             let file = entry.file_name().to_string_lossy().into_owned();
             if Some(&file) != own {
-                taken.insert(stem(&file).to_lowercase());
+                taken.insert(script_name::key(&stem(&file)));
             }
         }
         taken
     }
 
     fn is_name_taken(&self, name: &str, excluding: Option<&str>) -> bool {
-        self.taken_names(excluding).contains(&name.to_lowercase())
+        self.taken_names(excluding)
+            .contains(&script_name::key(name))
     }
 }
 
@@ -828,18 +830,6 @@ pub fn declared_type(source: &str) -> ScriptType {
         .declaration
         .script_type
         .into()
-}
-
-fn disambiguated(base: &str, taken: &HashSet<String>) -> String {
-    if !taken.contains(&base.to_lowercase()) {
-        return base.to_owned();
-    }
-    let numbered = |n: u32| script_name::with_suffix(base, &format!(" {n}"));
-    let mut n = 2;
-    while taken.contains(&numbered(n).to_lowercase()) {
-        n += 1;
-    }
-    numbered(n)
 }
 
 /// A stable SHA-256 hash of a script's source, shared by compile-cache and alert identity.
@@ -879,12 +869,22 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
 
+/// Writes beside `path` and moves over it. Each write has a temporary file of its own: libraries
+/// are opened more than once (a frame's, an import's on a worker), over the same folder.
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static WRITES: AtomicU64 = AtomicU64::new(0);
     let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
+    temporary.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        WRITES.fetch_add(1, Ordering::Relaxed)
+    ));
     let temporary = PathBuf::from(temporary);
-    fs::write(&temporary, bytes)?;
-    fs::rename(&temporary, path)
+    fs::write(&temporary, bytes)
+        .and_then(|()| fs::rename(&temporary, path))
+        .inspect_err(|_| {
+            let _ = fs::remove_file(&temporary);
+        })
 }
 
 fn atomic_write_json<T: Serialize>(value: &T, path: &Path) -> Result<()> {

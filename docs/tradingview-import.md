@@ -40,6 +40,21 @@ The preview draws each layout as the grid it will open as, and lists under each 
 out and, apart from that, what comes over changed (`LeftOut::is_change`). The last step names what
 was added, says where each kind is now and opens any of the layouts.
 
+## What runs where
+
+Nothing slow runs on the frame. Reading the app's data, reading what the preview is planned against
+(names in use, chart look) and writing the import each run on `service::work_queue` and are polled
+through `Pending`; the sheet shows which it is waiting for, and an import being written cannot be
+closed. A job that dies ends the wait: the preview returns to choosing, an import says that some of
+it may have been added. Writing reads the names again first, so one taken since the preview is not
+taken over.
+
+Matching and post prices are many small requests. Each goes to its provider's own workers
+(`start_search`, `start_for`), a few at a time (`PendingMap`), and only for what is chosen then.
+`matcher::Resolution` holds one symbol's search between its requests.
+
+Watchlists are added together (`WatchlistStore::add_lists`), in one save.
+
 ## Where the data comes from
 
 TradingView keeps charts on its servers and has no export for drawings or layouts. The desktop app
@@ -128,7 +143,10 @@ most of its drawings were made on.
   A post's card shows the author and words TradingView stored with the drawing, so nothing is asked
   of X; the author's picture, which would take a request, is not brought over.
 - **Pinned** drawings (`anchored: true`) sit at a place on the screen and are left out.
-- **Script names** are made into file names every system accepts. A watchlist none of whose symbols
+- **Script names** are made into file names every system accepts, and numbered past those in use,
+  by the library's own rules (`model::pine::script_name`: `portable`, `key`, `numbered`), so the
+  preview says the name that is saved. Names that differ in case or in how an accent is spelt are
+  one name. A watchlist none of whose symbols
   has a market is not added.
 - **Positions** store distances in price steps. The step comes from a chart's `pricescale`; without
   one the distance follows from the drawing's own risk figures `(accountSize − amountStop) / qty`;

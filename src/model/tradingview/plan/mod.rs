@@ -298,19 +298,26 @@ pub fn plan(
     taken: &Taken,
     base: &ChartAppearance,
 ) -> Plan {
-    let mut script_names: HashSet<String> = lower(&taken.scripts);
+    let mut script_names: HashSet<String> = taken
+        .scripts
+        .iter()
+        .map(|name| script_name::key(name))
+        .collect();
     let scripts: Vec<PlannedScript> = library
         .scripts
         .iter()
         .filter(|script| selection.scripts.contains(&script.id))
-        .map(|script| PlannedScript {
-            source_id: script.id.clone(),
-            name: unique(
-                &mut script_names,
-                &script_name::portable(&script.name)
-                    .unwrap_or_else(|_| "TradingView script".to_owned()),
-            ),
-            source: script.source.clone(),
+        .map(|script| {
+            // Named as the library will name it.
+            let base = script_name::portable(&script.name)
+                .unwrap_or_else(|_| "TradingView script".to_owned());
+            let name = script_name::numbered(&base, &script_names);
+            script_names.insert(script_name::key(&name));
+            PlannedScript {
+                source_id: script.id.clone(),
+                name,
+                source: script.source.clone(),
+            }
         })
         .collect();
 
@@ -424,7 +431,7 @@ fn lower(names: &[String]) -> HashSet<String> {
     names.iter().map(|name| name.to_lowercase()).collect()
 }
 
-/// `name`, numbered until it is not in use, and then in use.
+/// A layout's or watchlist's `name`, numbered until it is not in use, and then in use.
 fn unique(used: &mut HashSet<String>, name: &str) -> String {
     let name: String = name.chars().take(MAX_NAME_CHARS - 6).collect();
     let mut candidate = name.clone();

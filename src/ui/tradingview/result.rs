@@ -1,19 +1,31 @@
-//! The states around the two steps: reading, and nothing to read.
+//! The states around the two steps: waiting on work, and nothing to read.
 
-use super::Action;
+use super::{Action, Work};
 use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, loading, sheet};
 use crate::ui::theme;
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, Vec2, vec2};
 
-pub(super) fn reading(ui: &mut Ui, height: f32, actions: &mut Vec<Action>) {
+pub(super) fn working(ui: &mut Ui, height: f32, work: Work, actions: &mut Vec<Action>) {
     let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
-    loading::message(ui, area, tr!("Reading TradingView\u{2019}s data\u{2026}"));
+    let (message, way_out) = match work {
+        Work::Reading => (
+            tr!("Reading TradingView\u{2019}s data\u{2026}"),
+            Some((tr!("Cancel"), Action::Close)),
+        ),
+        Work::Preparing => (
+            tr!("Preparing the preview\u{2026}"),
+            Some((tr!("Back"), Action::Back)),
+        ),
+        Work::Importing => (tr!("Importing\u{2026}"), None),
+    };
+    loading::message(ui, area, message);
     sheet::footer(ui, |ui| {
-        if kit::footer_button(ui, tr!("Cancel"), kit::FooterButton::Secondary, true, 0.0).clicked()
+        if let Some((label, action)) = way_out
+            && kit::footer_button(ui, label, kit::FooterButton::Secondary, true, 0.0).clicked()
         {
-            actions.push(Action::Close);
+            actions.push(action);
         }
     });
 }

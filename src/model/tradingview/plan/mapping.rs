@@ -93,6 +93,11 @@ impl Mappings {
         self.found.contains_key(symbol)
     }
 
+    /// Takes the search's answer back, for it to be asked again.
+    pub fn forget_found(&mut self, symbol: &TvSymbol) {
+        self.found.remove(symbol);
+    }
+
     pub fn choose(&mut self, symbol: &TvSymbol, market: Market) {
         self.decided.insert(symbol.clone(), Match::Chosen(market));
     }

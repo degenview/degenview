@@ -4,6 +4,8 @@
 //! refuses more than the others, and a name it refuses could not follow its script there.
 
 use crate::i18n::tr;
+use icu_normalizer::ComposingNormalizerBorrowed;
+use std::collections::HashSet;
 
 /// The longest name made, in bytes: a 255-byte file name also has to hold `.pine` and the number
 /// a taken name gets.
@@ -47,6 +49,30 @@ pub fn with_suffix(name: &str, suffix: &str) -> String {
         false => fitted(name, room),
     };
     format!("{name}{suffix}")
+}
+
+/// What tells names apart: two names with one key are one file on some system (macOS and Windows
+/// ignore case, APFS also how an accent is spelt), so a synced library may hold only one of them.
+pub fn key(name: &str) -> String {
+    let lower = name.to_lowercase();
+    ComposingNormalizerBorrowed::new_nfc()
+        .normalize(&lower)
+        .into_owned()
+}
+
+/// `base`, or the first of "base 2", "base 3", … whose [`key`] is not in `taken`.
+pub fn numbered(base: &str, taken: &HashSet<String>) -> String {
+    if !taken.contains(&key(base)) {
+        return base.to_owned();
+    }
+    let mut n = 2;
+    loop {
+        let candidate = with_suffix(base, &format!(" {n}"));
+        if !taken.contains(&key(&candidate)) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 /// `text` with what no file name may hold replaced.
@@ -172,6 +198,15 @@ mod tests {
             assert!(numbered.ends_with(" 12") && numbered.len() <= MAX_NAME_BYTES);
             assert_eq!(portable(&numbered).as_deref(), Ok(numbered.as_str()));
         }
+    }
+
+    #[test]
+    fn names_that_are_one_file_somewhere_are_one_name() {
+        assert_eq!(key("Caf\u{c9}"), key("cafe\u{301}"));
+        assert_ne!(key("Cafe"), key("Caf\u{e9}"));
+        let taken = HashSet::from([key("Cafe\u{301}"), key("CAF\u{c9} 2")]);
+        assert_eq!(numbered("Caf\u{e9}", &taken), "Caf\u{e9} 3");
+        assert_eq!(numbered("Tea", &taken), "Tea");
     }
 
     #[test]

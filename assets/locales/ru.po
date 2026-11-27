@@ -7798,6 +7798,10 @@ msgstr[2] ""
 "Импортирован «{name}». {count} значений в файле оказались непригодными и "
 "были пропущены, например: {value}"
 
+#: src/ui/tradingview/result.rs
+msgid "Importing…"
+msgstr "Импорт…"
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "Импорт…"
@@ -12012,6 +12016,10 @@ msgstr "Провайдер рынков предсказаний"
 #: src/ui/chart/symbol_picker/search.rs src/ui/portfolio/asset_picker.rs
 msgid "Predictions"
 msgstr "Прогнозы"
+
+#: src/ui/tradingview/result.rs
+msgid "Preparing the preview…"
+msgstr "Подготовка предпросмотра…"
 
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Preset"
@@ -16236,6 +16244,10 @@ msgstr "Активы с наибольшим ростом за выбранны�
 #: src/model/chart/snapshot/mod.rs
 msgid "The image is too large to upload."
 msgstr "Изображение слишком велико для загрузки."
+
+#: src/host/tradingview/mod.rs
+msgid "The import stopped unexpectedly. Some of it may already have been added."
+msgstr "Импорт неожиданно прервался. Часть данных, возможно, уже добавлена."
 
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."

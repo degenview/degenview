@@ -4,7 +4,7 @@ use super::*;
 use crate::model::Timeframe;
 use crate::model::tradingview::fixtures;
 use crate::model::tradingview::parse::{self, Document};
-use crate::model::tradingview::plan::LeftOut;
+use crate::model::tradingview::plan::{LeftOut, Unmatched};
 use crate::service::SearchResult;
 use crate::service::tradingview::cache::testing::{self, Fake, Scratch};
 use crate::store::scripts::ScriptStore;
@@ -68,15 +68,7 @@ fn search() -> Arc<Search> {
         Ok(listed
             .iter()
             .filter(|name| **name == query)
-            .map(|name| SearchResult {
-                symbol: (*name).to_owned(),
-                full_symbol: (*name).to_owned(),
-                source,
-                price: None,
-                event: None,
-                base: None,
-                quote: None,
-            })
+            .map(|name| SearchResult::new(source, *name, *name))
             .collect())
     })
 }
@@ -142,6 +134,26 @@ fn matched(stage: &Stage) -> bool {
         .all(|(symbol, _)| review.mappings.has_answer(symbol))
 }
 
+fn planned(stage: &Stage) -> bool {
+    matches!(stage, Stage::Review(review) if review.plan.is_some())
+}
+
+fn written(stage: &Stage) -> bool {
+    matches!(stage, Stage::Done(_))
+}
+
+/// Asks for the preview and waits for it.
+fn preview(import: &mut TradingViewImport, ctx: &egui::Context) {
+    import.act(Action::Preview, ctx);
+    settle(import, ctx, planned);
+}
+
+/// Imports what the preview shows and waits for it to be written.
+fn write(import: &mut TradingViewImport, ctx: &egui::Context) {
+    import.act(Action::Import, ctx);
+    settle(import, ctx, written);
+}
+
 fn review(import: &TradingViewImport) -> &Review {
     match &import.stage {
         Stage::Review(review) => review,
@@ -157,12 +169,12 @@ fn a_folder_is_read_matched_previewed_and_imported() {
     let mut import = open(&targets, data_folder(&scratch), &ctx);
     settle(&mut import, &ctx, matched);
 
-    import.act(Action::Preview, &ctx);
+    preview(&mut import, &ctx);
     let plan = review(&import).plan.as_ref().expect("a plan");
     assert_eq!(plan.layouts[0].charts.len(), 2);
     assert_eq!(plan.drawing_count(), 2, "the later delta deleted the third");
 
-    import.act(Action::Import, &ctx);
+    write(&mut import, &ctx);
     let Stage::Done(summary) = &import.stage else {
         panic!("done");
     };
@@ -190,8 +202,8 @@ fn importing_again_adds_beside_what_is_there() {
     for _ in 0..2 {
         let mut import = open(&targets, folder.clone(), &ctx);
         settle(&mut import, &ctx, matched);
-        import.act(Action::Preview, &ctx);
-        import.act(Action::Import, &ctx);
+        preview(&mut import, &ctx);
+        write(&mut import, &ctx);
     }
     let names: Vec<String> = targets
         .store
@@ -231,7 +243,7 @@ fn an_import_opened_by_hand_starts_on_the_welcome() {
     assert!(matches!(import.view(), View::Content(content) if content.step == Step::Choose));
     // Reading again is not opening again.
     import.act(Action::Reload, &ctx);
-    assert!(matches!(import.view(), View::Reading));
+    assert!(matches!(import.view(), View::Working(Work::Reading)));
     settle(&mut import, &ctx, matched);
     assert!(matches!(import.view(), View::Content(_)));
 }
@@ -335,10 +347,10 @@ fn a_name_taken_after_the_preview_is_still_not_taken_over() {
     let mut second = open(&targets, folder, &ctx);
     for import in [&mut first, &mut second] {
         settle(import, &ctx, matched);
-        import.act(Action::Preview, &ctx);
+        preview(import, &ctx);
     }
-    first.act(Action::Import, &ctx);
-    second.act(Action::Import, &ctx);
+    write(&mut first, &ctx);
+    write(&mut second, &ctx);
     let names: Vec<String> = targets
         .store
         .lock()
@@ -514,7 +526,7 @@ fn a_post_is_put_beside_its_bar_from_the_markets_candles() {
     let ctx = egui::Context::default();
     let mut import = open(&targets, folder_of(&scratch, with_a_post()), &ctx);
     settle(&mut import, &ctx, placed);
-    import.act(Action::Preview, &ctx);
+    preview(&mut import, &ctx);
     // Half way from the high, 110, to the top of the room, 190.
     assert_eq!(post_price(&import), Some(150.0));
     let left_out = &review(&import).plan.as_ref().unwrap().layouts[0].left_out;
@@ -540,7 +552,7 @@ fn a_post_without_candles_is_left_out_and_can_be_tried_again() {
     let mut import =
         TradingViewImport::with_providers(targets, providers, Some(folder), Start::Choose, &ctx);
     settle(&mut import, &ctx, placed);
-    import.act(Action::Preview, &ctx);
+    preview(&mut import, &ctx);
     assert_eq!(post_price(&import), None);
     let left_out = &review(&import).plan.as_ref().unwrap().layouts[0].left_out;
     assert!(
@@ -552,7 +564,7 @@ fn a_post_without_candles_is_left_out_and_can_be_tried_again() {
     import.act(Action::Back, &ctx);
     import.act(Action::Retry, &ctx);
     settle(&mut import, &ctx, placed);
-    import.act(Action::Preview, &ctx);
+    preview(&mut import, &ctx);
     assert_eq!(post_price(&import), Some(150.0));
 }
 
@@ -571,7 +583,7 @@ fn rebuilding_the_preview_does_not_read_the_script_library_again() {
     let ctx = egui::Context::default();
     let mut import = open(&targets, data_folder(&scratch), &ctx);
     settle(&mut import, &ctx, matched);
-    import.act(Action::Preview, &ctx);
+    preview(&mut import, &ctx);
     let once = opened.load(Ordering::SeqCst);
     assert_eq!(once, 1);
     for timeframe in [Timeframe::HOUR_1, Timeframe::DAY_1, Timeframe::MINUTE_5] {
@@ -583,4 +595,162 @@ fn rebuilding_the_preview_does_not_read_the_script_library_again() {
         assert!(review(&import).plan.is_some(), "rebuilt");
     }
     assert_eq!(opened.load(Ordering::SeqCst), once);
+}
+
+/// A script library that answers each time it is allowed to, so a test holds the job that is
+/// reading or writing it.
+fn gated(targets: &mut Targets) -> std::sync::mpsc::Sender<()> {
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let (released, library) = (Mutex::new(released), Arc::clone(&targets.scripts));
+    targets.scripts = Arc::new(move || {
+        let _ = released
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5));
+        library()
+    });
+    release
+}
+
+/// A script library whose `fatal`th opening kills the job that asked.
+fn failing_at(targets: &mut Targets, fatal: usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let opened = AtomicUsize::new(0);
+    let library = Arc::clone(&targets.scripts);
+    targets.scripts = Arc::new(move || {
+        assert_ne!(
+            opened.fetch_add(1, Ordering::SeqCst) + 1,
+            fatal,
+            "the script library broke"
+        );
+        library()
+    });
+}
+
+#[test]
+fn the_preview_and_the_import_are_worked_on_off_the_frame() {
+    let scratch = Scratch::new();
+    let mut targets = targets(&scratch);
+    let release = gated(&mut targets);
+    let ctx = egui::Context::default();
+    let mut import = open(&targets, data_folder(&scratch), &ctx);
+    settle(&mut import, &ctx, matched);
+
+    import.act(Action::Preview, &ctx);
+    assert!(matches!(import.view(), View::Working(Work::Preparing)));
+    release.send(()).unwrap();
+    settle(&mut import, &ctx, planned);
+
+    import.act(Action::Import, &ctx);
+    assert!(matches!(import.view(), View::Working(Work::Importing)));
+    // A second click starts nothing.
+    import.act(Action::Import, &ctx);
+    assert!(!import.take_wrote(), "nothing is written yet");
+    // The names read again, then the library the scripts go into.
+    release.send(()).unwrap();
+    release.send(()).unwrap();
+    settle(&mut import, &ctx, written);
+    assert!(import.take_wrote());
+    assert_eq!(targets.store.lock().unwrap().saved_views().len(), 1);
+}
+
+#[test]
+fn an_import_that_dies_says_that_some_of_it_may_be_there() {
+    let scratch = Scratch::new();
+    let mut targets = targets(&scratch);
+    // The preview's reading and the import's, then the library the scripts go into.
+    failing_at(&mut targets, 3);
+    let ctx = egui::Context::default();
+    let mut import = open(&targets, data_folder(&scratch), &ctx);
+    settle(&mut import, &ctx, matched);
+    preview(&mut import, &ctx);
+    write(&mut import, &ctx);
+    let Stage::Done(summary) = &import.stage else {
+        panic!("done");
+    };
+    assert_eq!(summary.failures.len(), 1, "{:?}", summary.failures);
+    // What was written before it died is not known, so everything looks again.
+    assert!(import.take_wrote() && import.take_added_scripts());
+}
+
+#[test]
+fn a_preview_that_cannot_be_prepared_goes_back_to_choosing() {
+    let scratch = Scratch::new();
+    let mut targets = targets(&scratch);
+    failing_at(&mut targets, 1);
+    let ctx = egui::Context::default();
+    let mut import = open(&targets, data_folder(&scratch), &ctx);
+    settle(&mut import, &ctx, matched);
+    import.act(Action::Preview, &ctx);
+    settle(
+        &mut import,
+        &ctx,
+        |stage| matches!(stage, Stage::Review(review) if review.step == Step::Choose),
+    );
+    preview(&mut import, &ctx);
+}
+
+fn tv(symbol: &str) -> TvSymbol {
+    TvSymbol::read(symbol).unwrap()
+}
+
+#[test]
+fn only_what_is_still_chosen_is_searched_for_a_few_at_a_time() {
+    let asked = Arc::new(Mutex::new(Vec::<String>::new()));
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let (log, released) = (Arc::clone(&asked), Mutex::new(released));
+    let mut matching = Matching::new(Arc::new(move |_, query| {
+        log.lock().unwrap().push(query.to_owned());
+        let _ = released
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5));
+        Ok(Vec::new())
+    }));
+    let ctx = egui::Context::default();
+    let mut mappings = Mappings::default();
+    let all: Vec<TvSymbol> = (0..10).map(|n| tv(&format!("BINANCE:Q{n}USDT"))).collect();
+    matching.poll(&all, &mut mappings, &ctx);
+    for (index, symbol) in all.iter().enumerate() {
+        assert_eq!(
+            matching.requests.contains(symbol),
+            index < SEARCHES_AT_ONCE,
+            "{symbol:?}"
+        );
+    }
+
+    // Everything but the first is taken out of the selection while those are under way.
+    for _ in 0..all.len() {
+        release.send(()).unwrap();
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !mappings.has_answer(&all[0]) {
+        assert!(Instant::now() < deadline, "the search never ended");
+        std::thread::sleep(Duration::from_millis(5));
+        matching.poll(&all[..1], &mut mappings, &ctx);
+    }
+    let asked = asked.lock().unwrap();
+    assert!(
+        (SEARCHES_AT_ONCE..all.len())
+            .all(|n| !asked.iter().any(|name| name.starts_with(&format!("Q{n}")))),
+        "{asked:?}"
+    );
+}
+
+#[test]
+fn a_search_that_dies_leaves_the_symbol_unmatched_not_waiting() {
+    let mut matching = Matching::new(Arc::new(|_, _| panic!("the provider broke")));
+    let ctx = egui::Context::default();
+    let mut mappings = Mappings::default();
+    let wanted = [tv("BINANCE:BTCUSDT")];
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !mappings.has_answer(&wanted[0]) {
+        assert!(Instant::now() < deadline, "left waiting");
+        std::thread::sleep(Duration::from_millis(5));
+        matching.poll(&wanted, &mut mappings, &ctx);
+    }
+    assert_eq!(
+        mappings.status(&wanted[0]),
+        &Match::Unmatched(Unmatched::Unreachable)
+    );
 }

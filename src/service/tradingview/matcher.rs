@@ -6,6 +6,7 @@ use crate::model::tradingview::TvSymbol;
 use crate::model::tradingview::plan::{Market, Match, Unmatched};
 use crate::model::tradingview::symbol;
 use crate::service::{ProviderError, SearchResult};
+use std::collections::VecDeque;
 
 pub fn market_of(result: &SearchResult) -> Market {
     Market {
@@ -23,81 +24,157 @@ pub fn market_of(result: &SearchResult) -> Market {
 pub type Search =
     dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, ProviderError> + Send + Sync;
 
-/// Resolves `tv` through `search`.
-pub fn resolve(tv: &TvSymbol, search: &Search) -> Match {
-    if tv.is_expression() {
-        return Match::Unmatched(Unmatched::Expression);
-    }
-    if tv.is_derivative() {
-        return Match::Unmatched(Unmatched::Derivative);
-    }
-    let (mut asked, mut failed) = (0, 0);
-    let mut exact = |source: DataSource, name: &str| -> Result<Option<Market>, ProviderError> {
-        asked += 1;
-        match search(source, name) {
-            Ok(results) => Ok(results
-                .iter()
-                .find(|result| result.full_symbol.eq_ignore_ascii_case(name))
-                .map(market_of)),
-            Err(error) => {
-                failed += 1;
-                Err(error)
+/// A provider to ask for a name.
+struct Request {
+    source: DataSource,
+    name: String,
+    /// The symbol's own exchange, which nothing stands in for while it does not answer.
+    own: bool,
+}
+
+/// What a [`Resolution`] needs next.
+#[derive(Debug, PartialEq)]
+pub enum Step<'a> {
+    /// A ticker search of `source` for `name`, answered with [`Resolution::answer`].
+    Ask(DataSource, &'a str),
+    Done(&'a Match),
+}
+
+/// The search for one TradingView symbol's market, a request at a time, so that each can be made
+/// on its provider's own workers.
+pub struct Resolution {
+    requests: VecDeque<Request>,
+    asked: usize,
+    failed: usize,
+    /// TradingView's exchange is one DegenView has no provider for.
+    venue_unserved: bool,
+    found: Option<Match>,
+}
+
+impl Resolution {
+    pub fn new(tv: &TvSymbol) -> Self {
+        let mut resolution = Self {
+            requests: VecDeque::new(),
+            asked: 0,
+            failed: 0,
+            venue_unserved: tv.source().is_none(),
+            found: None,
+        };
+        if tv.is_expression() {
+            resolution.found = Some(Match::Unmatched(Unmatched::Expression));
+            return resolution;
+        }
+        if tv.is_derivative() {
+            resolution.found = Some(Match::Unmatched(Unmatched::Derivative));
+            return resolution;
+        }
+        let own = symbol::native_name(tv);
+        let own_source = own.as_ref().map(|(source, _)| *source);
+        resolution
+            .requests
+            .extend(own.map(|(source, name)| Request {
+                source,
+                name,
+                own: true,
+            }));
+        // A stock's ticker is not a pair, whatever it ends in.
+        let pair = tv
+            .pair()
+            .filter(|_| tv.source() != Some(DataSource::Alpaca));
+        if let Some((base, quote)) = pair {
+            for source in symbol::substitutes(quote) {
+                if own_source == Some(source) {
+                    continue;
+                }
+                if let Some(name) = symbol::pair_on(source, base, quote) {
+                    resolution.requests.push_back(Request {
+                        source,
+                        name,
+                        own: false,
+                    });
+                }
             }
         }
-    };
+        resolution.settle_if_exhausted();
+        resolution
+    }
 
-    let own = symbol::native_name(tv);
-    if let Some((source, name)) = &own {
-        match exact(*source, name) {
-            Ok(Some(market)) => return Match::Exact(market),
-            Err(ProviderError::MissingKey(DataSource::Alpaca)) => {
-                return Match::Unmatched(Unmatched::NeedsKey);
+    pub fn step(&self) -> Step<'_> {
+        match (&self.found, self.requests.front()) {
+            (Some(found), _) => Step::Done(found),
+            (None, Some(request)) => Step::Ask(request.source, &request.name),
+            // `settle_if_exhausted` leaves no resolution without either.
+            (None, None) => Step::Done(&Match::Unmatched(Unmatched::NotFound)),
+        }
+    }
+
+    /// Takes in what the request [`Self::step`] asked for came back with.
+    pub fn answer(&mut self, results: Result<Vec<SearchResult>, ProviderError>) {
+        if self.found.is_some() {
+            return;
+        }
+        let Some(request) = self.requests.pop_front() else {
+            return;
+        };
+        self.asked += 1;
+        match results {
+            Ok(results) => {
+                let market = results
+                    .iter()
+                    .find(|result| result.full_symbol.eq_ignore_ascii_case(&request.name))
+                    .map(market_of);
+                self.found = market.map(|market| {
+                    if request.own {
+                        Match::Exact(market)
+                    } else {
+                        Match::Substitute(market)
+                    }
+                });
+            }
+            Err(ProviderError::MissingKey(DataSource::Alpaca)) if request.own => {
+                self.found = Some(Match::Unmatched(Unmatched::NeedsKey));
             }
             // Not knowing is not a reason to take another exchange's market: search again.
-            Err(_) => return Match::Unmatched(Unmatched::Unreachable),
-            Ok(None) => {}
+            Err(_) if request.own => self.found = Some(Match::Unmatched(Unmatched::Unreachable)),
+            Err(_) => self.failed += 1,
+        }
+        self.settle_if_exhausted();
+    }
+
+    /// With nothing left to ask and nothing found, says why.
+    fn settle_if_exhausted(&mut self) {
+        if self.found.is_none() && self.requests.is_empty() {
+            self.found = Some(Match::Unmatched(
+                if self.asked > 0 && self.failed == self.asked {
+                    Unmatched::Unreachable
+                } else if self.venue_unserved {
+                    Unmatched::Venue
+                } else {
+                    Unmatched::NotFound
+                },
+            ));
         }
     }
-    // A stock's ticker is not a pair, whatever it ends in.
-    let pair = tv
-        .pair()
-        .filter(|_| tv.source() != Some(DataSource::Alpaca));
-    if let Some((base, quote)) = pair {
-        for source in symbol::substitutes(quote) {
-            if own.as_ref().is_some_and(|(own, _)| *own == source) {
-                continue;
-            }
-            let Some(name) = symbol::pair_on(source, base, quote) else {
-                continue;
-            };
-            if let Ok(Some(market)) = exact(source, &name) {
-                return Match::Substitute(market);
-            }
-        }
-    }
-    Match::Unmatched(if asked > 0 && failed == asked {
-        Unmatched::Unreachable
-    } else if tv.source().is_none() {
-        Unmatched::Venue
-    } else {
-        Unmatched::NotFound
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn hit(source: DataSource, name: &str) -> SearchResult {
-        SearchResult {
-            symbol: name.to_owned(),
-            full_symbol: name.to_owned(),
-            source,
-            price: None,
-            event: None,
-            base: None,
-            quote: None,
+    /// A whole resolution, its requests answered one after another.
+    fn resolve(tv: &TvSymbol, search: &Search) -> Match {
+        let mut resolution = Resolution::new(tv);
+        loop {
+            let results = match resolution.step() {
+                Step::Done(found) => return found.clone(),
+                Step::Ask(source, name) => search(source, name),
+            };
+            resolution.answer(results);
         }
+    }
+
+    fn hit(source: DataSource, name: &str) -> SearchResult {
+        SearchResult::new(source, name, name)
     }
 
     /// A catalog of what each provider lists.

@@ -118,6 +118,32 @@ fn names_in_use_are_never_taken_over() {
     assert_eq!(plan.scripts[0].name, "My bands 2");
 }
 
+/// APFS takes a precomposed and a decomposed accent for one name: the preview must say the name
+/// the library will give.
+#[test]
+fn a_script_is_numbered_past_a_name_spelt_another_way() {
+    let mut library = library();
+    library.scripts[0].name = "Caf\u{e9}".into();
+    let mut second = library.scripts[0].clone();
+    second.id = "again".into();
+    second.name = "Cafe\u{301}".into();
+    library.scripts.push(second);
+    let taken = Taken {
+        scripts: vec!["cafe\u{301}".into()],
+        ..Taken::default()
+    };
+    let plan = plan(
+        &library,
+        &Selection::all(&library),
+        &mapped(),
+        &Default::default(),
+        &taken,
+        &ChartAppearance::default(),
+    );
+    assert_eq!(plan.scripts[0].name, "Caf\u{e9} 2");
+    assert_eq!(plan.scripts[1].name, "Cafe\u{301} 3");
+}
+
 #[test]
 fn the_symbols_asked_about_are_those_of_what_is_chosen() {
     let library = library();

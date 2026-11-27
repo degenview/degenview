@@ -126,7 +126,9 @@ fn tradingview_gallery() {
         }),
     );
     frame("preview", &content(Step::Preview));
-    frame("reading", &View::Reading);
+    frame("reading", &View::Working(Work::Reading));
+    frame("preparing", &View::Working(Work::Preparing));
+    frame("importing", &View::Working(Work::Importing));
     frame(
         "failed",
         &View::Failed(

@@ -1,12 +1,14 @@
-//! The TradingView import from start to finish: read the app's data (off the frame), let the
-//! person choose what to bring and which markets it becomes (matched on a thread of its own),
-//! preview, and write. The sheets (`ui::tradingview`) draw the state held here and answer with
-//! [`Action`]s; the rules are in `model::tradingview`.
+//! The TradingView import from start to finish: read the app's data, let the person choose what
+//! to bring and which markets it becomes, preview, and write. Reading, matching and writing all
+//! run on the work queues; the frame only takes in their answers. The sheets (`ui::tradingview`)
+//! draw the state held here and answer with [`Action`]s; the rules are in `model::tradingview`.
 
 mod apply;
 pub mod offer;
 
 pub use apply::Targets;
+
+use apply::Order;
 
 use crate::i18n::tr;
 use crate::model::tradingview::library::Contents;
@@ -18,69 +20,24 @@ use crate::model::tradingview::{Library, TvSymbol};
 use crate::model::watchlist::new_id;
 use crate::model::{ChartAppearance, DataSource, Timeframe};
 use crate::service::system::file_dialog;
-use crate::service::tradingview::matcher::Search;
-use crate::service::tradingview::{self, Candles, Scan, ScanError, matcher};
-use crate::service::work_queue::{self, Pending};
+use crate::service::tradingview::matcher::{self, Resolution, Search};
+use crate::service::tradingview::{self, Candles, Scan, ScanError};
+use crate::service::work_queue::{self, Pending, PendingMap};
+use crate::service::{ProviderError, SearchResult};
 use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState, PickerTab};
-use crate::ui::tradingview::{self as sheets, Action, Content, Group, Step, View};
+use crate::ui::tradingview::{self as sheets, Action, Content, Group, Step, View, Work};
 use eframe::egui;
-use std::collections::HashSet;
-use std::hash::Hash;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, channel};
+
+/// Searches and price lookups under way at once. Few enough to leave the search workers to a
+/// symbol picker, and what waits is still dropped when it stops being chosen.
+const SEARCHES_AT_ONCE: usize = 4;
+const PRICES_AT_ONCE: usize = 2;
 
 /// Reading the app's data.
 type Read = Pending<Result<Scan, ScanError>>;
-
-/// A thread that answers questions one at a time, each asked once. Dropping it ends the thread
-/// after the question it is on.
-struct Lookup<Q, A> {
-    requests: Sender<Q>,
-    answers: Receiver<(Q, A)>,
-    asked: HashSet<Q>,
-}
-
-impl<Q, A> Lookup<Q, A>
-where
-    Q: Clone + Eq + Hash + Send + 'static,
-    A: Send + 'static,
-{
-    fn start(answer: impl Fn(&Q) -> A + Send + 'static, ctx: egui::Context) -> Self {
-        let (requests, wanted) = channel::<Q>();
-        let (answered, answers) = channel();
-        std::thread::spawn(move || {
-            for question in wanted {
-                let result = answer(&question);
-                if answered.send((question, result)).is_err() {
-                    break;
-                }
-                ctx.request_repaint();
-            }
-        });
-        Self {
-            requests,
-            answers,
-            asked: HashSet::new(),
-        }
-    }
-
-    fn ask(&mut self, questions: impl IntoIterator<Item = Q>) {
-        for question in questions {
-            if self.asked.insert(question.clone()) {
-                // The thread only ends when this is dropped.
-                let _ = self.requests.send(question);
-            }
-        }
-    }
-
-    /// Forgets questions whose answer did not help, so that they are asked again.
-    fn forget(&mut self, questions: &[Q]) {
-        for question in questions {
-            self.asked.remove(question);
-        }
-    }
-}
 
 /// Where the import looks things up.
 #[derive(Clone)]
@@ -98,6 +55,105 @@ pub enum Start {
     Choose,
 }
 
+/// The search for the chosen symbols' markets.
+struct Matching {
+    search: Arc<Search>,
+    /// Searches begun and not yet answered.
+    open: HashMap<TvSymbol, Resolution>,
+    requests: PendingMap<TvSymbol, Result<Vec<SearchResult>, ProviderError>>,
+}
+
+impl Matching {
+    fn new(search: Arc<Search>) -> Self {
+        Self {
+            search,
+            open: HashMap::new(),
+            requests: PendingMap::new(SEARCHES_AT_ONCE),
+        }
+    }
+
+    /// Takes in the answers and asks what the `wanted` symbols still need; `true` when a symbol
+    /// got its match.
+    fn poll(&mut self, wanted: &[TvSymbol], mappings: &mut Mappings, ctx: &egui::Context) -> bool {
+        for (symbol, answer) in self.requests.take_ended() {
+            let answer = answer
+                .unwrap_or_else(|| Err(ProviderError::Other("the search stopped".to_owned())));
+            if let Some(resolution) = self.open.get_mut(&symbol) {
+                resolution.answer(answer);
+            }
+        }
+        let mut matched = false;
+        for symbol in wanted {
+            if mappings.has_answer(symbol) || self.requests.contains(symbol) {
+                continue;
+            }
+            let resolution = self
+                .open
+                .entry(symbol.clone())
+                .or_insert_with(|| Resolution::new(symbol));
+            match resolution.step() {
+                matcher::Step::Done(found) => {
+                    mappings.found(symbol.clone(), found.clone());
+                    self.open.remove(symbol);
+                    matched = true;
+                }
+                matcher::Step::Ask(source, name) => {
+                    let (search, name) = (Arc::clone(&self.search), name.to_owned());
+                    self.requests.start_with(symbol, || {
+                        work_queue::start_search(source, Some(ctx), move || search(source, &name))
+                    });
+                }
+            }
+        }
+        matched
+    }
+}
+
+/// The prices of drawings that sit beside a bar.
+struct Placing {
+    candles: Arc<Candles>,
+    requests: PendingMap<Spot, Option<f64>>,
+}
+
+impl Placing {
+    fn new(candles: Arc<Candles>) -> Self {
+        Self {
+            candles,
+            requests: PendingMap::new(PRICES_AT_ONCE),
+        }
+    }
+
+    /// As [`Matching::poll`], for the `wanted` places.
+    fn poll(&mut self, wanted: &[Spot], placements: &mut Placements, ctx: &egui::Context) -> bool {
+        let ended = self.requests.take_ended();
+        let placed = !ended.is_empty();
+        for (spot, price) in ended {
+            placements.insert(spot, price.flatten());
+        }
+        for spot in wanted {
+            if placements.contains_key(spot) {
+                continue;
+            }
+            let (candles, asked) = (Arc::clone(&self.candles), spot.clone());
+            self.requests.start_with(spot, || {
+                work_queue::start_for(asked.source, Some(ctx), move || {
+                    candles(&asked).and_then(|candles| asked.price(&candles))
+                })
+            });
+        }
+        placed
+    }
+}
+
+/// The names in use and the look of a new chart, which the preview is planned against.
+enum Surroundings {
+    Unread,
+    Reading(Pending<(Taken, ChartAppearance)>),
+    /// Kept while the preview is open, since the plan is made anew with every answer that
+    /// arrives.
+    Read(Box<(Taken, ChartAppearance)>),
+}
+
 /// What is being chosen and previewed.
 struct Review {
     /// Tells this reading apart from any other, for the sheet.
@@ -108,16 +164,12 @@ struct Review {
     contents: Contents,
     selection: Selection,
     mappings: Mappings,
-    /// Matches symbols to markets.
-    resolver: Lookup<TvSymbol, Match>,
-    /// Finds the price of drawings that sit beside a bar.
-    placer: Lookup<Spot, Option<f64>>,
+    matching: Matching,
+    placing: Placing,
     placements: Placements,
     step: Step,
-    /// The names in use and the look of a new chart, as read when the preview was entered; kept
-    /// while it is open, since it is rebuilt with every answer that arrives.
-    surroundings: Option<(Taken, ChartAppearance)>,
-    /// Built on entering the preview.
+    surroundings: Surroundings,
+    /// Made once the preview's surroundings are read.
     plan: Option<Plan>,
     /// The "Match…" picker, with the symbol it answers.
     picking: Option<(TvSymbol, AssetPickerState)>,
@@ -125,8 +177,13 @@ struct Review {
 
 enum Stage {
     Reading(Read),
-    Failed { message: String, hint: &'static str },
+    Failed {
+        message: String,
+        hint: &'static str,
+    },
     Review(Box<Review>),
+    /// Being written.
+    Applying(Pending<Summary>),
     Done(Summary),
 }
 
@@ -200,6 +257,10 @@ impl TradingViewImport {
 
     /// Reads the data again, keeping what was chosen so far.
     fn reread(&mut self, ctx: &egui::Context) {
+        // An import under way or over is not replaced: a folder panel may answer that late.
+        if matches!(self.stage, Stage::Applying(_) | Stage::Done(_)) {
+            return;
+        }
         if let Stage::Review(review) =
             std::mem::replace(&mut self.stage, read(self.chosen.clone(), ctx))
         {
@@ -227,7 +288,7 @@ impl TradingViewImport {
             };
             if let Some(result) = job.poll_or(lost) {
                 self.stage = match result {
-                    Ok(scan) => Stage::Review(Box::new(self.review(scan, ctx))),
+                    Ok(scan) => Stage::Review(Box::new(self.review(scan))),
                     Err(error) => Stage::Failed {
                         message: error.to_string(),
                         hint: error.hint(),
@@ -236,27 +297,34 @@ impl TradingViewImport {
             }
         }
         match &mut self.stage {
-            Stage::Review(review) => {
-                while let Ok((symbol, result)) = review.resolver.answers.try_recv() {
-                    review.mappings.found(symbol, result);
-                    review.plan = None;
+            Stage::Review(review) => review.poll(ctx),
+            Stage::Applying(job) => {
+                let summary = job.poll();
+                if summary.is_some() || !job.is_pending() {
+                    self.finish(summary);
                 }
-                let wanted = review.selection.symbols(&review.library);
-                review
-                    .resolver
-                    .ask(wanted.into_iter().map(|(symbol, _)| symbol));
-                while let Ok((spot, price)) = review.placer.answers.try_recv() {
-                    review.placements.insert(spot, price);
-                    review.plan = None;
-                }
-                let spots = review.selection.spots(&review.library, &review.mappings);
-                review.placer.ask(spots);
             }
             Stage::Reading(_) | Stage::Failed { .. } | Stage::Done(_) => {}
         }
     }
 
-    fn review(&mut self, scan: Scan, ctx: &egui::Context) -> Review {
+    /// Ends the import with what was written; `None` when the job died on the way, which may have
+    /// left some of it written.
+    fn finish(&mut self, summary: Option<Summary>) {
+        self.wrote = true;
+        self.added_scripts = summary
+            .as_ref()
+            .is_none_or(|summary| !summary.scripts.is_empty());
+        self.stage = Stage::Done(summary.unwrap_or_else(|| Summary {
+            failures: vec![
+                tr!("The import stopped unexpectedly. Some of it may already have been added.")
+                    .to_owned(),
+            ],
+            ..Summary::default()
+        }));
+    }
+
+    fn review(&mut self, scan: Scan) -> Review {
         let (selection, mappings) = match self.carried.take() {
             Some((before, selection, mappings)) => (
                 selection.carried_to(&before, &scan.library),
@@ -271,79 +339,13 @@ impl TradingViewImport {
             contents: scan.library.contents(),
             library: scan.library,
             mappings,
-            resolver: {
-                let search = Arc::clone(&self.providers.search);
-                Lookup::start(
-                    move |symbol| matcher::resolve(symbol, &*search),
-                    ctx.clone(),
-                )
-            },
-            placer: {
-                let candles = Arc::clone(&self.providers.candles);
-                Lookup::start(
-                    move |spot: &Spot| candles(spot).and_then(|candles| spot.price(&candles)),
-                    ctx.clone(),
-                )
-            },
+            matching: Matching::new(Arc::clone(&self.providers.search)),
+            placing: Placing::new(Arc::clone(&self.providers.candles)),
             placements: Placements::new(),
             step: Step::Choose,
-            surroundings: None,
+            surroundings: Surroundings::Unread,
             plan: None,
             picking: None,
-        }
-    }
-
-    /// The names an import must not take over, and the look a new chart gets.
-    fn surroundings(&self) -> (Taken, ChartAppearance) {
-        let (layouts, base) = {
-            let store = crate::lock::lock(&self.targets.store);
-            (
-                store
-                    .saved_views()
-                    .into_iter()
-                    .map(|view| view.name)
-                    .collect(),
-                store.default_chart_template().look.unwrap_or_default(),
-            )
-        };
-        let watchlists = crate::lock::lock(&self.targets.watchlist)
-            .lists()
-            .iter()
-            .map(|list| list.name.clone())
-            .collect();
-        let scripts = (self.targets.scripts)()
-            .map(|library| library.names_in_use().into_iter().collect())
-            .unwrap_or_default();
-        (
-            Taken {
-                layouts,
-                watchlists,
-                scripts,
-            },
-            base,
-        )
-    }
-
-    fn build_plan(&mut self) {
-        let read = match &self.stage {
-            Stage::Review(review) if review.surroundings.is_none() => Some(self.surroundings()),
-            _ => None,
-        };
-        if let Stage::Review(review) = &mut self.stage {
-            if let Some(read) = read {
-                review.surroundings = Some(read);
-            }
-            let Some((taken, base)) = &review.surroundings else {
-                return;
-            };
-            review.plan = Some(plan::plan(
-                &review.library,
-                &review.selection,
-                &review.mappings,
-                &review.placements,
-                taken,
-                base,
-            ));
         }
     }
 
@@ -364,13 +366,6 @@ impl TradingViewImport {
             }
             return Outcome::Open;
         }
-        // A choice on the preview (a layout's timeframe) makes the plan anew.
-        if let Stage::Review(review) = &self.stage
-            && review.step == Step::Preview
-            && review.plan.is_none()
-        {
-            self.build_plan();
-        }
         let actions = sheets::show(ctx, &self.view());
         let mut outcome = Outcome::Open;
         for action in actions {
@@ -386,8 +381,12 @@ impl TradingViewImport {
         match &self.stage {
             Stage::Reading(_) if self.welcoming => View::Welcome(None),
             Stage::Review(review) if self.welcoming => View::Welcome(Some(&review.contents)),
-            Stage::Reading(_) => View::Reading,
+            Stage::Reading(_) => View::Working(Work::Reading),
             Stage::Failed { message, hint } => View::Failed(message, hint),
+            Stage::Applying(_) => View::Working(Work::Importing),
+            Stage::Review(review) if review.step == Step::Preview && review.plan.is_none() => {
+                View::Working(Work::Preparing)
+            }
             Stage::Review(review) => View::Content(Content {
                 opening: review.opening,
                 folder: &review.folder,
@@ -423,28 +422,19 @@ impl TradingViewImport {
             Action::Begin => self.welcoming = false,
             Action::Reload => self.reread(ctx),
             Action::OpenLayout(id) => return Outcome::OpenLayout(id),
-            Action::Import => {
-                // Planned again, against the names in use now.
-                if let Stage::Review(review) = &mut self.stage {
-                    review.surroundings = None;
-                }
-                self.build_plan();
-                if let Stage::Review(review) = &self.stage
-                    && let Some(plan) = &review.plan
-                {
-                    let summary = apply::apply(plan, &self.targets);
-                    self.wrote = true;
-                    self.added_scripts = !summary.scripts.is_empty();
-                    self.stage = Stage::Done(summary);
-                }
-            }
+            Action::Import => self.import(ctx),
             Action::Preview => {
-                if let Stage::Review(review) = &mut self.stage {
+                if let Stage::Review(review) = &mut self.stage
+                    && review.step != Step::Preview
+                {
                     review.step = Step::Preview;
-                    review.surroundings = None;
                     review.plan = None;
+                    let targets = self.targets.clone();
+                    review.surroundings =
+                        Surroundings::Reading(work_queue::start(Some(ctx), move || {
+                            apply::surroundings(&targets)
+                        }));
                 }
-                self.build_plan();
             }
             other => {
                 if let Stage::Review(review) = &mut self.stage {
@@ -454,9 +444,69 @@ impl TradingViewImport {
         }
         Outcome::Open
     }
+
+    /// Writes what the preview shows, which only a preview that is there can ask for.
+    fn import(&mut self, ctx: &egui::Context) {
+        // The review goes into the job, so a placeholder holds its place for a moment.
+        let stage = std::mem::replace(&mut self.stage, Stage::Done(Summary::default()));
+        self.stage = match stage {
+            Stage::Review(review) if review.plan.is_some() => {
+                let order = Order {
+                    library: review.library,
+                    selection: review.selection,
+                    mappings: review.mappings,
+                    placements: review.placements,
+                };
+                let targets = self.targets.clone();
+                Stage::Applying(work_queue::start(Some(ctx), move || {
+                    apply::commit(&order, &targets)
+                }))
+            }
+            other => other,
+        };
+    }
 }
 
 impl Review {
+    /// Takes in what finished since the last frame, and plans the preview once it can be.
+    fn poll(&mut self, ctx: &egui::Context) {
+        let wanted: Vec<TvSymbol> = self
+            .selection
+            .symbols(&self.library)
+            .into_iter()
+            .map(|(symbol, _)| symbol)
+            .collect();
+        if self.matching.poll(&wanted, &mut self.mappings, ctx) {
+            self.plan = None;
+        }
+        let spots = self.selection.spots(&self.library, &self.mappings);
+        if self.placing.poll(&spots, &mut self.placements, ctx) {
+            self.plan = None;
+        }
+        if let Surroundings::Reading(job) = &mut self.surroundings {
+            match job.poll() {
+                Some(read) => self.surroundings = Surroundings::Read(Box::new(read)),
+                // A read that died is asked for again by asking for the preview again.
+                None if !job.is_pending() => self.edit(Action::Back),
+                None => {}
+            }
+        }
+        if self.step == Step::Preview
+            && self.plan.is_none()
+            && let Surroundings::Read(read) = &self.surroundings
+        {
+            let (taken, base) = read.as_ref();
+            self.plan = Some(plan::plan(
+                &self.library,
+                &self.selection,
+                &self.mappings,
+                &self.placements,
+                taken,
+                base,
+            ));
+        }
+    }
+
     /// The actions that change only what is chosen.
     fn edit(&mut self, action: Action) {
         let toggle = |set: &mut std::collections::BTreeSet<String>, id: String| {
@@ -465,7 +515,10 @@ impl Review {
             }
         };
         match action {
-            Action::Back => self.step = Step::Choose,
+            Action::Back => {
+                self.step = Step::Choose;
+                self.surroundings = Surroundings::Unread;
+            }
             Action::ToggleLayout(id) => toggle(&mut self.selection.layouts, id),
             Action::ToggleWatchlist(id) => toggle(&mut self.selection.watchlists, id),
             Action::ToggleScript(id) => toggle(&mut self.selection.scripts, id),
@@ -493,27 +546,12 @@ impl Review {
             Action::Skip(symbol) => self.mappings.skip(&symbol),
             Action::Reset(symbol) => self.mappings.reset(&symbol),
             Action::Retry => {
-                let failed: Vec<TvSymbol> = self
-                    .selection
-                    .symbols(&self.library)
-                    .into_iter()
-                    .map(|(symbol, _)| symbol)
-                    .filter(|symbol| matches!(self.mappings.status(symbol), Match::Unmatched(_)))
-                    .collect();
-                for symbol in &failed {
-                    self.mappings.found(symbol.clone(), Match::Searching);
+                for (symbol, _) in self.selection.symbols(&self.library) {
+                    if matches!(self.mappings.status(&symbol), Match::Unmatched(_)) {
+                        self.mappings.forget_found(&symbol);
+                    }
                 }
-                self.resolver.forget(&failed);
-                let unplaced: Vec<Spot> = self
-                    .placements
-                    .iter()
-                    .filter(|(_, price)| price.is_none())
-                    .map(|(spot, _)| spot.clone())
-                    .collect();
-                for spot in &unplaced {
-                    self.placements.remove(spot);
-                }
-                self.placer.forget(&unplaced);
+                self.placements.retain(|_, price| price.is_some());
             }
             _ => {}
         }

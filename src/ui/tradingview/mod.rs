@@ -69,11 +69,21 @@ pub struct Content<'a> {
     pub plan: Option<&'a Plan>,
 }
 
+/// What the sheet is waiting for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Work {
+    /// The data is being read again.
+    Reading,
+    /// What the preview is planned against is being read.
+    Preparing,
+    /// The import is being written, which cannot be left halfway.
+    Importing,
+}
+
 pub enum View<'a> {
     /// The first page, with what was found once the data is read.
     Welcome(Option<&'a Contents>),
-    /// Reading the data again.
-    Reading,
+    Working(Work),
     /// What went wrong, and what to do about it.
     Failed(&'a str, &'a str),
     Content(Content<'a>),
@@ -121,16 +131,20 @@ pub fn show(ctx: &egui::Context, view: &View<'_>) -> Vec<Action> {
     sheet::show(ctx, Id::new("tradingview-import"), SIZE.x, |ui| {
         body(ui, view, &mut actions);
     });
-    // Escape steps back from the preview, else closes.
     if actions.is_empty() && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-        let previewing = matches!(view, View::Content(content) if content.step == Step::Preview);
-        actions.push(if previewing {
-            Action::Back
-        } else {
-            Action::Close
-        });
+        actions.extend(escape(view));
     }
     actions
+}
+
+/// Escape steps back from the preview, else closes; an import being written is not left.
+fn escape(view: &View<'_>) -> Option<Action> {
+    match view {
+        View::Working(Work::Importing) => None,
+        View::Working(Work::Preparing) => Some(Action::Back),
+        View::Content(content) if content.step == Step::Preview => Some(Action::Back),
+        _ => Some(Action::Close),
+    }
 }
 
 /// The sheet's inside, also what the gallery draws.
@@ -151,7 +165,7 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
     match view {
         // Drawn by `welcome`, never inside this sheet.
         View::Welcome(_) => {}
-        View::Reading => result::reading(ui, height, actions),
+        View::Working(work) => result::working(ui, height, *work, actions),
         View::Failed(message, hint) => result::failed(ui, height, message, hint, actions),
         View::Content(content) => match (content.step, content.plan) {
             (Step::Preview, Some(plan)) => preview::show(ui, height, content, plan, actions),
@@ -167,8 +181,9 @@ fn header(ui: &mut Ui, view: &View<'_>) {
     let (title, detail) = headline(view);
     let current = match view {
         View::Content(content) if content.step == Step::Preview => Some(1),
-        View::Content(_) | View::Reading => Some(0),
-        View::Done(_) => Some(2),
+        View::Working(Work::Preparing) => Some(1),
+        View::Content(_) | View::Working(Work::Reading) => Some(0),
+        View::Working(Work::Importing) | View::Done(_) => Some(2),
         View::Welcome(_) | View::Failed(..) => None,
     };
     sheet::inset(ui, |ui| {
@@ -241,6 +256,10 @@ fn header(ui: &mut Ui, view: &View<'_>) {
 
 fn headline(view: &View<'_>) -> (&'static str, &'static str) {
     match view {
+        View::Working(Work::Preparing) => (
+            tr!("Import Preview"),
+            tr!("What will be added. Nothing of yours is replaced."),
+        ),
         View::Content(content) if content.step == Step::Preview => (
             tr!("Import Preview"),
             tr!("What will be added. Nothing of yours is replaced."),

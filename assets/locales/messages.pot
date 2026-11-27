@@ -408,7 +408,7 @@ msgstr ""
 msgid "A snapshot is already being made."
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid ""
 "A symbol from an exchange DegenView doesn’t have is matched to the same pair"
 " elsewhere. Change or skip any of them."
@@ -751,13 +751,13 @@ msgstr ""
 msgid "Add broker…"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/detail/action.rs
 #: src/ui/chart/symbol_picker/footer.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Add card"
 msgstr ""
 
+#: src/ui/chart/symbol_picker/detail/action.rs
 #: src/ui/chart/symbol_picker/footer.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Add chart"
 msgstr ""
 
@@ -880,15 +880,15 @@ msgstr ""
 msgid "Add to the URL as ?token="
 msgstr ""
 
+#: src/ui/chart/symbol_picker/detail/action.rs
 #: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/list.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Add to this tab"
 msgstr ""
 
 #: src/ui/chart/card/header.rs
+#: src/ui/chart/symbol_picker/detail/action.rs
 #: src/ui/chart/symbol_picker/list.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Add to watchlist"
 msgstr ""
 
@@ -936,7 +936,7 @@ msgstr ""
 msgid "Add your {provider} API key to start"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/mod.rs
 msgid "Add {count} choice"
 msgid_plural "Add {count} choices"
 msgstr[0] ""
@@ -966,7 +966,7 @@ msgstr ""
 msgid "Added lines {first}–{last}"
 msgstr ""
 
-#: src/ui/tradingview/result.rs
+#: src/ui/tradingview/done.rs
 msgid "Added to DegenView"
 msgstr ""
 
@@ -1103,6 +1103,7 @@ msgstr ""
 #: src/ui/alert/center.rs
 #: src/ui/broker/panel.rs
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "All"
 msgstr ""
 
@@ -1734,7 +1735,7 @@ msgstr ""
 msgid "Ask {size} ({worth})"
 msgstr ""
 
-#: src/ui/tradingview/offer/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid ""
 "Asked only once. Later, choose Import from TradingView in the layout menu."
 msgstr ""
@@ -1818,6 +1819,7 @@ msgid "Auto · {interval}"
 msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "Auto-matched"
 msgstr ""
 
@@ -1910,6 +1912,8 @@ msgstr ""
 
 #: src/ui/broker/panel.rs
 #: src/ui/trade/order_sheet/review.rs
+#: src/ui/tradingview/preview/mod.rs
+#: src/ui/tradingview/result.rs
 msgid "Back"
 msgstr ""
 
@@ -2313,7 +2317,7 @@ msgstr ""
 msgid "Bring to front"
 msgstr ""
 
-#: src/ui/tradingview/offer/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "Bring your TradingView setup with you"
 msgstr ""
 
@@ -2587,6 +2591,9 @@ msgstr ""
 #: src/ui/settings/mcp/mod.rs
 #: src/ui/settings/mcp/permissions_sheet.rs
 #: src/ui/settings/pine_studio/mod.rs
+#: src/ui/tradingview/choose/mod.rs
+#: src/ui/tradingview/result.rs
+#: src/ui/tradingview/welcome/mod.rs
 #: src/ui/watchlist/sidebar/modals.rs
 #: src/ui/webhook/editor.rs
 #: src/ui/window/update_sheet/mod.rs
@@ -2933,7 +2940,7 @@ msgid_plural "Changes {areas} · reads {count} more areas"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 msgid "Change…"
 msgstr ""
 
@@ -2990,7 +2997,7 @@ msgstr ""
 msgid "Chart type: {chart_type}"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/mod.rs
 msgid "Chart {count} choice"
 msgid_plural "Chart {count} choices"
 msgstr[0] ""
@@ -3005,7 +3012,7 @@ msgstr ""
 msgid "Chart's scale"
 msgstr ""
 
-#: src/ui/tradingview/preview.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Charts"
 msgstr ""
 
@@ -3090,7 +3097,7 @@ msgstr ""
 msgid "Chg%"
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/mod.rs
 #: src/ui/tradingview/result.rs
 msgid "Choose Folder…"
 msgstr ""
@@ -3106,7 +3113,7 @@ msgid ""
 "home folder. Press Ctrl+H to see hidden folders."
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "Choose What to Import"
 msgstr ""
 
@@ -3391,6 +3398,7 @@ msgstr ""
 #: src/ui/kit/dialog/mod.rs
 #: src/ui/paper/tables.rs
 #: src/ui/snapshot_studio/window/mod.rs
+#: src/ui/tradingview/done.rs
 #: src/ui/window/chrome.rs
 msgid "Close"
 msgstr ""
@@ -3656,9 +3664,9 @@ msgstr ""
 
 #: src/ui/chart/settings/compare.rs
 #: src/ui/chart/settings/mod.rs
+#: src/ui/chart/symbol_picker/detail/action.rs
 #: src/ui/chart/symbol_picker/footer.rs
 #: src/ui/chart/symbol_picker/list.rs
-#: src/ui/chart/symbol_picker/mod.rs
 msgid "Compare"
 msgstr ""
 
@@ -3853,6 +3861,7 @@ msgid "Continue"
 msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
+#: src/ui/tradingview/choose/mod.rs
 msgid "Continue to Preview"
 msgstr ""
 
@@ -4833,7 +4842,7 @@ msgid ""
 "restart. It keeps trying in the background."
 msgstr ""
 
-#: src/ui/tradingview/offer/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "DegenView found it on this computer. You choose what comes over."
 msgstr ""
 
@@ -5316,6 +5325,7 @@ msgstr ""
 #: src/ui/portfolio/sheets.rs
 #: src/ui/settings/mcp/credentials.rs
 #: src/ui/settings/mcp/permissions_sheet.rs
+#: src/ui/tradingview/done.rs
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Done"
 msgstr ""
@@ -5487,6 +5497,7 @@ msgstr ""
 
 #: src/model/chart/object_tree.rs
 #: src/ui/snapshot_studio/window/toolbar.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Drawings"
 msgstr ""
 
@@ -7681,6 +7692,7 @@ msgstr ""
 msgid "Implement this plan"
 msgstr ""
 
+#: src/ui/tradingview/preview/mod.rs
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Import"
 msgstr ""
@@ -7690,6 +7702,7 @@ msgid "Import Complete"
 msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
+#: src/ui/tradingview/mod.rs
 msgid "Import Preview"
 msgstr ""
 
@@ -7767,16 +7780,20 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/tradingview/result.rs
+msgid "Importing…"
+msgstr ""
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr ""
 
-#: src/ui/tradingview/done.rs
-msgid "In Pine Studio"
-msgstr ""
-
 #: src/ui/settings/api_keys.rs
 msgid "In Account Management, open Personal Access Tokens and generate a token."
+msgstr ""
+
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
 msgstr ""
 
 #: src/ui/watchlist/sidebar/detail.rs
@@ -7920,7 +7937,7 @@ msgstr ""
 msgid "Inside pitchfork"
 msgstr ""
 
-#: src/ui/tradingview/result.rs
+#: src/service/tradingview/mod.rs
 msgid ""
 "Install the TradingView desktop app, sign in, and open the layouts and "
 "watchlists you want to bring over."
@@ -8010,7 +8027,7 @@ msgid ""
 "when you place, edit or cancel an order, and it has no live prices."
 msgstr ""
 
-#: src/ui/tradingview/preview.rs
+#: src/ui/tradingview/preview/cards.rs
 msgid "Its charts had different intervals. A DegenView layout has one:"
 msgstr ""
 
@@ -8364,12 +8381,16 @@ msgstr ""
 msgid "Layout: {name}"
 msgstr ""
 
+#: src/ui/tradingview/choose/cards.rs
+#: src/ui/tradingview/done.rs
+#: src/ui/tradingview/preview/mod.rs
 #: src/ui/workspace/empty_state/tabs.rs
 #: src/ui/workspace/toolbar.rs
 msgid "Layouts"
 msgstr ""
 
 #: src/ui/tradingview/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid ""
 "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
 msgstr ""
@@ -8403,7 +8424,7 @@ msgstr ""
 msgid "Left of Code"
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "Left out of the import"
 msgstr ""
 
@@ -9008,7 +9029,7 @@ msgstr ""
 msgid "Looking the order up at the broker…"
 msgstr ""
 
-#: src/ui/tradingview/preview.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Looking up markets and prices…"
 msgstr ""
 
@@ -9244,7 +9265,7 @@ msgstr ""
 msgid "Match case"
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "Match symbols to markets"
 msgstr ""
 
@@ -9256,6 +9277,7 @@ msgstr ""
 msgid "Match whole word"
 msgstr ""
 
+#: src/host/tradingview/mod.rs
 #: src/ui/portfolio/tab/import.rs
 msgid "Match {symbol}"
 msgstr ""
@@ -9272,7 +9294,7 @@ msgstr ""
 msgid "Matching bracket border"
 msgstr ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 msgid "Match…"
 msgstr ""
 
@@ -9994,7 +10016,7 @@ msgstr ""
 msgid "No Symbols"
 msgstr ""
 
-#: src/ui/tradingview/offer.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "No Thanks"
 msgstr ""
 
@@ -10485,7 +10507,7 @@ msgstr ""
 msgid "Not linked: {charts}. Price-based chart types have no shared time."
 msgstr ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 msgid "Not matched"
 msgstr ""
 
@@ -10551,7 +10573,7 @@ msgstr ""
 msgid "Nothing Triggered"
 msgstr ""
 
-#: src/ui/tradingview/result.rs
+#: src/ui/tradingview/done.rs
 msgid "Nothing Was Added"
 msgstr ""
 
@@ -10636,11 +10658,12 @@ msgstr ""
 msgid "Nothing profiled yet"
 msgstr ""
 
-#: src/ui/tradingview/offer/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "Nothing replaced"
 msgstr ""
 
 #: src/pine_studio/ai/review_view.rs
+#: src/ui/tradingview/words.rs
 msgid "Nothing selected"
 msgstr ""
 
@@ -10675,6 +10698,7 @@ msgid "Nothing to fix in this script."
 msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Nothing to import"
 msgstr ""
 
@@ -10978,7 +11002,7 @@ msgid ""
 " of its transactions out."
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/mod.rs
 msgid ""
 "Only what the TradingView app has opened recently on this computer is here. "
 "Missing something? Open it there, then reload."
@@ -11019,6 +11043,7 @@ msgid "Opacity percent"
 msgstr ""
 
 #: src/ui/drawing/layer/menu.rs
+#: src/ui/tradingview/done.rs
 msgid "Open"
 msgstr ""
 
@@ -11034,7 +11059,7 @@ msgstr ""
 msgid "Open File…"
 msgstr ""
 
-#: src/ui/tradingview/result.rs
+#: src/ui/tradingview/done.rs
 msgid "Open Layout"
 msgstr ""
 
@@ -11298,7 +11323,7 @@ msgid ""
 "(set on that client)."
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "Other exchange"
 msgstr ""
 
@@ -11749,8 +11774,9 @@ msgstr ""
 msgid "Pine logs"
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
-#: src/ui/tradingview/preview.rs
+#: src/ui/tradingview/choose/cards.rs
+#: src/ui/tradingview/done.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Pine scripts"
 msgstr ""
 
@@ -12057,6 +12083,10 @@ msgstr ""
 msgid "Predictions"
 msgstr ""
 
+#: src/ui/tradingview/result.rs
+msgid "Preparing the preview…"
+msgstr ""
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Preset"
 msgstr ""
@@ -12077,7 +12107,7 @@ msgstr ""
 msgid "Preview Chart"
 msgstr ""
 
-#: src/ui/tradingview/offer/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "Preview first"
 msgstr ""
 
@@ -12517,6 +12547,7 @@ msgid "Read {name}'s instructions"
 msgstr ""
 
 #: src/ui/tradingview/result.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "Reading TradingView’s data…"
 msgstr ""
 
@@ -12563,6 +12594,7 @@ msgid "Ready"
 msgstr ""
 
 #: src/ui/portfolio/import_preview.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Ready to import"
 msgstr ""
 
@@ -12696,7 +12728,7 @@ msgstr ""
 msgid "Release candidates preview the next version and may be less stable."
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/mod.rs
 msgid "Reload"
 msgstr ""
 
@@ -13065,7 +13097,7 @@ msgstr ""
 msgid "Replace API Key"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/mod.rs
+#: src/ui/chart/symbol_picker/detail/action.rs
 msgid "Replace chart"
 msgstr ""
 
@@ -13154,7 +13186,7 @@ msgstr ""
 
 #: src/ui/chart/settings/canvas.rs
 #: src/ui/chart/settings/style.rs
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 #: src/ui/settings/mcp/mod.rs
 msgid "Reset"
 msgstr ""
@@ -13955,6 +13987,7 @@ msgstr ""
 #: src/ui/chart/indicator_strip.rs
 #: src/ui/chart/settings/mod.rs
 #: src/ui/chart/settings/scripts/mod.rs
+#: src/ui/tradingview/preview/mod.rs
 msgid "Scripts"
 msgstr ""
 
@@ -13979,7 +14012,7 @@ msgstr ""
 msgid "Search"
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "Search Again"
 msgstr ""
 
@@ -14079,7 +14112,7 @@ msgstr ""
 msgid "Search symbol…"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/tabs.rs
+#: src/ui/chart/symbol_picker/mod.rs
 msgid "Search to add to {list}…"
 msgstr ""
 
@@ -14092,6 +14125,8 @@ msgid "Search {total} indicators, concepts or aliases"
 msgstr ""
 
 #: src/ui/portfolio/cmc_import.rs
+#: src/ui/tradingview/choose/mod.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "Searching exchanges…"
 msgstr ""
 
@@ -14851,7 +14886,7 @@ msgstr ""
 msgid "Size in price units"
 msgstr ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 msgid "Skip"
 msgstr ""
 
@@ -14863,7 +14898,7 @@ msgstr ""
 msgid "Skip the proxy"
 msgstr ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 #: src/ui/watchlist/sidebar/modals.rs
 msgid "Skipped"
 msgstr ""
@@ -14926,7 +14961,7 @@ msgstr ""
 msgid "Some colors are hard to read"
 msgstr ""
 
-#: src/ui/tradingview/result.rs
+#: src/ui/tradingview/done.rs
 msgid "Some things couldn’t be added"
 msgstr ""
 
@@ -16296,6 +16331,10 @@ msgstr ""
 msgid "The image is too large to upload."
 msgstr ""
 
+#: src/host/tradingview/mod.rs
+msgid "The import stopped unexpectedly. Some of it may already have been added."
+msgstr ""
+
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."
 msgstr ""
@@ -17598,7 +17637,7 @@ msgstr ""
 msgid "Trading settings"
 msgstr ""
 
-#: src/ui/tradingview/offer/mod.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "TradingView unchanged"
 msgstr ""
 
@@ -17712,6 +17751,7 @@ msgid "Trump"
 msgstr ""
 
 #: src/ui/settings/about.rs
+#: src/ui/tradingview/result.rs
 msgid "Try Again"
 msgstr ""
 
@@ -18634,6 +18674,9 @@ msgid "Watchlist: {title}"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
+#: src/ui/tradingview/choose/cards.rs
+#: src/ui/tradingview/done.rs
+#: src/ui/tradingview/preview/mod.rs
 #: src/ui/watchlist/sidebar/header.rs
 msgid "Watchlists"
 msgstr ""
@@ -19203,6 +19246,7 @@ msgstr[1] ""
 
 #: src/pine_studio/ai/panel.rs
 #: src/ui/broker/panel.rs
+#: src/ui/tradingview/welcome/mod.rs
 msgid "and {count} more"
 msgstr ""
 
@@ -19591,7 +19635,7 @@ msgstr ""
 msgid "stopped early: too much to import"
 msgstr ""
 
-#: src/ui/tradingview/choose.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "symbol matched"
 msgid_plural "symbols matched"
 msgstr[0] ""
@@ -19978,6 +20022,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/mcp/chart/mod.rs
+#: src/ui/tradingview/words.rs
 msgid "{count} drawing"
 msgid_plural "{count} drawings"
 msgstr[0] ""
@@ -20164,12 +20209,14 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/ui/settings/sync.rs
+#: src/ui/tradingview/words.rs
 msgid "{count} layout"
 msgid_plural "{count} layouts"
 msgstr[0] ""
 msgstr[1] ""
 
 #: src/pine_studio/ai/host.rs
+#: src/ui/tradingview/words.rs
 msgid "{count} line"
 msgid_plural "{count} lines"
 msgstr[0] ""
@@ -20204,6 +20251,7 @@ msgid "{count} live"
 msgstr ""
 
 #: src/ui/chart/settings/compare.rs
+#: src/ui/tradingview/words.rs
 msgid "{count} market"
 msgid_plural "{count} markets"
 msgstr[0] ""
@@ -20215,7 +20263,8 @@ msgid_plural "{count} markets · {hidden} hidden"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
+#: src/ui/tradingview/choose/mod.rs
 msgid "{count} matched"
 msgid_plural "{count} matched"
 msgstr[0] ""
@@ -20392,12 +20441,13 @@ msgstr[1] ""
 
 #: src/pine_studio/library/picker.rs
 #: src/ui/settings/sync.rs
+#: src/ui/tradingview/words.rs
 msgid "{count} script"
 msgid_plural "{count} scripts"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 msgid "{count} searching"
 msgstr ""
 
@@ -20435,6 +20485,7 @@ msgid_plural "{count} shown"
 msgstr[0] ""
 msgstr[1] ""
 
+#: src/ui/kit/matching.rs
 #: src/ui/portfolio/cmc_import.rs
 msgid "{count} skipped"
 msgid_plural "{count} skipped"
@@ -20477,7 +20528,9 @@ msgid_plural "{count} templates"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
+#: src/ui/tradingview/choose/mod.rs
+#: src/ui/tradingview/choose/symbols.rs
 msgid "{count} to match"
 msgstr ""
 
@@ -20538,6 +20591,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: src/ui/settings/sync.rs
+#: src/ui/tradingview/words.rs
 msgid "{count} watchlist"
 msgid_plural "{count} watchlists"
 msgstr[0] ""
@@ -20887,7 +20941,7 @@ msgstr ""
 msgid "{market}, {subtitle}"
 msgstr ""
 
-#: src/ui/portfolio/cmc_import.rs
+#: src/ui/kit/matching.rs
 msgid "{matched} of {total}"
 msgstr ""
 

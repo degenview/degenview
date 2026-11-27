@@ -7238,6 +7238,10 @@ msgid_plural "Imported “{name}”. {count} values in the file were not usable 
 msgstr[0] "“{name}” importado. {count} valor del archivo no se ha podido usar y se omitió, por ejemplo: {value}"
 msgstr[1] "“{name}” importado. {count} valores del archivo no se pudieron usar y se omitieron, por ejemplo: {value}"
 
+#: src/ui/tradingview/result.rs
+msgid "Importing…"
+msgstr "Importando…"
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "Importar…"
@@ -11198,6 +11202,10 @@ msgstr "Proveedor de mercados de predicción"
 msgid "Predictions"
 msgstr "Predicciones"
 
+#: src/ui/tradingview/result.rs
+msgid "Preparing the preview…"
+msgstr "Preparando la vista previa…"
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Preset"
 msgstr "Preajuste"
@@ -15146,6 +15154,10 @@ msgstr "Las tenencias que más han ganado en un intervalo"
 #: src/model/chart/snapshot/mod.rs
 msgid "The image is too large to upload."
 msgstr "La imagen es demasiado grande para subirla."
+
+#: src/host/tradingview/mod.rs
+msgid "The import stopped unexpectedly. Some of it may already have been added."
+msgstr "La importación se ha detenido de forma inesperada. Puede que ya se haya añadido una parte."
 
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."
