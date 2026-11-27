@@ -4,6 +4,30 @@ What changed for people who use DegenView, release by release, newest first. `to
 each section from the fragments in `changes/` when it cuts the release, and the app shows the
 sections between your version and the one on offer before it updates.
 
+## 0.6.0-rc.37 (2026-11-27)
+
+### New
+
+- DegenView is available in German. Pick it, or leave it on the system's language, in Settings ▸ Appearance ▸ Language; a restart applies the choice.
+- Charts, the symbol picker and watchlists can use Oanda forex, metals and index CFDs once an account ID and access token are saved in Settings ▸ Oanda.
+- DegenView is available in Russian. Pick it, or leave it on the system's language, in Settings ▸ Appearance ▸ Language; a restart applies the choice.
+
+### Fixed
+
+- Pine boxes that extend left or right now reach the edge of the chart however far back they start, and their text stays by the box.
+- Fills between Pine lines that both extend now run on with them.
+- Pine lines drawn from right to left, and upright ones, now extend the same way as on TradingView.
+- An unfilled market order shows “Market” as its price in Spanish and Chinese, not a dash.
+- The CoinMarketCap Fear & Greed and Altcoin Season cards name the reading in the interface language, not in English.
+- Two, three and four week candles (and unusual month lengths such as 5M) now start where TradingView's do, counted from the start of each year. Existing charts on these timeframes show different candles.
+- Shortened Russian footer hints in the timeframe picker so the popover stays compact.
+- On Windows and Linux, settings and messages no longer call your computer a Mac or mention the Keychain.
+- Pine's timeframe.change now matches TradingView on stock charts (also around holidays and inside request.security of another market), when the timeframe differs from one bar to the next, and with an empty timeframe.
+
+### Fixed in release candidates
+
+- On a stock chart, barstate.islastconfirmedhistory inside request.security is true again on the last finished week or month, as on TradingView.
+
 ## 0.6.0-rc.36 (2026-11-26)
 
 ### New
