@@ -887,6 +887,57 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_waiting_alert_moves_in_once_the_watching_one_is_paused() {
+        let source = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)";
+        let on_tab = |id: u64, tab: u64, state| PineAlertSubscription {
+            workspace_id: Some(tab),
+            state,
+            ..subscription(id, source)
+        };
+        let (store, mut host) = host_of(&[
+            on_tab(1, 1, PineAlertState::Active),
+            on_tab(2, 2, PineAlertState::Active),
+        ]);
+        let mut live = chart(2, &[instance(source)]);
+        host.reconcile(std::slice::from_ref(&live), &store);
+        host.run_active_on(&live, LIVE_NOW);
+
+        store
+            .replace_pine_subscriptions(&[
+                on_tab(1, 1, PineAlertState::Active),
+                on_tab(2, 2, PineAlertState::Paused),
+            ])
+            .expect("write");
+        host.reload(&store);
+        host.reconcile(std::slice::from_ref(&live), &store);
+        assert!(host.run_active_on(&live, LIVE_NOW + 1).is_empty());
+        live.bars[4].close += 1.0;
+        let fired = host.run_active_on(&live, LIVE_NOW + 2);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].0.id, 1);
+    }
+
+    /// A row as saved before alerts named their tab.
+    #[test]
+    fn a_row_saved_before_alerts_named_their_tab_fires_on_its_chart() {
+        let source = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)";
+        let mut saved = serde_json::to_value(subscription(1, source)).expect("encode");
+        saved
+            .as_object_mut()
+            .expect("object")
+            .remove("workspace_id")
+            .expect("field");
+        let old: PineAlertSubscription = serde_json::from_value(saved).expect("decode");
+        let (store, mut host) = host_of(&[old]);
+        let mut live = chart(4, &[instance(source)]);
+        host.reconcile(std::slice::from_ref(&live), &store);
+        assert_eq!(store.pine_subscriptions()[0].workspace_id, Some(4));
+        host.run_active_on(&live, LIVE_NOW);
+        live.bars[4].close += 1.0;
+        assert_eq!(host.run_active_on(&live, LIVE_NOW + 1).len(), 1);
+    }
+
     const SAYS_OLD: &str = "//@version=6\nindicator(\"S\")\nalert(\"old\", alert.freq_all)";
     const SAYS_NEW: &str = "//@version=6\nindicator(\"S\")\nlen = input.int(2)\n\
         alert(\"new\", alert.freq_all)";
