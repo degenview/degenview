@@ -126,20 +126,3 @@ pub fn currency_name(code: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
-
-/// The companies of the stocks offered before anything is searched, which no list has named yet.
-pub fn popular_company(ticker: &str) -> Option<&'static str> {
-    Some(match ticker.to_ascii_uppercase().as_str() {
-        "AAPL" => "Apple Inc.",
-        "MSFT" => "Microsoft Corporation",
-        "NVDA" => "NVIDIA Corporation",
-        "AMZN" => "Amazon.com, Inc.",
-        "GOOGL" => "Alphabet Inc. Class A",
-        "META" => "Meta Platforms, Inc.",
-        "TSLA" => "Tesla, Inc.",
-        "SPY" => "SPDR S&P 500 ETF Trust",
-        "QQQ" => "Invesco QQQ Trust",
-        "AMD" => "Advanced Micro Devices, Inc.",
-        _ => return None,
-    })
-}

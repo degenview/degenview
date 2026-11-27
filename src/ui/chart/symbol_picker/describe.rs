@@ -1,65 +1,9 @@
 //! What the picker says about a market in words: the Description column, the pair under the
-//! symbol and the line under the preview's ticker. Also loads the names those need.
+//! symbol and the line under the preview's ticker.
 
 use crate::model::DataSource;
 use crate::model::market::asset_name::AssetNames;
 use crate::service::SearchResult;
-use crate::service::market::coin_index::CoinIndex;
-use crate::service::market::names::{Directory, Listed};
-use crate::service::work_queue::{self, Pending};
-use eframe::egui;
-use std::sync::Arc;
-
-use super::search::Backend;
-
-/// The names directory and the two loads that fill it. Both are only read once per picker; until
-/// they answer, markets whose provider lists no names have none.
-#[derive(Default)]
-pub struct Names {
-    pub directory: Directory,
-    coins: Option<Pending<Arc<CoinIndex>>>,
-    listed: Option<Pending<Arc<Listed>>>,
-    asked: bool,
-}
-
-impl Names {
-    /// The same names for a freshly opened picker, which asks again so a failed load is retried.
-    pub fn reopened(self) -> Self {
-        Self {
-            directory: self.directory,
-            ..Self::default()
-        }
-    }
-
-    /// Starts the loads on the first call and takes in what has answered.
-    pub fn poll(&mut self, ctx: &egui::Context, backend: Backend) {
-        if !self.asked {
-            self.asked = true;
-            let coins = backend.coin_names;
-            self.coins = Some(work_queue::start_for(
-                DataSource::CoinGecko,
-                Some(ctx),
-                coins,
-            ));
-            let listed = backend.listed_names;
-            self.listed = Some(work_queue::start(Some(ctx), listed));
-        }
-        if let Some(coins) = self.coins.as_mut().and_then(Pending::poll)
-            && !coins.is_empty()
-        {
-            self.directory.coins = coins;
-        }
-        if let Some(listed) = self.listed.as_mut().and_then(Pending::poll)
-            && !listed.is_empty()
-        {
-            self.directory.listed = listed;
-        }
-    }
-
-    pub fn of(&self, result: &SearchResult) -> AssetNames {
-        self.directory.names(result)
-    }
-}
 
 /// The Description column: what the market trades. A pool or a forex pair is named on both
 /// sides, since neither side is a given; a prediction market says which event it belongs to.
@@ -84,11 +28,7 @@ pub fn pair_line(result: &SearchResult) -> String {
     ) {
         return String::new();
     }
-    let quote = result
-        .quote
-        .clone()
-        .or_else(|| result.source.quote_asset(&result.symbol));
-    quote.map_or_else(String::new, |quote| {
+    result.quote_asset().map_or_else(String::new, |quote| {
         format!("{} / {quote}", result.base_asset())
     })
 }

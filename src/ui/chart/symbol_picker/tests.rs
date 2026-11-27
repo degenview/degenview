@@ -2,10 +2,10 @@ use super::*;
 use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
 use crate::model::{Kline, Timeframe};
-use crate::service::EventInfo;
 use crate::service::market::coin_index::CoinIndex;
 use crate::service::market::names::Listed;
 use crate::service::net::http;
+use crate::service::{EventInfo, ProviderError};
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -1361,7 +1361,7 @@ fn a_portfolio_view_the_list_holds_is_checked_and_not_added_again() {
         in_list: &held,
     };
     assert!(rig.picker.row_state(0, &item, &env).on_chart);
-    assert_eq!(rig.picker.return_hint(&env), "Already in Favorites");
+    assert_eq!(rig.picker.footer(&env).return_hint, "Already in Favorites");
     assert!(rig.picker.commit(pick, PickKind::Watchlist, &env).is_none());
 }
 

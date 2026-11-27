@@ -1,9 +1,22 @@
 //! The list area: the rows, the captions above groups of them and what stands in for them.
 
 use super::columns::{self, Columns};
-use super::notice::{NOTICE_HEIGHT, show_notice};
-use super::*;
+use super::dashboards;
+use super::list::{self, RowState};
+use super::lookup::{self, Lookup};
+use super::notice::{NOTICE_HEIGHT, SettingsPage, show_notice};
+use super::offer::{self, Offer, Primary};
+use super::search::{Listing, Scope};
+use super::{Env, Item, PADDING, Pick, PickKind, PickMode, SymbolPicker, predictions};
+use crate::i18n::tr;
+use crate::model::DataSource;
+use crate::service::{ProviderError, SearchResult};
+use crate::ui::chart::picker_kit::widgets;
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::scroll::Beyond;
+use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::theme;
+use eframe::egui::{self, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 impl SymbolPicker {
     /// The rows, or what stands in for them. Returns a pick.
@@ -67,7 +80,7 @@ impl SymbolPicker {
                     let state = self.row_state(index, item, env);
                     let (response, out) = match item {
                         Item::Market(result) => {
-                            let names = self.names.of(result);
+                            let names = self.caches.names.of(result);
                             list::row(ui, result, &names, state, replacing, &columns)
                         }
                         Item::Choice(result) => predictions::rows::choice(
@@ -112,7 +125,7 @@ impl SymbolPicker {
                         Some(self.add_kind())
                     } else if out.pick {
                         // A click on a market already drawn here, while comparing, does nothing.
-                        (!(self.mode == PickMode::Compare && state.overlaid))
+                        (!(state.offer.primary == Primary::Compare && state.overlaid))
                             .then(|| self.default_kind())
                     } else {
                         None
@@ -152,31 +165,12 @@ impl SymbolPicker {
 
     /// How `item`'s row is drawn: highlighted, already held, drawn over the chart.
     pub(super) fn row_state(&self, index: usize, item: &Item, env: &Env) -> RowState {
-        let on_chart = match item {
-            Item::Market(result) | Item::Choice(result) => {
-                self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
-            }
-            Item::Tile(tile) => match &tile.pick {
-                TilePick::Gauge(result) => {
-                    self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
-                }
-                TilePick::Card(card) if self.mode == PickMode::Watchlist => {
-                    self.held(env, &card.instrument_id())
-                }
-                TilePick::Card(card) => env.cards_on_tab.iter().any(|on| on.same_card(card)),
-            },
-            Item::Event(_) => false,
-        };
         let market = item.market().filter(|_| !matches!(item, Item::Event(_)));
         RowState {
             highlighted: index == self.highlight,
-            on_chart,
-            overlaid: market.is_some_and(|result| Self::overlaid(env, result)),
-            can_overlay: env.can_overlay
-                && self.mode != PickMode::Watchlist
-                && market.is_some_and(Self::comparable),
-            comparing: self.mode == PickMode::Compare,
-            watchlist: self.mode == PickMode::Watchlist,
+            on_chart: offer::holds(self.mode, item, env),
+            overlaid: market.is_some_and(|result| offer::overlaid(env, result)),
+            offer: Offer::of(self.mode, Some(item), env),
             indent: if self.scope == Scope::Predictions && matches!(item, Item::Market(_)) {
                 predictions::rows::ART_INDENT
             } else {

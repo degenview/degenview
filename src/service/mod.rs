@@ -108,6 +108,13 @@ impl SearchResult {
         )
     }
 
+    /// What the market is priced in: the provider's own quote, else read out of the symbol.
+    pub fn quote_asset(&self) -> Option<String> {
+        self.quote
+            .clone()
+            .or_else(|| self.source.quote_asset(&self.symbol))
+    }
+
     /// `BASE/QUOTE` for a pair, else the symbol: the label portfolios keep for a market.
     pub fn pair_label(&self) -> String {
         match (&self.base, &self.quote) {
@@ -189,6 +196,12 @@ pub trait MarketSource {
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let _ = query;
         Ok(Vec::new())
+    }
+
+    /// The names this venue publishes for the assets it lists, as `(upper-case ticker, name)`.
+    /// They describe the same assets on venues that publish none. Blocks: not for the frame loop.
+    fn asset_names(&self) -> Vec<(String, String)> {
+        Vec::new()
     }
 }
 

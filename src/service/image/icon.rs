@@ -22,6 +22,7 @@ use crate::lock::lock;
 use crate::model::DataSource;
 use crate::service::cache::lookup::{self, Hit, LookupCache};
 use crate::service::market::coin_index;
+use crate::service::market::coingecko::BASE_URL;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -30,7 +31,6 @@ use std::time::{Duration, Instant};
 const STATIC_CDN: &str =
     "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color";
 const STOCK_CDN: &str = "https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons";
-const COINGECKO: &str = "https://api.coingecko.com/api/v3";
 const DEXSCREENER: &str = "https://api.dexscreener.com/latest/dex";
 
 /// Persisted answers: `(source, ticker) → artwork URL`.
@@ -325,7 +325,7 @@ fn resolve_symbol(symbol: &str) -> (Option<String>, bool) {
 /// those, the best-ranked coin, so "btc" resolves to bitcoin rather than a same-ticker copycat.
 fn coingecko_search_icon(base: &str) -> Result<Option<String>, ()> {
     crate::service::net::rate_limit::coingecko().wait_for_slot();
-    let url = format!("{COINGECKO}/search?query={base}");
+    let url = format!("{BASE_URL}/search?query={base}");
     let body =
         crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
             .map_err(|_| ())?;
@@ -384,7 +384,7 @@ fn verified(url: String) -> Option<String> {
 fn coingecko_icon_by_id(id: &str) -> Result<Option<String>, ()> {
     crate::service::net::rate_limit::coingecko().wait_for_slot();
     let url = format!(
-        "{COINGECKO}/coins/markets?vs_currency=usd&ids={}&per_page=1&sparkline=false",
+        "{BASE_URL}/coins/markets?vs_currency=usd&ids={}&per_page=1&sparkline=false",
         id.to_lowercase()
     );
     let body =

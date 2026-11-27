@@ -18,6 +18,12 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 
 ## What it does
 
+What a row can be used for in the open mode is decided once (`offer.rs`, `Offer`): what Return does,
+whether it does anything, and what else is offered (add as a chart, compare). The footer's key hints,
+the preview's button and menu, the row's right-click menu, the keys and the row clicks all read it, so
+a new mode or action is added there. The footer therefore hints ⇧↵ and ⌥↵ exactly when the button's
+menu offers them: not for a market already on the chart, nor for an add that Return already does.
+
 - **Opens searching for the market on the focused chart** (`Chart::picker_query`): the exchange's own
   name for Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
@@ -120,7 +126,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   `SymbolSearch::related`; clicking one uses it) and a **button** doing what Return does
   ("Replace chart", "Add chart", "Compare", "Add to watchlist", "Add card"), with a chevron for the
   other actions. It is greyed when Compare or a watchlist already has the market, and an event header
-  has none. `detail/layout.rs` shares the height: other markets are dropped first, and under 360 pt
+  has none. `detail/layout.rs` places every part (the renderer only draws into its rects): other markets are dropped first, and under 360 pt
   the status and exchange lines merge. A prediction market shows the event's artwork and title, its
   chance, the provider, its chance's last day when there is room, and what the provider says about
   the event (`EventStats`); an index or a card says what it charts.
@@ -131,7 +137,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   "No chart for this market" when the provider has none; failures are asked again when the picker is
   next opened. There is deliberately no range picker.
 - **Empty box**: recent picks (shared with the new-tab page and the portfolio asset picker), else
-  popular markets (`picker_kit::suggestions`).
+  popular markets (`model::market::well_known`, the one list the new tab's starter tiles use too).
 - **Tab bar width** (`fit_tabs`): the tabs, drawn as pills in one well, and the pull-down do not fit
   at the narrowest width with roomy padding, so the row gives up room in order: tab padding 28 → 20, the pull-down to
   its icon, tab padding 12. The tab titles are measured, not guessed.
@@ -158,7 +164,7 @@ The Description column and the line under the preview's ticker come from
 | Binance, Coinbase, OKX, Bybit, Kraken | none in the lists used | coin ranking, Gate.io/MEXC names, currency table |
 | CoinGecko | `/search` `name` | coin ranking by id, the title-cased id |
 | DEXScreener | `baseToken.name`, `quoteToken.name` | nothing: a ticker would name another token |
-| Alpaca | the company, without "Common Stock" and the like | the popular stocks' names |
+| Alpaca | the company, without "Common Stock" and the like | the well-known companies (`model::market::well_known`) |
 | Oanda | `displayName`, when it says more than the id | currency table only |
 | Polymarket, Kalshi | the event's title | |
 

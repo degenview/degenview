@@ -2,6 +2,8 @@
 //! that opens what else can be done with it.
 
 use super::super::PickKind;
+use super::super::list::{ADD_KEY, COMPARE_KEY, REPLACE_KEY};
+use super::super::offer::{Offer, Primary};
 use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, size};
@@ -15,7 +17,7 @@ const RADIUS: f32 = 8.0;
 /// One thing to do with the shown market.
 #[derive(Clone, Debug)]
 pub struct Action {
-    pub label: String,
+    pub label: &'static str,
     pub icon: Icon,
     pub shortcut: &'static str,
     pub kind: PickKind,
@@ -27,6 +29,47 @@ pub struct Actions {
     pub main: Action,
     pub enabled: bool,
     pub others: Vec<Action>,
+}
+
+impl Actions {
+    /// The button for `offer`, whose main action is the mode's `default_kind`. An event is only
+    /// folded open, so it has none.
+    pub fn of(offer: &Offer, default_kind: PickKind) -> Option<Self> {
+        let (label, icon) = match offer.primary {
+            Primary::Fold { .. } => return None,
+            Primary::Replace => (tr!("Replace chart"), Icon::Exchange),
+            Primary::AddChart => (tr!("Add chart"), Icon::Plus),
+            Primary::AddCard => (tr!("Add card"), Icon::Plus),
+            Primary::Compare => (tr!("Compare"), Icon::Compare),
+            Primary::Watch => (tr!("Add to watchlist"), Icon::Plus),
+        };
+        let others = offer
+            .others()
+            .map(|kind| {
+                let (label, icon, shortcut) = if kind == PickKind::Overlay {
+                    (tr!("Compare"), Icon::Compare, COMPARE_KEY)
+                } else {
+                    (tr!("Add to this tab"), Icon::Plus, ADD_KEY)
+                };
+                Action {
+                    label,
+                    icon,
+                    shortcut,
+                    kind,
+                }
+            })
+            .collect();
+        Some(Self {
+            main: Action {
+                label,
+                icon,
+                shortcut: REPLACE_KEY,
+                kind: default_kind,
+            },
+            enabled: offer.enabled,
+            others,
+        })
+    }
 }
 
 /// Draws the button in `rect`; returns what was asked for.
@@ -44,7 +87,7 @@ pub fn show(ui: &mut Ui, rect: Rect, actions: &Actions) -> Option<PickKind> {
         Sense::hover()
     };
     let response = ui.interact(main, Id::new("symbol_picker_action"), sense);
-    let response = crate::ui::accessibility::label(response, &actions.main.label);
+    let response = crate::ui::accessibility::label(response, actions.main.label);
     let more = (chevron_width > 0.0).then(|| {
         let more = ui.interact(chevron, Id::new("symbol_picker_more"), Sense::click());
         crate::ui::accessibility::label(more, tr!("More actions"))
@@ -72,7 +115,7 @@ pub fn show(ui: &mut Ui, rect: Rect, actions: &Actions) -> Option<PickKind> {
     };
     let label = kit::galley(
         ui,
-        &actions.main.label,
+        actions.main.label,
         size::BODY + 1.0,
         MEDIUM,
         color,
@@ -108,7 +151,7 @@ pub fn show(ui: &mut Ui, rect: Rect, actions: &Actions) -> Option<PickKind> {
         let rows: Vec<(&str, Option<&str>)> = actions
             .others
             .iter()
-            .map(|action| (action.label.as_str(), Some(action.shortcut)))
+            .map(|action| (action.label, Some(action.shortcut)))
             .collect();
         kit::fitted_menu_rows(ui, &more, egui::RectAlign::TOP_END, &rows, |ui| {
             kit::menu_scope(ui, 0.0);
@@ -116,7 +159,7 @@ pub fn show(ui: &mut Ui, rect: Rect, actions: &Actions) -> Option<PickKind> {
                 if kit::menu_item_with_shortcut(
                     ui,
                     action.icon,
-                    &action.label,
+                    action.label,
                     Some(action.shortcut),
                     true,
                     false,

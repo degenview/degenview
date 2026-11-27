@@ -5,6 +5,7 @@ use super::EmptyStateInput;
 use super::tiles::{self, Frame, Market};
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::well_known;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use eframe::egui::{Id, Ui};
@@ -21,33 +22,6 @@ const CLEAR_ROOM: f32 = 70.0;
 /// Rows the recent list leaves out of the room under it, and the fewest it shows.
 const SPARE_ROWS: f32 = 4.0;
 const MIN_ROWS: f32 = 3.0;
-
-/// Starter crypto markets: ticker and name.
-const CRYPTO: [(&str, &str); 10] = [
-    ("BTC", "Bitcoin"),
-    ("ETH", "Ethereum"),
-    ("SOL", "Solana"),
-    ("BNB", "BNB"),
-    ("XRP", "XRP"),
-    ("ADA", "Cardano"),
-    ("DOGE", "Dogecoin"),
-    ("AVAX", "Avalanche"),
-    ("DOT", "Polkadot"),
-    ("LINK", "Chainlink"),
-];
-/// Starter stocks and ETFs: ticker and name.
-const STOCKS: [(&str, &str); 10] = [
-    ("AAPL", "Apple"),
-    ("MSFT", "Microsoft"),
-    ("NVDA", "NVIDIA"),
-    ("AMZN", "Amazon"),
-    ("GOOGL", "Alphabet"),
-    ("META", "Meta"),
-    ("TSLA", "Tesla"),
-    ("SPY", "S&P 500"),
-    ("QQQ", "Nasdaq 100"),
-    ("AMD", "AMD"),
-];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Tab {
@@ -199,9 +173,11 @@ fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
 }
 
 fn suggestions(ui: &mut Ui, frame: &mut Frame) {
-    starters(ui, &CRYPTO, DataSource::Binance, "empty-crypto", frame);
+    let coins = well_known::COINS.map(|coin| (coin.ticker, coin.name));
+    starters(ui, &coins, DataSource::Binance, "empty-crypto", frame);
     tiles::separator(ui);
-    starters(ui, &STOCKS, DataSource::Alpaca, "empty-stock", frame);
+    let stocks = well_known::STOCKS.map(|stock| (stock.ticker, stock.name));
+    starters(ui, &stocks, DataSource::Alpaca, "empty-stock", frame);
 }
 
 /// A grid of starter markets from one provider: crypto is quoted in USDT, stocks by ticker.

@@ -140,6 +140,16 @@ impl MarketSource for Gate {
         )
     }
 
+    fn asset_names(&self) -> Vec<(String, String)> {
+        let Ok(pairs) = CATALOG.get(download_pairs) else {
+            return Vec::new();
+        };
+        pairs
+            .iter()
+            .filter_map(|pair| Some((pair.base.to_uppercase(), pair.base_name.clone()?)))
+            .collect()
+    }
+
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // `BTC_USDT`, `btc/usdt` and `BTCUSDT` are one query.
         let needle = normalize(query);
@@ -255,17 +265,6 @@ static CATALOG: Catalog<Pair> = Catalog::new("catalog_gateio_v2");
 /// Forgets the list held in memory (after the disk cache was cleared).
 pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
-}
-
-/// The asset names of the listed markets, by upper-case ticker. Blocks: not for the frame loop.
-pub(in crate::service) fn asset_names() -> Vec<(String, String)> {
-    let Ok(pairs) = CATALOG.get(download_pairs) else {
-        return Vec::new();
-    };
-    pairs
-        .iter()
-        .filter_map(|pair| Some((pair.base.to_uppercase(), pair.base_name.clone()?)))
-        .collect()
 }
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {

@@ -3,7 +3,7 @@
 
 use super::super::list::result_label;
 use super::super::search::trading_kind;
-use super::layout::RELATED_ROW;
+use super::layout::{RELATED_CAPTION, RELATED_CAPTION_GAP, RELATED_ROW, RELATED_RULE};
 use crate::i18n::tr;
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::result_icon;
@@ -25,10 +25,10 @@ pub fn show(
     room: Rect,
     related: &[SearchResult],
 ) -> Option<SearchResult> {
-    let mut y = room.top() + 12.0;
+    let mut y = room.top() + RELATED_RULE;
     ui.painter()
         .hline(panel.x_range(), y, Stroke::new(1.0, theme::separator()));
-    y += 10.0;
+    y += RELATED_CAPTION_GAP;
     let heading = kit::galley(
         ui,
         tr!("ALSO TRADES AS"),
@@ -39,7 +39,7 @@ pub fn show(
     );
     ui.painter()
         .galley(pos2(room.left(), y), heading, theme::text_tertiary());
-    y += 22.0;
+    y += RELATED_CAPTION;
 
     // The rows scroll inside what is left instead of running into the button.
     let rows = Rect::from_min_max(

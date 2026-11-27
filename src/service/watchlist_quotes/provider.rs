@@ -330,8 +330,9 @@ fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, 
     // One `/coins/markets` call prices every coin id, costing the limiter a single slot.
     super::super::net::rate_limit::coingecko().wait_for_slot();
     let url = format!(
-        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids={ids}\
+        "{}/coins/markets?vs_currency=usd&ids={ids}\
          &sparkline=false&price_change_percentage=24h&per_page={}",
+        crate::service::market::coingecko::BASE_URL,
         requests.len().min(250)
     );
     parse_coingecko_markets(&get(DataSource::CoinGecko, &url, &[])?, requests)

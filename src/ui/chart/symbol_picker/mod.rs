@@ -16,7 +16,9 @@ mod detail;
 mod footer;
 mod list;
 mod lookup;
+mod names;
 mod notice;
+mod offer;
 pub mod predictions;
 mod results;
 pub mod search;
@@ -24,31 +26,29 @@ mod tabs;
 pub mod watchlists;
 
 use super::picker_kit::recents::{self, RecentMarket};
-use super::picker_kit::widgets;
 use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::Portfolio;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::{DataSource, InstrumentId};
-use crate::service::{self, ProviderError, SearchResult};
+use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
-use crate::ui::icons::{self, Icon};
-use crate::ui::kit::hints::{Hint, WIDE_HINT_GAP, spaced_hint_row};
-use crate::ui::kit::loading::LoadingIndicator;
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::icons::Icon;
+use crate::ui::kit;
 use crate::ui::theme;
 use dashboards::{Tile, TilePick};
-use describe::Names;
 use detail::PreviewChart;
-use detail::action::{Action, Actions};
-use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
-use list::RowState;
+use detail::action::Actions;
+use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Stroke, Ui, Vec2, pos2, vec2};
+use footer::Footer;
 use lookup::Lookup;
-use notice::SettingsPage;
+use names::Names;
+use notice::{Notice, SettingsPage};
+use offer::{Offer, Overlay};
 use predictions::EventHead;
 use results::Rows;
 use search::{Backend, Listing, Scope, SymbolSearch};
-use tabs::Filter;
+use tabs::{Filter, FilterMenu};
 use watchlists::WatchlistGroup;
 #[cfg(test)]
 use {
@@ -203,10 +203,7 @@ pub struct SymbolPicker {
     /// The portfolio the Dashboards tab's cards cover; `None` covers them all.
     card_scope: Option<u64>,
     search: SymbolSearch,
-    /// What the markets' assets are called.
-    names: Names,
-    /// The preview's chart of the highlighted market.
-    chart: PreviewChart,
+    caches: Caches,
     /// The prediction events listed, and which show their choices.
     events: predictions::Events,
     /// The choices ticked to chart together, as the pick that charts them.
@@ -231,12 +228,43 @@ pub struct SymbolPicker {
     settings_request: Option<SettingsPage>,
 }
 
+/// What survives closing the picker: reopening keeps what was read and asks again for what
+/// failed.
+struct Caches {
+    /// What the markets' assets are called.
+    names: Names,
+    /// The preview's chart of the highlighted market.
+    chart: PreviewChart,
+}
+
+impl Caches {
+    fn new(backend: Backend) -> Self {
+        Self {
+            names: Names::default(),
+            chart: PreviewChart::new(backend.candles),
+        }
+    }
+
+    /// The same caches for a freshly opened picker.
+    fn reopened(&self) -> Self {
+        Self {
+            names: self.names.reopened(),
+            chart: self.chart.reopened(),
+        }
+    }
+}
+
 impl SymbolPicker {
     pub fn new(store: SharedStore) -> Self {
         Self::with_backend(store, Backend::LIVE)
     }
 
     fn with_backend(store: SharedStore, backend: Backend) -> Self {
+        Self::fresh(store, backend, Caches::new(backend))
+    }
+
+    /// A closed picker with nothing typed, over `caches`.
+    fn fresh(store: SharedStore, backend: Backend, caches: Caches) -> Self {
         Self {
             store,
             backend,
@@ -248,8 +276,7 @@ impl SymbolPicker {
             venue: None,
             card_scope: None,
             search: SymbolSearch::new(backend),
-            names: Names::default(),
-            chart: PreviewChart::new(backend.candles),
+            caches,
             events: predictions::Events::default(),
             ticked: None,
             trending: predictions::Trending::new(backend.trending),
@@ -302,13 +329,7 @@ impl SymbolPicker {
     }
 
     fn open_for(&mut self, current: &str, mode: PickMode) {
-        let store = self.store.clone();
-        let names = std::mem::take(&mut self.names).reopened();
-        let chart =
-            std::mem::replace(&mut self.chart, PreviewChart::new(self.backend.candles)).reopened();
-        *self = Self::with_backend(store, self.backend);
-        self.names = names;
-        self.chart = chart;
+        *self = Self::fresh(self.store.clone(), self.backend, self.caches.reopened());
         self.recents = self
             .store
             .lock()
@@ -373,7 +394,7 @@ impl SymbolPicker {
         }
         let search_id = Id::new("symbol_picker_search");
         self.claim_keys(ctx, search_id);
-        self.names.poll(ctx, self.backend);
+        self.caches.names.poll(ctx, self.backend);
         let keys = Keys::read(ctx);
 
         let listing = self.listing(ctx);
@@ -699,52 +720,42 @@ impl SymbolPicker {
         env.replacing.filter(|_| self.mode == PickMode::Chart)
     }
 
-    /// Whether `result` is the focused chart's own market or one already compared on it.
-    fn overlaid(env: &Env, result: &SearchResult) -> bool {
-        let market = InstrumentId::new(result.source, &result.full_symbol);
-        env.overlaid.iter().any(|id| id.is_same_market(&market))
-    }
-
-    /// Whether a market can be drawn over another chart: a crypto or stock market can.
-    fn comparable(result: &SearchResult) -> bool {
-        search::PROVIDERS.contains(&result.source)
-    }
-
-    /// What Return does on `item`: fold an event, or use what the row stands for.
+    /// What Return, ⇧Return or ⌥Return does on `item`: fold an event, or use what the row stands
+    /// for.
     fn use_item(&mut self, item: &Item, keys: &Keys, env: &Env) -> Option<Output> {
+        if let Item::Event(head) = item {
+            self.events.fold(&head.title);
+            return None;
+        }
+        let offer = Offer::of(self.mode, Some(item), env);
         let kind = if keys.add {
             self.add_kind()
-        } else if keys.overlay && env.can_overlay && self.mode != PickMode::Watchlist {
+        } else if keys.overlay && offer.overlay != Overlay::Unavailable {
             PickKind::Overlay
         } else {
+            // A prediction market or an index is not drawn over a chart.
             self.default_kind()
         };
+        // A market already drawn on the chart is not drawn twice.
+        if kind == PickKind::Overlay
+            && item
+                .market()
+                .is_some_and(|result| offer::overlaid(env, result))
+        {
+            return None;
+        }
+        let pick = self.pick_of(item)?;
+        self.commit(pick, kind, env)
+    }
+
+    /// What using `item` picks; an event is only folded open.
+    fn pick_of(&self, item: &Item) -> Option<Pick> {
         match item {
-            Item::Event(head) => {
-                self.events.fold(&head.title);
-                None
-            }
+            Item::Event(_) => None,
             Item::Market(result) | Item::Choice(result) => {
-                // A market that is already drawn on the chart is not drawn twice, and a
-                // prediction market or an index is not drawn over a chart at all.
-                let kind = if kind == PickKind::Overlay && !Self::comparable(result) {
-                    self.default_kind()
-                } else {
-                    kind
-                };
-                if kind == PickKind::Overlay && Self::overlaid(env, result) {
-                    return None;
-                }
-                self.commit(Pick::Market(self.selection(result)), kind, env)
+                Some(Pick::Market(self.selection(result)))
             }
-            Item::Tile(tile) => {
-                let kind = if kind == PickKind::Overlay {
-                    self.default_kind()
-                } else {
-                    kind
-                };
-                self.commit(Self::tile_pick(tile), kind, env)
-            }
+            Item::Tile(tile) => Some(Self::tile_pick(tile)),
         }
     }
 
@@ -788,7 +799,7 @@ impl SymbolPicker {
     /// Validates a pick, records it as recent and hands it to the host. A watchlist's own pick
     /// of what the list already holds is refused: nothing is added, so nothing is acknowledged.
     fn commit(&mut self, pick: Pick, kind: PickKind, env: &Env) -> Option<Output> {
-        if kind == PickKind::Watchlist && self.held(env, &pick.instrument()) {
+        if kind == PickKind::Watchlist && offer::holds_market(self.mode, &pick.instrument(), env) {
             self.added = None;
             return None;
         }
@@ -877,7 +888,13 @@ impl SymbolPicker {
             pos2(full.left(), search_area.bottom() + 4.0),
             vec2(full.width(), TABS),
         );
-        let (scope, filter) = self.tab_row(ui, tabs);
+        let (scope, filter) = tabs::tab_row(
+            ui,
+            tabs,
+            Scope::tabs(self.mode),
+            self.scope,
+            self.filter_menu(),
+        );
         if let Some(scope) = scope {
             self.set_scope(scope);
         }
@@ -924,156 +941,83 @@ impl SymbolPicker {
             if let Some(item) = self.highlighted.clone() {
                 let names = item
                     .market()
-                    .map(|result| self.names.of(result))
+                    .map(|result| self.caches.names.of(result))
                     .unwrap_or_default();
+                let offer = Offer::of(self.mode, Some(&item), env);
                 let shown = detail::Detail {
                     item: &item,
                     names,
                     quote: env.quote,
                     related,
-                    actions: self.actions(&item, env),
+                    actions: Actions::of(&offer, self.default_kind()),
                 };
-                let out = detail::show(ui, panel, &shown, &mut self.chart);
+                let out = detail::show(ui, panel, &shown, &mut self.caches.chart);
                 if let Some(other) = out.related {
                     picked = Some((Pick::Market(other), self.default_kind()));
                 }
                 if let Some(kind) = out.action {
-                    picked = match &item {
-                        Item::Market(result) | Item::Choice(result) => {
-                            Some((Pick::Market(self.selection(result)), kind))
-                        }
-                        Item::Tile(tile) => Some((Self::tile_pick(tile), kind)),
-                        Item::Event(_) => None,
-                    };
+                    picked = self.pick_of(&item).map(|pick| (pick, kind));
                 }
             }
         }
-        if let Some(hit) = self.footer(
-            ui,
-            Rect::from_min_max(pos2(full.left(), footer_top + 1.0), full.max),
-            env,
-        ) {
-            picked = Some(hit);
+        let footer_area = Rect::from_min_max(pos2(full.left(), footer_top + 1.0), full.max);
+        if footer::show(ui, footer_area, self.footer(env))
+            && let Some(ticked) = &self.ticked
+        {
+            picked = Some((Pick::Market(ticked.clone()), self.default_kind()));
         }
         picked
     }
 
-    /// What the preview's button offers for `item`: what Return does, and what else can be done.
-    /// An event is only folded open, so it has no button.
-    fn actions(&self, item: &Item, env: &Env) -> Option<Actions> {
-        let market = match item {
-            Item::Event(_) => return None,
-            Item::Market(result) | Item::Choice(result) => Some(result),
-            Item::Tile(_) => None,
-        };
-        let held = match item {
-            Item::Tile(Tile {
-                pick: TilePick::Card(card),
-                ..
-            }) => {
-                if self.mode == PickMode::Watchlist {
-                    self.held(env, &card.instrument_id())
-                } else {
-                    env.cards_on_tab.iter().any(|on| on.same_card(card))
-                }
-            }
-            _ => item.market().is_some_and(|result| {
-                self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
-            }),
-        };
-        let compare = market.filter(|result| {
-            env.can_overlay && Self::comparable(result) && !Self::overlaid(env, result)
-        });
-        let action = |label: &str, icon, shortcut, kind| Action {
-            label: label.to_owned(),
-            icon,
-            shortcut,
-            kind,
-        };
-        let add = || {
-            action(
-                tr!("Add to this tab"),
-                Icon::Plus,
-                list::ADD_KEY,
-                PickKind::Add,
-            )
-        };
-        let overlay = |shortcut| action(tr!("Compare"), Icon::Compare, shortcut, PickKind::Overlay);
-        let card = matches!(
-            item,
-            Item::Tile(Tile {
-                pick: TilePick::Card(_),
-                ..
-            })
-        );
-        let (main, enabled, others) = match self.mode {
-            PickMode::Watchlist => (
-                action(
-                    tr!("Add to watchlist"),
-                    Icon::Plus,
-                    list::REPLACE_KEY,
-                    PickKind::Watchlist,
-                ),
-                !held,
-                Vec::new(),
+    /// What the footer says about the highlighted row.
+    fn footer(&self, env: &Env) -> Footer<'_> {
+        let offer = Offer::of(self.mode, self.highlighted.as_ref(), env);
+        let count = predictions::ticked_count(self.ticked.as_ref());
+        Footer {
+            offer,
+            return_hint: footer::return_hint(
+                offer,
+                self.highlighted.as_ref(),
+                env.replacing,
+                &self.list_name,
             ),
-            _ if card => (
-                action(
-                    tr!("Add card"),
-                    Icon::Plus,
-                    list::REPLACE_KEY,
-                    self.default_kind(),
-                ),
-                true,
-                Vec::new(),
-            ),
-            PickMode::Compare => (
-                overlay(list::REPLACE_KEY),
-                market.is_some_and(|result| !Self::overlaid(env, result)),
-                vec![add()],
-            ),
-            PickMode::Chart if env.replacing.is_some() => (
-                action(
-                    tr!("Replace chart"),
-                    Icon::Exchange,
-                    list::REPLACE_KEY,
-                    PickKind::Replace,
-                ),
-                true,
-                std::iter::once(add())
-                    .chain(compare.map(|_| overlay(list::COMPARE_KEY)))
-                    .collect(),
-            ),
-            PickMode::Chart | PickMode::Add => (
-                action(
-                    tr!("Add chart"),
-                    Icon::Plus,
-                    list::REPLACE_KEY,
-                    self.default_kind(),
-                ),
-                true,
-                compare
-                    .map(|_| overlay(list::COMPARE_KEY))
-                    .into_iter()
-                    .collect(),
-            ),
-        };
-        Some(Actions {
-            main,
-            enabled,
-            others,
-        })
+            ticked: (count >= 1).then(|| self.ticked_label(count)),
+            added: self.added.as_deref(),
+        }
     }
 
-    /// Whether `market` is already where a pick would put it: on a chart of the tab, or in the
-    /// watchlist being added to.
-    fn held(&self, env: &Env, market: &InstrumentId) -> bool {
-        let held = if self.mode == PickMode::Watchlist {
-            env.in_list
+    /// What the footer's button for `count` ticked choices says.
+    fn ticked_label(&self, count: usize) -> String {
+        match self.mode {
+            PickMode::Watchlist => tr_n!(count, "Add {count} choice", "Add {count} choices"),
+            _ => tr_n!(count, "Chart {count} choice", "Chart {count} choices"),
+        }
+    }
+
+    /// The card under the list, if a provider needs a login or could not be searched.
+    fn notice(&self, listing: &Listing, lookup: &Lookup) -> Option<Notice> {
+        notice::notice_for(listing, lookup, self.scope, self.pick_needs_credentials)
+    }
+
+    /// What the search box asks for: a watchlist's picker names the list it adds to.
+    fn placeholder(&self) -> String {
+        if self.mode == PickMode::Watchlist && self.scope.searches() {
+            tr!("Search to add to {list}…", list = self.list_name)
         } else {
-            env.on_tab
-        };
-        held.iter().any(|id| id.is_same_market(market))
+            self.scope.placeholder().to_owned()
+        }
+    }
+
+    /// What the pull-down at the right of the tabs offers in this tab: the exchanges, or on the
+    /// Dashboards tab the portfolios. `None` when there is nothing to choose between.
+    fn filter_menu(&self) -> Option<FilterMenu> {
+        if self.scope == Scope::Dashboards {
+            FilterMenu::portfolios(&self.portfolios, self.card_scope_in_use())
+        } else {
+            // A venue typed as a prefix wins over the pull-down, so the pull-down says what is
+            // searched.
+            FilterMenu::venues(&self.scope.venues(), self.lookup().venue)
+        }
     }
 }
 

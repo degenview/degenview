@@ -3,6 +3,7 @@
 //! day).
 
 use crate::model::market::trend::{self, Trend};
+use crate::model::session_stats::MarketHours;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::{self, ProviderError};
 use std::collections::HashMap;
@@ -89,9 +90,18 @@ impl TrendLoader {
         arrived: Arc<dyn Fn() + Send + Sync>,
     ) {
         let claimed = self.claim(std::slice::from_ref(instrument), Instant::now());
-        let Some(instrument) = claimed.into_iter().next() else {
-            return;
-        };
+        if let Some(instrument) = claimed.into_iter().next() {
+            self.read_in_background(instrument, wanted, arrived);
+        }
+    }
+
+    /// Reads a claimed market on its provider's workers, unless it is no longer wanted by then.
+    fn read_in_background(
+        &self,
+        instrument: InstrumentId,
+        wanted: impl Fn() -> bool + Send + 'static,
+        arrived: Arc<dyn Fn() + Send + Sync>,
+    ) {
         let loader = self.clone();
         service::work_queue::submit_for(instrument.source, move || {
             if !wanted() {
@@ -142,13 +152,7 @@ impl TrendLoader {
     /// stale; `arrived` runs after each read (a repaint request).
     pub fn request(&self, wanted: &[InstrumentId], arrived: Arc<dyn Fn() + Send + Sync>) {
         for instrument in self.claim(wanted, Instant::now()) {
-            let loader = self.clone();
-            let arrived = Arc::clone(&arrived);
-            service::work_queue::submit_for(instrument.source, move || {
-                let result = loader.read(&instrument);
-                loader.finish(&instrument.key(), result, Instant::now());
-                arrived();
-            });
+            self.read_in_background(instrument, || true, Arc::clone(&arrived));
         }
     }
 
@@ -210,7 +214,7 @@ impl TrendLoader {
                 fetch(Timeframe::DAY_1, days + 1).map(|bars| trend::closes_within(&bars, days))
             }
             Span::LastDay => fetch(DAY_CANDLE, DAY_CANDLES).map(|bars| {
-                if instrument.source == DataSource::Alpaca {
+                if MarketHours::for_source(instrument.source) == MarketHours::UsStock {
                     trend::last_session_closes(&bars)
                 } else {
                     trend::last_day_closes(&bars)

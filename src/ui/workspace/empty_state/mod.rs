@@ -365,6 +365,7 @@ mod tests {
     #[test]
     #[ignore = "writes images for a person to look at"]
     fn gallery_of_the_page() {
+        use crate::model::market::well_known;
         use crate::ui::render_tests::{Screen, gallery_dir};
         use crate::ui::theme::AppTheme;
         if gallery_dir().is_none() {
@@ -394,10 +395,7 @@ mod tests {
         ];
         // A week for every market on the page: some climbing, some falling.
         let mut trends = HashMap::new();
-        let symbols = [
-            "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK",
-        ];
-        for (index, base) in symbols.iter().enumerate() {
+        for (index, base) in well_known::COINS.map(|coin| coin.ticker).iter().enumerate() {
             let slope = if index % 4 == 1 { -0.6 } else { 1.0 };
             let week: Vec<f32> = (0..7)
                 .map(|day| 10.0 + slope * day as f32 + ((day * 5 + index * 3) % 4) as f32 * 0.7)
@@ -409,11 +407,10 @@ mod tests {
                 );
             }
         }
-        for (index, ticker) in [
-            "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
-        ]
-        .into_iter()
-        .enumerate()
+        for (index, ticker) in well_known::STOCKS
+            .map(|stock| stock.ticker)
+            .into_iter()
+            .enumerate()
         {
             let slope = if index % 3 == 1 { -0.5 } else { 0.8 };
             let week: Vec<f32> = (0..7)

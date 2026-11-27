@@ -1,50 +1,62 @@
 //! The card under the list for a provider that needs a login or could not be searched.
 
-use super::*;
+use super::lookup::Lookup;
+use super::search::{Listing, Scope};
+use crate::i18n::tr;
+use crate::model::DataSource;
+use crate::service::{self, ProviderError};
+use crate::ui::chart::picker_kit::widgets;
+use crate::ui::icons::Icon;
+use crate::ui::kit::{self, REGULAR, SEMIBOLD};
+use crate::ui::theme;
+use eframe::egui::{self, Rect, Stroke, Ui, Vec2, pos2, vec2};
 
-impl SymbolPicker {
-    /// Whether the current view is about `source` alone: its tab, or a `VENUE:` prefix or the
-    /// pull-down naming it.
-    pub(super) fn targets(&self, source: DataSource, lookup: &Lookup) -> bool {
-        lookup.venue == Some(source)
-            || matches!(self.scope.venues().as_slice(), [only] if *only == source)
-    }
+/// Whether the view is about `source` alone: its tab, or a `VENUE:` prefix or the pull-down
+/// naming it.
+fn targets(source: DataSource, lookup: &Lookup, scope: Scope) -> bool {
+    lookup.venue == Some(source) || matches!(scope.venues().as_slice(), [only] if *only == source)
+}
 
-    /// Credential prompts follow the provider carried by the error. Explicit
-    /// venue searches take precedence over providers advertised on broad searches.
-    pub(super) fn notice(&self, listing: &Listing, lookup: &Lookup) -> Option<Notice> {
-        let missing = |targeted: bool| {
-            listing.errors.iter().find_map(|(_, error)| {
-                let ProviderError::MissingKey(source) = error else {
+/// The card to show, if any. `blocked` is the login a pick was just refused for. Credential
+/// prompts follow the provider carried by the error, and an explicit venue search takes
+/// precedence over providers advertised on broad searches.
+pub(super) fn notice_for(
+    listing: &Listing,
+    lookup: &Lookup,
+    scope: Scope,
+    blocked: Option<SettingsPage>,
+) -> Option<Notice> {
+    let missing = |targeted: bool| {
+        listing.errors.iter().find_map(|(_, error)| {
+            let ProviderError::MissingKey(source) = error else {
+                return None;
+            };
+            let page = SettingsPage::for_source(*source)?;
+            let visible = if targeted {
+                targets(*source, lookup, scope)
+            } else {
+                page.advertises_on_broad_search()
+            };
+            visible.then(|| page.credentials_notice(false))
+        })
+    };
+    blocked
+        .map(|page| page.credentials_notice(true))
+        .or_else(|| missing(true))
+        .or_else(|| missing(false))
+        .or_else(|| {
+            listing.errors.iter().find_map(|(source, error)| {
+                if matches!(error, ProviderError::MissingKey(_)) {
                     return None;
-                };
-                let page = SettingsPage::for_source(*source)?;
-                let visible = if targeted {
-                    self.targets(*source, lookup)
-                } else {
-                    page.advertises_on_broad_search()
-                };
-                visible.then(|| page.credentials_notice(false))
-            })
-        };
-        self.pick_needs_credentials
-            .map(|page| page.credentials_notice(true))
-            .or_else(|| missing(true))
-            .or_else(|| missing(false))
-            .or_else(|| {
-                listing.errors.iter().find_map(|(source, error)| {
-                    if matches!(error, ProviderError::MissingKey(_)) {
-                        return None;
-                    }
-                    let title = SettingsPage::for_source(*source)?.search_failure_title()?;
-                    Some(Notice {
-                        title,
-                        detail: error.to_string(),
-                        settings: None,
-                    })
+                }
+                let title = SettingsPage::for_source(*source)?.search_failure_title()?;
+                Some(Notice {
+                    title,
+                    detail: error.to_string(),
+                    settings: None,
                 })
             })
-    }
+        })
 }
 
 pub(super) const NOTICE_HEIGHT: f32 = 60.0;
@@ -52,7 +64,6 @@ pub(super) const NOTICE_BUTTON_HEIGHT: f32 = 28.0;
 /// The button's gap to the card's right edge: the one it has above and below.
 pub(super) const NOTICE_BUTTON_INSET: f32 = (NOTICE_HEIGHT - NOTICE_BUTTON_HEIGHT) / 2.0;
 
-/// A card under the list: a title, one line of detail and, when Settings can fix it, a button.
 /// Which Settings page a notice's button opens.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SettingsPage {
@@ -107,6 +118,7 @@ impl SettingsPage {
     }
 }
 
+/// A card under the list: a title, one line of detail and, when Settings can fix it, a button.
 pub(super) struct Notice {
     pub(super) title: &'static str,
     pub(super) detail: String,

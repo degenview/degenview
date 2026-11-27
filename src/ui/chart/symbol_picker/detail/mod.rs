@@ -15,6 +15,7 @@ use super::{Item, PickKind, predictions};
 use crate::format;
 use crate::i18n::{tr, tr_n};
 use crate::model::market::asset_name::AssetNames;
+use crate::model::session_stats::MarketHours;
 use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::model::{DataSource, InstrumentId};
 use crate::service::EventStats;
@@ -27,8 +28,8 @@ use crate::ui::{kit::source_logo, theme};
 use action::Actions;
 pub use chart::PreviewChart;
 use eframe::egui::{Color32, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2};
+use layout::PAD;
 
-const PAD: f32 = 20.0;
 const ICON: f32 = 40.0;
 /// The chart of a prediction market, under its chance.
 const PREDICTION_CHART: f32 = 64.0;
@@ -62,13 +63,7 @@ pub fn show(ui: &mut Ui, area: Rect, detail: &Detail, chart: &mut PreviewChart) 
     // The button keeps the foot of the panel; the rest is laid out above it.
     let above = match &detail.actions {
         Some(actions) => {
-            let button = Rect::from_min_max(
-                pos2(
-                    area.left() + PAD,
-                    area.bottom() - PAD + 4.0 - layout::BUTTON,
-                ),
-                pos2(area.right() - PAD, area.bottom() - PAD + 4.0),
-            );
+            let button = layout::button(area);
             out.action = action::show(ui, button, actions);
             Rect::from_min_max(area.min, pos2(area.right(), button.top()))
         }
@@ -105,63 +100,43 @@ fn market(
     chart: &mut PreviewChart,
 ) -> Option<SearchResult> {
     let related = detail.related.filter(|related| !related.is_empty());
-    let fit = layout::layout(area.height(), detail.actions.is_some(), related.is_some());
-    let inner = area.shrink2(vec2(PAD, fit.pad));
+    let fit = layout::market(area, detail.actions.is_some(), related.is_some());
 
     let icon = Rect::from_min_size(
         pos2(
-            inner.left(),
-            inner.top() + (fit.header - ICON.min(fit.header)) / 2.0,
+            fit.header.left(),
+            fit.header.center().y - ICON.min(fit.header.height()) / 2.0,
         ),
-        Vec2::splat(ICON.min(fit.header)),
+        Vec2::splat(ICON.min(fit.header.height())),
     );
     result_icon(ui, icon, result);
-    let text_left = icon.right() + 12.0;
     super::list::two_lines_sized(
         ui,
-        Rect::from_min_max(
-            pos2(text_left, inner.top()),
-            pos2(inner.right(), inner.top() + fit.header),
-        ),
+        fit.header.with_min_x(icon.right() + 12.0),
         (result.ticker(), 19.0, BOLD),
         &describe::headline(result, &detail.names),
     );
 
-    let gap = if fit.compact { 8.0 } else { 14.0 };
-    let mut y = inner.top() + fit.header + gap;
     price_line(
         ui,
-        pos2(inner.left(), y),
-        inner.width(),
+        fit.price.min,
+        fit.price.width(),
         result.source,
         detail.quote,
     );
-    y += fit.price + gap / 2.0;
 
-    if fit.compact {
+    match fit.venue {
+        Some(venue) => {
+            status_line(ui, fit.status.min, result, detail.quote);
+            venue_line(ui, venue.min, result);
+        }
         // Whether it trades, and where, on the one line there is room for.
-        venue_status_line(ui, pos2(inner.left(), y), result, detail.quote);
-    } else {
-        status_line(ui, pos2(inner.left(), y), result, detail.quote);
-        venue_line(ui, pos2(inner.left(), y + 21.0), result);
+        None => venue_status_line(ui, fit.status.min, result, detail.quote),
     }
-    y += fit.lines + gap;
 
-    chart.show(
-        ui,
-        Rect::from_min_size(pos2(inner.left(), y), vec2(inner.width(), fit.chart)),
-        &instrument(result),
-        detail.quote,
-    );
-    y += fit.chart;
+    chart.show(ui, fit.chart, &instrument(result), detail.quote);
 
-    let related = related.filter(|_| fit.related > 0.0)?;
-    related::show(
-        ui,
-        area,
-        Rect::from_min_max(pos2(inner.left(), y), pos2(inner.right(), y + fit.related)),
-        related,
-    )
+    related::show(ui, area, fit.related?, related?)
 }
 
 /// A prediction market: the event, the chance of the choice, where it is listed, how that chance
@@ -478,12 +453,14 @@ fn price_line(
 /// Whether the market trades now: crypto around the clock, a share when its market is open.
 /// `None` while a share's market has not said.
 fn status(result: &SearchResult, quote: Option<&WatchlistQuote>) -> Option<(&'static str, bool)> {
+    if MarketHours::for_source(result.source) == MarketHours::UsStock {
+        return match quote.map(|quote| quote.freshness) {
+            Some(Freshness::Live) => Some((tr!("Market open"), true)),
+            Some(Freshness::MarketClosed) => Some((tr!("Market closed"), false)),
+            _ => None,
+        };
+    }
     Some(match result.source {
-        DataSource::Alpaca => match quote.map(|quote| quote.freshness) {
-            Some(Freshness::Live) => (tr!("Market open"), true),
-            Some(Freshness::MarketClosed) => (tr!("Market closed"), false),
-            _ => return None,
-        },
         // Forex and the CFDs on it rest over the weekend.
         DataSource::Oanda => (tr!("Open 24/5"), true),
         _ => (tr!("Open 24/7"), true),

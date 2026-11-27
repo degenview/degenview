@@ -4,9 +4,8 @@
 
 use super::coin_index::{self, CoinIndex};
 use crate::model::DataSource;
-use crate::model::market::asset_name::{
-    AssetNames, company_name, currency_name, popular_company, sanitize,
-};
+use crate::model::market::asset_name::{AssetNames, company_name, currency_name, sanitize};
+use crate::model::market::well_known;
 use crate::service::SearchResult;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,10 +26,7 @@ impl Directory {
     pub fn names(&self, result: &SearchResult) -> AssetNames {
         let own = (*result.names).clone();
         let base = result.base_asset();
-        let quote = result
-            .quote
-            .clone()
-            .or_else(|| result.source.quote_asset(&result.symbol));
+        let quote = result.quote_asset();
         match result.source {
             DataSource::Binance
             | DataSource::Coinbase
@@ -50,10 +46,7 @@ impl Directory {
             DataSource::CoinGecko => AssetNames {
                 base: own
                     .base
-                    .or_else(|| {
-                        let coin = self.coins.by_id(&result.full_symbol)?;
-                        sanitize(&coin.name)
-                    })
+                    .or_else(|| self.coins.by_id(&result.full_symbol)?.name.clone())
                     .or_else(|| sanitize(&title_case(&result.full_symbol))),
                 quote: None,
             },
@@ -63,7 +56,7 @@ impl Directory {
                 base: result
                     .company()
                     .map(company_name)
-                    .or_else(|| popular_company(result.ticker()).map(str::to_owned)),
+                    .or_else(|| well_known::company(result.ticker()).map(str::to_owned)),
                 quote: None,
             },
             // Oanda's own name describes the whole instrument ("Germany 30").
@@ -85,7 +78,7 @@ impl Directory {
     fn coin(&self, ticker: &str) -> Option<String> {
         self.coins
             .by_symbol(ticker)
-            .and_then(|coin| sanitize(&coin.name))
+            .and_then(|coin| coin.name.clone())
             .or_else(|| self.listed.get(&ticker.to_uppercase()).cloned())
             .or_else(|| currency_name(ticker).map(str::to_owned))
     }
@@ -96,13 +89,13 @@ pub fn load_coins() -> Arc<CoinIndex> {
     coin_index::load().0
 }
 
-/// The names Gate.io and MEXC publish with their markets, from their day-long market lists.
-/// Blocks.
+/// The names the venues that publish them list with their markets, from their day-long market
+/// lists; the first venue to name a ticker keeps it. Blocks.
 pub fn load_listed() -> Arc<Listed> {
     let mut listed = Listed::new();
-    let names = super::gateio::asset_names()
+    let names = DataSource::ALL
         .into_iter()
-        .chain(super::mexc::asset_names());
+        .flat_map(|source| crate::service::for_source(source).asset_names());
     for (ticker, name) in names {
         if let Some(name) = sanitize(&name) {
             listed.entry(ticker).or_insert(name);

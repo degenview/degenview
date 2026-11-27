@@ -11,13 +11,13 @@
 use super::PickMode;
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::well_known;
 use crate::service::market::coin_index::CoinIndex;
 use crate::service::market::names::{self, Listed};
 use crate::service::market::search_rank::{self, is_dollar_quote};
 use crate::service::market::trend::Fetch;
 use crate::service::work_queue::{self, Pending};
 use crate::service::{self, ProviderError, SearchResult};
-use crate::ui::chart::picker_kit::suggestions::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
 use eframe::egui;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -149,15 +149,15 @@ impl Scope {
 }
 
 /// Markets offered before anything is typed and nothing has been picked yet: the largest crypto
-/// dollar pairs and the biggest US stocks, from the lists in `picker_kit::suggestions`.
+/// dollar pairs and the biggest US stocks ([`well_known`]).
 pub fn popular() -> Vec<SearchResult> {
-    let crypto = CRYPTO_SUGGESTIONS.iter().map(|base| {
-        let symbol = format!("{base}USDT");
-        SearchResult::new(DataSource::Binance, symbol.clone(), symbol).pair(*base, "USDT")
+    let crypto = well_known::COINS.iter().map(|coin| {
+        let symbol = format!("{}USDT", coin.ticker);
+        SearchResult::new(DataSource::Binance, symbol.clone(), symbol).pair(coin.ticker, "USDT")
     });
-    let stocks = STOCK_SUGGESTIONS
+    let stocks = well_known::STOCKS
         .iter()
-        .map(|ticker| SearchResult::new(DataSource::Alpaca, *ticker, *ticker));
+        .map(|stock| SearchResult::new(DataSource::Alpaca, stock.ticker, stock.ticker));
     crypto.chain(stocks).collect()
 }
 

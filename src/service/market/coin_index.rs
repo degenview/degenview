@@ -2,14 +2,14 @@
 //! names for the markets of exchanges that list none.
 
 use crate::lock::lock;
+use crate::model::market::asset_name::sanitize;
 use crate::service::cache::lookup;
+use crate::service::market::coingecko;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-
-const COINGECKO: &str = "https://api.coingecko.com/api/v3";
 
 /// The lookup namespace the stored ranking lives in.
 pub const NAMESPACE: &str = "coin_index";
@@ -33,7 +33,8 @@ struct Coin {
 /// What one coin of the ranking is known by.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CoinInfo {
-    pub name: String,
+    /// Made fit to show; `None` when the ranking gave nothing that is.
+    pub name: Option<String>,
     pub image: String,
 }
 
@@ -51,7 +52,7 @@ impl CoinIndex {
         let mut index = Self::default();
         for coin in coins {
             let info = Arc::new(CoinInfo {
-                name: coin.name.clone(),
+                name: sanitize(&coin.name),
                 image: coin.image.clone(),
             });
             index
@@ -166,7 +167,8 @@ pub fn load() -> (Arc<CoinIndex>, bool) {
 fn fetch_coins() -> Option<Vec<Coin>> {
     crate::service::net::rate_limit::coingecko().wait_for_slot();
     let url = format!(
-        "{COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page={MAX_COINS}&sparkline=false"
+        "{}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page={MAX_COINS}&sparkline=false",
+        coingecko::BASE_URL
     );
     let body =
         crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
@@ -207,17 +209,12 @@ mod tests {
         let index = CoinIndex::from_coins(&parse_coins(body).expect("coins"));
         let btc = index.by_symbol("BTC").expect("btc");
         assert_eq!(
-            (btc.name.as_str(), btc.image.as_str()),
-            ("Bitcoin", "https://x/bitcoin.png")
+            (btc.name.as_deref(), btc.image.as_str()),
+            (Some("Bitcoin"), "https://x/bitcoin.png")
         );
-        assert_eq!(
-            index.by_id("sei-network").map(|c| c.name.as_str()),
-            Some("Sei")
-        );
-        assert_eq!(
-            index.by_id("batcat").map(|c| c.name.as_str()),
-            Some("batcat")
-        );
+        let name = |id| index.by_id(id).and_then(|c| c.name.as_deref());
+        assert_eq!(name("sei-network"), Some("Sei"));
+        assert_eq!(name("batcat"), Some("batcat"));
         assert!(index.by_id("broken").is_none());
         assert!(parse_coins("[]").is_none());
         assert!(parse_coins("not json").is_none());

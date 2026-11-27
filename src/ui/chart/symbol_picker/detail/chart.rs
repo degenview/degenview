@@ -36,10 +36,14 @@ impl PreviewChart {
 
     /// The same chart for a freshly opened picker: what was read stays, what failed is asked
     /// again.
-    pub fn reopened(mut self) -> Self {
+    pub fn reopened(&self) -> Self {
         self.loader.forget_unavailable();
-        self.key.clear();
-        self
+        Self {
+            loader: self.loader.clone(),
+            wanted: Arc::clone(&self.wanted),
+            key: String::new(),
+            since: Instant::now(),
+        }
     }
 
     /// Draws `market`'s last day in `rect`, ending at the price quoted beside it and coloured as

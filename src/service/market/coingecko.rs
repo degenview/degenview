@@ -5,7 +5,7 @@ use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
-const BASE_URL: &str = "https://api.coingecko.com/api/v3";
+pub(in crate::service) const BASE_URL: &str = "https://api.coingecko.com/api/v3";
 
 pub struct CoinGecko;
 

@@ -4,6 +4,7 @@
 
 use super::columns::{self, Columns, END, ICON, MARK, PAD, VENUE_GAP, VENUE_LOGO};
 use super::describe;
+use super::offer::{Offer, Overlay, Primary};
 use super::search::market_kind;
 use crate::i18n::tr;
 use crate::model::DataSource;
@@ -31,12 +32,8 @@ pub struct RowState {
     pub on_chart: bool,
     /// The market is the focused chart's own or already compared on it.
     pub overlaid: bool,
-    /// The focused chart can have a market drawn over it.
-    pub can_overlay: bool,
-    /// The picker is comparing: the check means "already compared", not "already a chart".
-    pub comparing: bool,
-    /// The picker is adding to a watchlist: the plus follows the market instead of charting it.
-    pub watchlist: bool,
+    /// What the row can be used for.
+    pub offer: Offer,
     /// How far the artwork is pushed in, so a lone prediction choice lines up with the artwork of
     /// the events around it.
     pub indent: f32,
@@ -45,25 +42,26 @@ pub struct RowState {
 impl RowState {
     /// What the plus (and the menu's last item) does to the market.
     fn add_label(self) -> &'static str {
-        if self.watchlist {
+        if self.offer.primary == Primary::Watch {
             tr!("Add to watchlist")
         } else {
             tr!("Add to this tab")
         }
     }
 
-    /// What the check at the right edge says.
+    /// What the check at the right edge says: while comparing it means "already compared", not
+    /// "already a chart".
     fn checked(self) -> bool {
-        if self.comparing {
+        if self.offer.primary == Primary::Compare {
             self.overlaid
         } else {
             self.on_chart
         }
     }
 
-    /// Whether the compare button shows: the chart takes overlays and this is not one already.
+    /// Whether the compare button shows.
     fn offers_overlay(self) -> bool {
-        self.can_overlay && !self.overlaid
+        self.offer.overlay == Overlay::Open
     }
 }
 
@@ -378,7 +376,7 @@ pub fn chance_label(ui: &Ui, rect: Rect, right: f32, chance: f64) -> f32 {
 }
 
 /// The menu a right-click on a row opens: use the market here, compare it on the chart, or add it
-/// as a chart of its own. While comparing, Return compares, so Replace is not offered.
+/// as a chart of its own, as the row's [`Offer`] has them.
 fn context_menu(
     ui: &mut Ui,
     response: &Response,
@@ -387,19 +385,19 @@ fn context_menu(
     out: &mut RowOutput,
 ) {
     let replace = replacing
-        .filter(|_| !state.comparing && !state.watchlist)
+        .filter(|_| state.offer.primary == Primary::Replace)
         .map(|current| tr!("Replace {market}", market = current));
     let compare = state.offers_overlay().then(|| match replacing {
         Some(current) => tr!("Compare with {market}", market = current),
         None => tr!("Compare").to_owned(),
     });
-    let compare_key = if state.comparing {
+    let compare_key = if state.offer.primary == Primary::Compare {
         REPLACE_KEY
     } else {
         COMPARE_KEY
     };
     // A watchlist's own Return is the add, so the menu needs no second key for it.
-    let add_key = if state.watchlist {
+    let add_key = if state.offer.primary == Primary::Watch {
         Some(REPLACE_KEY)
     } else {
         Some(ADD_KEY)
