@@ -3,9 +3,9 @@
 //! Every provider plans its requests from these lists (`bucket::FoldPlan`), and the symbol picker
 //! asks `DataSource::serves` before offering a timeframe, so the two agree by construction. A
 //! source folds the coarsest finer native candle for a timeframe it lacks and never substitutes a
-//! nearby length (`bucket::fold_base` says what nests).
+//! nearby length (`Grid::fold_base` says what nests).
 
-use super::bucket::FoldPlan;
+use super::bucket::{FoldPlan, Grid};
 use super::samples;
 use super::source::DataSource;
 use crate::model::{TimeUnit, Timeframe};
@@ -156,9 +156,10 @@ const COINBASE: [Timeframe; 6] = [
 ];
 
 /// Alpaca serves any minute count to 59 and hour count to 23, but only the lengths that divide
-/// the hour are used: it is not documented where its other bars start, and one that is not on our
-/// midnight grid would cut buckets the other sources do not. Days, weeks and months are as it
-/// stamps them (at New York midnight).
+/// the hour are used: it is not documented where its other bars start. Its `1Hour` bars are cut on
+/// the clock hour (09:00 to 10:00 New York), which is not where a stock's session grid cuts
+/// (09:30), so a stock's hours fold from the 30 minute bars (`Grid::UsEquities`) and the native
+/// hour is never the base. Days, weeks and months are as it stamps them (at New York midnight).
 const ALPACA: [Timeframe; 8] = [
     minutes(1),
     minutes(5),
@@ -168,6 +169,33 @@ const ALPACA: [Timeframe; 8] = [
     Timeframe::DAY_1,
     Timeframe::WEEK_1,
     Timeframe::MONTH_1,
+];
+
+/// Oanda's granularities: S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30, H1, H2, H4, H6, H8,
+/// H12, D and W. Every request asks Oanda for UTC alignment (`alignmentTimezone=UTC`,
+/// `dailyAlignment=0`, `weeklyAlignment=Monday`), so these bars open on the UTC grid like every
+/// bucket here. The monthly candle is left out: even at UTC midnight Oanda stamps it on the
+/// last day of the previous month, off the grid, so months fold from days.
+const OANDA: [Timeframe; 19] = [
+    seconds(5),
+    seconds(10),
+    seconds(15),
+    seconds(30),
+    minutes(1),
+    minutes(2),
+    minutes(4),
+    minutes(5),
+    minutes(10),
+    minutes(15),
+    minutes(30),
+    hours(1),
+    hours(2),
+    hours(4),
+    hours(6),
+    hours(8),
+    hours(12),
+    Timeframe::DAY_1,
+    Timeframe::WEEK_1,
 ];
 
 /// GeckoTerminal's OHLCV aggregates (it indexes DEXScreener's pools): minute 1, 5 and 15, hour 1,
@@ -200,15 +228,34 @@ impl DataSource {
             Self::Gate => &GATE,
             Self::Mexc => &MEXC,
             Self::Alpaca => &ALPACA,
+            Self::Oanda => &OANDA,
             Self::DexScreener => &GECKOTERMINAL,
             Self::CoinGecko | Self::Polymarket | Self::Kalshi | Self::CoinMarketCap => &[],
         }
     }
 
+    /// Where the source's markets cut their buckets: a stock's intraday candles follow the US
+    /// session, everything else the UTC day.
+    pub fn grid(self) -> Grid {
+        match self {
+            Self::Alpaca => Grid::UsEquities,
+            _ => Grid::Utc,
+        }
+    }
+
+    /// Whether the source's bars close on the UTC clock, which a countdown to a bar's close needs.
+    /// Not a source without candles of its own (CoinGecko's are cut from price samples that come
+    /// minutes late, the rest draw lines), and not a stock's: its bars follow a session with
+    /// holidays and early closes that nothing here knows, so a countdown would run through a
+    /// closed market.
+    pub fn counts_down_bars(self) -> bool {
+        !self.natives().is_empty() && self.grid() == Grid::Utc
+    }
+
     /// How `timeframe` is made from the source's own candles; `None` for a source that has none
     /// or whose candles no fold of reaches it.
     pub fn plan(self, timeframe: Timeframe) -> Option<FoldPlan> {
-        FoldPlan::new(timeframe, self.natives())
+        FoldPlan::in_grid(self.grid(), timeframe, self.natives())
     }
 
     /// Whether the source can chart `timeframe`: its candles fold to it, CoinGecko's price
@@ -223,6 +270,7 @@ impl DataSource {
             | Self::Gate
             | Self::Mexc
             | Self::Alpaca
+            | Self::Oanda
             | Self::DexScreener => self.plan(timeframe).is_some(),
             Self::CoinGecko => samples::chart_days(timeframe, 1).is_some(),
             // Their lines are drawn from points a minute or more apart.
@@ -245,7 +293,8 @@ impl DataSource {
             | Self::Bybit
             | Self::Gate
             | Self::Mexc
-            | Self::Alpaca => true,
+            | Self::Alpaca
+            | Self::Oanda => true,
             Self::DexScreener => self.plan(timeframe).is_some_and(|plan| {
                 let page_days = plan.base().nominal_ms() * GECKOTERMINAL_PAGE as i64 / 86_400_000;
                 page_days < GECKOTERMINAL_HISTORY_DAYS

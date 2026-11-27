@@ -14,6 +14,7 @@ fn styled() -> ChartAppearance {
     appearance.canvas.background.top = Some([9, 9, 9, 255]);
     appearance.canvas.horizontal_grid.visible = false;
     appearance.canvas.margins.right = 33;
+    appearance.canvas.bar_countdown = false;
     appearance.style.chart_type = ChartType::Renko;
     appearance.style.renko.size.method = SizeMethod::Traditional;
     appearance.style.renko.size.amount = 25.0;
@@ -357,6 +358,17 @@ fn appearance_and_canvas_takes_the_template_whole_but_the_axis_decimals() {
         "precision follows the market"
     );
     assert_eq!(merged.axis_small_prices, SmallPrices::ZeroCount);
+}
+
+#[test]
+fn a_template_decides_the_countdown_whichever_way_it_is_set() {
+    let mut off = ChartAppearance::default();
+    off.canvas.bar_countdown = false;
+    let on = ChartAppearance::default();
+    for scope in [ApplyScope::AppearanceAndCanvas, ApplyScope::ColorsAndCanvas] {
+        assert!(!scope.merge(&on, &off).canvas.bar_countdown, "{scope:?}");
+        assert!(scope.merge(&off, &on).canvas.bar_countdown, "{scope:?}");
+    }
 }
 
 #[test]

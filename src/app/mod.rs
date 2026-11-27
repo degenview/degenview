@@ -30,6 +30,7 @@ use crate::host::snapshot::SnapshotHost;
 use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::Placement;
+use crate::host::tradingview::offer::ImportOffer;
 use crate::host::update::UpdateHost;
 use crate::lock::lock;
 use crate::model::Timeframe;
@@ -57,6 +58,8 @@ fn open_system_settings(pane: &str) {
 
 #[derive(Clone, Debug, PartialEq)]
 enum AppAction {
+    /// An import added Pine scripts to the library.
+    ScriptsImported,
     /// Quit, after asking about unsaved scripts.
     Quit,
     /// Quit, after asking about unsaved scripts, and open the app again.
@@ -69,8 +72,13 @@ enum AppAction {
     OpenPine,
     /// Open the Pine Studio on the source of a Pine logs message.
     OpenPineSource(crate::model::pine::logs_view::SourceTarget),
+    /// The TradingView import was asked for from outside a chart tab (the offer at launch).
+    /// The offer to import from TradingView was taken.
+    AcceptImportOffer,
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
+    /// Open Settings on the Oanda page.
+    OpenOandaSettings,
     OpenBrokerSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
@@ -155,6 +163,8 @@ pub struct DegenViewApp {
     pine_host: Arc<Mutex<PineSubscriptionHost>>,
     /// Looks for a newer release on a schedule; the tab bar and Settings ▸ About draw it.
     updates: UpdateHost,
+    /// The one-time offer to import from TradingView.
+    import_offer: ImportOffer,
     /// Set by Settings' Restart: open the app again when it exits, so a choice that applies at
     /// startup takes effect. Cleared when the quit is called off.
     reopen_on_exit: bool,
@@ -252,6 +262,7 @@ impl DegenViewApp {
             host
         };
         let updates = UpdateHost::load(&store);
+        let import_offer = ImportOffer::new(store.clone(), &creation.egui_ctx);
         let settings_host = Arc::new(Mutex::new(SettingsHost::new(
             snapshots.clone(),
             editor_themes.clone(),
@@ -401,6 +412,7 @@ impl DegenViewApp {
             alerts,
             pine_host,
             updates,
+            import_offer,
             reopen_on_exit: false,
             sync,
             script_signature: 0,
@@ -433,6 +445,9 @@ impl eframe::App for DegenViewApp {
         self.tick_pine();
         self.tick_mcp(ctx);
         self.updates.tick(ctx);
+        if self.import_offer.poll() {
+            self.tabs.repaint_windows(ctx);
+        }
         self.tick_sync(ctx);
         self.tick_editor_themes();
         self.tabs.tick_quotes(

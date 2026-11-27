@@ -595,7 +595,7 @@ fn a_date_range_is_a_box_between_two_times_over_the_height_of_the_plot() {
     assert!(near(screen.outlines[0][0], pos2(250.0, PLOT.top())));
     assert!(near(screen.outlines[0][2], pos2(650.0, PLOT.bottom())));
     // Five bars (both ends count), four minutes, and the volume of those five bars.
-    assert_eq!(texts(&screen), ["5 bars, 4m\nVolume: 5"]);
+    assert_eq!(texts(&screen), ["5 bars · 4m\nVolume: 5"]);
     // An arrow along the time at the height of the anchors.
     assert!(near(screen.lines[0][0], pos2(250.0, 200.0)));
 }
@@ -605,7 +605,7 @@ fn a_date_and_price_range_says_both() {
     let screen = built(Tool::DateAndPriceRange, &[at(2, 100.0), at(6, 108.0)]);
     assert_eq!(
         texts(&screen),
-        ["+8.00 (+8.00%) +800\n5 bars, 4m\nVolume: 5"]
+        ["+8.00 (+8.00%) +800\n5 bars · 4m\nVolume: 5"]
     );
     assert_eq!(screen.lines.len(), 2, "an arrow each way");
 }
@@ -637,7 +637,7 @@ fn the_measurers_print_only_what_they_are_set_to_and_never_a_volume_that_is_not_
         &silent,
         false,
     );
-    assert_eq!(texts(&screen), ["5 bars, 4m"]);
+    assert_eq!(texts(&screen), ["5 bars · 4m"]);
     // Nothing on at all: no label.
     let mut none = Tool::PriceRange.default_style();
     none.measure.price = false;

@@ -11,6 +11,7 @@ pub(in crate::workspace) mod symbol_picker;
 use super::PersistedChart;
 use crate::host::portfolio::card::CardRuntime;
 use crate::i18n::tr;
+use crate::model::chart::countdown::{Countdown, CountdownInput};
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
 use crate::model::market;
@@ -63,6 +64,9 @@ pub(super) struct Chart {
     /// Wall-clock time (epoch ms) the candles last arrived from the provider or its live feed.
     /// Paper trading stamps its quotes with this, never with the time they are read.
     pub(super) last_data_ms: Option<i64>,
+    /// The timeframe the candles held were fetched for. A timeframe chosen since is not theirs
+    /// until its answer arrives, and nothing counts down a bar of a length the candles are not.
+    data_timeframe: Option<Timeframe>,
     /// The newest bar the live feed delivered: a refresh begun before it keeps it.
     pub(super) live: Option<LiveMark>,
     /// The live klines of the bucket forming, when the timeframe is folded from finer ones.
@@ -152,6 +156,7 @@ impl Chart {
             next_drawing_id: 1,
             last_paper_quote: None,
             last_data_ms: None,
+            data_timeframe: None,
             live: None,
             live_fold: LiveFold::default(),
             pm_series: Vec::new(),
@@ -204,7 +209,8 @@ impl Chart {
             | DataSource::Gate
             | DataSource::Mexc
             | DataSource::CoinGecko
-            | DataSource::Alpaca => self.source.display_symbol(&self.symbol),
+            | DataSource::Alpaca
+            | DataSource::Oanda => self.source.display_symbol(&self.symbol),
             DataSource::DexScreener => self.source.base_asset(&self.display_title()),
             DataSource::Polymarket | DataSource::Kalshi | DataSource::CoinMarketCap => {
                 String::new()
@@ -277,6 +283,7 @@ impl Chart {
         self.pm_series.clear();
         self.last_paper_quote = None;
         self.last_data_ms = None;
+        self.data_timeframe = None;
         self.forget_live();
         self.candles.clear();
         self.reset_history();
@@ -333,7 +340,7 @@ impl Chart {
         if !has_it {
             let id = self
                 .chart
-                .add_pine_instance(Some(script_id), rsi.name, rsi.source);
+                .add_pine_instance(Some(script_id), rsi.name.text(), rsi.source);
             self.chart.set_pine_visible(id, !hidden);
         }
     }
@@ -384,17 +391,53 @@ impl Chart {
 
     /// How long after a fetch began the next one is due.
     pub(super) fn refresh_after(&self) -> Duration {
+        match self.refresh_cadence() {
+            SLOW_REFRESH_INTERVAL if self.error.is_some() => SLOW_RETRY_INTERVAL,
+            cadence => cadence,
+        }
+    }
+
+    /// Records that candles for `timeframe` have just arrived, from a refresh or the live feed.
+    /// The newest candle is what a countdown reads, so a live bar accepted for the timeframe is
+    /// a bar of it even while the history behind it is still on its way.
+    pub(super) fn note_arrival(&mut self, timeframe: Timeframe, now_ms: i64) {
+        self.last_data_ms = Some(now_ms);
+        self.data_timeframe = Some(timeframe);
+    }
+
+    /// How often the source is asked for candles while it answers.
+    fn refresh_cadence(&self) -> Duration {
         match self.source {
-            DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken
-                if self.error.is_some() =>
-            {
-                SLOW_RETRY_INTERVAL
-            }
             DataSource::CoinGecko | DataSource::DexScreener | DataSource::Kraken => {
                 SLOW_REFRESH_INTERVAL
             }
             _ => REFRESH_INTERVAL,
         }
+    }
+
+    /// The time the forming bar has left, for a chart of `timeframe` at `now_ms`, or `None` where
+    /// the chart has nothing to promise: the setting is off, a replay cuts it, or the data is not
+    /// a live bar of this timeframe (see [`Countdown::resolve`]).
+    pub(super) fn bar_countdown(
+        &self,
+        timeframe: Timeframe,
+        replay: bool,
+        now_ms: i64,
+    ) -> Option<Countdown> {
+        let appearance = self.chart.appearance();
+        if !appearance.canvas.bar_countdown || self.data_timeframe != Some(timeframe) {
+            return None;
+        }
+        Countdown::resolve(&CountdownInput {
+            chart_type: appearance.style.effective_type(self.source),
+            source: self.source,
+            timeframe,
+            newest: self.candles.last(),
+            now_ms,
+            data_age_ms: self.last_data_ms.map(|at| now_ms - at),
+            refresh_ms: self.refresh_cadence().as_millis() as i64,
+            replay,
+        })
     }
 
     /// Forgets what the live feed delivered: the candles are another market's or timeframe's.
@@ -532,7 +575,7 @@ impl Chart {
                         .set_series(SeriesLine::build(&self.pm_series, fetched.series));
                 }
                 self.error = None;
-                self.last_data_ms = Some(crate::clock::now_ms());
+                self.note_arrival(timeframe, crate::clock::now_ms());
             }
             Err(error) => self.error = Some(error),
         }
@@ -575,6 +618,77 @@ mod tests {
             timeframe: Timeframe::HOUR_1,
         });
         chart
+    }
+
+    const NOW: i64 = 1_800_000_000_000;
+
+    /// A Binance chart of 5-minute bars whose newest candle is the bar of `NOW`, answered a
+    /// second ago.
+    fn live_chart() -> Chart {
+        let mut chart = Chart::blank(1, "BTCUSDT", DataSource::Binance);
+        let open = crate::model::market::bucket::bucket_start_ms(Timeframe::MINUTE_5, NOW);
+        let mut newest = candle(open, 1.0);
+        newest.close_time = open + 5 * 60_000 - 1;
+        chart.candles = vec![newest];
+        chart.last_data_ms = Some(NOW - 1_000);
+        chart.data_timeframe = Some(Timeframe::MINUTE_5);
+        chart
+    }
+
+    fn seconds_left(chart: &Chart, timeframe: Timeframe, replay: bool) -> Option<i64> {
+        chart
+            .bar_countdown(timeframe, replay, NOW)
+            .map(|countdown| countdown.remaining_ms / 1_000)
+    }
+
+    #[test]
+    fn a_live_chart_counts_down_to_the_close_of_its_bar() {
+        let chart = live_chart();
+        let left = seconds_left(&chart, Timeframe::MINUTE_5, false).expect("counts");
+        assert!((0..=300).contains(&left), "{left}");
+    }
+
+    #[test]
+    fn a_countdown_belongs_to_the_timeframe_the_candles_were_fetched_for() {
+        let mut chart = live_chart();
+        assert_eq!(seconds_left(&chart, Timeframe::MINUTE_1, false), None);
+        // The answer for the new timeframe arrives: candles of one minute.
+        chart.data_timeframe = Some(Timeframe::MINUTE_1);
+        let open = crate::model::market::bucket::bucket_start_ms(Timeframe::MINUTE_1, NOW);
+        let mut minute = candle(open, 1.0);
+        minute.close_time = open + 60_000 - 1;
+        chart.candles = vec![minute];
+        assert!(seconds_left(&chart, Timeframe::MINUTE_1, false).is_some());
+        chart.clear_market_data();
+        assert_eq!(seconds_left(&chart, Timeframe::MINUTE_1, false), None);
+    }
+
+    #[test]
+    fn a_countdown_is_off_in_a_replay_and_when_the_setting_is_off() {
+        let mut chart = live_chart();
+        assert_eq!(seconds_left(&chart, Timeframe::MINUTE_5, true), None);
+        chart.chart.appearance_mut().canvas.bar_countdown = false;
+        assert_eq!(seconds_left(&chart, Timeframe::MINUTE_5, false), None);
+    }
+
+    #[test]
+    fn a_failed_refresh_alone_does_not_hide_a_countdown_but_silence_does() {
+        let mut chart = live_chart();
+        chart.error = Some(ProviderError::other("down"));
+        assert!(seconds_left(&chart, Timeframe::MINUTE_5, false).is_some());
+        chart.last_data_ms = Some(NOW - 16_000);
+        assert_eq!(
+            seconds_left(&chart, Timeframe::MINUTE_5, false),
+            None,
+            "three refreshes without an answer"
+        );
+    }
+
+    #[test]
+    fn a_chart_of_a_session_market_has_no_countdown() {
+        let mut chart = live_chart();
+        chart.source = DataSource::Alpaca;
+        assert_eq!(seconds_left(&chart, Timeframe::MINUTE_5, false), None);
     }
 
     #[test]

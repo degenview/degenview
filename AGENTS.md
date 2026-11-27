@@ -41,6 +41,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Proxies, VPN "system proxy", `HTTP(S)_PROXY`, building an HTTP agent, WebSocket connections, or Settings ▸ Network | [Network proxy](docs/network-proxy.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
+| Import from TradingView: its app's cache, layouts, drawings, watchlists and scripts, symbol matching | [TradingView import](docs/tradingview-import.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
 | The changelog, `changes/` fragments, release notes, or the sheet an update opens | [Releases and updates](docs/agent-guides/releases-updates.md#release-notes-and-the-changelog) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
@@ -54,7 +55,8 @@ background; never skip one because the code looks self-explanatory.
 
 New or changed user-facing text is written with `tr!` / `tr_n!` / `tr_c!` (`crate::i18n`), never as a
 bare literal in a widget call, and never a sentence assembled from pieces. Existing literals move over
-directory by directory. Rules and the pseudo-locale for checking a screen:
+directory by directory. A new or reworded message is translated in every `assets/locales/*.po` in the
+same change; the tests fail otherwise. Rules and the pseudo-locale for checking a screen:
 [Localization](docs/localization.md).
 
 ## Never blue
@@ -168,6 +170,9 @@ while you only need the compiler's answer, and trim the caches when done
 Each worktree builds into its own `target/` (5 GB fresh, growing every rebuild; cargo never deletes
 old output). Finished worktrees are where the disk goes.
 
+- On macOS, create worktrees with `git cow add`, not `git worktree add`: instead of
+  `git worktree add -b branch-name ../worktree-name`, run
+  `git cow add -b branch-name ../worktree-name`.
 - One worktree per branch, beside the main checkout, building into `target/` or a `target-*`
   directory (both ignored). Never share one `CARGO_TARGET_DIR` between worktrees: concurrent builds
   block on its lock and overwrite each other's `target/debug/degenview`.
@@ -200,6 +205,7 @@ old output). Finished worktrees are where the disk goes.
 - [Drawing tools](docs/drawing-tools.md) — tools, geometry, verified vs inferred behavior, limits.
 - [Pine execution-model audit](docs/reviews/pine-execution-model-audit.md) — engine vs TradingView's execution model: findings, stacked fixes, what is deferred.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: sink, limits, batches, TradingView verification.
+- [`ta.*` against TradingView](docs/pine-ta-parity.md) — the true-range family: what is compared, what still differs (conditional `ta.supertrend`, `ta.sar`), how to probe.
 - [Portfolio cards](docs/portfolio-cards.md) — card design, known gaps.
 - [New-tab page](docs/new-tab-page.md) — the blank tab: search launcher, tabs, sparklines, animated backdrop.
 - [README hero GIF](tools/readme-gif/README.md): how the animated picture is recorded from the real app, and when to retake it.
@@ -218,4 +224,5 @@ old output). Finished worktrees are where the disk goes.
   [Pine debugger](docs/pine-debugger.md), [Pine profiler](docs/pine-profiler.md),
   [Editor themes](docs/editor-themes.md), [User-defined methods](docs/pine-user-methods.md),
   [Pine volume footprints](docs/pine-footprint.md), [AI assistant](docs/ai-assistant.md),
-  [Portfolio page](docs/portfolio-page.md), [Network proxy](docs/network-proxy.md).
+  [Portfolio page](docs/portfolio-page.md), [Network proxy](docs/network-proxy.md),
+  [TradingView import](docs/tradingview-import.md).

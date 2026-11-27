@@ -5,13 +5,12 @@
 
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::well_known;
 use crate::service::work_queue::{self, PendingAll};
 use crate::service::{ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::chart::picker_kit::recents::{self, RecentMarket};
-use crate::ui::chart::picker_kit::suggestions::{
-    self, CRYPTO_SUGGESTIONS, Chip, STOCK_SUGGESTIONS, prediction_topics,
-};
+use crate::ui::chart::picker_kit::suggestions::{self, Chip, prediction_topics};
 use crate::ui::chart::picker_kit::{self, art, results, widgets};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -89,6 +88,8 @@ pub struct AssetPickerState {
     pub subtitle: String,
     pub action_label: String,
     pub tab: PickerTab,
+    /// The sections offered.
+    tabs: &'static [PickerTab],
     /// The prediction-market provider the Predictions section searches.
     pub provider: DataSource,
     pub query: String,
@@ -130,6 +131,7 @@ impl AssetPickerState {
             subtitle: subtitle.to_owned(),
             action_label: action_label.to_owned(),
             tab: PickerTab::Crypto,
+            tabs: &PickerTab::ALL,
             provider: DataSource::Polymarket,
             query: String::new(),
             selected: None,
@@ -144,6 +146,19 @@ impl AssetPickerState {
             recents_loaded: false,
             recents_dirty: false,
         }
+    }
+
+    /// Offers only `tabs`, for a caller that cannot use what the others find.
+    pub fn with_tabs(mut self, tabs: &'static [PickerTab]) -> Self {
+        self.tabs = tabs;
+        self
+    }
+
+    /// Opens on a search already typed, for a caller that knows what is being looked for.
+    pub fn with_query(mut self, query: &str) -> Self {
+        self.query = query.to_owned();
+        self.touch();
+        self
     }
 
     /// The providers the current section asks.
@@ -383,7 +398,11 @@ fn show_body(
 ) {
     widgets::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
-    let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
+    let items: Vec<_> = state
+        .tabs
+        .iter()
+        .map(|&tab| (tab, tab.title(), tab.icon()))
+        .collect();
     if let Some(tab) = kit::icon_tabs::icon_tabs(ui, &items, state.tab) {
         state.select_tab(tab);
         state.focus = true;
@@ -473,22 +492,22 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
             match state.tab {
                 PickerTab::Crypto => {
                     let items =
-                        CRYPTO_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Binance));
+                        well_known::COINS.map(|coin| Chip::Logo(coin.ticker, DataSource::Binance));
                     if let Some(index) =
                         suggestions::suggestion_grid(ui, tr!("Suggestions"), &items)
                     {
-                        search = Some(CRYPTO_SUGGESTIONS[index]);
+                        search = Some(well_known::COINS[index].ticker);
                     }
                 }
                 PickerTab::Stocks => {
-                    let items =
-                        STOCK_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Alpaca));
+                    let items = well_known::STOCKS
+                        .map(|stock| Chip::Logo(stock.ticker, DataSource::Alpaca));
                     if let Some(index) = suggestions::suggestion_grid(
                         ui,
                         tr!("Popular US stocks and ETFs · free IEX feed"),
                         &items,
                     ) {
-                        search = Some(STOCK_SUGGESTIONS[index]);
+                        search = Some(well_known::STOCKS[index].ticker);
                     }
                 }
                 PickerTab::Predictions => {
@@ -594,6 +613,7 @@ mod tests {
             event: None,
             base: None,
             quote: None,
+            names: Default::default(),
         }
     }
 
@@ -627,6 +647,14 @@ mod tests {
             state.receive();
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn a_picker_opened_on_a_query_searches_for_it() {
+        let picker = AssetPickerState::new("Match", "", "Use").with_query("BTC");
+        assert!(picker.is_due(Instant::now() + DEBOUNCE));
+        let empty = AssetPickerState::new("Match", "", "Use");
+        assert!(!empty.is_due(Instant::now() + DEBOUNCE));
     }
 
     #[test]

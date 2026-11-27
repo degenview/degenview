@@ -146,6 +146,30 @@ pub(crate) fn field_id(id_salt: impl std::hash::Hash + std::fmt::Debug) -> Id {
     Id::new("settings-field").with(id_salt)
 }
 
+/// The title over a form control: a text field, or any other control laid out like one. The
+/// rows from here on are spaced by hand, so the layout's own vertical spacing is turned off.
+pub fn field_title(ui: &mut egui::Ui, title: &str) {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    ui.label(text(
+        title,
+        size::SUBHEADLINE + 1.0,
+        MEDIUM,
+        theme::text_primary(),
+    ));
+    ui.add_space(6.0);
+}
+
+/// The explanation under a form control.
+pub fn field_hint(ui: &mut egui::Ui, hint: &str) {
+    ui.add_space(6.0);
+    ui.label(text(
+        hint,
+        size::CAPTION + 0.5,
+        REGULAR,
+        theme::text_secondary(),
+    ));
+}
+
 /// A labelled text field in the app's field style. A secret field hides its text and offers an
 /// eye button to reveal it, so a pasted key can be checked before saving. `id_salt` names the field
 /// (see [`field_id`]).
@@ -161,14 +185,7 @@ pub fn field(
     let id = field_id(id_salt);
     let revealed_id = id.with("revealed");
     let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
-    ui.spacing_mut().item_spacing.y = 0.0;
-    ui.label(text(
-        title,
-        size::SUBHEADLINE + 1.0,
-        MEDIUM,
-        theme::text_primary(),
-    ));
-    ui.add_space(6.0);
+    field_title(ui, title);
     let focused = ui.memory(|memory| memory.has_focus(id));
     let mut edit = None;
     input_frame(focused).show(ui, |ui| {
@@ -206,13 +223,7 @@ pub fn field(
         });
     });
     if let Some(hint) = hint {
-        ui.add_space(6.0);
-        ui.label(text(
-            hint,
-            size::CAPTION + 0.5,
-            REGULAR,
-            theme::text_secondary(),
-        ));
+        field_hint(ui, hint);
     }
     edit.expect("the field's text edit ran")
 }

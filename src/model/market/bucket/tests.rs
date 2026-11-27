@@ -3,6 +3,15 @@ use super::*;
 const MINUTE_MS: i64 = 60_000;
 const HOUR_MS: i64 = 3_600_000;
 
+/// The UTC grid's fold, which most of these tests are about.
+fn fold(candles: &[Kline], timeframe: Timeframe, truncated: bool) -> Vec<Kline> {
+    Grid::Utc.fold(candles, timeframe, truncated)
+}
+
+fn fold_base(target: Timeframe, natives: &[Timeframe]) -> Option<Timeframe> {
+    Grid::Utc.fold_base(target, natives)
+}
+
 fn tf(count: u16, unit: TimeUnit) -> Timeframe {
     Timeframe::new(count, unit).unwrap()
 }
@@ -186,25 +195,64 @@ fn multi_day_buckets_count_days_from_the_epoch() {
 }
 
 #[test]
-fn multi_week_buckets_start_on_monday() {
-    let two = tf(2, TimeUnit::Week);
-    // Monday 1969-12-29 opens week 0, so it opens a two-week bucket.
-    let first_monday = day(1969, 12, 29);
-    assert_eq!(bucket_start_ms(two, first_monday), first_monday);
+fn month_counts_restart_in_january() {
+    // TradingView, BTCUSDT (probe R11): five-month periods open in January, June and November.
+    let five = tf(5, TimeUnit::Month);
+    assert_eq!(bucket_start_ms(five, day(2024, 3, 15)), day(2024, 1, 1));
+    assert_eq!(bucket_start_ms(five, day(2025, 7, 10)), day(2025, 6, 1));
+    assert_eq!(bucket_start_ms(five, day(2025, 12, 31)), day(2025, 11, 1));
+    assert_eq!(bucket_start_ms(five, day(2026, 1, 6)), day(2026, 1, 1));
     assert_eq!(
-        bucket_start_ms(two, first_monday + 13 * DAY_MS),
-        first_monday
+        next_bucket_start_ms(five, day(2025, 11, 1)),
+        day(2026, 1, 1)
     );
-    assert_eq!(
-        next_bucket_start_ms(two, first_monday),
-        first_monday + 14 * DAY_MS
-    );
-    for time in [day(2024, 1, 3), day(2024, 7, 28), day(2025, 12, 31)] {
-        let start = bucket_start_ms(two, time);
-        // A Monday, an even number of weeks after the first one.
-        assert_eq!((start - first_monday) % (14 * DAY_MS), 0, "{time}");
-        assert!(start <= time && time < start + 14 * DAY_MS);
+}
+
+#[test]
+fn multi_week_buckets_count_from_the_first_monday_of_the_year() {
+    // TradingView, BTCUSDT (probe R10, 2026-11-26): where the period holding each date opens.
+    let weeks = |count| tf(count, TimeUnit::Week);
+    let cases = [
+        // date, 2W, 3W, 4W
+        ((2023, 1, 2), (2023, 1, 2), (2023, 1, 2), (2023, 1, 2)),
+        ((2024, 1, 1), (2024, 1, 1), (2024, 1, 1), (2024, 1, 1)),
+        ((2025, 1, 6), (2025, 1, 6), (2025, 1, 6), (2025, 1, 6)),
+        // Before 2026's first Monday: still counted from 2025's.
+        (
+            (2025, 12, 29),
+            (2025, 12, 22),
+            (2025, 12, 29),
+            (2025, 12, 8),
+        ),
+        ((2026, 1, 12), (2026, 1, 5), (2026, 1, 5), (2026, 1, 5)),
+        ((2026, 6, 1), (2026, 5, 25), (2026, 6, 1), (2026, 5, 25)),
+        (
+            (2026, 11, 23),
+            (2026, 11, 23),
+            (2026, 11, 16),
+            (2026, 11, 9),
+        ),
+    ];
+    for ((y, m, d), two, three, four) in cases {
+        for (count, expected) in [(2, two), (3, three), (4, four)] {
+            let (year, month, date) = expected;
+            assert_eq!(
+                bucket_start_ms(weeks(count), day(y, m, d)),
+                day(year, month, date),
+                "{count}W at {y}-{m}-{d}"
+            );
+        }
     }
+    // The count restarts with the year, so its last period can be short: 2025's three-week period
+    // that opens on 29 December ends when 2026's first one opens.
+    assert_eq!(
+        next_bucket_start_ms(weeks(3), day(2025, 12, 29)),
+        day(2026, 1, 5)
+    );
+    assert_eq!(
+        next_bucket_start_ms(weeks(2), day(2026, 1, 12)),
+        day(2026, 1, 19)
+    );
     // One week stays on the Mondays Binance uses.
     assert_eq!(
         bucket_start_ms(Timeframe::WEEK_1, day(2024, 1, 4)),
@@ -793,4 +841,399 @@ fn one_second_candles_fold_into_forty_five_second_buckets() {
 
 fn tf_text(text: &str) -> Timeframe {
     Timeframe::parse(text).unwrap()
+}
+
+/// The regular US session, as TradingView cuts a stock's candles (`NASDAQ:AAPL`, 2026-11-25).
+mod session_grid {
+    use super::*;
+
+    /// 24 Nov 2026 is in standard time: the session is 14:30 to 21:00 UTC.
+    fn winter(hour: i64, minute: i64) -> i64 {
+        at(2026, 11, 24, hour, minute)
+    }
+
+    /// 9 Jul 2026 is in daylight time: the session is 13:30 to 20:00 UTC.
+    fn summer(hour: i64, minute: i64) -> i64 {
+        at(2026, 7, 9, hour, minute)
+    }
+
+    fn starts(timeframe: Timeframe, first: i64, last: i64) -> Vec<i64> {
+        let mut starts = Vec::new();
+        let mut open = Grid::UsEquities.bucket_start_ms(timeframe, first);
+        while open <= last {
+            starts.push(open);
+            open = Grid::UsEquities.next_bucket_start_ms(timeframe, open);
+        }
+        starts
+    }
+
+    /// Open times, as hours and minutes after 14:30 UTC (09:30 New York) of a winter session.
+    fn after_open(times: &[i64]) -> Vec<i64> {
+        times
+            .iter()
+            .map(|time| (time - winter(14, 30)) / MINUTE_MS)
+            .collect()
+    }
+
+    #[test]
+    fn hours_start_at_half_past_nine_and_the_last_is_cut_at_the_close() {
+        // TradingView: 1h 09:30 10:30 ... 15:30, 2h 09:30 11:30 13:30 15:30, 3h 09:30 12:30 15:30,
+        // 4h 09:30 13:30; every session's last candle closes at 16:00.
+        let (first, last) = (winter(14, 30), winter(20, 59));
+        let hour = |count| starts(tf(count, TimeUnit::Hour), first, last);
+        assert_eq!(after_open(&hour(1)), [0, 60, 120, 180, 240, 300, 360], "1h");
+        assert_eq!(after_open(&hour(2)), [0, 120, 240, 360], "2h");
+        assert_eq!(after_open(&hour(3)), [0, 180, 360], "3h");
+        assert_eq!(after_open(&hour(4)), [0, 240], "4h");
+        for (count, last_open) in [(1, 360), (2, 360), (3, 360), (4, 240)] {
+            let timeframe = tf(count, TimeUnit::Hour);
+            let open = winter(14, 30) + last_open * MINUTE_MS;
+            assert_eq!(
+                Grid::UsEquities.next_bucket_start_ms(timeframe, open),
+                winter(21, 0),
+                "{count}h closes at 16:00"
+            );
+        }
+    }
+
+    #[test]
+    fn the_clock_change_moves_the_session_in_utc_and_nothing_else() {
+        let four = tf(4, TimeUnit::Hour);
+        assert_eq!(
+            starts(four, summer(13, 30), summer(19, 59)),
+            [summer(13, 30), summer(17, 30)]
+        );
+        assert_eq!(
+            Grid::UsEquities.next_bucket_start_ms(four, summer(17, 30)),
+            summer(20, 0)
+        );
+    }
+
+    #[test]
+    fn minutes_that_divide_half_an_hour_are_cut_from_the_open() {
+        let grid = Grid::UsEquities;
+        assert_eq!(
+            grid.bucket_start_ms(tf(15, TimeUnit::Minute), winter(15, 7)),
+            winter(15, 0)
+        );
+        assert_eq!(
+            grid.bucket_start_ms(tf(30, TimeUnit::Minute), winter(14, 59)),
+            winter(14, 30)
+        );
+        // 22 minutes from the open: 09:30, 09:52, ... the 18th ends at the close, 16:00.
+        let odd = tf(22, TimeUnit::Minute);
+        assert_eq!(
+            grid.bucket_start_ms(odd, winter(20, 59)),
+            winter(14, 30) + 17 * 22 * MINUTE_MS
+        );
+        assert_eq!(
+            grid.next_bucket_start_ms(odd, winter(20, 59)),
+            winter(21, 0)
+        );
+    }
+
+    #[test]
+    fn candles_outside_the_session_are_not_folded_and_each_session_starts_afresh() {
+        // 30 minute candles from 08:00 to 20:00 New York on the 24th (pre and post market included)
+        // and the first one of the 25th.
+        let thirty = 30 * MINUTE_MS;
+        let mut candles = series(winter(13, 0), thirty, 24);
+        candles.push(candle(winter(14, 30) + 24 * 60 * MINUTE_MS, thirty, 100.0));
+        let four = Grid::UsEquities.fold(&candles, tf(4, TimeUnit::Hour), false);
+        assert_eq!(
+            opens(&four),
+            [
+                winter(14, 30),
+                winter(18, 30),
+                winter(14, 30) + 24 * 60 * MINUTE_MS
+            ]
+        );
+        assert_eq!(four[0].close_time, winter(18, 30) - 1);
+        assert_eq!(four[1].close_time, winter(21, 0) - 1, "cut at the close");
+        // 09:30 to 13:30 holds eight candles, 13:30 to 16:00 five: the candles at 08:00 and after
+        // 16:00 are in neither.
+        assert_eq!(four[0].volume, 8.0 * 2.0);
+        assert_eq!(four[1].volume, 5.0 * 2.0);
+    }
+
+    #[test]
+    fn a_native_intraday_series_loses_its_extended_hours_too() {
+        let thirty = 30 * MINUTE_MS;
+        let candles = series(winter(13, 0), thirty, 24);
+        let plan = FoldPlan::in_grid(
+            Grid::UsEquities,
+            tf(30, TimeUnit::Minute),
+            &[tf(30, TimeUnit::Minute)],
+        )
+        .unwrap();
+        assert!(plan.is_native());
+        let shown = plan.fold(candles, false);
+        assert_eq!(shown.len(), 13);
+        assert_eq!(shown[0].open_time, winter(14, 30));
+        assert_eq!(shown[12].open_time, winter(20, 30));
+    }
+
+    #[test]
+    fn the_hour_is_folded_from_half_hours_not_taken_from_the_clock_hour() {
+        let natives = [
+            Timeframe::MINUTE_1,
+            Timeframe::MINUTE_5,
+            Timeframe::MINUTE_15,
+            tf(30, TimeUnit::Minute),
+            Timeframe::HOUR_1,
+            Timeframe::DAY_1,
+            Timeframe::WEEK_1,
+            Timeframe::MONTH_1,
+        ];
+        let grid = Grid::UsEquities;
+        let half_hour = tf(30, TimeUnit::Minute);
+        for target in ["1h", "2h", "4h"] {
+            assert_eq!(
+                grid.fold_base(tf_text(target), &natives),
+                Some(half_hour),
+                "{target}"
+            );
+        }
+        assert_eq!(grid.fold_base(half_hour, &natives), Some(half_hour));
+        assert_eq!(
+            grid.fold_base(tf_text("45m"), &natives),
+            Some(Timeframe::MINUTE_15)
+        );
+        assert_eq!(
+            grid.fold_base(tf_text("22m"), &natives),
+            Some(Timeframe::MINUTE_1)
+        );
+        // The same list on the UTC grid takes the clock hour.
+        assert_eq!(
+            Grid::Utc.fold_base(Timeframe::HOUR_1, &natives),
+            Some(Timeframe::HOUR_1)
+        );
+        // Days and longer are not cut on the session.
+        assert_eq!(
+            grid.fold_base(Timeframe::WEEK_1, &natives),
+            Some(Timeframe::WEEK_1)
+        );
+    }
+
+    #[test]
+    fn a_day_a_week_and_a_month_stop_trading_at_the_close_of_their_last_weekday() {
+        let grid = Grid::UsEquities;
+        // Tuesday 24 Nov 2026: the day's bucket is the UTC day, trading stops at 16:00.
+        let tuesday = day(2026, 11, 24);
+        assert_eq!(
+            grid.session_end_ms(Timeframe::DAY_1, tuesday),
+            winter(21, 0)
+        );
+        // The week of Monday 23 Nov ends on Friday the 27th at 16:00 (not Monday midnight).
+        let monday = day(2026, 11, 23);
+        assert_eq!(
+            grid.session_end_ms(Timeframe::WEEK_1, monday),
+            at(2026, 11, 27, 21, 0)
+        );
+        // November 2026 ends on Monday the 30th.
+        assert_eq!(
+            grid.session_end_ms(Timeframe::MONTH_1, day(2026, 11, 1)),
+            at(2026, 11, 30, 21, 0)
+        );
+        // On the UTC grid and for intraday buckets it is where the next one opens.
+        assert_eq!(
+            Grid::Utc.session_end_ms(Timeframe::DAY_1, tuesday),
+            tuesday + DAY_MS
+        );
+        assert_eq!(
+            grid.session_end_ms(tf(4, TimeUnit::Hour), winter(18, 30)),
+            winter(21, 0)
+        );
+    }
+
+    #[test]
+    fn the_candle_after_a_stocks_bucket_is_the_next_one_that_trades() {
+        let grid = Grid::UsEquities;
+        let following = |timeframe, start| grid.following_end_ms(timeframe, start);
+        // The week of Monday 9 Nov 2026 stops on Friday; the next one on Friday the 20th.
+        assert_eq!(
+            following(Timeframe::WEEK_1, day(2026, 11, 9)),
+            at(2026, 11, 20, 21, 0)
+        );
+        // Friday's day is followed by Monday's, past the weekend.
+        assert_eq!(
+            following(Timeframe::DAY_1, day(2026, 11, 20)),
+            at(2026, 11, 23, 21, 0)
+        );
+        // October 2026 ends on Friday the 30th; November on Monday the 30th.
+        assert_eq!(
+            following(Timeframe::MONTH_1, day(2026, 10, 1)),
+            at(2026, 11, 30, 21, 0)
+        );
+        // Intraday: the next bucket of the session, else the first of the next session.
+        let four_hours = tf(4, TimeUnit::Hour);
+        assert_eq!(following(four_hours, winter(14, 30)), winter(21, 0));
+        assert_eq!(
+            following(Timeframe::HOUR_1, at(2026, 11, 20, 20, 30)),
+            at(2026, 11, 23, 15, 30)
+        );
+        // The UTC grid has no closing hours.
+        assert_eq!(
+            Grid::Utc.following_end_ms(Timeframe::WEEK_1, day(2026, 11, 9)),
+            day(2026, 11, 23)
+        );
+    }
+
+    /// Every minute of the weeks around both clock changes of 2026 (8 March and 1 November) and a
+    /// plain one, for lengths that divide the half hour and ones that do not: the buckets tile the
+    /// session exactly, whatever the offset.
+    #[test]
+    fn the_buckets_tile_every_session_through_the_clock_changes() {
+        let lengths = [
+            "1m", "5m", "15m", "22m", "30m", "45m", "1h", "2h", "3h", "4h", "6h",
+        ];
+        let weeks = [
+            at(2026, 3, 2, 0, 0),
+            at(2026, 3, 9, 0, 0),
+            at(2026, 10, 26, 0, 0),
+            at(2026, 11, 2, 0, 0),
+            at(2026, 7, 6, 0, 0),
+        ];
+        let grid = Grid::UsEquities;
+        for text in lengths {
+            let timeframe = tf_text(text);
+            for week in weeks {
+                for minute in 0..7 * 24 * 60 {
+                    let t = week + minute * MINUTE_MS;
+                    let start = grid.bucket_start_ms(timeframe, t);
+                    let next = grid.next_bucket_start_ms(timeframe, t);
+                    assert!(start <= t, "{text} at {t}: starts after the moment");
+                    assert!(next > start, "{text} at {t}: ends before it starts");
+                    if !grid.is_traded(timeframe, t) {
+                        continue;
+                    }
+                    assert!(
+                        grid.bucket_start_ms(timeframe, start) == start,
+                        "{text} at {t}: the start is not on the grid"
+                    );
+                    // Inside the session: the bucket stays inside it and holds the moment.
+                    let day = crate::model::market::session::local_day(t);
+                    let open = crate::model::market::session::open_ms(day);
+                    let close = crate::model::market::session::close_ms(day);
+                    assert!(
+                        open <= start && next <= close,
+                        "{text} at {t}: leaves the session"
+                    );
+                    assert!(t < next, "{text} at {t}: ends before the moment");
+                    assert_eq!((start - open) % timeframe.nominal_ms(), 0, "{text} at {t}");
+                    if next < close {
+                        assert_eq!(
+                            grid.bucket_start_ms(timeframe, next),
+                            next,
+                            "{text} at {t}: the next bucket opens where this one ends"
+                        );
+                    } else {
+                        assert_eq!(
+                            next, close,
+                            "{text} at {t}: the last bucket ends at the close"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// One minute candles of five sessions across the clock change of 1 November 2026, from 08:00 to
+    /// 20:00 New York (the pre and post market included), with prices and volumes that differ.
+    fn minutes_around_the_clock_change() -> Vec<Kline> {
+        let session = crate::model::market::session::open_ms;
+        let mut minutes = Vec::new();
+        let mut index = 0;
+        for (month, date) in [(10, 29), (10, 30), (11, 2), (11, 3), (11, 4)] {
+            let open = session(days_from_civil(2026, month, date));
+            for minute in -90..(390 + 240) {
+                let mut candle = candle(
+                    open + minute * MINUTE_MS,
+                    MINUTE_MS,
+                    100.0 + (index % 37) as f64,
+                );
+                candle.volume = 1.0 + (index % 7) as f64;
+                minutes.push(candle);
+                index += 1;
+            }
+        }
+        minutes
+    }
+
+    #[test]
+    fn folding_from_a_coarser_base_gives_the_same_candles_as_folding_the_minutes() {
+        let grid = Grid::UsEquities;
+        let minutes = minutes_around_the_clock_change();
+        for (base, targets) in [
+            ("5m", vec!["15m", "30m"]),
+            ("15m", vec!["30m", "1h"]),
+            ("30m", vec!["1h", "2h", "3h", "4h", "6h"]),
+        ] {
+            let base_candles = grid.fold(&minutes, tf_text(base), false);
+            for target in targets {
+                let direct = grid.fold(&minutes, tf_text(target), false);
+                let nested = grid.fold(&base_candles, tf_text(target), false);
+                assert_eq!(direct, nested, "{base} then {target}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_fold_keeps_every_regular_hours_minute_and_nothing_else() {
+        let grid = Grid::UsEquities;
+        let minutes = minutes_around_the_clock_change();
+        let regular: f64 = minutes
+            .iter()
+            .filter(|candle| crate::model::market::session::is_open(candle.open_time))
+            .map(|candle| candle.volume)
+            .sum();
+        for target in ["1m", "5m", "22m", "30m", "1h", "4h", "6h"] {
+            let folded = grid.fold(&minutes, tf_text(target), false);
+            let volume: f64 = folded.iter().map(|candle| candle.volume).sum();
+            assert_eq!(volume, regular, "{target}");
+            assert!(
+                folded
+                    .iter()
+                    .all(|candle| crate::model::market::session::is_open(candle.open_time)),
+                "{target}: a candle opens outside the session"
+            );
+            // Buckets are ascending and never overlap.
+            assert!(
+                folded
+                    .windows(2)
+                    .all(|pair| pair[0].close_time < pair[1].open_time),
+                "{target}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stocks_first_bucket_of_a_cut_short_answer_is_dropped_like_any_other() {
+        let thirty = 30 * MINUTE_MS;
+        // The answer starts at 11:00 New York: the 09:30 to 13:30 bucket is a fragment.
+        let candles = series(winter(16, 0), thirty, 12);
+        let kept = Grid::UsEquities.fold(&candles, tf(4, TimeUnit::Hour), true);
+        assert_eq!(opens(&kept), [winter(18, 30)]);
+        let all = Grid::UsEquities.fold(&candles, tf(4, TimeUnit::Hour), false);
+        assert_eq!(opens(&all), [winter(14, 30), winter(18, 30)]);
+    }
+}
+
+#[test]
+fn a_grid_that_drops_candles_asks_for_more_of_them() {
+    let natives = [
+        Timeframe::MINUTE_1,
+        tf(30, TimeUnit::Minute),
+        Timeframe::HOUR_1,
+        Timeframe::DAY_1,
+    ];
+    let hour = |grid| FoldPlan::in_grid(grid, Timeframe::HOUR_1, &natives).unwrap();
+    // The UTC grid takes the clock hour itself: four of them are four candles.
+    assert_eq!(hour(Grid::Utc).base_count(4), 4);
+    // The session grid folds half hours (two to the hour) and asks for three times as many, so a
+    // newest answer made of post market candles still holds the session.
+    assert_eq!(hour(Grid::UsEquities).base_count(4), 3 * 5 * 2);
+    // Days are not cut on the session: nothing is left out of them.
+    let day = FoldPlan::in_grid(Grid::UsEquities, Timeframe::DAY_1, &natives).unwrap();
+    assert_eq!(day.base_count(4), 4);
 }

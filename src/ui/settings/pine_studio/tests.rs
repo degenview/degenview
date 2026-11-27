@@ -83,7 +83,7 @@ fn click_at(position: egui::Pos2) -> Vec<Event> {
 #[test]
 fn the_page_is_in_the_sidebar_after_appearance() {
     use crate::ui::settings::window::SettingsSection as S;
-    assert_eq!(S::ALL.len(), 14);
+    assert_eq!(S::ALL.len(), 15);
     let visible: Vec<_> = S::visible().collect();
     assert_eq!(visible[1], S::PineStudio);
     assert_eq!(S::PineStudio.title(), "Pine Studio");

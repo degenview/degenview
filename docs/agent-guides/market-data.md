@@ -10,6 +10,10 @@
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
+   Pass the provider's asset names with `SearchResult::named` when its search lists them, return
+   them from `MarketSource::asset_names` when they describe assets other venues leave unnamed, and decide
+   in `service::market::names::Directory` what describes its markets otherwise
+   ([Asset names](../symbol-picker.md#asset-names)).
 5. `SourceLogo` under `assets/source_logos/`, the `ui::kit::source_logo::source` arm, attribution in
    `docs/source-logos.md`.
 
@@ -25,7 +29,7 @@ watchlists.
 
 - Name a market as its exchange does (`BTCUSDT`, `BTC-USD`); `DataSource::display_symbol` only
   upper-cases. Never rebuild `BTC/USDT` labels. Asset: `DataSource::base_asset` /
-  `SearchResult::base_asset`; pair: `SearchResult::base`/`quote`.
+  `SearchResult::base_asset`; pair: `SearchResult::base`/`quote_asset()`.
 - Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
   (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use
@@ -50,16 +54,35 @@ watchlists.
   serialize as `"Hour"`, `"Day"`, `"Week"`, `"Month"`, `"Quarter"`, `"Year"` so older builds and
   synced layouts decode them; anything else is its label (`"22m"`). Decoding takes both.
   `nominal_ms()` is exact to weeks; months are 30 days, a quarter 91 and a year 365.
-- Buckets are `model::market::bucket` and nothing else cuts them (providers, chart and Pine): UTC,
-  seconds, minutes and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from
-  1970-01-01, weeks start on Monday, months count from 1970-01 (so `3M` is the calendar quarter,
-  `12M` the year). A bucket closes 1 ms before the next opens.
-- Missing interval: fold finer bars with `bucket::fold(candles, timeframe, truncated)`. Never
-  substitute a nearby interval. `bucket::fold_base(target, natives)` is the coarsest native whose
-  buckets nest exactly in the target's (an intraday base must divide the day, and the target when
-  that is intraday; days nest in multiples of days and, as single days, in weeks and months; weeks
-  in weeks, months in months), or `None`. `3M`/`1Y` are real quarters/years everywhere. Pass
-  `truncated` when the series starts where a request stopped, to drop the partial first bucket.
+- Buckets are `model::market::bucket` and nothing else cuts them (providers, chart and Pine), on the
+  market's `bucket::Grid` (`DataSource::grid`). `Grid::Utc` is every crypto source: seconds, minutes
+  and hours restart at midnight (a `22m` day ends in a shorter bucket), days count from 1970-01-01,
+  weeks start on Monday and count from the first Monday of each year (a year's last multi-week
+  bucket can be short; the days before that Monday belong to the previous year's), months count
+  from January each year (so `3M` is the calendar quarter, `12M` the year), both as TradingView
+  anchors them (2026-11-26, `time("2W" | "3W" | "4W" | "2M" | "5M")` on `BINANCE:BTCUSDT`). A bucket
+  closes 1 ms before the next opens. Pine's `time_close` of a several-week bar on a 24/7 market is its bucket's end, the short one
+  included (`time::bucket::close_time`). Multi-**day** buckets are known to differ: TradingView counts
+  them from 1 January (a stock's in trading days), which providers' own multi-day candles and gap
+  filling do not yet follow.
+  `Grid::UsEquities` is a US stock (Alpaca): its **intraday** buckets anchor at the session open,
+  09:30 New York (`model::market::session`, which holds the clock changes), every session restarts
+  them, the last one is cut at the 16:00 close (1h is `09:30 10:30 … 15:30`, 4h `09:30 13:30`, as
+  TradingView cuts `NASDAQ:AAPL`; measured 2026-11-25), and a candle that opens outside the session
+  (pre and post market) is left out, in native series too. Days, weeks and months are as on the UTC
+  grid. Holidays are not modelled (they hold no bar) and neither are early closes: the last bucket
+  of a 13:00 session still closes at 16:00 (`time_close` of that day's last candle is later than
+  TradingView's).
+- Missing interval: fold finer bars with `Grid::fold(candles, timeframe, truncated)` (a plan does,
+  `FoldPlan::fold`). Never substitute a nearby interval. `Grid::fold_base(target, natives)` is the
+  coarsest native whose buckets nest exactly in the target's (an intraday base must divide the day,
+  and the target when that is intraday; on the session grid also the open's offset into the day and
+  the session's length, so Alpaca's clock-hour bars never serve a stock's hour; days nest in
+  multiples of days and, as single days, in weeks and months; weeks in weeks, months in months), or
+  `None`. `3M`/`1Y` are real quarters/years everywhere. Pass `truncated` when the series starts
+  where a request stopped, to drop the partial first bucket. A grid that leaves candles out asks the
+  provider for more (`Grid::fetch_slack`, three times as many on the session grid): the newest `n`
+  base candles can be all pre or post market.
 - **Every source serves any timeframe, or says it cannot.** `MarketSource::fetch_klines` and
   `fetch_klines_range` take a `Timeframe` (never a token string) and answer
   `ProviderError::UnsupportedInterval { provider, timeframe }`, "Polymarket has no 1m history"
@@ -83,11 +106,26 @@ watchlists.
   | Bybit | 1m 3m 5m 15m 30m 1h 2h 4h 6h 12h 1D 1W 1M | Public v5 API, no key, spot only; symbols are Binance-style `BTCUSDT`. Every bar is cut where this app cuts (weeks Monday, months calendar), so 3M and 1Y fold from months. 1,000 per request, paged back with an `end` cursor through `service::market::paging` (60 pages, capped before the fold). Refusals are HTTP 200 with a `retCode` (`10006`/`10018` are rate limits) and some countries get HTTP 403. 600 requests per 5 s per IP: no lane. Held and tail-refreshed when folded (`cache::policy`) |
   | Kraken | 1m 5m 15m 30m 1h 4h 1D | Public API, no key. `OHLC` answers only the newest 720 candles and cannot page back past them (`KRAKEN_BARS`): 12 hours of 1m, 30 days of 1h, 2 years of 1D. The chart's first 500 leave the rest for its first older page (`supports_older_history` is true, `window`), and the next page is empty; a full window drops the fragment a fold of it would start with. Its week (`10080`) starts on a Thursday and its `21600` is 15 days counted from 1970, so 1W, 1M and 1Y fold from days. Ids are `BTC/USD` on REST and websocket alike (`XBT`/`XDG` are refused: `kraken_asset`). One request every six seconds (`net::rate_limit::kraken`: measured, a burst of about nine gets through and then only about one in six seconds; faster is `EGeneral:Too many requests`), so charts and overlays refresh on the slow schedule (the socket keeps them live) on a worker lane of its own (`work_queue::KRAKEN_LANE`: the sleep must not hold the general workers; the quote adapter does not wait, since a round joins every source); refusals are HTTP 200 with an `error` code (`is_rate_limit`) |
   | Coinbase | 1m 5m 15m 1h 6h 1D | `MAX_PAGES` x 290 candles caps a request (a 5m series reaches back ~60 days). Paging is by time window, so an answer that stops at the cap with fewer candles than asked (an illiquid product) begins at the window's start, and a first bucket that opened before it is a fragment (`FoldPlan::shape_since`); an empty page is the start of the product's history, and the count rule alone applies |
-  | Alpaca | 1m 5m 15m 30m 1h 1D 1W 1M | Alpaca also has `3Hour`, `4Min`, `2Month` and so on, but it does not say where those start; only lengths that divide the hour are used (an hour's start is the same in UTC and New York), the rest fold. Days, weeks and months keep Alpaca's New York-midnight stamps; a fold re-anchors them on UTC. Stocks fold intraday buckets from UTC midnight, not the session open. 10,000 bars per request |
+  | Alpaca | 1m 5m 15m 30m 1h 1D 1W 1M | Alpaca also has `3Hour`, `4Min`, `2Month` and so on, but it does not say where those start; only lengths that divide the hour are used, the rest fold. Its `1Hour` is cut on the clock hour (09:00 to 10:00 New York), not where a stock's session grid cuts (09:30), so a stock's hours, `2h`, `4h` and the rest fold from its `30Min` bars (`Grid::UsEquities`) and the native hour is never the base. Intraday answers hold pre and post market bars; the session grid drops them, so a request asks for three times the base bars it shows. Days, weeks and months keep Alpaca's New York-midnight stamps; a fold re-anchors them on UTC. 10,000 bars per request |
   | DEXScreener (GeckoTerminal) | 1m 5m 15m 1h 4h 12h 1D | 1,000 per request; empty buckets are filled flat (`bucket::fill_gaps`) before a fold |
   | CoinGecko | none: prices, `model::market::samples` | `/market_chart` samples are 5 minutes for 1 day, hourly to 90 days, daily to 365; a candle is built from samples so the spacing must divide the candle: `chart_days(timeframe, limit)` is the days to ask for, or `None` (1m, and any length that is not a whole number of five minutes: 7m, 22m) |
   | Polymarket, Kalshi | lines: `model::market::line` | any timeframe: a point per timeframe (a week at most) over 60 candles, between a month and a year, at most 1,000 points (a 1m line reaches back 16 hours). Polymarket: the shortest `prices-history` window that holds the span and allows `fidelity` = the point spacing (`1w` allows 5 minutes, `1m` 10, `max` is the whole history only from 12 hours; where none holds the span and allows the fidelity the line is shorter). Kalshi: the longest of 1, 60 and 1,440 minutes that is no longer than a point, over at most 1,000 of it |
   | CoinMarketCap | none | ignores the timeframe |
+
+- **Oanda has two environments** (`model::market::oanda::OandaEnvironment`), live
+  (`api-fxtrade.oanda.com`) and practice (`api-fxpractice.oanda.com`), and a token works only on its
+  own: the other answers 401. The choice is saved with the account id and token (items without it are
+  live), `DEGENVIEW_OANDA_ENVIRONMENT=practice` goes with the other environment variables, and every
+  request is built by `service::market::oanda::api_request`, which takes the host from the login that
+  signs it. Do not build an Oanda URL anywhere else. One answer uses one login: it is looked up once
+  and passed down (`klines_range`), never per page, and what is kept between answers (the watchlist's
+  day-ago references) is kept per environment.
+- **Oanda history** uses UTC-aligned midpoint candles. Range reads feed `to` and `count` into
+  the shared backward pager so a market closure consumes no page slots. The adapter requests an
+  extra row and drops any candle at the exclusive end cursor. A history request is capped at
+  40 pages, before folding. The watchlist publishes batched midpoint quotes independently of
+  history. Its background job fetches the UTC hour covering 24 hours ago through the same candle
+  service. An empty hour leaves the 24-hour change blank until the cutoff advances.
 
 - **Alpaca feeds** (`model::market::feed`): bars of a day and longer come from SIP (consolidated
   volume, 15 minutes late on the Basic plan, which the app cannot tell from a paid one), intraday
@@ -98,6 +136,27 @@ watchlists.
   (403, with or without `end`, measured on `1Day`), so `bars_window` makes no request: no bar of a
   day or longer opens that recently on any plan. Charts name their feed (`DataSource::chart_feed_label`);
   `display_name()` stays `Alpaca (IEX)` because portfolio and paper keys are built from it.
+- **A US stock differs from TradingView in these ways** (as of 2026-11-25; `Grid::UsEquities`, probe A8 in
+  `report-dont-commit/verify/README.md`, TradingView `NASDAQ:AAPL` on its default regular trading hours,
+  `RTH` in its status bar):
+  - *Extended hours are never drawn.* Regular hours are TradingView's default, so the candles agree.
+    TradingView's own "extended trading hours" setting is not supported, and its candle structure in
+    that mode has not been measured (it probably anchors and cuts differently, so do not build
+    pre and post market buckets on a guess: measure it first).
+  - *Early closes are not modelled* (13:00 on the day after Thanksgiving, 24 December, …): candles
+    stop where the data does, but the last bucket still closes at 16:00 (`time_close` of that
+    candle is later than TradingView's 13:00). Pinned by
+    `service::market::alpaca::tests::an_early_close_is_not_modelled…`.
+  - *Holidays are not modelled.* They hold no bar, so nothing is built for them; a week or month
+    whose last weekday is a holiday closes one bar later than TradingView's (the next bucket's first
+    bar completes it).
+  - *A daily, weekly or monthly bar keeps Alpaca's New York-midnight stamp* (TradingView stamps a
+    daily stock bar `09:30`, closing at `16:00`, measured on a 1D chart). From Pine on an intraday
+    stock chart `time_close("D")` is 16:00 as on TradingView, but `time("D")` is the UTC midnight
+    (the evening before in New York): TradingView's value from an intraday chart was not measured.
+    Scripts that only compare it between bars (`time("D") != time("D")[1]`) are not affected.
+  - *The feed.* Alpaca's intraday bars are IEX (2 to 4% of the volume), TradingView's are
+    consolidated: candle times and structure agree, prices and volumes do not.
 - Alpaca bars close 1 ms before the next opens (days, weeks and months keep the New York midnight
   offset, so an hour off across a clock change). Intraday fetches look back at least 7 days, so a
   tail refresh (4 bars) finds the last session over a weekend; every start is clamped to

@@ -69,7 +69,9 @@ A user method wins over a builtin of the same name only when it takes the call a
 (`tag(x) => x.describe()`), a library's methods, and the debugger's watch expressions. They keep the
 candidates whose first parameter accepts the receiver's value and whose other parameters take the
 arguments *written* (count and names, so nothing is evaluated to decide), and only when several
-remain evaluate the arguments and take the first that fits. A `na` receiver of unknown type fits every
+remain evaluate the arguments and take the one that fits best, ranked as the checker ranks a static
+call: an exact type, then an int for a float, then an untyped parameter; the first declared wins a tie
+(an `int` and a `time` are the same value at run time, so they tie). A `na` receiver of unknown type fits every
 overload, so the first is chosen; a statically typed `float(na)` is resolved at compile time and does
 not have this problem. Across 19 corpus scripts that declare methods, 250 of 273 calls to a declared
 method name were resolved statically (91.6%; a builtin call that shares a method's name counts as
@@ -94,9 +96,11 @@ the Methods page's `maintainQueue`/`calcBB`, `getType`, `fill`/`featureScale` an
 - calling a method as a function (`area(rect)`) is accepted because the engine always did; the
   documentation only shows the dot form;
 - a method called on `na`;
-- `Ty::Any` inside collections: `array.new<T>` for a library type, `map.new<K, V>` and
-  `matrix.new<T>` do not carry their element types, so overloads over those collections are not told
-  apart at compile time.
+- `Ty::Any` inside collections: `array.new<T>` for a library type and `matrix.new<T>` do not
+  carry their element types, so overloads over those collections are not told apart at compile time.
+  `map.new<K, V>` carries both types for static resolution (`m.copy()` and `map.copy(m)` alike, as
+  `array.copy`/`array.slice`/`array.get` and their method forms); a dynamic map receiver is matched
+  by collection kind only at runtime.
 
 ## Known limits
 

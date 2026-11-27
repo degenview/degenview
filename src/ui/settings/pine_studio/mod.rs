@@ -841,10 +841,7 @@ pub(in crate::ui) fn typography_controls(
     let mut change = TypographyChange::default();
     ui.spacing_mut().item_spacing.y = 8.0;
     let hint = match shown.status {
-        FontStatus::Missing(name) => tr!(
-            "“{name}” is not installed on this Mac, so the default is used until it is.",
-            name = name
-        ),
+        FontStatus::Missing(name) => crate::platform::font_not_installed(name),
         FontStatus::Failed(name, why) => {
             tr!(
                 "“{name}” could not be loaded: {why}",
@@ -853,8 +850,7 @@ pub(in crate::ui) fn typography_controls(
             )
         }
         FontStatus::Loading(name) => tr!("Loading “{name}”…", name = name),
-        _ => tr!("Built in: JetBrains Mono. Or any monospaced font installed on this Mac.")
-            .to_owned(),
+        _ => crate::platform::font_choice_hint().to_owned(),
     };
     // A control and, beside it while a theme sets the value, its reset: room for both.
     card::card_reserving(

@@ -1,6 +1,6 @@
 [package]
 name = "degenview"
-version = "0.6.0-rc.35"
+version = "0.6.0-rc.37"
 edition = "2024"
 rust-version = "1.95"
 description = "A native macOS market dashboard, rewritten in Rust"
@@ -43,6 +43,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 # Oversize sync payloads (a long paper-trading history) are deflated to fit one CloudKit record.
 # Already in the tree through the image crates.
 flate2 = "1"
+# TradingView import: the app's HTTP cache holds brotli and zstd bodies beside gzip.
+brotli-decompressor = "~6.3.1"
+ruzstd = "0.9.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
@@ -50,7 +53,7 @@ sha2 = "0.10.9"
 # impls. Already in the tree through rustls, rmcp and others; derive only, no runtime.
 thiserror = "2.0.21"
 # Interface languages (`i18n`, docs/localization.md): gettext `.po` catalogs (a parser that follows gettext's grammar), the languages the
-# system is set to, CLDR locale fallback, and dates written the way a language writes them. ICU4X
+# system is set to, CLDR locale fallback, and dates and lists written the way a language writes them. ICU4X
 # formatters use their compiled-in data (every language, about 1.5 MB in a release build); no
 # build script and no data files to ship.
 ferrocat-po = { version = "3.6.0", default-features = false }
@@ -60,6 +63,9 @@ icu_locale_core = "2.4.0"
 icu_calendar = "2.4.0"
 icu_datetime = "2.4.0"
 icu_time = "2.4.0"
+icu_list = "2.4.0"
+# Script names that differ only in how an accent is spelt are one file on APFS (`script_name::key`).
+icu_normalizer = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
 hmac = "0.12.1"
 rusqlite = { version = "0.43", features = ["bundled"] }
 tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }

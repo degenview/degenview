@@ -88,8 +88,7 @@ impl ImportReport {
         if self.truncated {
             parts.push(tr!("stopped early: too much to import").to_owned());
         }
-        // A list of short phrases, the separator is not part of any sentence.
-        parts.join(", ")
+        crate::i18n::join_list(&parts)
     }
 }
 
@@ -290,6 +289,20 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             });
             if !valid {
                 return Err("Gate.io markets are written BASE_QUOTE, like BTC_USDT".to_owned());
+            }
+            Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
+        }
+        DataSource::Oanda => {
+            let symbol = rest.to_uppercase();
+            let valid = symbol.split_once('_').is_some_and(|(base, quote)| {
+                [base, quote]
+                    .iter()
+                    .all(|part| !part.is_empty() && part.chars().all(is_upper_alphanumeric))
+            });
+            if !valid {
+                return Err(
+                    tr!("Oanda instruments are written BASE_QUOTE, like EUR_USD").to_owned(),
+                );
             }
             Ok(item(source, &symbol, &symbol.replace('_', "/"), &symbol))
         }
@@ -595,6 +608,25 @@ mod tests {
     }
 
     #[test]
+    fn oanda_rows_are_instruments_written_base_underscore_quote() {
+        let parsed = parse("OANDA:eur_usd\nOANDA:EURUSD\nOANDA:EUR-USD\nOANDA:EUR_USD_PERP");
+        assert_eq!(parsed.rows.len(), 1);
+        let Row::Instrument(item) = &parsed.rows[0] else {
+            panic!("an instrument");
+        };
+        assert_eq!(item.instrument.key(), "OANDA:EUR_USD");
+        assert_eq!(item.name, "EUR/USD");
+        assert_eq!(
+            parsed
+                .skipped
+                .iter()
+                .map(|skipped| skipped.reason.as_str())
+                .collect::<Vec<_>>(),
+            ["Oanda instruments are written BASE_QUOTE, like EUR_USD"; 3]
+        );
+    }
+
+    #[test]
     fn gate_rows_are_spot_pairs_written_base_underscore_quote() {
         let parsed =
             parse("GATEIO:btc_usdt\nGATEIO:BTCUSDT\nGATEIO:BTC_USDT_PERP\nGATEIO:BTC-USDT");
@@ -693,7 +725,7 @@ mod tests {
         assert_eq!(list.sections().count(), 1);
         assert_eq!(
             report.summary(),
-            "Added 1 symbol, 1 already in the list, 1 skipped"
+            "Added 1 symbol, 1 already in the list, and 1 skipped"
         );
         // The new market landed inside the reused section.
         let eth = list
@@ -711,7 +743,7 @@ mod tests {
             sections_added: 2,
             ..ImportReport::default()
         };
-        assert_eq!(report.summary(), "Added 2 symbols, 2 sections");
+        assert_eq!(report.summary(), "Added 2 symbols and 2 sections");
         assert_eq!(
             ImportReport {
                 added: 1,
@@ -719,7 +751,7 @@ mod tests {
                 ..ImportReport::default()
             }
             .summary(),
-            "Added 1 symbol, 1 section"
+            "Added 1 symbol and 1 section"
         );
     }
 

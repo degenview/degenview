@@ -4,7 +4,7 @@ use degenview_brokers::Side;
 use eframe::egui::{self, vec2};
 
 use super::state::SheetState;
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::trading::backend::TradingBackend;
 use crate::trading::model::OrderRow;
 use crate::ui::icons::{self, Icon};
@@ -102,8 +102,8 @@ pub(super) fn show(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn Trad
             };
             ui.label(kit::text(
                 match row.side {
-                    Side::Buy => tr!("Buy"),
-                    Side::Sell => tr!("Sell"),
+                    Side::Buy => tr_c!("side", "Buy"),
+                    Side::Sell => tr_c!("side", "Sell"),
                 },
                 kit::size::CAPTION + 1.0,
                 kit::SEMIBOLD,

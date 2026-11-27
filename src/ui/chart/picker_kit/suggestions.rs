@@ -9,14 +9,6 @@ use crate::ui::kit::{MEDIUM, galley_words, size};
 use crate::ui::theme;
 use eframe::egui::{self, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
-pub(crate) const CRYPTO_SUGGESTIONS: [&str; 10] = [
-    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK",
-];
-
-pub(crate) const STOCK_SUGGESTIONS: [&str; 10] = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
-];
-
 /// Starting points for the Predictions section; each searches the selected provider for its query,
 /// which stays as written (it is what the providers are asked), while the title is the person's
 /// language.

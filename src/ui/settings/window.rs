@@ -1,5 +1,5 @@
 //! The app's Settings window: a sidebar of badge-and-title rows beside the selected page —
-//! Appearance, Alpaca, CoinMarketCap, Notifications (how alerts are delivered, and the
+//! Appearance, Alpaca, Oanda, CoinMarketCap, Notifications (how alerts are delivered, and the
 //! background agent's health), Webhooks, Storage (the cache) and About.
 //!
 //! A pure view: it reads settings values and returns `SettingsAction`s for the host.
@@ -10,7 +10,9 @@ use crate::model::alert::{
 };
 use crate::model::mcp::McpAction;
 use crate::platform;
-use crate::service::keychain::api_keys::{AlpacaCredentialsStore, CoinMarketCapKeyStore};
+use crate::service::keychain::api_keys::{
+    AlpacaCredentialsStore, CoinMarketCapKeyStore, OandaCredentialsStore,
+};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::settings::api_keys::{self, ApiKeysState};
@@ -34,6 +36,7 @@ pub enum SettingsSection {
     Appearance,
     PineStudio,
     Alpaca,
+    Oanda,
     Brokers,
     CoinMarketCap,
     Ai,
@@ -48,10 +51,11 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Appearance,
         Self::PineStudio,
         Self::Alpaca,
+        Self::Oanda,
         Self::Brokers,
         Self::CoinMarketCap,
         Self::Ai,
@@ -77,6 +81,7 @@ impl SettingsSection {
             Self::Appearance => tr!("Appearance"),
             Self::PineStudio => tr!("Pine Studio"),
             Self::Alpaca => "Alpaca",
+            Self::Oanda => "Oanda",
             Self::Brokers => tr!("Brokers"),
             Self::CoinMarketCap => "CoinMarketCap",
             Self::Ai => tr!("AI Assistant"),
@@ -97,6 +102,7 @@ impl SettingsSection {
             Self::Appearance => Color32::from_rgb(94, 92, 230),
             Self::PineStudio => Color32::from_rgb(172, 142, 104),
             Self::Alpaca => Color32::from_rgb(255, 159, 10),
+            Self::Oanda => Color32::from_rgb(0, 166, 81),
             Self::Brokers => Color32::from_rgb(255, 112, 67),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
             Self::Ai => Color32::from_rgb(255, 214, 10),
@@ -117,6 +123,7 @@ impl SettingsSection {
             Self::Appearance => "appearance",
             Self::PineStudio => "pinestudio",
             Self::Alpaca => "alpaca",
+            Self::Oanda => "oanda",
             Self::Brokers => "brokers",
             Self::CoinMarketCap => "coinmarketcap",
             Self::Ai => "ai",
@@ -346,6 +353,7 @@ impl SettingsSection {
             Self::Appearance => Icon::Paintbrush,
             Self::PineStudio => Icon::AngleBrackets,
             Self::Alpaca => Icon::ChartLine,
+            Self::Oanda => Icon::Banknote,
             Self::Brokers => Icon::ArrowLeftRight,
             Self::CoinMarketCap => Icon::Gauge,
             Self::Ai => Icon::Sparkles,
@@ -465,6 +473,15 @@ pub fn show(
                 |ui| api_keys::alpaca_body(ui, &mut state.api_keys, store),
             );
         }
+        SettingsSection::Oanda => {
+            let store = OandaCredentialsStore::shared();
+            page_shell(
+                &mut page,
+                section,
+                tr!("Connect Oanda to chart forex, metals and index CFDs in DegenView."),
+                |ui| api_keys::oanda_body(ui, &mut state.api_keys, store),
+            );
+        }
         SettingsSection::Brokers => {
             page_shell(
                 &mut page,
@@ -543,14 +560,9 @@ pub fn show(
         }
         SettingsSection::Mcp => {
             let mut mcp_actions = Vec::new();
-            page_shell(
-                &mut page,
-                section,
-                tr!(
-                    "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control."
-                ),
-                |ui| mcp::body(ui, &mut state.mcp, &input.mcp, &mut mcp_actions),
-            );
+            page_shell(&mut page, section, crate::platform::mcp_page_hint(), |ui| {
+                mcp::body(ui, &mut state.mcp, &input.mcp, &mut mcp_actions)
+            });
             actions.extend(mcp_actions.into_iter().map(SettingsAction::Mcp));
         }
         SettingsSection::Snapshots => {

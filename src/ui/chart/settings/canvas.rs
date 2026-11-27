@@ -445,6 +445,28 @@ fn scales_rows(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle) {
             );
         },
     );
+    countdown_row(ui, &mut canvas.bar_countdown);
+}
+
+/// The time the forming bar has left, under the last price's tag on the axis. Set per chart, and
+/// kept when the chart changes to a type or market that has no such bar.
+fn countdown_row(ui: &mut Ui, on: &mut bool) {
+    let hint = if *on {
+        tr!(
+            "The time left in the forming bar, under the last price. Not shown on Renko, Kagi, Line Break, Point & Figure and Range charts, in a replay, or for markets without clock-cut bars."
+        )
+    } else {
+        tr!("The last price's tag shows the price alone.")
+    };
+    card::card(
+        ui,
+        Icon::Clock,
+        tr!("Countdown to bar close"),
+        Some(hint),
+        |ui| {
+            card::switch(ui, on);
+        },
+    );
 }
 
 // MARK: Buttons
@@ -570,11 +592,12 @@ mod tests {
             canvas.horizontal_grid.dash = LineDash::Dotted;
             canvas.watermark.mode = WatermarkMode::Symbol;
             canvas.ohlc_readout = false;
+            canvas.bar_countdown = false;
         }
         assert!(draw(&mut card) > 600.0);
         assert!(
-            !card.appearance().canvas.ohlc_readout,
-            "drawing keeps it off"
+            !card.appearance().canvas.ohlc_readout && !card.appearance().canvas.bar_countdown,
+            "drawing keeps them off"
         );
     }
 

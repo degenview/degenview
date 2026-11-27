@@ -1,6 +1,6 @@
-//! API keys for the data providers that need one: Alpaca (key id + secret) and CoinMarketCap
-//! (one key). Ports of `AlpacaCredentialsStore` and `CoinMarketCapCredentialStore`, on the same
-//! Security-framework layer as the webhook secrets.
+//! API keys for the data providers that need one: Alpaca (key id + secret), Oanda (account id +
+//! access token) and CoinMarketCap (one key). Ports of `AlpacaCredentialsStore` and
+//! `CoinMarketCapCredentialStore`, on the same Security-framework layer as the webhook secrets.
 //!
 //! Reading a key can raise a Keychain prompt, so `is_configured` asks only for the item's
 //! attributes and the secret is read lazily on the first request that needs it. Under
@@ -8,6 +8,7 @@
 //! the Keychain: keys live in memory for the session.
 
 use crate::lock::lock;
+use crate::model::market::oanda::OandaEnvironment;
 use crate::service::keychain::webhook_secrets::{Scope, is_disabled, platform};
 use crate::service::webhook::delivery::SecretStoreError;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,8 @@ use std::sync::{Mutex, OnceLock};
 
 const ALPACA_SERVICE: &str = "es.nico.degenview.alpaca";
 const ALPACA_ACCOUNT: &str = "credentials-v1";
+const OANDA_SERVICE: &str = "es.nico.degenview.oanda";
+const OANDA_ACCOUNT: &str = "credentials-v1";
 const CMC_SERVICE: &str = "es.nico.degenview.coinmarketcap";
 const CMC_ACCOUNT: &str = "api-key-v1";
 
@@ -105,9 +108,9 @@ pub struct AlpacaCredentials {
     pub secret_key: String,
 }
 
-impl AlpacaCredentials {
-    pub fn is_configured(&self) -> bool {
-        !self.key_id.trim().is_empty() && !self.secret_key.trim().is_empty()
+impl CredentialPair for AlpacaCredentials {
+    fn fields(&self) -> (&str, &str) {
+        (&self.key_id, &self.secret_key)
     }
 
     fn trimmed(&self) -> Self {
@@ -127,90 +130,160 @@ const ALPACA_OWN: Scope = Scope {
     shared_group: false,
 };
 
-#[derive(Default)]
-struct AlpacaCache {
-    credentials: Option<AlpacaCredentials>,
-    exists: Option<bool>,
-}
-
-pub struct AlpacaCredentialsStore {
-    backend: Box<dyn KeyBackend>,
-    cache: Mutex<AlpacaCache>,
-}
+pub type AlpacaCredentialsStore = CredentialsStore<AlpacaCredentials>;
 
 impl AlpacaCredentialsStore {
     pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
-        Self {
-            backend,
-            cache: Mutex::new(AlpacaCache::default()),
-        }
+        Self::new(backend, ALPACA_SHARED, ALPACA_ACCOUNT, Some(ALPACA_OWN))
     }
 
-    /// The app-wide store.
     pub fn shared() -> &'static Self {
         static STORE: OnceLock<AlpacaCredentialsStore> = OnceLock::new();
         STORE.get_or_init(|| Self::with_backend(default_backend()))
     }
+}
 
-    /// The saved credentials, or empty ones. The first read may prompt for Keychain access.
-    /// A key found only outside the shared group is copied into it, as the Swift app did.
-    pub fn credentials(&self) -> AlpacaCredentials {
+// MARK: Oanda
+
+/// The Oanda account id, personal access token and the environment they belong to, as one item.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OandaCredentials {
+    #[serde(rename = "accountId")]
+    pub account_id: String,
+    #[serde(rename = "accessToken")]
+    pub access_token: String,
+    /// Items saved before the choice existed were all sent to the live API.
+    #[serde(default)]
+    pub environment: OandaEnvironment,
+}
+
+impl CredentialPair for OandaCredentials {
+    fn fields(&self) -> (&str, &str) {
+        (&self.account_id, &self.access_token)
+    }
+
+    fn trimmed(&self) -> Self {
+        Self {
+            account_id: self.account_id.trim().to_owned(),
+            access_token: self.access_token.trim().to_owned(),
+            environment: self.environment,
+        }
+    }
+}
+
+const OANDA_SHARED: Scope = Scope {
+    service: OANDA_SERVICE,
+    shared_group: true,
+};
+
+pub type OandaCredentialsStore = CredentialsStore<OandaCredentials>;
+
+impl OandaCredentialsStore {
+    pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
+        Self::new(backend, OANDA_SHARED, OANDA_ACCOUNT, None)
+    }
+
+    pub fn shared() -> &'static Self {
+        static STORE: OnceLock<OandaCredentialsStore> = OnceLock::new();
+        STORE.get_or_init(|| Self::with_backend(default_backend()))
+    }
+}
+
+/// Two fields saved together as one Keychain item.
+pub trait CredentialPair: Clone + Default + Serialize + serde::de::DeserializeOwned {
+    fn fields(&self) -> (&str, &str);
+    fn trimmed(&self) -> Self;
+
+    fn is_configured(&self) -> bool {
+        let (first, second) = self.fields();
+        !first.trim().is_empty() && !second.trim().is_empty()
+    }
+}
+
+#[derive(Default)]
+struct CredentialsCache<C> {
+    credentials: Option<C>,
+    exists: Option<bool>,
+}
+
+pub struct CredentialsStore<C> {
+    backend: Box<dyn KeyBackend>,
+    scope: Scope,
+    account: &'static str,
+    legacy: Option<Scope>,
+    cache: Mutex<CredentialsCache<C>>,
+}
+
+impl<C: CredentialPair> CredentialsStore<C> {
+    fn new(
+        backend: Box<dyn KeyBackend>,
+        scope: Scope,
+        account: &'static str,
+        legacy: Option<Scope>,
+    ) -> Self {
+        Self {
+            backend,
+            scope,
+            account,
+            legacy,
+            cache: Mutex::default(),
+        }
+    }
+
+    /// Reads the saved credentials once. The first read may prompt for Keychain access.
+    pub fn credentials(&self) -> C {
         let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.clone();
         }
-        let stored = self
+        let credentials = self
             .backend
-            .read(ALPACA_SHARED, ALPACA_ACCOUNT)
-            .or_else(|| self.backend.read(ALPACA_OWN, ALPACA_ACCOUNT))
-            .and_then(|text| {
-                serde_json::from_str::<AlpacaCredentials>(&text)
-                    .ok()
-                    .map(|credentials| (text, credentials))
-            });
-        let credentials = match stored {
-            Some((text, credentials)) => {
-                let _ = self.backend.write(ALPACA_SHARED, ALPACA_ACCOUNT, &text);
-                credentials
-            }
-            None => AlpacaCredentials::default(),
-        };
+            .read(self.scope, self.account)
+            .map(|text| serde_json::from_str::<C>(&text).ok())
+            .unwrap_or_else(|| self.read_legacy())
+            .unwrap_or_default();
         cache.credentials = Some(credentials.clone());
         credentials
     }
 
-    /// Whether credentials are saved. Reads attributes only, so it never prompts.
+    fn read_legacy(&self) -> Option<C> {
+        let text = self.backend.read(self.legacy?, self.account)?;
+        let credentials = serde_json::from_str(&text).ok()?;
+        let _ = self.backend.write(self.scope, self.account, &text);
+        Some(credentials)
+    }
+
+    /// Checks the item's attributes without prompting for Keychain access.
     pub fn is_configured(&self) -> bool {
         let mut cache = lock(&self.cache);
         if let Some(credentials) = &cache.credentials {
             return credentials.is_configured();
         }
-        if let Some(exists) = cache.exists {
-            return exists;
-        }
-        let found = self.backend.exists(ALPACA_SHARED, ALPACA_ACCOUNT)
-            || self.backend.exists(ALPACA_OWN, ALPACA_ACCOUNT);
-        cache.exists = Some(found);
-        found
+        *cache.exists.get_or_insert_with(|| {
+            self.backend.exists(self.scope, self.account)
+                || self
+                    .legacy
+                    .is_some_and(|scope| self.backend.exists(scope, self.account))
+        })
     }
 
-    /// Saves trimmed credentials; incomplete ones remove the saved item.
-    pub fn save(&self, credentials: &AlpacaCredentials) -> Result<(), SecretStoreError> {
+    /// Saves trimmed credentials. Incomplete credentials remove the saved item.
+    pub fn save(&self, credentials: &C) -> Result<(), SecretStoreError> {
         let normalized = credentials.trimmed();
+        let mut cache = lock(&self.cache);
         if normalized.is_configured() {
             let text = serde_json::to_string(&normalized)
                 .map_err(|error| SecretStoreError(error.to_string()))?;
-            self.backend.write(ALPACA_SHARED, ALPACA_ACCOUNT, &text)?;
+            self.backend.write(self.scope, self.account, &text)?;
         } else {
-            // Both are tried; the cache below is changed only if both are gone.
-            let shared = self.backend.delete(ALPACA_SHARED, ALPACA_ACCOUNT);
-            let own = self.backend.delete(ALPACA_OWN, ALPACA_ACCOUNT);
-            shared.and(own)?;
+            let current = self.backend.delete(self.scope, self.account);
+            let legacy = self
+                .legacy
+                .map_or(Ok(()), |scope| self.backend.delete(scope, self.account));
+            current.and(legacy)?;
         }
-        let mut cache = lock(&self.cache);
         cache.credentials = Some(normalized);
         cache.exists = None;
-        drop(cache);
         Ok(())
     }
 }
@@ -309,6 +382,10 @@ impl CoinMarketCapKeyStore {
 /// Environment names, kept as a developer convenience when nothing is saved in the app.
 pub const ALPACA_KEY_ID_ENV: &str = "DEGENVIEW_ALPACA_KEY_ID";
 pub const ALPACA_SECRET_KEY_ENV: &str = "DEGENVIEW_ALPACA_SECRET_KEY";
+pub const OANDA_ACCOUNT_ID_ENV: &str = "DEGENVIEW_OANDA_ACCOUNT_ID";
+pub const OANDA_ACCESS_TOKEN_ENV: &str = "DEGENVIEW_OANDA_ACCESS_TOKEN";
+/// `live` (the default) or `practice`.
+pub const OANDA_ENVIRONMENT_ENV: &str = "DEGENVIEW_OANDA_ENVIRONMENT";
 pub const CMC_API_KEY_ENV: &str = "DEGENVIEW_CMC_API_KEY";
 
 fn non_empty(value: Option<String>) -> Option<String> {
@@ -344,6 +421,39 @@ pub fn alpaca_credentials_with(
 
 pub fn alpaca_credentials() -> Option<(String, String)> {
     alpaca_credentials_with(AlpacaCredentialsStore::shared(), &|name| {
+        std::env::var(name).ok()
+    })
+}
+
+/// Whether Oanda credentials are saved, for anything that only needs to know (a chart picker,
+/// the MCP server). Like [`alpaca_configured`]: attributes only, never a prompt.
+pub fn oanda_configured() -> bool {
+    OandaCredentialsStore::shared().is_configured()
+}
+
+/// The Oanda login to send: what the user saved in Settings, else the environment.
+pub fn oanda_credentials_with(
+    store: &OandaCredentialsStore,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<OandaCredentials> {
+    if store.is_configured() {
+        let saved = store.credentials();
+        if saved.is_configured() {
+            return Some(saved);
+        }
+    }
+    Some(OandaCredentials {
+        account_id: non_empty(env(OANDA_ACCOUNT_ID_ENV))?,
+        access_token: non_empty(env(OANDA_ACCESS_TOKEN_ENV))?,
+        environment: match non_empty(env(OANDA_ENVIRONMENT_ENV)) {
+            Some(name) => OandaEnvironment::parse(&name)?,
+            None => OandaEnvironment::default(),
+        },
+    })
+}
+
+pub fn oanda_credentials() -> Option<OandaCredentials> {
+    oanda_credentials_with(OandaCredentialsStore::shared(), &|name| {
         std::env::var(name).ok()
     })
 }
@@ -510,6 +620,115 @@ mod tests {
         assert_eq!(reads.load(Ordering::SeqCst), 1);
     }
 
+    fn oanda() -> (OandaCredentialsStore, Arc<MemoryBackend>) {
+        let memory = Arc::new(MemoryBackend::default());
+        let store = OandaCredentialsStore::with_backend(Box::new(Shared(
+            memory.clone(),
+            Arc::new(AtomicU64::new(0)),
+        )));
+        (store, memory)
+    }
+
+    fn oanda_credentials(id: &str, token: &str) -> OandaCredentials {
+        OandaCredentials {
+            account_id: id.into(),
+            access_token: token.into(),
+            environment: OandaEnvironment::Live,
+        }
+    }
+
+    #[test]
+    fn oanda_needs_both_halves_and_saves_them_trimmed() {
+        let (store, memory) = oanda();
+        assert!(!oanda_credentials("", "").is_configured());
+        assert!(!oanda_credentials("001-001", "  ").is_configured());
+        assert!(oanda_credentials(" 001-001 ", "tok").is_configured());
+        assert!(!store.is_configured());
+        store
+            .save(&oanda_credentials(" 001-001 ", " tok\n"))
+            .unwrap();
+        assert_eq!(
+            store.credentials(),
+            oanda_credentials("001-001", "tok"),
+            "saved trimmed"
+        );
+        assert!(store.is_configured());
+        assert_eq!(
+            memory.read(OANDA_SHARED, OANDA_ACCOUNT).as_deref(),
+            Some(r#"{"accountId":"001-001","accessToken":"tok","environment":"live"}"#)
+        );
+        store.save(&oanda_credentials("001-001", "")).unwrap();
+        assert!(
+            !store.is_configured(),
+            "incomplete credentials delete the item"
+        );
+        assert!(!memory.exists(OANDA_SHARED, OANDA_ACCOUNT));
+    }
+
+    #[test]
+    fn oanda_prefers_the_saved_credentials_and_falls_back_to_the_environment() {
+        let (store, _) = oanda();
+        let env = |name: &str| match name {
+            OANDA_ACCOUNT_ID_ENV => Some(" env-account ".to_owned()),
+            OANDA_ACCESS_TOKEN_ENV => Some("env-token".to_owned()),
+            _ => None,
+        };
+        assert_eq!(
+            oanda_credentials_with(&store, &env),
+            Some(oanda_credentials("env-account", "env-token")),
+            "nothing saved: the environment, live unless it says otherwise"
+        );
+        store
+            .save(&oanda_credentials("saved-account", "saved-token"))
+            .unwrap();
+        assert_eq!(
+            oanda_credentials_with(&store, &env),
+            Some(oanda_credentials("saved-account", "saved-token"))
+        );
+        assert_eq!(oanda_credentials_with(&oanda().0, &|_| None), None);
+        let half = |name: &str| (name == OANDA_ACCOUNT_ID_ENV).then(|| "only-id".to_owned());
+        assert_eq!(oanda_credentials_with(&oanda().0, &half), None);
+        let named = |value: &'static str| {
+            move |name: &str| match name {
+                OANDA_ENVIRONMENT_ENV => Some(value.to_owned()),
+                _ => env(name),
+            }
+        };
+        assert_eq!(
+            oanda_credentials_with(&oanda().0, &named("practice")).map(|login| login.environment),
+            Some(OandaEnvironment::Practice)
+        );
+        assert_eq!(
+            oanda_credentials_with(&oanda().0, &named("demo")),
+            None,
+            "a misspelt environment is not sent to the live host"
+        );
+    }
+
+    #[test]
+    fn oanda_keeps_its_environment_and_reads_older_items_as_live() {
+        let (store, memory) = oanda();
+        memory
+            .write(
+                OANDA_SHARED,
+                OANDA_ACCOUNT,
+                r#"{"accountId":"001-001","accessToken":"tok"}"#,
+            )
+            .unwrap();
+        assert_eq!(store.credentials(), oanda_credentials("001-001", "tok"));
+
+        let practice = OandaCredentials {
+            environment: OandaEnvironment::Practice,
+            ..oanda_credentials("101-001", "tok")
+        };
+        store.save(&practice).unwrap();
+        let stored = memory.read(OANDA_SHARED, OANDA_ACCOUNT).unwrap();
+        assert_eq!(
+            serde_json::from_str::<OandaCredentials>(&stored).unwrap(),
+            practice
+        );
+    }
+
     #[test]
     fn under_test_the_shared_stores_never_touch_the_keychain() {
         assert!(is_disabled());
@@ -521,6 +740,11 @@ mod tests {
         alpaca.save(&credentials("PK", "S")).unwrap();
         assert!(alpaca.is_configured());
         alpaca.save(&AlpacaCredentials::default()).unwrap();
+        let oanda = OandaCredentialsStore::shared();
+        oanda.save(&oanda_credentials("A", "T")).unwrap();
+        assert!(oanda.is_configured());
+        oanda.save(&OandaCredentials::default()).unwrap();
+        assert!(!oanda.is_configured());
     }
 
     #[test]

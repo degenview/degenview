@@ -9,6 +9,7 @@
 //! has happened.
 
 use crate::host::snapshot::{Hosting, SnapshotHost, turn_on_a_host};
+use crate::i18n::tr;
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;
@@ -235,6 +236,11 @@ impl ChartWorkspace {
             drawings,
             indicators: chart.indicators,
             replay_active: replay_ms.is_some(),
+            countdown: chart.bar_countdown(
+                self.timeframe,
+                replay_ms.is_some(),
+                crate::clock::now_ms(),
+            ),
             include_trading,
             scale_mode: chart.scale_mode,
             logo: None,
@@ -525,26 +531,25 @@ impl ChartWorkspace {
             );
         }
         if let Some(waiting) = &self.snapshot.consent {
-            let note = waiting
-                .destination
-                .note()
-                .map_or_else(String::new, |note| format!(" {note}"));
-            let message = format!(
-                "To share this chart, DegenView uploads its image to {}. {}{note} Saving or \
-                 copying an image never uploads anything.",
-                waiting.destination.label(),
-                waiting.destination.notice()
-            );
+            let message = crate::i18n::join_sentences(&[
+                tr!(
+                    "To share this chart, DegenView uploads its image to {destination}.",
+                    destination = waiting.destination.label()
+                ),
+                waiting.destination.notice().to_owned(),
+                waiting.destination.note().unwrap_or_default().to_owned(),
+                tr!("Saving or copying an image never uploads anything.").to_owned(),
+            ]);
             let outcome = kit::alert(
                 ctx,
                 Id::new(("snapshot-consent", self.id)),
                 &kit::Alert {
                     icon: Icon::ShareUp,
                     tint: kit::ORANGE,
-                    title: "Upload this chart image?",
+                    title: tr!("Upload this chart image?"),
                     message: &message,
-                    accept: "Upload",
-                    dismiss: "Cancel",
+                    accept: tr!("Upload"),
+                    dismiss: tr!("Cancel"),
                     cautious: true,
                 },
             );
@@ -561,10 +566,10 @@ impl ChartWorkspace {
                 &kit::Alert {
                     icon: Icon::TriangleFill,
                     tint: kit::ORANGE,
-                    title: "Could not upload the snapshot",
+                    title: tr!("Could not upload the snapshot"),
                     message: &waiting.message,
-                    accept: "Try again",
-                    dismiss: "Cancel",
+                    accept: tr!("Try again"),
+                    dismiss: tr!("Cancel"),
                     cautious: false,
                 },
             );
@@ -1296,6 +1301,80 @@ mod tests {
                 _ => None,
             })
             .expect("an image to copy")
+    }
+
+    /// The chart of the rig made live: its newest candle is the 1-hour bar of the clock, which
+    /// just arrived, so it has a countdown.
+    fn make_live(rig: &mut Rig) {
+        let index = rig.workspace.chart_index(rig.chart_id).unwrap();
+        let now = crate::clock::now_ms();
+        let open = crate::model::market::bucket::bucket_start_ms(Timeframe::HOUR_1, now);
+        let chart = &mut rig.workspace.charts[index];
+        chart.candles = vec![Kline {
+            open_time: open,
+            close_time: open + 3_600_000 - 1,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.0,
+            volume: 1.0,
+        }];
+        chart.note_arrival(Timeframe::HOUR_1, now);
+    }
+
+    #[test]
+    fn a_snapshot_is_taken_with_the_countdown_the_chart_has_now() {
+        let mut rig = rig();
+        let index = rig.workspace.chart_index(rig.chart_id).unwrap();
+        let parts = |rig: &Rig| rig.workspace.chart_parts(&rig.ctx, index, false);
+        assert_eq!(parts(&rig).countdown, None, "the fixture's bars are old");
+
+        make_live(&mut rig);
+        let taken = parts(&rig).countdown.expect("a live chart counts down");
+        assert!(taken.remaining_ms > 0 && taken.remaining_ms < 3_600_000);
+
+        // The capture owns it: the chart's own data going stale afterwards changes nothing.
+        let held = parts(&rig);
+        rig.workspace.charts[index].last_data_ms = Some(0);
+        assert_eq!(held.countdown, Some(taken));
+        assert_eq!(
+            parts(&rig).countdown,
+            None,
+            "and a new capture sees the stale chart"
+        );
+    }
+
+    #[test]
+    fn a_snapshot_of_a_replay_or_of_a_chart_with_the_setting_off_has_no_countdown() {
+        let mut rig = rig();
+        make_live(&mut rig);
+        let index = rig.workspace.chart_index(rig.chart_id).unwrap();
+        rig.workspace.charts[index]
+            .chart
+            .appearance_mut()
+            .canvas
+            .bar_countdown = false;
+        assert_eq!(
+            rig.workspace.chart_parts(&rig.ctx, index, false).countdown,
+            None
+        );
+
+        rig.workspace.charts[index]
+            .chart
+            .appearance_mut()
+            .canvas
+            .bar_countdown = true;
+        let times: Vec<i64> = rig.workspace.charts[index]
+            .candles
+            .iter()
+            .map(|bar| bar.open_time)
+            .collect();
+        rig.workspace.replay.start(times[0], "BTCUSDT", times);
+        assert!(rig.workspace.replay.is_active());
+        assert_eq!(
+            rig.workspace.chart_parts(&rig.ctx, index, false).countdown,
+            None
+        );
     }
 
     #[test]

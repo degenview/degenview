@@ -23,6 +23,7 @@ pub mod icon_tabs;
 pub mod keycap;
 pub mod loading;
 pub mod markdown_view;
+pub mod matching;
 mod menu;
 pub(in crate::ui) mod outline;
 mod page;
@@ -33,6 +34,7 @@ pub mod ruler;
 pub mod scroll;
 pub mod search_box;
 pub mod sheet;
+pub mod sheet_parts;
 pub mod source_logo;
 pub mod sparkline;
 pub mod split;
@@ -50,7 +52,10 @@ pub use button::{
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice, notice_with};
-pub use field::{FIELD_HEIGHT, field, field_frame, input_frame, plain_field, search_field};
+pub use field::{
+    FIELD_HEIGHT, field, field_frame, field_hint, field_title, input_frame, plain_field,
+    search_field,
+};
 pub use form::{
     Segment, StepDirection, color_well, paint_switch, segmented, segmented_filling, segments,
     segments_width, stepper, stepper_arrows, switch,

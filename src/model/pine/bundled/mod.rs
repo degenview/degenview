@@ -4,6 +4,7 @@
 //! script id is [`script_id`]. Every one is original work from the published definition of the
 //! study, under the app's own license.
 
+use crate::i18n::{Marked, tr_noop};
 use crate::model::indicators::catalog::Family;
 
 /// One bundled indicator: its catalog text and its Pine source.
@@ -11,10 +12,10 @@ use crate::model::indicators::catalog::Family;
 pub struct BundledIndicator {
     /// Stable, used for favorites and the instance's script id. Never reuse or rename one.
     pub id: &'static str,
-    pub name: &'static str,
+    pub name: Marked,
     pub family: Family,
-    pub summary: &'static str,
-    pub description: &'static str,
+    pub summary: Marked,
+    pub description: Marked,
     /// Other names a search matches.
     pub aliases: &'static [&'static str],
     /// On the price pane (`true`) or in a pane of its own.
@@ -38,8 +39,8 @@ pub fn find(id: &str) -> Option<&'static BundledIndicator> {
 
 macro_rules! indicator {
     (
-        $id:literal, $name:literal, $family:ident, $overlay:literal,
-        $summary:literal, $description:literal, [$($alias:literal),* $(,)?]
+        $id:literal, $name:expr, $family:ident, $overlay:literal,
+        $summary:expr, $description:expr, [$($alias:literal),* $(,)?]
     ) => {
         BundledIndicator {
             id: $id,
@@ -60,137 +61,167 @@ macro_rules! indicator {
 pub static ALL: [BundledIndicator; 21] = [
     indicator!(
         "ichimoku-cloud",
-        "Ichimoku Cloud",
+        tr_noop!("Ichimoku Cloud"),
         Trend,
         true,
-        "Midline averages and a projected cloud that frames the trend.",
-        "Ichimoku Kinko Hyo draws a conversion and a base line and a cloud between two leading spans shifted forward. Price above the cloud is bullish, below is bearish, inside is indecision. The lagging span is not drawn.",
+        tr_noop!("Midline averages and a projected cloud that frames the trend."),
+        tr_noop!(
+            "Ichimoku Kinko Hyo draws a conversion and a base line and a cloud between two leading spans shifted forward. Price above the cloud is bullish, below is bearish, inside is indecision. The lagging span is not drawn."
+        ),
         ["ichimoku kinko hyo", "kumo", "tenkan", "kijun"]
     ),
     indicator!(
         "parabolic-sar",
-        "Parabolic SAR",
+        tr_noop!("Parabolic SAR"),
         Trend,
         true,
-        "A trailing stop that accelerates toward price.",
-        "Wilder's Parabolic Stop and Reverse puts a dot below the bars while the trend is up and above them while it is down, speeding up as the trend runs. A dot that flips side is a reversal signal.",
+        tr_noop!("A trailing stop that accelerates toward price."),
+        tr_noop!(
+            "Wilder's Parabolic Stop and Reverse puts a dot below the bars while the trend is up and above them while it is down, speeding up as the trend runs. A dot that flips side is a reversal signal."
+        ),
         ["psar", "stop and reverse", "sar"]
     ),
     indicator!(
         "donchian-channels",
-        "Donchian Channels",
+        tr_noop!("Donchian Channels"),
         Volatility,
         true,
-        "The highest high and lowest low of the last N bars.",
-        "Draws the highest high and lowest low over a window with their midpoint. A close beyond a band is a breakout, which is the entry rule of the classic turtle system.",
+        tr_noop!("The highest high and lowest low of the last N bars."),
+        tr_noop!(
+            "Draws the highest high and lowest low over a window with their midpoint. A close beyond a band is a breakout, which is the entry rule of the classic turtle system."
+        ),
         ["donchian", "turtle", "price channel"]
     ),
     indicator!(
         "keltner-channels",
-        "Keltner Channels",
+        tr_noop!("Keltner Channels"),
         Volatility,
         true,
-        "An EMA with bands a multiple of the ATR away.",
-        "A moving average with bands set by the Average True Range, so the channel follows volatility. Closes outside the channel suggest a strong move; a flat, narrow channel suggests a range.",
+        tr_noop!("An EMA with bands a multiple of the ATR away."),
+        tr_noop!(
+            "A moving average with bands set by the Average True Range, so the channel follows volatility. Closes outside the channel suggest a strong move; a flat, narrow channel suggests a range."
+        ),
         ["keltner", "kc", "atr bands"]
     ),
     indicator!(
         "vwap",
-        "VWAP",
+        tr_noop!("VWAP"),
         VolumeFlow,
         true,
-        "Volume weighted average price, restarted each day, with bands.",
-        "The average price weighted by volume since the start of the day, with bands a multiple of the volume-weighted standard deviation away. Traders use it as the fair price of the session. It needs volume.",
+        tr_noop!("Volume weighted average price, restarted each day, with bands."),
+        tr_noop!(
+            "The average price weighted by volume since the start of the day, with bands a multiple of the volume-weighted standard deviation away. Traders use it as the fair price of the session. It needs volume."
+        ),
         ["volume weighted average price", "anchored vwap"]
     ),
     indicator!(
         "moving-average-ribbon",
-        "Moving Average Ribbon",
+        tr_noop!("Moving Average Ribbon"),
         Trend,
         true,
-        "Six moving averages of increasing length.",
-        "Six averages (SMA, EMA, WMA or HMA) from a first length in equal steps. A fanned-out ribbon means a strong trend, a tangle means a range, and the order of the lines flips when the trend does.",
+        tr_noop!("Six moving averages of increasing length."),
+        tr_noop!(
+            "Six averages (SMA, EMA, WMA or HMA) from a first length in equal steps. A fanned-out ribbon means a strong trend, a tangle means a range, and the order of the lines flips when the trend does."
+        ),
         ["ma ribbon", "ema ribbon", "guppy"]
     ),
     indicator!(
         "williams-fractals",
-        "Williams Fractals",
+        tr_noop!("Williams Fractals"),
         Structure,
         true,
-        "Marks swing highs and lows confirmed by the bars on each side.",
-        "A fractal is a bar whose high (or low) is the highest (lowest) of the bars either side of it. Each is confirmed after those bars close, and the mark is placed back on the bar. Fractals are often used as support, resistance and stop levels.",
+        tr_noop!("Marks swing highs and lows confirmed by the bars on each side."),
+        tr_noop!(
+            "A fractal is a bar whose high (or low) is the highest (lowest) of the bars either side of it. Each is confirmed after those bars close, and the mark is placed back on the bar. Fractals are often used as support, resistance and stop levels."
+        ),
         ["fractal", "swing high", "swing low", "pivot"]
     ),
     indicator!(
         "linear-regression-bands",
-        "Linear Regression Bands",
+        tr_noop!("Linear Regression Bands"),
         Trend,
         true,
-        "The least-squares line of recent closes with deviation bands.",
-        "Fits a straight line through the last N closes and draws bands a multiple of the standard deviation above and below it. The slope is the trend and the bands show how stretched price is from it.",
+        tr_noop!("The least-squares line of recent closes with deviation bands."),
+        tr_noop!(
+            "Fits a straight line through the last N closes and draws bands a multiple of the standard deviation above and below it. The slope is the trend and the bands show how stretched price is from it."
+        ),
         ["linreg", "regression channel", "least squares"]
     ),
     indicator!(
         "macd",
-        "MACD",
+        tr_noop!("MACD"),
         Momentum,
         false,
-        "Moving Average Convergence Divergence with signal and histogram.",
-        "The difference between a fast and a slow EMA, a signal line of that difference, and a histogram of the gap. The histogram is darker while momentum is growing. A MACD line crossing its signal is the classic trigger.",
+        tr_noop!("Moving Average Convergence Divergence with signal and histogram."),
+        tr_noop!(
+            "The difference between a fast and a slow EMA, a signal line of that difference, and a histogram of the gap. The histogram is darker while momentum is growing. A MACD line crossing its signal is the classic trigger."
+        ),
         ["moving average convergence divergence"]
     ),
     indicator!(
         "rsi",
-        "RSI",
+        tr_noop!("RSI"),
         Momentum,
         false,
-        "Relative Strength Index, 14 periods, 0 to 100.",
-        "Wilder's momentum oscillator: the average gain over the average loss across the last N bars, scaled from 0 to 100. Above the upper level is conventionally overbought and below the lower level oversold.",
+        tr_noop!("Relative Strength Index, 14 periods, 0 to 100."),
+        tr_noop!(
+            "Wilder's momentum oscillator: the average gain over the average loss across the last N bars, scaled from 0 to 100. Above the upper level is conventionally overbought and below the lower level oversold."
+        ),
         ["relative strength index", "rsi 14"]
     ),
     indicator!(
         "stochastic",
-        "Stochastic",
+        tr_noop!("Stochastic"),
         Momentum,
         false,
-        "Where the close sits inside the recent range, 0 to 100.",
-        "Compares the close with the high-low range of the last N bars, smoothed into %K and %D. Above the upper level is overbought and below the lower level is oversold.",
+        tr_noop!("Where the close sits inside the recent range, 0 to 100."),
+        tr_noop!(
+            "Compares the close with the high-low range of the last N bars, smoothed into %K and %D. Above the upper level is overbought and below the lower level is oversold."
+        ),
         ["stoch", "stochastic oscillator", "%k", "%d"]
     ),
     indicator!(
         "stochastic-rsi",
-        "Stochastic RSI",
+        tr_noop!("Stochastic RSI"),
         Momentum,
         false,
-        "The Stochastic formula applied to RSI.",
-        "Applies the Stochastic to the RSI instead of price. It reaches the ends of its range far more often than RSI itself, so it times turns earlier and gives more false ones.",
+        tr_noop!("The Stochastic formula applied to RSI."),
+        tr_noop!(
+            "Applies the Stochastic to the RSI instead of price. It reaches the ends of its range far more often than RSI itself, so it times turns earlier and gives more false ones."
+        ),
         ["stoch rsi", "stochrsi"]
     ),
     indicator!(
         "cci",
-        "CCI",
+        tr_noop!("CCI"),
         Momentum,
         false,
-        "Commodity Channel Index: distance from the average price.",
-        "Measures how far the typical price is from its moving average in units of the mean deviation. Readings beyond +100 or -100 mark an unusually strong move.",
+        tr_noop!("Commodity Channel Index: distance from the average price."),
+        tr_noop!(
+            "Measures how far the typical price is from its moving average in units of the mean deviation. Readings beyond +100 or -100 mark an unusually strong move."
+        ),
         ["commodity channel index"]
     ),
     indicator!(
         "williams-r",
-        "Williams %R",
+        tr_noop!("Williams %R"),
         Momentum,
         false,
-        "Distance of the close below the recent high, 0 to -100.",
-        "Shows where the close is relative to the highest high of the last N bars. Above -20 is overbought and below -80 is oversold. It is the Stochastic turned upside down.",
+        tr_noop!("Distance of the close below the recent high, 0 to -100."),
+        tr_noop!(
+            "Shows where the close is relative to the highest high of the last N bars. Above -20 is overbought and below -80 is oversold. It is the Stochastic turned upside down."
+        ),
         ["williams percent r", "wpr", "%r"]
     ),
     indicator!(
         "adx-dmi",
-        "ADX / DMI",
+        tr_noop!("ADX / DMI"),
         Trend,
         false,
-        "Trend strength (ADX) with the +DI and -DI direction lines.",
-        "ADX measures how strong a trend is, not which way: above about 25 there is a trend. +DI over -DI means the trend is up, the reverse that it is down.",
+        tr_noop!("Trend strength (ADX) with the +DI and -DI direction lines."),
+        tr_noop!(
+            "ADX measures how strong a trend is, not which way: above about 25 there is a trend. +DI over -DI means the trend is up, the reverse that it is down."
+        ),
         [
             "adx",
             "dmi",
@@ -200,56 +231,68 @@ pub static ALL: [BundledIndicator; 21] = [
     ),
     indicator!(
         "aroon",
-        "Aroon",
+        tr_noop!("Aroon"),
         Trend,
         false,
-        "How recently the highest high and lowest low happened.",
-        "Aroon Up and Aroon Down, each 0 to 100, say how many bars ago the highest high and the lowest low were. A strong Aroon Up with a weak Aroon Down is an uptrend.",
+        tr_noop!("How recently the highest high and lowest low happened."),
+        tr_noop!(
+            "Aroon Up and Aroon Down, each 0 to 100, say how many bars ago the highest high and the lowest low were. A strong Aroon Up with a weak Aroon Down is an uptrend."
+        ),
         ["aroon up", "aroon down", "aroon oscillator"]
     ),
     indicator!(
         "atr",
-        "ATR",
+        tr_noop!("ATR"),
         Volatility,
         false,
-        "Average True Range: the typical bar size including gaps.",
-        "Wilder's Average True Range, in price units or as a percent of the close. It measures volatility, not direction, and is widely used to size stops and positions.",
+        tr_noop!("Average True Range: the typical bar size including gaps."),
+        tr_noop!(
+            "Wilder's Average True Range, in price units or as a percent of the close. It measures volatility, not direction, and is widely used to size stops and positions."
+        ),
         ["average true range", "true range"]
     ),
     indicator!(
         "obv",
-        "OBV",
+        tr_noop!("OBV"),
         VolumeFlow,
         false,
-        "On-Balance Volume: a running total of signed volume.",
-        "Adds the bar's volume on an up close and subtracts it on a down close, with a moving average of the total as its signal. Rising OBV while price is flat suggests accumulation.",
+        tr_noop!("On-Balance Volume: a running total of signed volume."),
+        tr_noop!(
+            "Adds the bar's volume on an up close and subtracts it on a down close, with a moving average of the total as its signal. Rising OBV while price is flat suggests accumulation."
+        ),
         ["on balance volume"]
     ),
     indicator!(
         "money-flow-index",
-        "Money Flow Index",
+        tr_noop!("Money Flow Index"),
         VolumeFlow,
         false,
-        "A volume-weighted RSI, 0 to 100.",
-        "Like RSI but built from the typical price times volume. Above 80 is overbought and below 20 oversold; a new price extreme that MFI does not confirm is a divergence. It needs volume.",
+        tr_noop!("A volume-weighted RSI, 0 to 100."),
+        tr_noop!(
+            "Like RSI but built from the typical price times volume. Above 80 is overbought and below 20 oversold; a new price extreme that MFI does not confirm is a divergence. It needs volume."
+        ),
         ["mfi", "volume rsi"]
     ),
     indicator!(
         "chaikin-money-flow",
-        "Chaikin Money Flow",
+        tr_noop!("Chaikin Money Flow"),
         VolumeFlow,
         false,
-        "Buying and selling pressure over N bars, -1 to +1.",
-        "Weights each bar's volume by where it closed inside its range and sums over N bars. Above zero means closes lean toward the highs (buying pressure). It needs volume.",
+        tr_noop!("Buying and selling pressure over N bars, -1 to +1."),
+        tr_noop!(
+            "Weights each bar's volume by where it closed inside its range and sums over N bars. Above zero means closes lean toward the highs (buying pressure). It needs volume."
+        ),
         ["cmf", "chaikin"]
     ),
     indicator!(
         "awesome-oscillator",
-        "Awesome Oscillator",
+        tr_noop!("Awesome Oscillator"),
         Momentum,
         false,
-        "Fast minus slow average of the bar midpoint.",
-        "Bill Williams' histogram: a 5-period average of the midpoint minus a 34-period one. Green bars are rising and red bars falling; crossing zero is a momentum shift.",
+        tr_noop!("Fast minus slow average of the bar midpoint."),
+        tr_noop!(
+            "Bill Williams' histogram: a 5-period average of the midpoint minus a 34-period one. Green bars are rising and red bars falling; crossing zero is a momentum shift."
+        ),
         ["ao", "bill williams"]
     ),
 ];
@@ -367,14 +410,16 @@ mod tests {
             for diagnostic in &program.diagnostics {
                 problems.push(format!(
                     "{}: {:?} {}",
-                    indicator.name, diagnostic.severity, diagnostic.message
+                    indicator.name.msgid(),
+                    diagnostic.severity,
+                    diagnostic.message
                 ));
             }
             let declared_overlay = indicator.source.contains("overlay = true");
             if declared_overlay != indicator.overlay {
                 problems.push(format!(
                     "{}: overlay flag disagrees with the script",
-                    indicator.name
+                    indicator.name.msgid()
                 ));
             }
         }
@@ -443,7 +488,7 @@ mod tests {
             );
             let drawn = output.plots.len() + output.markers.len() + output.hlines.len();
             if drawn == 0 {
-                problems.push(format!("{}: draws nothing", indicator.name));
+                problems.push(format!("{}: draws nothing", indicator.name.msgid()));
             }
             if let Some(failure) = failure {
                 let severity = if failure.severity == DiagnosticSeverity::Error {
@@ -453,17 +498,19 @@ mod tests {
                 };
                 problems.push(format!(
                     "{}: {severity}: {}",
-                    indicator.name, failure.message
+                    indicator.name.msgid(),
+                    failure.message
                 ));
             }
             // A plot that is all gaps would be a blank pane.
             for plot in &output.plots {
                 if !plot.values.iter().any(|value| value.is_some())
-                    && !indicator.name.contains("Fractals")
+                    && !indicator.name.msgid().contains("Fractals")
                 {
                     problems.push(format!(
                         "{}: plot {:?} has no values",
-                        indicator.name, plot.title
+                        indicator.name.msgid(),
+                        plot.title
                     ));
                 }
             }

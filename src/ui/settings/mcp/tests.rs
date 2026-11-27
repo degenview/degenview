@@ -52,7 +52,7 @@ fn a_set_of_permissions_reads_as_how_much_and_where_not_as_a_capsule_per_area() 
     let some = PermissionSet::of([Permission::ChartsRead, Permission::AlertsRead]);
     assert_eq!(
         overview_of(&some),
-        ("Read only", "Charts, Price Alerts".to_owned(), false)
+        ("Read only", "Charts and Price Alerts".to_owned(), false)
     );
     let many = PermissionSet::of([
         Permission::ChartsRead,
@@ -65,7 +65,7 @@ fn a_set_of_permissions_reads_as_how_much_and_where_not_as_a_capsule_per_area() 
         overview_of(&many),
         (
             "Read only",
-            "Charts, Drawings, Price Alerts +2 more".to_owned(),
+            "Charts, Drawings, Price Alerts, and 2 more".to_owned(),
             false
         )
     );
@@ -80,7 +80,7 @@ fn a_set_of_permissions_reads_as_how_much_and_where_not_as_a_capsule_per_area() 
         overview_of(&mixed),
         (
             "Read & write",
-            "Changes Charts, Price Alerts · reads 1 more area".to_owned(),
+            "Changes Charts and Price Alerts · reads 1 more area".to_owned(),
             true
         )
     );

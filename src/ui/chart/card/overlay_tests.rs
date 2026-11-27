@@ -611,7 +611,7 @@ fn the_card_is_only_there_while_the_crosshair_is_and_has_no_controls_until_a_row
 
 /// The right edge of the plot: where the grid lines stop (the lines that run on to the card's
 /// edge, such as the time axis, are longer).
-fn plot_right(drawn: &super::canvas_tests::Drawn) -> f32 {
+pub(super) fn plot_right(drawn: &super::canvas_tests::Drawn) -> f32 {
     drawn
         .segments
         .iter()
@@ -626,12 +626,15 @@ fn plot_right(drawn: &super::canvas_tests::Drawn) -> f32 {
 fn the_axis_is_wide_enough_for_an_overlays_last_value_tag() {
     // On the Regular axis a compared market's tag reads its own price, which can be far wider than
     // the chart's: the axis has to make room, or the text runs into the plot.
+    // With no countdown to reserve room for: the tag is what widens the axis.
     let plain = {
         let mut chart = Harness::new(ChartCanvas::default());
+        chart.card.appearance_mut().canvas.bar_countdown = false;
         chart.draw().0
     };
     let wide = {
         let mut chart = harness(&[("BIGUSDT", market(300, |n| 1_234_567.891 + n as f64))]);
+        chart.card.appearance_mut().canvas.bar_countdown = false;
         assert_eq!(chart.scale_mode, PriceScaleMode::Regular);
         chart.draw().0
     };

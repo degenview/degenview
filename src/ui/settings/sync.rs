@@ -101,7 +101,7 @@ pub fn counts_text(counts: &Counts) -> String {
     if listed.is_empty() {
         tr!("nothing yet").to_owned()
     } else {
-        listed.join(", ")
+        crate::i18n::join_list(&listed)
     }
 }
 
@@ -995,7 +995,10 @@ mod tests {
             scripts: 2,
             ..Default::default()
         };
-        assert_eq!(counts_text(&counts), "3 watchlists, 1 layout, 2 scripts");
+        assert_eq!(
+            counts_text(&counts),
+            "3 watchlists, 1 layout, and 2 scripts"
+        );
     }
 
     fn conflict(id: i64, kind: &str, created_ms: i64) -> ConflictSummary {

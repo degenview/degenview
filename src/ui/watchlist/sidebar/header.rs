@@ -4,7 +4,7 @@
 use super::menus::{MENU_FRAME, menu_width, menu_width_now, submenu_width_now};
 use super::{PromptKind, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState};
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::watchlist::{
     Watchlist, WatchlistColumn, WatchlistFlag, WatchlistSort, WatchlistSortKey,
 };
@@ -347,54 +347,59 @@ fn options_menu(
             },
         );
 
-        kit::menu_submenu(ui, row(Icon::SplitColumns, tr!("Columns")), submenu, |ui| {
-            for column in WatchlistColumn::ALL {
-                let visible = list.display.columns.contains(&column);
-                let toggle = kit::menu_row(
+        kit::menu_submenu(
+            ui,
+            row(Icon::SplitColumns, tr_c!("watchlist columns", "Columns")),
+            submenu,
+            |ui| {
+                for column in WatchlistColumn::ALL {
+                    let visible = list.display.columns.contains(&column);
+                    let toggle = kit::menu_row(
+                        ui,
+                        kit::MenuRow {
+                            checked: visible,
+                            ..kit::MenuRow::new(column.accessibility_title())
+                        },
+                    );
+                    if toggle.clicked() {
+                        actions.push(WatchlistAction::SetColumn {
+                            list: list.id,
+                            column,
+                            visible: !visible,
+                        });
+                    }
+                }
+                kit::menu_separator(ui);
+                let shows = list.display.shows_description;
+                let subtitle = kit::menu_row(
                     ui,
                     kit::MenuRow {
-                        checked: visible,
-                        ..kit::MenuRow::new(column.accessibility_title())
+                        checked: shows,
+                        ..kit::MenuRow::new(tr!("Show Symbol Subtitle"))
                     },
                 );
-                if toggle.clicked() {
-                    actions.push(WatchlistAction::SetColumn {
+                if subtitle.clicked() {
+                    actions.push(WatchlistAction::SetShowsDescription {
                         list: list.id,
-                        column,
-                        visible: !visible,
+                        shows: !shows,
                     });
                 }
-            }
-            kit::menu_separator(ui);
-            let shows = list.display.shows_description;
-            let subtitle = kit::menu_row(
-                ui,
-                kit::MenuRow {
-                    checked: shows,
-                    ..kit::MenuRow::new(tr!("Show Symbol Subtitle"))
-                },
-            );
-            if subtitle.clicked() {
-                actions.push(WatchlistAction::SetShowsDescription {
-                    list: list.id,
-                    shows: !shows,
-                });
-            }
-            let shows = list.display.shows_chart;
-            let chart = kit::menu_row(
-                ui,
-                kit::MenuRow {
-                    checked: shows,
-                    ..kit::MenuRow::new(tr!("Show 1M Chart"))
-                },
-            );
-            if chart.clicked() {
-                actions.push(WatchlistAction::SetShowsChart {
-                    list: list.id,
-                    shows: !shows,
-                });
-            }
-        });
+                let shows = list.display.shows_chart;
+                let chart = kit::menu_row(
+                    ui,
+                    kit::MenuRow {
+                        checked: shows,
+                        ..kit::MenuRow::new(tr!("Show 1M Chart"))
+                    },
+                );
+                if chart.clicked() {
+                    actions.push(WatchlistAction::SetShowsChart {
+                        list: list.id,
+                        shows: !shows,
+                    });
+                }
+            },
+        );
 
         kit::menu_submenu(ui, row(Icon::Tag, tr!("Filter by Flag")), submenu, |ui| {
             for flag in WatchlistFlag::ALL {

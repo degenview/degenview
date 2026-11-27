@@ -105,6 +105,7 @@ mod tests {
             DataSource::Gate,
             DataSource::Mexc,
             DataSource::Alpaca,
+            DataSource::Oanda,
             DataSource::DexScreener,
         ] {
             for text in TABLE {

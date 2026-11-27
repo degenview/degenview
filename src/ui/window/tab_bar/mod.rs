@@ -583,7 +583,7 @@ impl TabBar<'_> {
         let rows = menu_rows().map(|label| (label, None));
         // The Tab Linking section at the bottom has a width of its own.
         let section = if tab.linkable {
-            tab_link_menu::WIDTH
+            tab_link_menu::width(ui)
         } else {
             0.0
         };

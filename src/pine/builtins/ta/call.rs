@@ -3,6 +3,7 @@
 
 use super::extra;
 use crate::pine::builtins::array::{Bound, new_array};
+use crate::pine::builtins::market_values;
 use crate::pine::runtime::session::Session;
 use crate::pine::runtime::types::RuntimeContext;
 use crate::pine::runtime::value::RuntimeValue;
@@ -63,6 +64,7 @@ impl Session {
         let source = |key: &str| bound.get(key).unwrap_or(&na).clone();
         let key = self.site_key(site, context);
         let bar = context.bar.clone();
+        let previous_close = market_values::previous_close(&self.working);
         let state = self.working.ta_states.entry(key).or_default();
         let value = match name {
             "ta.alma" => extra::alma(
@@ -113,6 +115,7 @@ impl Session {
                         .and_then(RuntimeValue::bool)
                         .unwrap_or(true),
                     &bar,
+                    previous_close,
                     state,
                 );
                 let float =
@@ -128,6 +131,7 @@ impl Session {
                     .and_then(RuntimeValue::bool)
                     .unwrap_or(true),
                 &bar,
+                previous_close,
                 state,
             ),
             "ta.bbw" => extra::bollinger_width(
@@ -143,6 +147,16 @@ impl Session {
                     .and_then(RuntimeValue::text_value)
                     .unwrap_or("");
                 let flag = |key: &str| bound.get(key).and_then(RuntimeValue::bool).unwrap_or(false);
+                if kind == "Woodie" && flag("developing") {
+                    // Woodie's pivot weighs the open of the period that follows, which a running
+                    // period does not have yet. TradingView stops the script (RE10128).
+                    return Err(Diagnostic::error(
+                        "PINE4035",
+                        DiagnosticCategory::Runtime,
+                        "ta.pivot_point_levels: the Woodie type cannot be used with developing = true (TradingView runtime error RE10128).",
+                        range,
+                    ));
+                }
                 let levels = extra::pivot_point_levels(
                     kind,
                     flag("anchor"),

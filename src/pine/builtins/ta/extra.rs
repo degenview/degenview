@@ -96,85 +96,82 @@ pub fn variable(name: &str) -> Option<&'static Variable> {
     VARIABLES.iter().find(|variable| variable.name == name)
 }
 
-/// A series a function derives from its inputs (`ta.kc`'s two averages, `ta.tsi`'s four) with the
-/// last result of its own moving average.
+/// How a [`Derived`] average folds a value into the one before it.
+#[derive(Clone, Copy)]
+pub(super) enum Smoothing {
+    /// `ta.ema`: alpha `2 / (length + 1)`.
+    Exponential,
+    /// `ta.rma` (Wilder's): alpha `1 / length`.
+    Wilder,
+}
+
+/// One smoothed series of a function: the moving average of everything fed to it (`ta.ema`,
+/// `ta.rma`, `ta.macd`'s three, `ta.kc`'s two, `ta.tsi`'s four, `ta.rsi`'s two). A missing value gives
+/// no result and leaves the average as it was, so a gap neither restarts the seed nor moves the
+/// line (TradingView ignores `na`); the average starts as the mean of the first `length` values
+/// that exist. Only that seed is kept, and it is dropped once the average exists.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Derived {
-    values: Vec<Option<f64>>,
+    seed: Vec<f64>,
     last: Option<f64>,
 }
 
 impl Derived {
-    /// The EMA of everything pushed so far, seeded with the simple average of the first `length`
-    /// values like `ta.ema`.
-    fn ema(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
-        self.values.push(value);
-        let result = match (self.last, value) {
-            _ if length == 0 => None,
-            (Some(prior), Some(x)) => {
-                let alpha = 2.0 / (length as f64 + 1.0);
-                Some(alpha * x + (1.0 - alpha) * prior)
-            }
-            (Some(_), None) => None,
-            (None, _) => self
-                .window(length)
-                .map(|w| w.iter().sum::<f64>() / length as f64),
-        };
-        if result.is_some() {
-            self.last = result;
-        } else if value.is_none() {
-            // A gap breaks the average; it reseeds once `length` values are present again.
-            self.last = None;
+    /// Folds `value` in: the average of the first `length` values seeds it, `alpha * x + (1 - alpha)
+    /// * prior` continues it.
+    pub(super) fn step(
+        &mut self,
+        value: Option<f64>,
+        length: usize,
+        smoothing: Smoothing,
+    ) -> Option<f64> {
+        let x = value?;
+        if length == 0 {
+            return None;
         }
-        result
+        if let Some(prior) = self.last {
+            let alpha = match smoothing {
+                Smoothing::Exponential => 2.0 / (length as f64 + 1.0),
+                Smoothing::Wilder => 1.0 / length as f64,
+            };
+            let next = alpha * x + (1.0 - alpha) * prior;
+            self.last = Some(next);
+            return Some(next);
+        }
+        self.seed.push(x);
+        if self.seed.len() < length {
+            return None;
+        }
+        let average = self.seed.iter().sum::<f64>() / length as f64;
+        self.seed = Vec::new();
+        self.last = Some(average);
+        Some(average)
     }
 
-    /// The RMA (Wilder's smoothing, alpha 1/`length`) of everything pushed so far, seeded with the
-    /// simple average of the first `length` values like `ta.rma`. Only that seed window is kept: once
-    /// the average exists, a value is folded into it and not stored.
-    fn rma(&mut self, value: f64, length: usize) -> Option<f64> {
-        if self.last.is_none() {
-            self.values.push(Some(value));
-        }
-        let result = match self.last {
-            _ if length == 0 => None,
-            Some(prior) => {
-                let alpha = 1.0 / length as f64;
-                Some(alpha * value + (1.0 - alpha) * prior)
-            }
-            None => self
-                .window(length)
-                .map(|w| w.iter().sum::<f64>() / length as f64),
-        };
-        if result.is_some() {
-            self.last = result;
-        }
-        result
+    pub(super) fn ema(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+        self.step(value, length, Smoothing::Exponential)
     }
 
-    fn window(&self, length: usize) -> Option<Vec<f64>> {
-        let start = self.values.len().checked_sub(length)?;
-        self.values[start..].iter().copied().collect()
+    pub(super) fn rma(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+        self.step(value, length, Smoothing::Wilder)
     }
 }
 
 /// `ta.rsi(source, length)` for the bar `state.inputs` just ended on: `100 - 100 / (1 + rs)` with
 /// `rs` the RMA of the gains over the RMA of the losses, as TradingView defines it. The first value
-/// comes once `length` changes exist. No losses is 100. A missing source value is skipped, as
-/// `ta.sma` and `ta.rma` skip it: the bar repeats the last result and a change is measured between
-/// the two latest values that exist.
+/// comes once `length` changes exist. No losses is 100. A bar whose change is missing, the `na`
+/// bar and the one after it, has no value and leaves both averages as they were.
 pub fn rsi(state: &mut State, length: i64) -> RuntimeValue {
     let length = count(length);
-    let Some(now) = state.inputs.last().and_then(RuntimeValue::number) else {
-        return state.results.last().cloned().unwrap_or(RuntimeValue::Na);
+    let change = match state.inputs.as_slice() {
+        [.., before, now] => now
+            .number()
+            .zip(before.number())
+            .map(|(now, before)| now - before),
+        _ => None,
     };
-    let earlier = &state.inputs[..state.inputs.len() - 1];
-    let Some(before) = earlier.iter().rev().find_map(RuntimeValue::number) else {
-        return RuntimeValue::Na;
-    };
-    let change = now - before;
-    let gain = derived(state, 0).rma(change.max(0.0), length);
-    let loss = derived(state, 1).rma((-change).max(0.0), length);
+    let gain = derived(state, 0).rma(change.map(|change| change.max(0.0)), length);
+    let loss = derived(state, 1).rma(change.map(|change| (-change).max(0.0)), length);
     match (gain, loss) {
         (Some(_), Some(0.0)) => RuntimeValue::Float(100.0),
         (Some(gain), Some(loss)) => RuntimeValue::Float(100.0 - 100.0 / (1.0 + gain / loss)),
@@ -231,8 +228,8 @@ impl PivotPeriod {
 /// has none of. A period starts at each bar where `anchor` is true (and at the first bar); the
 /// levels set when one ends hold until the next ends, and are `na` before the first. With
 /// `developing` they are instead worked out from the bars of the running period so far, this bar
-/// included. Woodie's pivot weighs the open of the period that follows (the bar that sets the levels)
-/// in the same way, so a developing Woodie uses the running period's own open.
+/// included. Woodie's pivot weighs the open of the period that follows, which a running period does
+/// not have, so the call refuses `developing` for it (`call.rs`, as TradingView does).
 ///
 /// `None` when `kind` is not one of [`PIVOT_TYPES`].
 pub fn pivot_point_levels(
@@ -401,7 +398,7 @@ fn mean_ranks(values: &[f64]) -> Vec<f64> {
     ranks
 }
 
-fn derived(state: &mut State, slot: usize) -> &mut Derived {
+pub(super) fn derived(state: &mut State, slot: usize) -> &mut Derived {
     if state.derived.len() <= slot {
         state.derived.resize_with(slot + 1, Derived::default);
     }
@@ -520,7 +517,8 @@ pub fn percentile(
     values.sort_by(f64::total_cmp);
     let n = values.len();
     if interpolate {
-        let position = percentage / 100.0 * (n as f64 - 1.0);
+        // Hazen's position, `p * n - 0.5` counting from 0, held inside the window (TradingView).
+        let position = (percentage / 100.0 * n as f64 - 0.5).clamp(0.0, n as f64 - 1.0);
         let below = position.floor() as usize;
         let above = position.ceil() as usize;
         out(Some(
@@ -553,18 +551,27 @@ pub fn valuewhen(
         .map_or(RuntimeValue::Na, |index| state.seconds[index].clone())
 }
 
-/// `ta.mfi(series, length)`: the money flow index.
+/// `ta.mfi(series, length)`: the money flow index, `100 - 100 / (1 + up / down)` over the last
+/// `length` bars' volume-weighted flows, as the reference code reads it: a missing change (the
+/// first bar) is neither up nor down, so the source counts on both sides and the first value is on
+/// bar `length - 1`. No down flow, with or without an up flow, is 100 (TradingView).
 pub fn mfi(source: &RuntimeValue, length: i64, bar: &Kline, state: &mut State) -> RuntimeValue {
     let previous = state.inputs.last().and_then(RuntimeValue::number);
     state.inputs.push(source.clone());
-    let flow = match (source.number(), previous) {
-        (Some(now), Some(before)) => {
-            let up = if now - before <= 0.0 { 0.0 } else { now };
-            let down = if now - before >= 0.0 { 0.0 } else { now };
-            Some((bar.volume * up, bar.volume * down))
-        }
-        _ => None,
-    };
+    let flow = source.number().map(|now| {
+        let change = previous.map(|before| now - before);
+        let up = if change.is_some_and(|change| change <= 0.0) {
+            0.0
+        } else {
+            now
+        };
+        let down = if change.is_some_and(|change| change >= 0.0) {
+            0.0
+        } else {
+            now
+        };
+        (bar.volume * up, bar.volume * down)
+    });
     state
         .results
         .push(flow.map_or(RuntimeValue::Na, |(up, down)| {
@@ -587,7 +594,11 @@ pub fn mfi(source: &RuntimeValue, length: i64, bar: &Kline, state: &mut State) -
         upper += pair[0].number().unwrap_or(0.0);
         lower += pair[1].number().unwrap_or(0.0);
     }
-    out(Some(100.0 - 100.0 / (1.0 + upper / lower)))
+    out(Some(if lower == 0.0 {
+        100.0
+    } else {
+        100.0 - 100.0 / (1.0 + upper / lower)
+    }))
 }
 
 /// `ta.vwma(source, length)`: the volume-weighted moving average.
@@ -621,6 +632,9 @@ fn range(state: &State, length: usize) -> Option<(f64, f64)> {
 }
 
 /// `ta.stoch(source, high, low, length)`: where the source sits in the high-low range, 0 to 100.
+/// A window with no range has nothing to divide by: when the source sits exactly on its value (0 / 0)
+/// the previous value stays, otherwise there is none (TradingView, probes P10 and P11; a source
+/// 5e-11 off the window is already `na`, so the test is exact).
 pub fn stoch(
     source: &RuntimeValue,
     high: &RuntimeValue,
@@ -628,22 +642,31 @@ pub fn stoch(
     length: i64,
     state: &mut State,
 ) -> RuntimeValue {
+    let previous = state.results.last().cloned().unwrap_or(RuntimeValue::Na);
     let (Some(source), Some(high), Some(low)) = (source.number(), high.number(), low.number())
     else {
         // A gap in the inputs poisons the window: keep the history aligned with `na` bars.
         state.highs.push(f64::NAN);
         state.lows.push(f64::NAN);
+        state.results.push(RuntimeValue::Na);
         return RuntimeValue::Na;
     };
     state.highs.push(high);
     state.lows.push(low);
-    let Some((highest, lowest)) = range(state, count(length)) else {
-        return RuntimeValue::Na;
+    let value = match range(state, count(length)) {
+        Some((highest, lowest)) if highest.is_finite() && lowest.is_finite() => {
+            if highest != lowest {
+                out(Some(100.0 * (source - lowest) / (highest - lowest)))
+            } else if source == highest {
+                previous
+            } else {
+                RuntimeValue::Na
+            }
+        }
+        _ => RuntimeValue::Na,
     };
-    out(
-        (highest.is_finite() && lowest.is_finite() && highest != lowest)
-            .then(|| 100.0 * (source - lowest) / (highest - lowest)),
-    )
+    state.results.push(value.clone());
+    value
 }
 
 /// `ta.wpr(length)`: Williams %R, from the bar's own high, low and close.
@@ -663,25 +686,28 @@ pub fn keltner(
     multiplier: f64,
     use_true_range: bool,
     bar: &Kline,
+    previous_close: Option<f64>,
     state: &mut State,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
     let length = count(length);
-    let previous_close = state.closes.last().copied();
-    state.closes.push(bar.close);
+    // `ta.tr`'s own form: no range on the first bar, so the average starts on the bar after it.
     let span = if use_true_range {
-        ta::true_range(bar, previous_close)
+        ta::true_range_checked(bar, previous_close, false)
     } else {
-        bar.high - bar.low
+        Some(bar.high - bar.low)
     };
     let basis = derived(state, 0).ema(source.number(), length);
-    let average_range = derived(state, 1).ema(Some(span), length);
+    let average_range = derived(state, 1).ema(span, length);
+    // The basis is the moving average on its own: it exists from its first value, the bands from
+    // the first value of the range as well.
     match (basis, average_range) {
         (Some(basis), Some(average)) => (
             Some(basis),
             Some(basis + average * multiplier),
             Some(basis - average * multiplier),
         ),
-        _ => (None, None, None),
+        (basis, None) => (basis, None, None),
+        (None, Some(_)) => (None, None, None),
     }
 }
 
@@ -692,9 +718,18 @@ pub fn keltner_width(
     multiplier: f64,
     use_true_range: bool,
     bar: &Kline,
+    previous_close: Option<f64>,
     state: &mut State,
 ) -> RuntimeValue {
-    let (basis, upper, lower) = keltner(source, length, multiplier, use_true_range, bar, state);
+    let (basis, upper, lower) = keltner(
+        source,
+        length,
+        multiplier,
+        use_true_range,
+        bar,
+        previous_close,
+        state,
+    );
     match (basis, upper, lower) {
         (Some(basis), Some(upper), Some(lower)) if basis != 0.0 => {
             out(Some((upper - lower) / basis))
@@ -881,11 +916,12 @@ fn williams_accumulation_distribution(
     total + gain
 }
 
-/// Not cumulative: the volume-weighted position of the close within the bar.
+/// Not cumulative: the volume-weighted position of the close within the bar; 0 / 0 on a bar
+/// without a range is na (not measured on TradingView).
 fn williams_variable_accumulation_distribution(bar: &Kline) -> f64 {
     let span = bar.high - bar.low;
     if span == 0.0 {
-        0.0
+        f64::NAN
     } else {
         (bar.close - bar.open) / span * bar.volume
     }
@@ -930,6 +966,18 @@ mod pivot_and_rank_tests {
         let wvad = cumulative(variable("ta.wvad").unwrap(), &bar, &runtime, &mut state);
         close_to(&wvad, (105.0 - 100.0) / 20.0 * 10.0);
         assert!(state.results.is_empty(), "a per-bar variable keeps nothing");
+        let flat = Kline {
+            open: 100.0,
+            high: 100.0,
+            low: 100.0,
+            close: 100.0,
+            ..bar
+        };
+        assert_eq!(
+            cumulative(variable("ta.wvad").unwrap(), &flat, &runtime, &mut state),
+            RuntimeValue::Na,
+            "0 / 0 is na"
+        );
         // A running total still folds every committed bar once, and a second read adds nothing.
         let first = cumulative(variable("ta.obv").unwrap(), &bar, &runtime, &mut state);
         assert_eq!(state.results.len(), 50);

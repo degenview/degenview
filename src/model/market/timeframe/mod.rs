@@ -259,7 +259,7 @@ impl Timeframe {
     }
 
     /// The interval token every provider is asked for: `30s`, `22m`, `3h`, `2d`, `1w`, `3M`, `1Y`. A
-    /// source with no such candle folds finer ones (`model::market::bucket::fold`).
+    /// source with no such candle folds finer ones (`model::market::bucket::Grid::fold`).
     pub fn interval(self) -> String {
         let count = self.count;
         match self.unit {

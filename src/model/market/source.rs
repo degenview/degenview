@@ -16,6 +16,7 @@ pub enum DataSource {
     CoinGecko,
     DexScreener,
     Alpaca,
+    Oanda,
     Polymarket,
     Kalshi,
     CoinMarketCap,
@@ -34,6 +35,7 @@ impl DataSource {
             Self::CoinGecko => "CoinGecko",
             Self::DexScreener => "DEXScreener",
             Self::Alpaca => "Alpaca (IEX)",
+            Self::Oanda => "Oanda",
             Self::Polymarket => "Polymarket",
             Self::Kalshi => "Kalshi",
             Self::CoinMarketCap => "CoinMarketCap",
@@ -53,30 +55,35 @@ impl DataSource {
             Self::CoinGecko => "COINGECKO",
             Self::DexScreener => "DEXSCREENER",
             Self::Alpaca => "ALPACA",
+            Self::Oanda => "OANDA",
             Self::Polymarket => "POLYMARKET",
             Self::Kalshi => "KALSHI",
             Self::CoinMarketCap => "CMC",
         }
     }
 
+    /// Every source, in the order the pickers list them.
+    pub const ALL: [DataSource; 14] = [
+        DataSource::Binance,
+        DataSource::Coinbase,
+        DataSource::Okx,
+        DataSource::Kraken,
+        DataSource::Bybit,
+        DataSource::Gate,
+        DataSource::Mexc,
+        DataSource::CoinGecko,
+        DataSource::DexScreener,
+        DataSource::Alpaca,
+        DataSource::Oanda,
+        DataSource::Polymarket,
+        DataSource::Kalshi,
+        DataSource::CoinMarketCap,
+    ];
+
     /// The source a `watchlist_slug` names, in any case.
     pub fn from_watchlist_slug(slug: &str) -> Option<Self> {
-        const ALL: [DataSource; 13] = [
-            DataSource::Binance,
-            DataSource::Coinbase,
-            DataSource::Okx,
-            DataSource::Kraken,
-            DataSource::Bybit,
-            DataSource::Gate,
-            DataSource::Mexc,
-            DataSource::CoinGecko,
-            DataSource::DexScreener,
-            DataSource::Alpaca,
-            DataSource::Polymarket,
-            DataSource::Kalshi,
-            DataSource::CoinMarketCap,
-        ];
-        ALL.into_iter()
+        Self::ALL
+            .into_iter()
             .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
     }
 
@@ -124,6 +131,7 @@ impl DataSource {
                 | Self::Mexc
                 | Self::DexScreener
                 | Self::Alpaca
+                | Self::Oanda
         )
     }
 
@@ -152,7 +160,8 @@ impl DataSource {
             | Self::Gate
             | Self::Mexc
             | Self::CoinGecko
-            | Self::Alpaca => raw.to_uppercase(),
+            | Self::Alpaca
+            | Self::Oanda => raw.to_uppercase(),
             Self::CoinMarketCap => super::cmc::title(raw).to_owned(),
             _ => raw.to_owned(),
         }
@@ -193,7 +202,7 @@ impl DataSource {
                 (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ']))
                     .then(|| quote.to_owned())
             }
-            Self::Gate => {
+            Self::Gate | Self::Oanda => {
                 let (base, quote) = upper.split_once('_')?;
                 (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ', '_']))
                     .then(|| quote.to_owned())
@@ -265,6 +274,9 @@ mod tests {
         assert_eq!(Okx.quote_asset("sol-usdt").as_deref(), Some("USDT"));
         assert_eq!(Kraken.quote_asset("eth/eur").as_deref(), Some("EUR"));
         assert_eq!(Gate.quote_asset("sol_usdt").as_deref(), Some("USDT"));
+        assert_eq!(Oanda.quote_asset("eur_usd").as_deref(), Some("USD"));
+        assert_eq!(Oanda.quote_asset("xau_usd").as_deref(), Some("USD"));
+        assert_eq!(Oanda.quote_asset("EURUSD"), None);
         assert_eq!(Gate.quote_asset("SOLUSDT"), None);
         assert_eq!(Kraken.quote_asset("ETHEUR"), None);
         // A perpetual swap's id has three parts: not a spot pair.
@@ -295,6 +307,7 @@ mod tests {
         assert_eq!(DataSource::Gate.display_symbol("btc_usdt"), "BTC_USDT");
         assert_eq!(DataSource::Mexc.display_symbol("btcusdt"), "BTCUSDT");
         assert_eq!(DataSource::Alpaca.display_symbol(" aapl "), "AAPL");
+        assert_eq!(DataSource::Oanda.display_symbol(" eur_usd "), "EUR_USD");
         // A DEX pair address is an id, not a name: it is left alone.
         assert_eq!(DataSource::DexScreener.display_symbol("0xAbC"), "0xAbC");
     }

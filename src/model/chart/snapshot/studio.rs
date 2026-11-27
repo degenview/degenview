@@ -177,9 +177,10 @@ impl Background {
         Self::Illuminated,
     ];
 
-    pub const fn label(self) -> &'static str {
+    /// The backdrops are named like the editor themes: a design's name is not translated, `None` is.
+    pub fn label(self) -> &'static str {
         match self {
-            Self::None => "None",
+            Self::None => tr!("None"),
             Self::Dots => "Dots",
             Self::Luminous => "Luminous",
             Self::Radiant => "Radiant",

@@ -201,6 +201,11 @@ are the same: no marker, dropped by an older build that re-saves the layout, whi
 from" copy. The field is left out of a row while it is empty, so a layout that compares nothing is
 unchanged for older builds.
 
+A chart's countdown to the bar's close (`canvas.bar_countdown`, [chart canvas](chart-canvas.md)) is
+written only while it is off. A build that predates it drops the key when it re-saves the layout, which
+turns the countdown back on and, by changing `layout_structure_hash`, can make a "conflict from" copy.
+The default is part of the format: changing it later would silently change every row that has no key.
+
 A chart's price-scale mode (`scale_mode` in the layout's chart rows) is not a drawing field and has no
 such marker. A layout field an older build does not know is dropped when that build re-saves the
 layout, which changes `layout_structure_hash` and can make a "conflict from" copy. The mode is written

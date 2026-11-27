@@ -90,6 +90,7 @@ pub fn source_id(source: DataSource) -> &'static str {
         DataSource::CoinGecko => "coingecko",
         DataSource::DexScreener => "dexscreener",
         DataSource::Alpaca => "alpaca",
+        DataSource::Oanda => "oanda",
         DataSource::Polymarket => "polymarket",
         DataSource::Kalshi => "kalshi",
         DataSource::CoinMarketCap => "coinmarketcap",
@@ -449,6 +450,7 @@ mod tests {
             event: None,
             base: None,
             quote: None,
+            names: Default::default(),
         }
     }
 

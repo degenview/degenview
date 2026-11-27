@@ -58,7 +58,7 @@ column; word for word is wrong in one of them.
   *tú*, infinitive on buttons, *ordenador*, *Ajustes*). Tag the file with the language only (`es`), not
   the region (`es-ES`): `Locale::negotiate` falls back along CLDR's chain, so `es-MX` and `es-419` land
   on `es`. A region-specific file is for a language that really has two written forms
-  (`zh-Hans`/`zh-Hant`, `pt-BR`/`pt-PT`).
+  (`zh`/`zh-Hant`, `pt-BR`/`pt-PT`; CLDR's chain makes Simplified the plain `zh`).
 
 ## Files to change
 
@@ -70,6 +70,7 @@ column; word for word is wrong in one of them.
 | `assets/locales/messages.pot` | Only when you changed source text or added a context: `UPDATE_POT=1 cargo test --lib i18n::tests::the_template_lists`. |
 | Source with a shared msgid | `tr_c!` split, or the code that built language (see above). |
 | `src/ui/theme/mod.rs` (`base_fonts`) | Only for a script egui's fonts lack (CJK, Thai, Arabic, Hebrew, Indic). Latin, Cyrillic and Greek need nothing. |
+| `assets/fonts/` | A `native_name` in such a script must draw in every interface language: add its characters to the bundled subset (`assets/fonts/README.md`). A test fails until it does. |
 | `tools/bundle.sh` | `CFBundleLocalizations` in both `Info.plist` files. |
 | `packaging/windows/degenview.iss` | `[Languages]` entry and translated `[CustomMessages]` / shortcut names. |
 | `packaging/flatpak/es.nico.degenview.metainfo.xml` and `.desktop` | `xml:lang` summary and description, `Comment[<tag>]`. |
@@ -95,7 +96,9 @@ vocabulary.
    keep each chunk's header.
 3. **One agent per chunk**, in parallel, each given the glossary, the style rules in this guide and
    the instruction to open the call site of every entry. Ask for a `.po` fragment back with every
-   entry filled.
+   entry filled, each `msgstr` under its own `msgid`. Never take a numbered list of translations and
+   join it back by position: two entries trade places, both still read as good text, and no gettext
+   tool notices (the German proxy hints sent Mac users to Windows Settings that way).
 4. **Merge and check:**
 
    ```bash
@@ -112,6 +115,9 @@ vocabulary.
    - sample at least 100 entries against their call sites, favouring short labels;
    - look for English left in a translation, untranslated placeholders, doubled spaces, a changed
      `…`.
+   Then have readers who did not translate go through **every** pair of English and translation,
+   asking only whether the second says what the first says (swapped, omitted, reversed, wrong
+   sense). Tests catch placeholders and platform names; nothing else catches a misplaced entry.
 6. **Contexts.** Anything the pass shows as one msgid with two meanings goes back to the source
    (`tr_c!`), then to the template, then to the catalog. Never settle for a compromise word.
 
@@ -122,14 +128,13 @@ reviewed and the flag removed, so never leave a guess flagged and never remove t
 
 ## Verify
 
-- `cargo test --lib i18n`: the catalog and the source agree (no stale message, same placeholders,
-  consistent plural use), plural formulas match CLDR, the file is valid to `msgfmt` (which needs
-  GNU gettext installed).
-- **Nothing may be left untranslated.** `msgattrib --untranslated --no-obsolete assets/locales/<tag>.po`
-  must print nothing, and `msgfmt --statistics` must count every message. An entry that is missing
-  shows in English and no test fails (a catalog may be incomplete), so a lost edit is found only by
-  this check or by looking at the screen: the Spanish restart question shipped with an English title
-  that way. After a scripted edit of the file, run both again.
+- `cargo test --lib i18n`: the catalog and the source agree (no stale or untranslated message, same
+  placeholders, consistent plural use), plural formulas match CLDR, the file is valid to `msgfmt`
+  (which needs GNU gettext installed).
+- **Nothing may be left untranslated.** An entry that is missing, empty or `fuzzy` shows in English;
+  `every_catalog_matches_the_messages_in_the_source` fails on it. For a language not yet in
+  `LANGUAGES`, which no test reads, `msgattrib --untranslated --no-obsolete assets/locales/<tag>.po`
+  must print nothing.
 - `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`.
 - **Look at screens in the language**, not only the catalog. `DEGENVIEW_LOCALE=<tag>` names the
   language for one run (over the saved choice and the system's). Use a release build and a scratch

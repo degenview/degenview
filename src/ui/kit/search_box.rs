@@ -13,6 +13,9 @@ use eframe::egui::{self, FontId, Id, Sense, Stroke, StrokeKind, Ui, vec2};
 /// How tall the box is, and the buttons that sit beside it in a picker's header.
 pub const HEIGHT: f32 = 36.0;
 
+/// How tall [`large_search_box`] is.
+pub const LARGE_HEIGHT: f32 = 44.0;
+
 /// How tall [`compact_search_box`] is: a pull-down's field, level with its rows and chips.
 pub const COMPACT_HEIGHT: f32 = 30.0;
 
@@ -37,6 +40,30 @@ pub fn search_box(
     show(
         ui,
         Size::Regular,
+        Content {
+            icon,
+            query,
+            searching,
+            placeholder,
+            id,
+            focus,
+        },
+    )
+}
+
+/// [`search_box`] at [`LARGE_HEIGHT`], heading a large sheet.
+pub fn large_search_box(
+    ui: &mut Ui,
+    icon: Icon,
+    query: &mut String,
+    searching: bool,
+    placeholder: &str,
+    id: Id,
+    focus: bool,
+) -> SearchBoxEvent {
+    show(
+        ui,
+        Size::Large,
         Content {
             icon,
             query,
@@ -74,6 +101,7 @@ pub fn compact_search_box(
 
 #[derive(Clone, Copy)]
 enum Size {
+    Large,
     Regular,
     Compact,
 }
@@ -81,6 +109,7 @@ enum Size {
 impl Size {
     fn height(self) -> f32 {
         match self {
+            Self::Large => LARGE_HEIGHT,
             Self::Regular => HEIGHT,
             Self::Compact => COMPACT_HEIGHT,
         }
@@ -92,6 +121,7 @@ impl Size {
 
     fn inset(self) -> f32 {
         match self {
+            Self::Large => 14.0,
             Self::Regular => 12.0,
             Self::Compact => 10.0,
         }
@@ -99,8 +129,16 @@ impl Size {
 
     fn icon(self) -> f32 {
         match self {
+            Self::Large => 16.0,
             Self::Regular => 14.0,
             Self::Compact => 13.0,
+        }
+    }
+
+    fn text(self) -> f32 {
+        match self {
+            Self::Large => size::BODY + 3.0,
+            Self::Regular | Self::Compact => size::BODY,
         }
     }
 }
@@ -163,9 +201,14 @@ fn show(ui: &mut Ui, box_size: Size, content: Content) -> SearchBoxEvent {
     let edit = egui::TextEdit::singleline(query)
         .id(id)
         .frame(egui::Frame::NONE)
-        .font(FontId::proportional(size::BODY))
+        .font(FontId::proportional(box_size.text()))
         .text_color(theme::text_primary())
-        .hint_text(text(placeholder, size::BODY, 400.0, theme::text_tertiary()))
+        .hint_text(text(
+            placeholder,
+            box_size.text(),
+            400.0,
+            theme::text_tertiary(),
+        ))
         .desired_width((inner.available_width() - trailing).max(60.0));
     let response = inner.add(edit);
     if focus {

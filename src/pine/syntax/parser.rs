@@ -898,18 +898,24 @@ impl Parser {
 
     fn generic_map_constructor(&mut self, lhs: Expression) -> Extension {
         self.advance();
-        let _ = self.type_argument();
+        let key = self.type_reference();
         self.expect(
             TokenKind::Comma,
             "Expected ',' between the key and value types.",
         );
-        let _ = self.type_argument();
+        let value = self.type_reference();
         self.expect(TokenKind::Greater, "Expected '>'.");
         if !self.take(TokenKind::LeftParen) {
             self.error("PINE2008", "Expected '('.", self.current().range);
             return Extension::Finished(lhs);
         }
-        self.call_suffix(lhs)
+        let mut call = self.call_suffix(lhs);
+        if let (Extension::Extended(Expression::Call { map_types, .. }), Some(key), Some(value)) =
+            (&mut call, key, value)
+        {
+            *map_types = Some(Box::new([key, value]));
+        }
+        call
     }
 
     fn generic_matrix_constructor(&mut self, lhs: Expression) -> Extension {
@@ -943,6 +949,7 @@ impl Parser {
                 Extension::Extended(Expression::Call {
                     name,
                     arguments,
+                    map_types: None,
                     site: self.call_site,
                     range,
                     route: None,
@@ -1579,24 +1586,7 @@ fn exportable_name(statement: &Statement) -> Option<&str> {
 }
 
 fn value_type_name(kind: ValueType) -> &'static str {
-    match kind {
-        ValueType::Int => "int",
-        ValueType::Float => "float",
-        ValueType::Bool => "bool",
-        ValueType::String => "string",
-        ValueType::Color => "color",
-        ValueType::Line => "line",
-        ValueType::Label => "label",
-        ValueType::Box => "box",
-        ValueType::Table => "table",
-        ValueType::Linefill => "linefill",
-        ValueType::Polyline => "polyline",
-        ValueType::Array => "array",
-        ValueType::Object => "object",
-        ValueType::Map => "map",
-        ValueType::Matrix => "matrix",
-        ValueType::Time => "time",
-    }
+    kind.name()
 }
 
 fn object_type(name: &str) -> Option<ValueType> {

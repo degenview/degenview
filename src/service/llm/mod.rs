@@ -16,6 +16,7 @@ pub mod report;
 pub mod sample;
 pub mod sse;
 
+use crate::i18n::tr;
 use crate::service::net::agent::FollowingAgent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -44,7 +45,7 @@ impl ProviderKind {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Anthropic => "Anthropic",
-            Self::Compatible => "OpenAI-compatible",
+            Self::Compatible => tr!("OpenAI-compatible"),
         }
     }
 
@@ -484,7 +485,7 @@ pub fn validate_base_url(text: &str) -> Result<String, String> {
     match scheme {
         "https" => {}
         "http" if local => {}
-        "http" => return Err("Use https://, or http:// only for a server on this Mac.".to_owned()),
+        "http" => return Err(crate::platform::ai_plain_http_refused().to_owned()),
         _ => return Err("The URL must start with https://.".to_owned()),
     }
     Ok(text.trim_end_matches('/').to_owned())

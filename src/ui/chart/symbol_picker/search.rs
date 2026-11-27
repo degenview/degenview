@@ -11,12 +11,16 @@
 use super::PickMode;
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::well_known;
+use crate::service::market::coin_index::CoinIndex;
+use crate::service::market::names::{self, Listed};
 use crate::service::market::search_rank::{self, is_dollar_quote};
+use crate::service::market::trend::Fetch;
 use crate::service::work_queue::{self, Pending};
 use crate::service::{self, ProviderError, SearchResult};
-use crate::ui::chart::picker_kit::suggestions::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
 use eframe::egui;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// How long the box waits after a keystroke before it asks.
@@ -26,7 +30,7 @@ const RELATED_LIMIT: usize = 6;
 
 /// The markets the picker lists, in the order the providers are asked (and so the order exchanges
 /// that list the same market appear in).
-pub const PROVIDERS: [DataSource; 10] = [
+pub const PROVIDERS: [DataSource; 11] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -37,6 +41,7 @@ pub const PROVIDERS: [DataSource; 10] = [
     DataSource::DexScreener,
     DataSource::CoinGecko,
     DataSource::Alpaca,
+    DataSource::Oanda,
 ];
 
 /// The prediction markets the Predictions tab asks, in the order their answers are listed.
@@ -45,10 +50,12 @@ pub const PREDICTION_PROVIDERS: [DataSource; 2] = [DataSource::Polymarket, DataS
 /// What the market tabs narrow the list to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Scope {
-    /// Crypto and stocks together.
+    /// Crypto, stocks and forex together.
     All,
     Stocks,
     Crypto,
+    /// Oanda's forex, metals and index CFDs.
+    Forex,
     /// Polymarket and Kalshi: events with their choices.
     Predictions,
     /// CoinMarketCap's market-wide indices and the portfolio views. Nothing is searched.
@@ -58,10 +65,11 @@ pub enum Scope {
 }
 
 impl Scope {
-    pub const TABS: [Self; 6] = [
+    pub const TABS: [Self; 7] = [
         Self::All,
         Self::Stocks,
         Self::Crypto,
+        Self::Forex,
         Self::Predictions,
         Self::Dashboards,
         Self::Watchlists,
@@ -72,6 +80,7 @@ impl Scope {
             Self::All => tr!("All"),
             Self::Stocks => tr!("Stocks"),
             Self::Crypto => tr!("Crypto"),
+            Self::Forex => tr!("Forex"),
             Self::Predictions => tr!("Predictions"),
             Self::Dashboards => tr!("Dashboards"),
             Self::Watchlists => tr!("Watchlists"),
@@ -82,7 +91,12 @@ impl Scope {
         match self {
             Self::All | Self::Watchlists => PROVIDERS.contains(&source),
             Self::Stocks => source == DataSource::Alpaca,
-            Self::Crypto => PROVIDERS.contains(&source) && source != DataSource::Alpaca,
+            Self::Forex => source == DataSource::Oanda,
+            Self::Crypto => {
+                PROVIDERS.contains(&source)
+                    && source != DataSource::Alpaca
+                    && source != DataSource::Oanda
+            }
             Self::Predictions => PREDICTION_PROVIDERS.contains(&source),
             Self::Dashboards => source == DataSource::CoinMarketCap,
         }
@@ -129,21 +143,21 @@ impl Scope {
             Self::Predictions => tr!("Search markets (e.g. Bitcoin, Fed, election)"),
             Self::Dashboards => tr!("Filter indices and portfolio views"),
             Self::Watchlists => tr!("Filter your watchlists"),
-            Self::All | Self::Stocks | Self::Crypto => tr!("Search symbol…"),
+            Self::All | Self::Stocks | Self::Crypto | Self::Forex => tr!("Search symbol…"),
         }
     }
 }
 
 /// Markets offered before anything is typed and nothing has been picked yet: the largest crypto
-/// dollar pairs and the biggest US stocks, from the lists in `picker_kit::suggestions`.
+/// dollar pairs and the biggest US stocks ([`well_known`]).
 pub fn popular() -> Vec<SearchResult> {
-    let crypto = CRYPTO_SUGGESTIONS.iter().map(|base| {
-        let symbol = format!("{base}USDT");
-        SearchResult::new(DataSource::Binance, symbol.clone(), symbol).pair(*base, "USDT")
+    let crypto = well_known::COINS.iter().map(|coin| {
+        let symbol = format!("{}USDT", coin.ticker);
+        SearchResult::new(DataSource::Binance, symbol.clone(), symbol).pair(coin.ticker, "USDT")
     });
-    let stocks = STOCK_SUGGESTIONS
+    let stocks = well_known::STOCKS
         .iter()
-        .map(|ticker| SearchResult::new(DataSource::Alpaca, *ticker, *ticker));
+        .map(|stock| SearchResult::new(DataSource::Alpaca, stock.ticker, stock.ticker));
     crypto.chain(stocks).collect()
 }
 
@@ -151,9 +165,27 @@ pub fn popular() -> Vec<SearchResult> {
 pub fn market_kind(source: DataSource) -> &'static str {
     match source {
         DataSource::Alpaca => tr!("Stock"),
+        DataSource::Oanda => tr!("Forex"),
         DataSource::Polymarket | DataSource::Kalshi => tr!("Prediction"),
         DataSource::CoinMarketCap => tr!("Index"),
         _ => tr!("Crypto"),
+    }
+}
+
+/// The category a venue is listed under in the venue pull-down.
+pub fn venue_group(source: DataSource) -> &'static str {
+    match source {
+        DataSource::Binance
+        | DataSource::Coinbase
+        | DataSource::Okx
+        | DataSource::Kraken
+        | DataSource::Bybit
+        | DataSource::Gate
+        | DataSource::Mexc => tr!("Crypto exchanges"),
+        DataSource::DexScreener | DataSource::CoinGecko => tr!("DEX & aggregators"),
+        DataSource::Alpaca | DataSource::Oanda => tr!("Stocks & forex"),
+        DataSource::Polymarket | DataSource::Kalshi => tr!("Predictions"),
+        DataSource::CoinMarketCap => tr!("Index"),
     }
 }
 
@@ -189,6 +221,12 @@ pub struct Backend {
     pub related: fn(&str) -> Vec<SearchResult>,
     /// The busiest prediction markets, for the Predictions tab while the box is empty.
     pub trending: fn(DataSource, usize) -> Result<Vec<SearchResult>, ProviderError>,
+    /// The top coins, for the names of markets whose exchange lists none.
+    pub coin_names: fn() -> Arc<CoinIndex>,
+    /// The names the exchanges that publish them list.
+    pub listed_names: fn() -> Arc<Listed>,
+    /// The candles the preview's chart draws.
+    pub candles: Fetch,
 }
 
 impl Backend {
@@ -196,6 +234,9 @@ impl Backend {
         search: service::search,
         related: related_markets,
         trending: service::trending,
+        coin_names: names::load_coins,
+        listed_names: names::load_listed,
+        candles: service::fetch_klines,
     };
 }
 
@@ -418,10 +459,14 @@ mod tests {
     fn the_scopes_cover_their_own_markets() {
         assert!(Scope::All.includes(DataSource::Binance));
         assert!(Scope::All.includes(DataSource::Alpaca));
+        assert!(Scope::All.includes(DataSource::Oanda));
         assert!(Scope::Crypto.includes(DataSource::DexScreener));
         assert!(!Scope::Crypto.includes(DataSource::Alpaca));
+        assert!(!Scope::Crypto.includes(DataSource::Oanda));
         assert!(Scope::Stocks.includes(DataSource::Alpaca));
         assert!(!Scope::Stocks.includes(DataSource::Coinbase));
+        assert!(Scope::Forex.includes(DataSource::Oanda));
+        assert!(!Scope::Forex.includes(DataSource::Binance));
         assert!(Scope::Predictions.includes(DataSource::Polymarket));
         assert!(Scope::Predictions.includes(DataSource::Kalshi));
         assert!(!Scope::Predictions.includes(DataSource::Binance));
@@ -431,7 +476,13 @@ mod tests {
         assert!(!Scope::Dashboards.searches());
         assert!(Scope::Predictions.searches());
         // Prediction markets and indices never leak into the tabs that list spot markets.
-        for scope in [Scope::All, Scope::Stocks, Scope::Crypto, Scope::Watchlists] {
+        for scope in [
+            Scope::All,
+            Scope::Stocks,
+            Scope::Crypto,
+            Scope::Forex,
+            Scope::Watchlists,
+        ] {
             assert!(!scope.includes(DataSource::Polymarket));
             assert!(!scope.includes(DataSource::Kalshi));
             assert!(!scope.includes(DataSource::CoinMarketCap));
@@ -442,14 +493,20 @@ mod tests {
     fn a_mode_offers_only_the_tabs_it_can_use() {
         assert_eq!(Scope::tabs(PickMode::Chart), Scope::TABS);
         assert_eq!(Scope::tabs(PickMode::Add), Scope::TABS);
-        // A market compared over a chart is a crypto or stock market.
+        // A market compared over a chart is a crypto, stock or forex market.
         assert_eq!(
             Scope::tabs(PickMode::Compare),
-            [Scope::All, Scope::Stocks, Scope::Crypto, Scope::Watchlists]
+            [
+                Scope::All,
+                Scope::Stocks,
+                Scope::Crypto,
+                Scope::Forex,
+                Scope::Watchlists
+            ]
         );
         // A watchlist's own markets are already in the sidebar being added to.
         assert!(!Scope::tabs(PickMode::Watchlist).contains(&Scope::Watchlists));
-        assert_eq!(Scope::Crypto.next(PickMode::Compare), Scope::Watchlists);
+        assert_eq!(Scope::Crypto.next(PickMode::Compare), Scope::Forex);
         assert_eq!(Scope::Dashboards.next(PickMode::Watchlist), Scope::All);
     }
 
@@ -468,7 +525,9 @@ mod tests {
     #[test]
     fn a_scope_offers_only_its_own_venues() {
         assert_eq!(Scope::Stocks.venues(), [DataSource::Alpaca]);
+        assert_eq!(Scope::Forex.venues(), [DataSource::Oanda]);
         assert!(!Scope::Crypto.venues().contains(&DataSource::Alpaca));
+        assert!(!Scope::Crypto.venues().contains(&DataSource::Oanda));
         assert_eq!(Scope::All.venues().len(), PROVIDERS.len());
         assert_eq!(Scope::Watchlists.venues().len(), PROVIDERS.len());
         assert_eq!(Scope::Predictions.venues(), PREDICTION_PROVIDERS);
@@ -499,6 +558,7 @@ mod tests {
             DataSource::Mexc,
             DataSource::DexScreener,
             DataSource::CoinGecko,
+            DataSource::Oanda,
         ] {
             search
                 .answers

@@ -118,6 +118,12 @@ impl SettingsHost {
         self.open = true;
     }
 
+    /// Opens Settings on the Oanda page (the symbol picker's "Set up Oanda" notice).
+    pub fn open_oanda(&mut self) {
+        self.state.section = crate::ui::settings::window::SettingsSection::Oanda;
+        self.open = true;
+    }
+
     /// Opens Settings on the Brokers page (the live trading panel's "Open Settings").
     pub fn open_brokers(&mut self) {
         self.state.section = crate::ui::settings::window::SettingsSection::Brokers;
@@ -396,7 +402,7 @@ impl SettingsHost {
                         Some(provider),
                         result.map(|()| {
                             Some(if secrets.is_empty() {
-                                StatusMessage::ok("Saved")
+                                StatusMessage::saved()
                             } else {
                                 StatusMessage::saved_securely()
                             })
@@ -407,7 +413,7 @@ impl SettingsHost {
                     Some(provider),
                     self.snapshots
                         .remove_secret(provider, field)
-                        .map(|()| Some(StatusMessage::ok("Removed"))),
+                        .map(|()| Some(StatusMessage::removed())),
                 ),
                 SnapshotsAction::IncludeTrading(include) => (
                     None,
@@ -552,7 +558,12 @@ impl SettingsHost {
             self.secrets.set_secret(target_id, &result.secret)
         };
         match secret_written {
-            Ok(()) => self.state.webhooks.save_succeeded(),
+            Ok(()) => {
+                // A test, in flight or finished, was of the endpoint as it was.
+                self.tests.retain(|(id, _)| *id != target_id);
+                self.state.webhooks.forget(target_id);
+                self.state.webhooks.save_succeeded();
+            }
             Err(error) => {
                 let _ = store.replace_webhook_endpoints(&original);
                 self.state.webhooks.save_failed(error.0);

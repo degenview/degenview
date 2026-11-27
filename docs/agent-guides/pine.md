@@ -10,6 +10,9 @@
 - `log.*()` goes to `Session.logs`, never `RuntimeState` (rollback would discard it). Opt-in
   (`ExecutionController::with_logs`); readers apply `LogBatch`es in order via `LogHistory`. Limits in
   `pine::logs`; read [Pine Logs](../pine-logs.md) before changing them.
+- `ta.tr`, `ta.atr`, `ta.kc`, `ta.kcw`, `ta.dmi` and `ta.supertrend` are checked against TradingView's
+  own logs; what still differs and how to measure more is in
+  [`ta.*` against TradingView](../pine-ta-parity.md). Read it before changing them.
 - Debugger (`pine/debug/`, [Pine debugger](../pine-debugger.md)) is opt-in: `Session::debug` is
   `None` unless `attach_debugger` ran; hooks (statement loop, `invoke`, `execute_bar`,
   `request.security` evaluator) test it and call `#[cold] #[inline(never)]` helpers. Never hook
@@ -36,6 +39,29 @@
 - `request.footprint()` handles are stateless (footprint = bar index; `volume_row` = bar index +
   row); data in `Session::footprints`, outside `RuntimeState` so rollback does not copy it. Read
   [Pine volume footprints](../pine-footprint.md) before changing the algorithm: mostly inferred.
+- `ta.*` and a missing (`na`) source bar, as measured on TradingView (Binance bars, probes P03/P09, and the 120-bar comparison in [`ta.*` against TradingView](../pine-ta-parity.md#a-missing-source-bar)):
+  `ta.ema`, `ta.rma`, `ta.macd` and the legs of `ta.kc`, `ta.tsi` and `ta.rsi` are `extra::Derived`
+  averages: a `na` bar gives `na`, leaves the state alone and the average starts as the mean of the
+  first `length` values that exist. `ta.rsi` is `na` while `ta.change(src)` is (the `na` bar and the one
+  after). `ta.stdev`, `ta.variance`, `ta.median`, `ta.range`, `math.sum` and the stdev of `ta.bb` /
+  `ta.bbw` skip the `na` bar and keep their value there (`last_valid`). `ta.wma` is `na` on the bar and
+  later windows hold the last value before it in its slot. `ta.dev` stays strict (TradingView is,
+  against its own manual). **Measured on TradingView, still
+  strict here** (`na` for `length` bars after a gap, where TradingView carries on): `ta.cmo`,
+  `ta.correlation`, `ta.hma`, `ta.mode`, `ta.vwma`, `ta.mfi`, `ta.percentrank`, `ta.highest`,
+  `ta.lowest`, `ta.highestbars`, `ta.lowestbars`, `ta.rising`, `ta.falling`, `ta.cum`: what each does is
+  in [`ta.*` against TradingView](../pine-ta-parity.md#a-missing-source-bar). Every other `ta.*`
+  function is unmeasured here. Never add a per-bar growing field to
+  `ta::State` for this (cloned on every realtime tick).
+- `ta.*` edge rules measured on TradingView (probes P09-P11): `ta.cmo` is `na` on a window where
+  nothing moved (0/0); `ta.cci` repeats its previous value when the window is flat; `ta.mfi` is 100
+  whenever the down flow is 0 (up flow or not) and, because a missing change counts the source on both
+  sides as the reference code reads it, has its first value on bar `length - 1`; `ta.stoch` repeats the
+  previous raw %K when the source sits exactly on a window with no range (a source 5e-11 off it is `na`) and is
+  `na` when the range is 0 and the source is elsewhere; `ta.percentile_linear_interpolation` and
+  `array.percentile_linear_interpolation` interpolate at the 0-based position `p * n - 0.5` held
+  in `[0, n - 1]` (nearest rank is `ceil(p * n)` and already matched). `ta.wvad` on a bar without a range
+  is `na`: **not measured** on TradingView.
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
@@ -81,6 +107,22 @@
   a rolled-back unconfirmed realtime tick keeps the structure active until the block runs on a
   closing tick (as TradingView documents). Condition evaluated every bar (like `if`) so `ta.*` keeps
   history.
+- Map `for [key, value] in m` uses the map's insertion order and reads each value when its
+  iteration starts. Replacing a value does not change the order; adding or removing a key during
+  direct iteration raises `PINE4039`, including changes through aliases. This follows the documented
+  TradingView restriction on changing a map's size; the exact error timing and visibility of
+  replacement values have not been verified on TradingView. A `map<float, V>` exposes numeric keys
+  as floats, including whole-number keys that share the internal lookup key with an integer.
+- A map made with `map.new<K, V>()` keeps its declared types and refuses a write of any other
+  (`PINE4040` at run time; `PINE3073` when the checker knows the types): `put` and `put_all` widen an
+  int to a float and take `na` as a value, nothing else. A slot declared as a script type or enum is
+  only checked to be an object handle or an enum member; which type it is, is the checker's. A refused
+  `put_all` stores nothing. `map.new<K, V>(...)` takes no arguments (`PINE3072`).
+  Checked on TradingView (2026-11-25): `put`/`put_all` with a wrong key or value type, and
+  `map.new<K, V>(1)`, are compile errors; a `map<string, int>` goes into `put_all` of a
+  `map<string, float>` and into a `map<float, float>` parameter, but a `map<float, float>` does not
+  go into a `map<int, float>`, and a `map<int, float>` cannot be assigned to a `map<float, float>`
+  variable (`Ty::assignable`: a call may widen, an assignment may not).
 - `matrix.*`: `matrix_builtins` (names in `MEMBERS`, offered directly by the editor).
   - Element arithmetic (`sum`, `diff`, `mult`) via `operators::apply` (ints stay ints, `na`
     propagates); float numerics (`pow`, `kron`, linear algebra) convert to
@@ -125,6 +167,17 @@
   match to a pixel at every size; widths differ by a few percent because the font does.
   A box's text is clipped to its top and bottom but runs past its sides, as on TradingView (a
   `size.huge` `0123` is wider than a narrow box).
+  A line's `extend.right` runs past its second point and `extend.left` past its first, so a line
+  written right to left swaps sides and an upright one extends up or down. A linefill is the band
+  between the two lines run on only to the sides both extend (`LineExtend::shared`). Its extended
+  ends lie where each line first leaves the plot enlarged by its own width and height on every
+  side, which shows when the lines run opposite ways. It is drawn as two triangles that meet where
+  its outline crosses itself (`geometry::band_triangles`). Boxes differ: their sides are by
+  position, whichever of `left`/`right` is larger. All measured on TradingView.
+  An extended box (`extend.*`) runs to the plot's edge from any distance, with no border on that
+  side (`geometry::extended_box`), and its text stays placed by `left`/`right`. TradingView does the
+  same once it has loaded those bars; before that it places the text of a box on older bars within
+  the view, which is not copied (probe by scrolling back first).
   Unmeasured: the text a `plotshape` puts beside a non-label shape (reads the label scale) and the
   size of `plotchar` glyphs (always 12 points).
 - Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
@@ -143,27 +196,51 @@
   `ignored_features::ignored_values` (PINE7004) is empty but kept for the next unsupported constant.
 - `ta.pivot_point_levels`: running period OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`),
   starting at each anchor bar; levels set at a period's end hold until the next ends; `developing`
-  uses the running period. Classic published formulas (reference lists none); Woodie's uses the
+  uses the running period; Woodie with `developing = true` is a runtime error (`PINE4035`, naming
+  TradingView's RE10128). Classic published formulas (reference lists none); Woodie's uses the
   setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
   (Pearson on mid-ranks) x 100.
-- `timeframe.change(tf)` is per call site, like `ta.change`: `ta::State::bar_times` (in
-  `RuntimeState::ta_states`, key `site_key`) holds the open time of the bar the site last ran on
-  and of the one before (`ta::previous_bar_time`), and the call compares the current bar with the
-  second. The first run of a site is false (no earlier run to compare with), a site that a branch,
-  a short-circuit, a `switch` arm or a conditionally called function skips keeps the last bar it ran
-  on, the runs of one bar (a loop) all see the same earlier bar, and two call sites, or one
-  function reached from two sites, never share it. Inside `request.security` the site's state is
-  the request's own. It does not read the chart's previous bar (`last_committed_open_time` is only
-  the guard against a repeated bar). Measured on TradingView (probe R2, BINANCE:BTCUSDT 4h, 84
-  fixed bars, 2026-11-01..11-15, the call counted per day): global every bar 14; `if` over the
-  window 13; `if inw and hour == 4` 13 (the chart-bar rule gives 0); `if hour == 4` that also runs
-  before the window 14; the two sides of an `if`/`else` 13 and 13; ternary, `and`, `switch` arm 13;
-  a function called conditionally 13, from two sites 13 and 13; two sites on every bar 13 and 13;
-  `"D"` and `"W"` at `hour == 4` 14 and 2; a `for i = 0 to 2` loop 39 (13 days x 3 runs, not
-  13); inside `request.security("240", ...)` 14 (`hour == 4`) and 13 (window). DegenView gives
-  the same 22 values on the same candles. Not measured: a series-string timeframe that changes between runs of
-  one site (the previous bar is compared under the current timeframe). `ta.*` in a `for` loop
-  still pushes one history entry per run (audit items 20/21), which `timeframe.change` does not.
+- `timeframe.change(tf)` is per call site, like `ta.change` of the period: `ta::State::periods` (in
+  `RuntimeState::ta_states`, key `site_key`) holds where the period found by the bar the site last
+  ran on opens, and the same for the bar before (`ta::previous_period`). A run compares the period
+  its own timeframe finds for the current bar with the one kept from the previous bar, so the
+  timeframe may differ from run to run (`h < 12 ? "D" : "W"` changes whenever the two periods open
+  at different times). It is not the previous bar's time cut by the current timeframe.
+  - The first run of a site is false. A site that a branch, a short-circuit, a `switch` arm or a
+    conditionally called function skips keeps what it found on the last bar it ran on. Two call
+    sites, or one function reached from two sites, never share it; inside `request.security` the
+    state is the request's own. The runs of one bar (a loop) all compare with the previous bar,
+    and what the last run found is what the next bar compares with.
+  - `""` is the running series' own timeframe.
+  - Periods are cut on the grid of the series the call runs on (`Session::request_grid`, else the
+    chart's `symbol.grid`), so a request for a stock counts the same from a crypto chart as from a
+    stock one (probe Q1: `"240"`, `"D"` and a mix over ten sessions, 20, 10 and 20, and Bitcoin's
+    72, 12 and 60, from either chart).
+  - On a 24/7 market a period is named by its bucket's start. On a market with closing hours it is
+    named by the first bar the series has in the bucket (`Session::period_of`, from `series_bars`,
+    which a stock script that calls `timeframe.change` therefore keeps): a day, week or month opens
+    with its first bar, so the day, the week that begins with it and the session's first `"240"`
+    are one period, after a holiday too, without a holiday calendar (probe Q2, AAPL 30m around
+    Labor Day and New Year: `"D"` before noon else `"W"` 16 and 20, else `"M"` 21). A history that
+    starts inside a period names it by its first loaded bar. `time("W")` still reads the calendar's
+    Monday where TradingView reads the first traded day (Q2: 8 September against 7).
+  - It does not read the chart's previous bar (`last_committed_open_time` only guards against a
+    repeated bar).
+  - Measured on TradingView over fixed windows. Per call site (probe R2, BINANCE:BTCUSDT 4h,
+    2026-11-01..11-15): global every bar 14; `if` over the window 13; `if inw and hour == 4` 13;
+    `if hour == 4` that also runs before the window 14; each side of an `if`/`else` 13; ternary,
+    `and`, `switch` arm 13; a conditionally called function 13, from two sites 13 and 13; two sites
+    on every bar 13 and 13; `"D"` and `"W"` at `hour == 4` 14 and 2; a three-run loop 39; inside
+    `request.security` 14 and 13. A timeframe that varies (probes R6, R8): `"D"` before noon else
+    `"W"` 25; `"W"` at 04:00 else `"D"` 37; `"240"` and `"D"` on alternate bars 69; through a
+    function 25; in a request 26; a loop naming `"D"`, `"W"`, `"240"` 69, 81, 83; weeks against
+    months to November 31, 88 and 1866; `""` 83 of 84 bars. Stock (probe R9, NASDAQ:AAPL 30m,
+    18 sessions): `"D"` 17, `"240"` 35, `"D"` before noon else `"240"` 35, `"240"`/`"60"`
+    alternating 197, `"D"` before noon else `"W"` 31. `""` inside `"D"`, `"W"`, same-timeframe and
+    `"720"` requests (Q3) 14, 2, 84 and 28. DegenView gives the same values on the same bar times
+    (`"2W"` on AAPL 1D needs the yearly week anchor of `model::market::bucket`). Not measured: a
+    stock's `""`. `ta.*` in a `for` loop still pushes one history entry per run (audit items 20/21),
+    which `timeframe.change` does not.
 - `session.*` reads `trading_session::MarketSessions` by `syminfo.type`: crypto 24x7 UTC (session =
   UTC day); `stock` New York 09:30-16:00 weekdays, pre- from 04:00, post- to 20:00. Charts show the
   regular session, so `isfirstbar`/`islastbar` equal their `_regular` forms; a bar of a day or more
@@ -329,6 +406,14 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   empty list for as long as the chart stayed loaded (real window, BTCUSDT 5m with a `"1"` request,
   14:20: `n = 0`). A refresh the provider fails keeps the candles the run had; history runs never
   refresh (a rebuild asks again).
+  `barstate.ishistory` in a request is `!isrealtime`, the final incomplete candle included. Probes
+  A and B (2026-11-21) read ishistory 0 and isrealtime 0 there; that did not reproduce. Measured
+  2026-11-23 to 11-26 (flags islast isconfirmed ishistory isrealtime islastconfirmedhistory), the
+  setup of those probes with the market closed (AAPL 1D, `"1M"`, `lookahead_on`, US Thanksgiving)
+  reads `0 1 1 0 1` on Oct 1, 15 and 30 as they did and `1 0 1 0 0` on Nov 2, 10 and 20; the
+  incomplete candle also read ishistory 1 on XETR:SAP, TSE:7203 and ASX:BHP closed, on the history
+  bars of a live BTCUSDT 4h chart and in Bar Replay on BTCUSDT 1D. Not checked: the primary NASDAQ
+  feed and intraday replay (paid plans).
   `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
   developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
   candle is complete in the data whichever chart bar reads it. The candle still open at the
@@ -341,6 +426,19 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   higher-timeframe one: the last intrabar stands for the chart bar and the first with `lookahead_on`,
   on history and on the live bar alike (probe S5: ETHUSDT `"5"` on a BTCUSDT 1h chart reads offset
   55 / 0 on a history bar and 20 / 0 on the live one at 13:22, like BTCUSDT's own).
+  A stock's buckets are cut on its session, not the UTC day (`bucket::Grid::UsEquities`, see
+  [Market data](market-data.md#timeframes)): `SymbolInfo::grid` is the chart's grid, the provider
+  says another symbol's (`SecurityDataProvider::grid`), and every `time::bucket` helper takes it. A
+  4h candle of AAPL ends at 13:30 and at 16:00 New York, so a request closes the chart bar that ends
+  there, and a day, week or month ends at the close of its last weekday (`Grid::session_end_ms`),
+  not at the next UTC midnight (TradingView probe A8, 2026-11-25). A bucket that stops before the
+  next one opens means a candle's successor is not found from where it ends: use
+  `time::bucket::following_end` (the next bucket that can trade, `Grid::following_end_ms`), as
+  `islastconfirmedhistory` does for a folded series. Asking for the bucket at the candle's own end
+  answers with the same week again, and no stock week or month was ever the last confirmed one
+  (AAPL 1D, 2026-11-26: the completed week and month read it). The differences that remain
+  (extended hours, early closes, holidays, the `time("D")` of a day) are listed in
+  [Market data](market-data.md#timeframes).
   `gaps_on` puts the value on the chart bar that closes the candle (`SecurityRequest::gaps_on`,
   `Session::owns_value`), and on the live bar that closes it the developing candle's value; with
   `lookahead_on` on the bar that opens the candle. Every other bar is `na`, for the chart's own symbol

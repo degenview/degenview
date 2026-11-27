@@ -50,7 +50,12 @@ impl WatchlistQuoteCoordinator {
     /// Starts the background loop. `repaint` is called (from that thread) whenever a
     /// quote changed.
     pub fn new(book: WatchlistQuoteBook, repaint: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self::with_provider(book, repaint, Arc::new(LiveProvider), Config::default())
+        Self::with_provider(
+            book,
+            repaint,
+            Arc::new(LiveProvider::default()),
+            Config::default(),
+        )
     }
 
     pub fn with_provider(

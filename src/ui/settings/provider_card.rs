@@ -14,7 +14,7 @@ use crate::service::snapshot::providers::{
     SnapshotProvider,
 };
 use crate::service::snapshot::upload::{self, UreqTransport};
-use crate::service::work_queue::{self, Pending};
+use crate::service::work_queue;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
 use crate::ui::kit::loading::LoadingIndicator;
@@ -22,6 +22,7 @@ use crate::ui::kit::{Autosave, destructive_button, field};
 use crate::ui::paper::form;
 use crate::ui::settings::brokers::{fitted, gray_link, muted, step_row, titled_group};
 use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::connection_test::ConnectionTest;
 use crate::ui::settings::snapshots::SnapshotsAction;
 use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
@@ -40,6 +41,9 @@ pub struct CardInput<'a> {
     pub secrets: &'a Arc<SnapshotSecrets>,
 }
 
+/// What a test tries: the settings as typed and the secrets typed over the saved ones.
+type TestSubject = (FieldValues, BTreeMap<String, String>);
+
 /// What the user is doing in one row.
 #[derive(Default)]
 pub struct ProviderForm {
@@ -51,9 +55,8 @@ pub struct ProviderForm {
     /// The saved settings the fields were last filled from.
     loaded_from: Option<FieldValues>,
     autosave: Autosave,
-    test: Option<Pending<Result<(), String>>>,
-    /// What the last test said.
-    test_status: Option<StatusMessage>,
+    /// A test of what the fields hold.
+    test: ConnectionTest<TestSubject, Result<(), String>>,
     /// What the last save said.
     pub status: Option<StatusMessage>,
 }
@@ -189,6 +192,13 @@ impl ProviderForm {
                 == Readiness::Ready
     }
 
+    fn test_subject(&self, descriptor: &ProviderDescriptor, saved: &FieldValues) -> TestSubject {
+        (
+            self.settings_as_typed(descriptor, saved),
+            self.typed_secrets(descriptor),
+        )
+    }
+
     /// Uploads a one-pixel image with what is typed (else saved), on the snapshot workers.
     fn start_test(
         &mut self,
@@ -197,43 +207,35 @@ impl ProviderForm {
         saved: &FieldValues,
         secrets: &Arc<SnapshotSecrets>,
     ) {
-        if self.test.is_some() {
-            return;
-        }
-        let descriptor = provider.descriptor();
-        let destination = Destination::new(provider, self.settings_as_typed(descriptor, saved));
-        let typed = self.typed_secrets(descriptor);
+        let subject = self.test_subject(provider.descriptor(), saved);
+        let (settings, typed) = subject.clone();
+        let destination = Destination::new(provider, settings);
         let store = Arc::clone(secrets);
-        self.test_status = None;
-        self.test = Some(work_queue::SNAPSHOTS.start(Some(repaint), move || {
-            // Read here, on the worker: the secure storage may prompt.
-            let mut secrets = store.read_all(provider);
-            for (key, value) in typed {
-                secrets.insert(&key, value);
-            }
-            let label = destination.label();
-            upload::test(&UreqTransport::default(), &destination, &secrets)
-                .map_err(|error| error.message(&label))
-        }));
+        self.test.start(subject, || {
+            work_queue::SNAPSHOTS.start(Some(repaint), move || {
+                // Read here, on the worker: the secure storage may prompt.
+                let mut secrets = store.read_all(provider);
+                for (key, value) in typed {
+                    secrets.insert(&key, value);
+                }
+                let label = destination.label();
+                upload::test(&UreqTransport::default(), &destination, &secrets)
+                    .map_err(|error| error.message(&label))
+            })
+        });
     }
 
-    fn poll_test(&mut self, label: &str) {
-        let Some(test) = &mut self.test else {
-            return;
-        };
-        let Some(outcome) = test.poll_or(|| Err(tr!("The test stopped unexpectedly.").to_owned()))
-        else {
-            return;
-        };
-        self.test = None;
-        self.test_status = Some(match outcome {
-            Ok(()) => StatusMessage::ok(tr!("{label} accepted a test image.", label = label)),
-            Err(message) => StatusMessage::error(message),
+    fn poll_test(&mut self, descriptor: &ProviderDescriptor, saved: &FieldValues, label: &str) {
+        let current = self.test_subject(descriptor, saved);
+        self.test.follow(&current, |outcome| match outcome {
+            Some(Ok(())) => StatusMessage::ok(tr!("{label} accepted a test image.", label = label)),
+            Some(Err(message)) => StatusMessage::error(message),
+            None => StatusMessage::error(tr!("The test stopped unexpectedly.")),
         });
     }
 
     pub fn is_testing(&self) -> bool {
-        self.test.is_some()
+        self.test.is_running()
     }
 }
 
@@ -265,7 +267,7 @@ pub fn provider_card(
     let descriptor = provider.descriptor();
     let settings = input.prefs.settings_of(descriptor.id);
     form.sync_with(descriptor, &settings);
-    form.poll_test(&provider.label(&settings));
+    form.poll_test(descriptor, &settings, &provider.label(&settings));
     if form.is_testing() {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(150));
@@ -409,7 +411,8 @@ fn body(
         ui.add_space(4.0);
         actions_row(ui, provider, input, form, settings, present, actions);
     }
-    for status in [&form.test_status, &form.status].into_iter().flatten() {
+    let tested = form.test.answer(&form.test_subject(descriptor, settings));
+    for status in [tested, form.status.as_ref()].into_iter().flatten() {
         status_message(ui, &status.text(), status.is_error);
     }
 }
@@ -447,6 +450,8 @@ fn actions_row(
                 if input.secrets.state(descriptor.id, spec) == SecretState::Saved
                     && destructive_button(ui, spec.remove_label.text()).clicked()
                 {
+                    // A test used the saved secret, which no field shows.
+                    form.test.forget();
                     actions.push(SnapshotsAction::RemoveSecret {
                         provider: descriptor.id,
                         field: spec.key,

@@ -7,6 +7,8 @@
 
 use crate::lock::lock;
 use eframe::egui;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
@@ -185,6 +187,49 @@ impl<T> PendingAll<T> {
                 .map(|(_, answer)| answer)
                 .collect(),
         )
+    }
+}
+
+/// Jobs under way, one per key and no more than a limit at once. For many small requests: what
+/// has not been started yet is still the caller's to drop.
+pub struct PendingMap<K, T> {
+    jobs: HashMap<K, Pending<T>>,
+    limit: usize,
+}
+
+impl<K: Clone + Eq + Hash, T> PendingMap<K, T> {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            jobs: HashMap::new(),
+            limit,
+        }
+    }
+
+    pub fn contains(&self, key: &K) -> bool {
+        self.jobs.contains_key(key)
+    }
+
+    /// Starts `job` for `key`, unless one is under way for it or the limit is reached.
+    pub fn start_with(&mut self, key: &K, job: impl FnOnce() -> Pending<T>) {
+        if self.jobs.len() < self.limit && !self.jobs.contains_key(key) {
+            self.jobs.insert(key.clone(), job());
+        }
+    }
+
+    /// The jobs that ended since the last call, each with its answer or `None` when it ended
+    /// without one.
+    pub fn take_ended(&mut self) -> Vec<(K, Option<T>)> {
+        let mut ended = Vec::new();
+        for (key, job) in &mut self.jobs {
+            let answer = job.poll();
+            if answer.is_some() || !job.is_pending() {
+                ended.push((key.clone(), answer));
+            }
+        }
+        for (key, _) in &ended {
+            self.jobs.remove(key);
+        }
+        ended
     }
 }
 
@@ -400,6 +445,40 @@ mod tests {
         };
         assert_eq!(answers, [Some(1), None, Some(3)]);
         assert_eq!(all.poll(), None, "the answers are taken once");
+    }
+
+    #[test]
+    fn a_map_of_jobs_keeps_to_its_limit_and_reports_the_lost_ones() {
+        let queue = WorkQueue::new(4);
+        let mut jobs: PendingMap<u8, u8> = PendingMap::new(2);
+        let (release, released) = mpsc::channel::<()>();
+        jobs.start_with(&1, || {
+            queue.start(None, move || released.recv().map(|()| 1).unwrap_or(0))
+        });
+        jobs.start_with(&2, || {
+            queue.start(None, || -> u8 { panic!("this one fails") })
+        });
+        jobs.start_with(&3, || unreachable!("over the limit"));
+        jobs.start_with(&1, || unreachable!("already under way"));
+        assert!(jobs.contains(&1) && jobs.contains(&2) && !jobs.contains(&3));
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut ended = Vec::new();
+        while ended.is_empty() {
+            ended = jobs.take_ended();
+            assert!(Instant::now() < deadline, "the job never ended");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(ended, [(2, None)]);
+        release.send(()).unwrap();
+        let mut ended = Vec::new();
+        while ended.is_empty() {
+            ended = jobs.take_ended();
+            assert!(Instant::now() < deadline, "the job never ended");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(ended, [(1, Some(1))]);
+        assert!(!jobs.contains(&1));
     }
 
     #[test]

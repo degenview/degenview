@@ -4,6 +4,75 @@ What changed for people who use DegenView, release by release, newest first. `to
 each section from the fragments in `changes/` when it cuts the release, and the app shows the
 sections between your version and the one on offer before it updates.
 
+## 0.6.0-rc.37 (2026-11-27)
+
+### New
+
+- DegenView is available in German. Pick it, or leave it on the system's language, in Settings ▸ Appearance ▸ Language; a restart applies the choice.
+- Charts, the symbol picker and watchlists can use Oanda forex, metals and index CFDs once an account ID and access token are saved in Settings ▸ Oanda.
+- DegenView is available in Russian. Pick it, or leave it on the system's language, in Settings ▸ Appearance ▸ Language; a restart applies the choice.
+
+### Fixed
+
+- Pine boxes that extend left or right now reach the edge of the chart however far back they start, and their text stays by the box.
+- Fills between Pine lines that both extend now run on with them.
+- Pine lines drawn from right to left, and upright ones, now extend the same way as on TradingView.
+- An unfilled market order shows “Market” as its price in Spanish and Chinese, not a dash.
+- The CoinMarketCap Fear & Greed and Altcoin Season cards name the reading in the interface language, not in English.
+- Two, three and four week candles (and unusual month lengths such as 5M) now start where TradingView's do, counted from the start of each year. Existing charts on these timeframes show different candles.
+- Shortened Russian footer hints in the timeframe picker so the popover stays compact.
+- On Windows and Linux, settings and messages no longer call your computer a Mac or mention the Keychain.
+- Pine's timeframe.change now matches TradingView on stock charts (also around holidays and inside request.security of another market), when the timeframe differs from one bar to the next, and with an empty timeframe.
+
+### Fixed in release candidates
+
+- On a stock chart, barstate.islastconfirmedhistory inside request.security is true again on the last finished week or month, as on TradingView.
+
+## 0.6.0-rc.36 (2026-11-26)
+
+### New
+
+- The last price on the axis can show how long the current bar has left before it closes. Turn it on or off with Countdown to bar close, in the price axis menu or in the chart settings.
+- Drag rows in the object tree up and down to change the order of drawings, compared symbols and scripts on the chart.
+- DegenView is available in Simplified Chinese. Pick it, or leave it on the system's language, in Settings ▸ Appearance ▸ Language; a restart applies the choice.
+- DegenView is available in Spanish (Spain). Pick it, or leave it on the system's language, in Settings ▸ Appearance ▸ Language; a restart applies the choice.
+
+### Fixed
+
+- A Pine script that reads a built-in function without calling it (`plot(ta.sma)`, `x = nz`) now shows a compile error on that line, as on TradingView, instead of stopping at run time with "Undefined variable".
+- A history (`[1]`) of a call inside a ternary, `and`/`or`, `switch` or `if` operand in a Pine script now reads the value the call has on every bar, as on TradingView.
+- Pine scripts can loop directly over a map’s keys and values without a runtime error.
+- Pine `map.put_all` copies the pairs of the other map instead of failing with "requires a map".
+- request.security to a finer timeframe than the chart now returns the first intrabar of each chart bar with lookahead_on, and its barstate.islast, islastconfirmedhistory and isrealtime follow the requested series as on TradingView.
+- A request.security to a finer timeframe on a stock or monthly chart now reads the candles that end inside each chart bar, so the last candle of a day or of a 31-day month is no longer counted in the next bar.
+- barstate.islast inside request.security is now true for the series' latest candle on every chart bar that reads it, not only on the chart's last bar.
+- On a monthly, quarterly or yearly chart, request.security to the chart's own timeframe is no longer treated as a finer timeframe when the latest month has 31 days, so its values match TradingView.
+- On a monthly chart with a live bar, last_bar_time is now the live bar's real open, a quarterly request no longer marks the finished quarter as the last one, and time_close of a month is the start of the next month as on TradingView.
+- Scripts that request a finer timeframe on a monthly chart now receive the last day of a 31-day month.
+- Inside request.security, bar_index now starts at 0, so barstate.isfirst is true on the first requested candle, as on TradingView.
+- barstate.ishistory, barstate.isrealtime, barstate.islast, barstate.isnew and barstate.isconfirmed inside request.security now follow the chart bar being drawn, as on TradingView, so scripts that act on the last or latest bar of a request behave the same.
+- On a monthly chart, request.security to a quarterly or yearly timeframe now returns the finished quarter or year on its last month, as on TradingView, instead of one month late.
+- Right-clicking a chart while a drawing tool or Zoom In is selected switches back to the cursor; right-click again for the menu.
+- Searching for a name with spaces, symbols or non-English characters (比特币, café, "a & b") no longer fails on DEXScreener, CoinGecko and Polymarket.
+- US stock charts of 1h and longer intraday timeframes now cut their candles on the regular session like TradingView does: 4h is 09:30 and 13:30 New York, the last candle of a day closes at 16:00, and pre-market and after-hours candles are no longer drawn.
+- Pine scripts on a stock that request a higher timeframe (a 4h, a day, a week) now get that candle when the session closes, where TradingView gives it, instead of at midnight.
+- `[line, direction] = ta.supertrend(3, 10)` in Pine scripts no longer reads na on every bar; it matches TradingView from the first bar. Scripts that saved the old result may plot and trade differently.
+- Pine scripts that use `ta.supertrend`, `ta.macd`, `ta.bb`, `ta.dmi` or `ta.kc` as a single value, or name the wrong number of values, now show a compile error as on TradingView instead of silently plotting nothing.
+- ta.cmo, ta.cci, ta.mfi and ta.stoch now give TradingView's values when the price has not moved over their window, and ta.mfi starts one bar earlier. Saved scripts that use them plot and trade differently.
+- ta.percentile_linear_interpolation and array.percentile_linear_interpolation now interpolate like TradingView, and never go beyond the lowest and highest value. Saved scripts that use them plot and trade differently.
+- ta.pivot_point_levels with the Woodie type and developing = true now stops the script with an error, like on TradingView, instead of drawing levels.
+- `ta.stdev(source, length, false)` and `ta.variance(source, length, false)` in Pine scripts now give the sample figure (divided by n - 1) instead of ignoring `biased`, as on TradingView.
+- `ta.bbw` is now in percent, `ta.iii` is the value of each bar instead of a running total, and `ta.obv`, `ta.pvt` and `ta.cum` start on the first bar that has a value, as on TradingView. Scripts that use them may plot and trade differently.
+- ta.ema, ta.rma, ta.rsi, ta.wma, ta.stdev, ta.variance, ta.median, ta.range, math.sum and Bollinger bands now treat a missing (na) bar in the source like TradingView, instead of going blank for a whole window or restarting. Saved scripts that use them plot and trade differently.
+- ta.tr, ta.tr(false), the Keltner bands and DMI start one bar later, like on TradingView, and ta.tr(true) and a conditional ta.atr, ta.supertrend, ta.kc or ta.dmi measure the range against the chart's previous close. Saved scripts that use them plot and trade differently.
+- Pine's timeframe.change now compares with the last bar its own call ran on, so a call inside an if, a condition or a function counts the same changes as TradingView, and the very first call is false.
+- A tool button on the left strip now arms its tool on a click and opens its sub-tool menu only from its arrow, or on a click when its tool is already selected, as on TradingView; Escape shuts an open menu first.
+- `ta.vwap` can be read as a variable in a Pine script (`plot(ta.vwap)`) instead of stopping the script with "Undefined variable"; it equals `ta.vwap(hlc3)`, as on TradingView.
+
+### Fixed in release candidates
+
+- Charts no longer crash when formatting some prices just below 1.
+
 ## 0.6.0-rc.35 (2026-11-24)
 
 ### New

@@ -128,12 +128,17 @@ impl PriceScale {
 }
 
 /// The smallest distance between two neighbouring grid ticks, `0.0` when there are fewer than
-/// two: how fine a label must be to tell its neighbours apart.
+/// two: how fine a label must be to tell its neighbours apart. A difference carries the error of
+/// the ticks it is taken from (`0.9 - 0.8` is `0.09999999999999998`), so the step is kept to nine
+/// digits: a tenth stays a tenth and its labels do not depend on the last bit.
 pub(super) fn tick_step(ticks: &[f64]) -> f64 {
     let step = ticks
         .windows(2)
         .map(|pair| (pair[1] - pair[0]).abs())
         .filter(|gap| *gap > 0.0)
         .fold(f64::INFINITY, f64::min);
-    if step.is_finite() { step } else { 0.0 }
+    if !step.is_finite() {
+        return 0.0;
+    }
+    format!("{step:.8e}").parse().unwrap_or(step)
 }

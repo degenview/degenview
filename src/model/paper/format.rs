@@ -11,8 +11,8 @@ use crate::model::paper::{
 impl PaperOrderSide {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Buy => tr!("Buy"),
-            Self::Sell => tr!("Sell"),
+            Self::Buy => tr_c!("side", "Buy"),
+            Self::Sell => tr_c!("side", "Sell"),
         }
     }
 

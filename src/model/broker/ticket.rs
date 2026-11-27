@@ -98,8 +98,8 @@ pub struct NoticeText {
 pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) -> NoticeText {
     let order: &LiveOrder = &notice.order;
     let side = match order.side {
-        Side::Buy => tr!("Buy"),
-        Side::Sell => tr!("Sell"),
+        Side::Buy => tr_c!("side", "Buy"),
+        Side::Sell => tr_c!("side", "Sell"),
     };
     let base = spec.map_or("", |s| s.base.as_str());
     let size = match order.size {
@@ -141,7 +141,9 @@ pub fn notice_text(notice: &Notice, broker: &str, spec: Option<&ProductSpec>) ->
         NoticeKind::Expired => (tr!("Order expired"), false),
     };
     let body = match (&order.reason, notice.kind) {
-        (Some(reason), NoticeKind::Rejected | NoticeKind::Cancelled) => format!("{what}. {reason}"),
+        (Some(reason), NoticeKind::Rejected | NoticeKind::Cancelled) => {
+            tr!("{what}. {reason}", what = what, reason = reason)
+        }
         (_, NoticeKind::PartiallyFilled) => {
             tr!(
                 "{what}: {filled} filled.",
@@ -222,7 +224,7 @@ pub fn size_text(order: &LiveOrder) -> String {
 /// The type column.
 pub fn type_label(order: &LiveOrder) -> String {
     match order.order_type {
-        OrderType::Market => tr!("Market"),
+        OrderType::Market => tr_c!("order type", "Market"),
         OrderType::Limit if order.post_only => tr!("Limit, post-only"),
         OrderType::Limit => tr!("Limit"),
         OrderType::StopLimit => tr!("Stop-limit"),

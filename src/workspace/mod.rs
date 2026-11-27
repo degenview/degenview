@@ -58,6 +58,7 @@ mod tab_link;
 mod test_support;
 mod toolbar;
 mod trade;
+mod tradingview;
 mod undo;
 mod watchlist;
 
@@ -88,6 +89,8 @@ pub enum WorkspaceAction {
     OpenWebhookSettings,
     /// Open Settings on the Alpaca page (the symbol picker's "Stocks need an Alpaca key" notice).
     OpenAlpacaSettings,
+    /// Open Settings on the Oanda page (the symbol picker's "Set up Oanda to search forex" notice).
+    OpenOandaSettings,
     /// Open Settings on the Brokers page (the live trading panel).
     OpenBrokerSettings,
     /// Open Settings on the Snapshots page (the camera menu's "Configure Snapshots…").
@@ -107,6 +110,8 @@ pub enum WorkspaceAction {
         baseline: Option<f64>,
     },
     OpenWatchlistInNewTab(WatchlistInstrument),
+    /// An import added Pine scripts to the library, which iCloud Sync should look at.
+    ScriptsImported,
 }
 
 /// What a saved workspace holds for one chart (defined in `model`; re-exported so the store and
@@ -215,6 +220,8 @@ pub struct ChartWorkspace {
     grid_drag: ui::workspace::grid_drop::GridDrag,
     /// Choosing what a content tool places: the picture that waits, the sheet, the worker.
     content: drawing::content::ContentFlow,
+    /// The TradingView import, while its sheet is open.
+    tradingview: Option<crate::host::tradingview::TradingViewImport>,
 }
 
 impl ChartWorkspace {
@@ -332,6 +339,7 @@ impl ChartWorkspace {
             layout: LayoutSession::default(),
             grid_drag: ui::workspace::grid_drop::GridDrag::default(),
             content: drawing::content::ContentFlow::default(),
+            tradingview: None,
         }
     }
 
@@ -681,11 +689,7 @@ impl ChartWorkspace {
         }
 
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(ui::theme::background())
-                    .inner_margin(egui::Margin::same(10)),
-            )
+            .frame(egui::Frame::new().fill(ui::theme::background()))
             .show(ui, |ui| self.render_grid(ui, &mut lock(paper), window));
         if let Some(item) = self.watchlist_pane.take_new_tab_request() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
@@ -695,6 +699,7 @@ impl ChartWorkspace {
         }
 
         actions.extend(self.show_symbol_picker(&ctx));
+        self.show_tradingview_import(&ctx, &mut actions);
         if self.indicator_picker.is_open() {
             let target = self.indicator_target();
             match self.indicator_picker.show(&ctx, target.as_ref()) {

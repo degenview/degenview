@@ -66,7 +66,7 @@ cp assets/brand/DegenView.icns "$app/Contents/Resources/DegenView.icns"
 # The fonts compiled into the app are under the SIL OFL, which wants its text and the copyright
 # notice to travel with every copy of them.
 mkdir -p "$app/Contents/Resources/Licenses"
-cp assets/fonts/OFL-JetBrainsMono.txt assets/fonts/OFL-NotoSansSymbols2.txt assets/fonts/OFL-Inter.txt "$app/Contents/Resources/Licenses/"
+cp assets/fonts/OFL-JetBrainsMono.txt assets/fonts/OFL-NotoSansSymbols2.txt assets/fonts/OFL-Inter.txt assets/fonts/OFL-NotoSansSC.txt "$app/Contents/Resources/Licenses/"
 cp assets/fonts/README.md "$app/Contents/Resources/Licenses/FONTS.md"
 # The helper shares the app icon: Login Items settings and its notifications show the bundle icon.
 cp assets/brand/DegenView.icns "$helper/Contents/Resources/DegenView.icns"
@@ -77,7 +77,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleLocalizations</key><array><string>en</string><string>es</string></array>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>de</string><string>es</string><string>zh-Hans</string><string>ru</string></array>
   <key>CFBundleName</key><string>DegenView</string>
   <key>CFBundleDisplayName</key><string>DegenView</string>
   <key>CFBundleIdentifier</key><string>es.nico.degenview</string>
@@ -98,7 +98,7 @@ cat > "$helper/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleLocalizations</key><array><string>en</string><string>es</string></array>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>de</string><string>es</string><string>zh-Hans</string><string>ru</string></array>
   <key>CFBundleName</key><string>DegenView Alert Agent</string>
   <key>CFBundleDisplayName</key><string>DegenView Alert Agent</string>
   <key>CFBundleIdentifier</key><string>es.nico.degenview.alert-agent</string>

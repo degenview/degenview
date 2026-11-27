@@ -11,7 +11,7 @@ pub mod subscription;
 use crate::clock::now_ms;
 use crate::lock::lock;
 use crate::model::chart::synthetic::ticker;
-use crate::model::market::bucket::{self, FoldPlan};
+use crate::model::market::bucket::{FoldPlan, Grid};
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
@@ -77,7 +77,7 @@ impl KlineSecurityDataProvider {
         if key.recent_bars > 0 {
             start = start.max(chart.end_ms - chart.spacing_ms * key.recent_bars as i64);
         }
-        let start = intrabar_start(target, start);
+        let start = intrabar_start(plan.grid(), target, start);
         let candles = while_transient(&INTRABAR_RETRY_DELAYS, || {
             crate::service::fetch_klines_range(
                 source,
@@ -112,6 +112,11 @@ impl KlineSecurityDataProvider {
 }
 
 impl SecurityDataProvider for KlineSecurityDataProvider {
+    fn grid(&self, symbol: &str) -> Grid {
+        let (plain, _) = ticker::split(symbol);
+        resolve_symbol(plain).map_or(Grid::Utc, |(source, _)| source.grid())
+    }
+
     fn candles(&self, key: &SecurityKey) -> Option<Vec<Kline>> {
         let cache_key = (key.clone(), None);
         if let Some(candles) = Self::cached(&cache_key) {
@@ -144,8 +149,8 @@ impl SecurityDataProvider for KlineSecurityDataProvider {
 /// The chart's first bar and the window `MAX_INTRABAR_CANDLES` allows do not sit on the target's
 /// grid (a `59s` bucket opens 2 s before 02:00:00), so asking from them would make the first bucket
 /// a fragment whenever the history reaches further back.
-fn intrabar_start(target: Timeframe, start_ms: i64) -> i64 {
-    bucket::bucket_start_ms(target, start_ms)
+fn intrabar_start(grid: Grid, target: Timeframe, start_ms: i64) -> i64 {
+    grid.bucket_start_ms(target, start_ms)
 }
 
 /// The target candles of `plan` from `candles`, base candles that start where the request did and
@@ -200,6 +205,7 @@ fn source_for_slug(slug: &str) -> Option<DataSource> {
         "COINGECKO" => Some(DataSource::CoinGecko),
         "DEXSCREENER" => Some(DataSource::DexScreener),
         "ALPACA" => Some(DataSource::Alpaca),
+        "OANDA" => Some(DataSource::Oanda),
         "POLYMARKET" => Some(DataSource::Polymarket),
         "KALSHI" => Some(DataSource::Kalshi),
         "CMC" => Some(DataSource::CoinMarketCap),
@@ -291,8 +297,8 @@ mod tests {
     fn the_fetch_starts_where_the_target_bucket_that_holds_the_window_opens() {
         let fifty_nine = Timeframe::new(59, crate::model::TimeUnit::Second).unwrap();
         // 7,200 s is 2 s into a bucket that opened at 7,198 s.
-        assert_eq!(intrabar_start(fifty_nine, TWO_AM), 7_198_000);
-        assert_eq!(intrabar_start(fifty_nine, 7_198_000), 7_198_000);
+        assert_eq!(intrabar_start(Grid::Utc, fifty_nine, TWO_AM), 7_198_000);
+        assert_eq!(intrabar_start(Grid::Utc, fifty_nine, 7_198_000), 7_198_000);
     }
 
     #[test]
@@ -474,6 +480,21 @@ mod tests {
             Some((DataSource::Coinbase, "BTC-USD".to_owned()))
         );
         assert_eq!(resolve_symbol("NOPE:ETHUSDT"), None);
+    }
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+
+    #[test]
+    fn the_provider_says_which_grid_a_symbols_market_cuts() {
+        let provider = KlineSecurityDataProvider;
+        assert_eq!(provider.grid("ALPACA:AAPL"), Grid::UsEquities);
+        assert_eq!(provider.grid("BINANCE:BTCUSDT"), Grid::Utc);
+        assert_eq!(provider.grid("COINBASE:ETH-USD"), Grid::Utc);
+        // A symbol that names no market the host knows is not a stock.
+        assert_eq!(provider.grid("NOWHERE:XYZ"), Grid::Utc);
     }
 }
 

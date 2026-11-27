@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::market::bucket::fold_base;
+use crate::model::market::bucket::Grid;
 
 fn tf(text: &str) -> Timeframe {
     Timeframe::parse(text).unwrap()
@@ -11,7 +11,7 @@ const TABLE: [&str; 24] = [
     "3D", "5D", "1W", "2W", "1M", "2M", "3M", "6M", "1Y",
 ];
 
-const CANDLE_SOURCES: [DataSource; 9] = [
+const CANDLE_SOURCES: [DataSource; 10] = [
     DataSource::Binance,
     DataSource::Coinbase,
     DataSource::Okx,
@@ -21,6 +21,7 @@ const CANDLE_SOURCES: [DataSource; 9] = [
     DataSource::Mexc,
     DataSource::Alpaca,
     DataSource::DexScreener,
+    DataSource::Oanda,
 ];
 
 #[test]
@@ -33,7 +34,7 @@ fn every_native_is_its_own_base_and_lists_are_shortest_first() {
         );
         for native in natives {
             assert_eq!(
-                fold_base(*native, natives),
+                Grid::Utc.fold_base(*native, natives),
                 Some(*native),
                 "{source:?} {native}"
             );
@@ -204,10 +205,12 @@ fn alpaca_serves_only_what_divides_the_hour_and_the_day_week_and_month() {
         .map(|t| t.label())
         .collect();
     assert_eq!(labels, ["1m", "5m", "15m", "30m", "1h", "1D", "1W", "1M"]);
-    // Alpaca has 3Hour and 4Min bars; those are not on our grid, so they are folded.
+    // Alpaca has 3Hour and 4Min bars; those are not on our grid, so they are folded. A stock's
+    // hours are cut from the 09:30 open, which its clock-hour bars are not: they fold from the
+    // half hours.
     assert_eq!(
         DataSource::Alpaca.plan(tf("3h")).unwrap().base(),
-        Timeframe::HOUR_1
+        Timeframe::new(30, TimeUnit::Minute).unwrap()
     );
     assert_eq!(
         DataSource::Alpaca.plan(tf("4m")).unwrap().base(),
@@ -329,24 +332,32 @@ fn geckoterminal_pages_back_while_a_page_of_its_base_candles_is_short_of_180_day
 }
 
 #[test]
-fn only_binance_okx_and_gate_serve_seconds_and_gate_only_those_of_ten() {
+fn only_binance_okx_gate_and_oanda_serve_seconds_and_gate_only_those_of_ten() {
     let serving = |text: &str| -> Vec<DataSource> {
         CANDLE_SOURCES
             .into_iter()
             .filter(|source| source.serves(tf(text)))
             .collect()
     };
-    for text in ["1s", "5s", "15s", "45s"] {
+    // No one has a one-second bar.
+    assert_eq!(serving("1s"), [DataSource::Binance, DataSource::Okx]);
+    // Oanda cuts five-second bars, so it also folds the 45s from them.
+    for text in ["5s", "15s", "45s"] {
         assert_eq!(
             serving(text),
-            [DataSource::Binance, DataSource::Okx],
+            [DataSource::Binance, DataSource::Okx, DataSource::Oanda],
             "{text}"
         );
     }
     for text in ["10s", "30s"] {
         assert_eq!(
             serving(text),
-            [DataSource::Binance, DataSource::Okx, DataSource::Gate],
+            [
+                DataSource::Binance,
+                DataSource::Okx,
+                DataSource::Gate,
+                DataSource::Oanda
+            ],
             "{text}"
         );
     }

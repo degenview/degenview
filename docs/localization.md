@@ -15,8 +15,10 @@ The pieces are the standard ones, so a translator's tools and a new engineer's e
 
 **State.** The runtime, the language setting and Settings ▸ Appearance ▸ Language exist, and the
 shared date helpers (`ui::kit::time_text`, `i18n::datetime`, Settings ▸ Appearance) are translated.
-**Spanish (Spain)** is the first translation (`assets/locales/es.po`, tag `es`), so the language card
-shows in release builds too; it hides itself whenever only one language is offered. The rest of the
+**Spanish (Spain)** (`assets/locales/es.po`, tag `es`) was the first translation, **Simplified
+Chinese** (`assets/locales/zh.po`, tag `zh`) the second and **German** (`assets/locales/de.po`, tag
+`de`) the third, so the language card shows in release builds too; it hides itself whenever only one
+language is offered. The rest of the
 interface is still English literals; moving it over, directory by directory, is the next step.
 
 ## Writing text
@@ -45,6 +47,11 @@ Rules that need a person:
 - **Never build a sentence from pieces.** `format!("{} {}", tr!("Delete"), name)` cannot be
   translated: another language puts the words in another order. Write one message with the value in it.
 - Never `if count == 1 { "item" } else { "items" }`; that is `tr_n!`.
+- **A run of items is `i18n::join_list`, not `join(", ")`.** CLDR's "and" list pattern (`icu_list`)
+  writes `a, b, and c` in English, `a, b y c` in Spanish and `a、b和c` in Chinese. Pass the result to
+  `tr!` as a value when the list sits in a sentence; end a truncated list with its own item
+  (`tr!("{count} more")`) so the "and" lands before it. Two measurements side by side (a count of bars
+  and a duration) are not a list: separate them with ` · `.
 - **One message, one meaning.** Reuse a text only for the same meaning; use `tr_c!` when two places
   need different translations of the same English (a test fails on a text written both counted and
   plain).
@@ -66,7 +73,11 @@ Rules that need a person:
   (`if cfg!(windows) { tr!(…) } else { tr!(…) }`), never a platform word put into a sentence: another
   language writes the sentence its own way and inflects the word. A text that needs the platform's
   name gets a function there that returns the whole sentence ("Secret not found in your Keychain",
-  "Show in Finder"). Where a longer text holds one, split it into sentences and join them with a space.
+  "Show in Finder"). Where a longer text holds one, split it into sentences and join them with `i18n::join_sentences`, which
+  writes the space the language wants (none after Chinese 。).
+- **Only a Mac is called a Mac.** A message that names a Mac or the Keychain is worded in
+  `platform.rs`, beside what Windows and Linux say instead. The exceptions are what only iCloud Sync
+  can show, and `only_a_mac_is_called_a_mac` (`src/i18n/tests.rs`) lists them.
 - **A status line keeps no text.** A `StatusMessage` that says the same thing whatever happened, such
   as `StatusMessage::saved_securely()`, is stored as how to write it and written when drawn, so a
   language chosen after the save reaches it. `StatusMessage::ok`/`error` with text keep that text as
@@ -182,15 +193,15 @@ msgstr[1] "{count} alertas"
   loader reads valid catalogs; deciding that one is valid is `msgfmt`'s, which
   `the_catalogs_and_layouts_are_valid_gettext` runs on every shipped file and on each layout the tests
   use (it needs gettext's tools, which CI's Linux image has).
-- A message the catalog lacks, leaves empty, or marks `fuzzy` shows in English. Nothing breaks while a
-  language is incomplete.
+- A message the catalog lacks, leaves empty, or marks `fuzzy` shows in English. Every shipped
+  catalog translates every message, so a change that adds or rewords one translates it in all of them.
 - Bring a catalog up to date with the source: `msgmerge -U assets/locales/es.po
   assets/locales/messages.pot` (a translation platform such as Weblate does it by itself).
 - `every_catalog_matches_the_messages_in_the_source` fails on a message that is no longer in the
-  source (stale), a `{name}` the source does not pass, a text that uses other values than its English,
-  and a message counted in one place and not in the other. A catalog whose `Plural-Forms` disagrees
-  with CLDR for its language is caught by `the_plural_formulas_translators_write_agree_with_cldr`,
-  once the language's formula is in it.
+  source (stale), a message the catalog gives no translation for, a `{name}` the source does not
+  pass, a text that uses other values than its English, and a message counted in one place and not
+  in the other. A catalog whose `Plural-Forms` disagrees with CLDR for its language is caught by
+  `the_plural_formulas_translators_write_agree_with_cldr`, once the language's formula is in it.
 
 ### Adding a language
 
@@ -201,7 +212,8 @@ verification are in [Translation](agent-guides/translation.md). The steps for th
    catalog). Plural rules and date patterns come from the catalog's header and CLDR; no code per
    language.
 2. `msginit` or the translation platform makes `assets/locales/<tag>.po` from `messages.pot`. Its
-   `Plural-Forms` is the standard GNU one for the language.
+   `Plural-Forms` is the standard GNU one for the language. Translate every message before adding the
+   row: the tests fail on a shipped catalog with a gap.
 3. Add the language's formula to `the_plural_formulas_translators_write_agree_with_cldr`.
 4. **Fonts.** egui draws from the fonts it is given and has no system fallback. Latin, Cyrillic and
    Greek are in the macOS system font and egui's own; Chinese, Japanese, Korean, Thai, Arabic, Hebrew
@@ -213,8 +225,8 @@ verification are in [Translation](agent-guides/translation.md). The steps for th
 
 ### Packaging that names languages
 
-Spanish is listed in each of these (the macOS bundle, the Windows installer, the Flatpak metainfo and
-desktop entry); a language added later is added to each, as follows:
+Spanish, Simplified Chinese and German are listed in each of these (the macOS bundle, the Windows installer,
+the Flatpak metainfo and desktop entry); a language added later is added to each, as follows:
 
 - **macOS bundle** (`tools/bundle.sh` writes both `Info.plist` files). Add `CFBundleDevelopmentRegion`
   (`en`) and `CFBundleLocalizations` (`en` plus each tag) to the app's and to the alert agent's
@@ -228,7 +240,10 @@ desktop entry); a language added later is added to each, as follows:
 - **Windows installer** (`packaging/windows/degenview.iss`). It has no `[Languages]` section, so
   Inno Setup's wizard is English. Add `Name: "en"; MessagesFile: "compiler:Default.isl"` first, then
   `Name: "<tag>"; MessagesFile: "compiler:Languages\<Name>.isl"` for each, and the wizard follows the
-  system language. A language Inno Setup ships no `.isl` for needs one added under `packaging/windows/`.
+  system language. A language Inno Setup ships no `.isl` for needs one added under `packaging/windows/`:
+`ChineseSimplified.isl` is a translation of Inno's own `Default.isl` (every key, the `%1` and
+`[name]` values unchanged; UTF-8, `LanguageID=$0804`, code page 936), referenced from the script by its
+bare file name. Compile it with the pinned Inno Setup and run the setup with `/LANG=zh` to see it.
   The installer's own `[CustomMessages]` and the shortcut names (`[Icons]`) are English text to
   translate there. The app inside does not read the installer's choice; it follows the setting.
 - **Flatpak metainfo** (`packaging/flatpak/es.nico.degenview.metainfo.xml`). Add the translated
@@ -250,13 +265,64 @@ CLDR's fallback chain instead of English. Trading terms Spanish-speaking traders
 the catalog, so a new message uses the word the neighbouring ones do. Numbers keep the shared format
 (see "Not done yet").
 
+### Simplified Chinese
+
+`assets/locales/zh.po` is written for mainland China in the register of a Mac or trading app:
+informal 你, bare verbs on buttons and menu items, full-width punctuation, one space between Han
+characters and Latin letters, digits or `{values}` as Apple writes them, and no 请. The catalog has one
+plural form (`nplurals=1`; counts take a measure word such as 个 or 根). CLDR makes Simplified the
+default script of Chinese, so the tag is `zh` and `zh-CN`, `zh-SG`, `zh-Hans` and `zh-Hans-CN` reach it
+through the fallback chain, while `zh-TW` and `zh-HK` (`zh-Hant` on the chain) stay on English until a
+`zh-Hant` catalog exists. The macOS bundle lists it as `zh-Hans`, which is Apple's name for it.
+Traders say
+Long, Short, Stop and Take profit in Chinese (做多, 做空, 止损, 止盈), so unlike Spanish they are
+translated; Webhook, VWAP, TPO, Pine and MCP stay in English. Vocabulary is kept by reading the
+catalog.
+
+The font is the system's, found and read by `ui::theme::cjk` only when the language in use is
+Chinese (Hiragino Sans GB on macOS, Microsoft YaHei on Windows, and on Linux the first font of
+fontconfig's ranking (`fc-match -s`) that declares zh-cn, or another Chinese language, because each
+distribution puts Noto Sans CJK, WenQuanYi or Droid under another name and the best match for
+`:lang=zh-cn` can be a font with no Han characters; inside the Flatpak sandbox the ranking lists the
+host's fonts under `/run/host/fonts`, which the app can read. Checked with the real Flatpak build on
+Fedora (Noto Sans CJK) and Kali (Droid Sans Fallback only)). A machine with none of them shows the
+missing-glyph box for every Han character; no font for the catalog is bundled because one with its
+characters is megabytes.
+
+The language picker lists each language by its own name whatever language is in use, so `简体中文` must
+draw in an English interface, which reads no Chinese font. Its four characters are bundled as a 4 KB
+subset of Noto Sans SC (`assets/fonts`), after the system's font in the chain. A test draws every
+language's own name with the app's fonts.
+
+egui centres each font's line box in the line and a Chinese font's line gap is large, so its
+characters sit about 0.23 em above Inter's; the font is shifted by the difference of the two
+fonts' own `ascent - height / 2` (read from their tables, `cjk::baseline_offset`), whichever Chinese
+font the machine has. Han characters a person types or a provider sends (a watchlist name, a
+Chinese market) are drawn only when the interface is Chinese, apart from the four of the picker.
+
+### German
+
+`assets/locales/de.po` is standard German, tagged `de` so `de-AT` and `de-CH` reach it through CLDR's
+fallback chain. It addresses the reader with *du*, writes infinitives on buttons and menu items
+("Chart hinzufügen") and the du imperative in hints and empty states, uses „…“ quotes and a space
+before an ellipsis that follows a whole word. German traders' English stays English (Chart,
+Watchlist, Long, Short, Stop-Loss, Take-Profit, Order, Trade, Broker, Replay, Webhook); the macOS
+menu bar takes Apple's names (Ablage, Darstellung, Im Dock ablegen). Vocabulary is kept by reading
+the catalog (Alarm, Zeiteinheit, Kerze, Balken, Preisskala, Haltepunkt, Handelsplatz). A noun keeps
+its capital inside a sentence, which is why a name put into one goes through `i18n::in_sentence`
+instead of `to_lowercase`. It was looked at in real windows on Linux (Fedora, GNOME), macOS (menu
+bar and window) and Windows 11 on ARM64 (language switch and restart, settings pages, installer),
+and has had no native speaker's review.
+
 ## Not done yet
 
 - **Right-to-left languages.** egui's text layout does not apply the bidirectional algorithm
   (`epaint` `TODO(emilk): heed bidi characters`) and the layouts are not mirrored. Arabic, Hebrew and
   Persian wait on that.
-- **IME.** The Pine editor handles keys itself and no `Event::Ime` is read; composing Chinese,
-  Japanese or Korean there is unchecked. Plain `TextEdit` fields use egui's.
+- **IME.** Pinyin composition on macOS works in the symbol search (a plain `TextEdit`) and in the Pine
+  editor: the preedit is drawn underlined and the committed text arrives. Windows, Linux and the other
+  input methods (Japanese, Korean) are unchecked.
+- **Traditional Chinese** (`zh-Hant`), and Han text under an English interface (see "Simplified Chinese").
 - **Numbers.** Prices and chart axes keep one format (`format.rs`, `model/chart/price_format.rs`);
   decimal and thousands separators (`icu_decimal`) are a decision to make with the first language that
   differs.

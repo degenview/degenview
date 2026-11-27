@@ -431,8 +431,13 @@ mod tests {
                 &HashMap::new(),
             );
             let preview = pine(&output, failure.as_ref())
-                .unwrap_or_else(|| panic!("{} has no preview", indicator.name));
-            assert_eq!(preview.overlay, indicator.overlay, "{}", indicator.name);
+                .unwrap_or_else(|| panic!("{} has no preview", indicator.name.msgid()));
+            assert_eq!(
+                preview.overlay,
+                indicator.overlay,
+                "{}",
+                indicator.name.msgid()
+            );
             if indicator.id == "williams-fractals" {
                 assert!(!preview.marks.is_empty(), "fractals are marks");
             } else {
@@ -442,7 +447,7 @@ mod tests {
                         .iter()
                         .any(|line| line.values.iter().flatten().count() > 10),
                     "{} drew a line with almost no values",
-                    indicator.name
+                    indicator.name.msgid()
                 );
             }
         }

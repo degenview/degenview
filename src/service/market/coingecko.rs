@@ -1,10 +1,11 @@
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::samples;
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
-const BASE_URL: &str = "https://api.coingecko.com/api/v3";
+pub(in crate::service) const BASE_URL: &str = "https://api.coingecko.com/api/v3";
 
 pub struct CoinGecko;
 
@@ -38,7 +39,7 @@ impl MarketSource for CoinGecko {
         if q.is_empty() {
             return Ok(Vec::new());
         }
-        let url = format!("{BASE_URL}/search?query={q}");
+        let url = search_url(&q);
         let body = crate::service::net::http::get_text(
             &url,
             &[],
@@ -58,17 +59,21 @@ impl MarketSource for CoinGecko {
             ) else {
                 continue;
             };
-            results.push(SearchResult::new(
-                crate::model::DataSource::CoinGecko,
-                symbol.to_uppercase(),
-                id,
-            ));
+            results.push(
+                SearchResult::new(DataSource::CoinGecko, symbol.to_uppercase(), id)
+                    .named(coin.get("name").and_then(Value::as_str), None),
+            );
         }
         Ok(results.into_iter().take(20).collect())
     }
 }
 
 /// `/market_chart` returns `{"prices": [[timestamp_ms, price], …]}`, oldest first.
+/// The search address for an already trimmed, lower-cased query.
+fn search_url(query: &str) -> String {
+    format!("{BASE_URL}/search?query={}", encode_component(query))
+}
+
 fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
     let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
     let rows = value
@@ -126,6 +131,14 @@ fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_query_outside_ascii_is_escaped_in_the_search_address() {
+        assert_eq!(
+            search_url("比特币 & co"),
+            format!("{BASE_URL}/search?query=%E6%AF%94%E7%89%B9%E5%B8%81%20%26%20co")
+        );
+    }
 
     #[test]
     fn a_length_the_samples_cannot_build_is_refused_before_any_request() {

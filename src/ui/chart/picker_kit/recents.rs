@@ -1,6 +1,7 @@
 //! The markets picked before, kept in the store so they can be picked again without searching.
 
 use crate::model::DataSource;
+use crate::model::market::asset_name::AssetNames;
 use crate::service::SearchResult;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,12 @@ pub struct RecentMarket {
     pub symbol: String,
     pub full_symbol: String,
     pub source: DataSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
+    #[serde(default)]
+    pub names: AssetNames,
 }
 
 /// The markets picked before, newest first (shared with an empty tab's shortcuts).
@@ -49,6 +56,9 @@ pub(crate) fn record_recent(recents: &mut Vec<RecentMarket>, result: &SearchResu
             symbol: result.symbol.clone(),
             full_symbol: result.full_symbol.clone(),
             source: result.source,
+            base: result.base.clone(),
+            quote: result.quote.clone(),
+            names: (*result.names).clone(),
         },
     );
     recents.truncate(RECENT_LIMIT);
@@ -63,8 +73,9 @@ impl RecentMarket {
             source: self.source,
             price: None,
             event: None,
-            base: None,
-            quote: None,
+            base: self.base.clone(),
+            quote: self.quote.clone(),
+            names: Box::new(self.names.clone()),
         }
     }
 }

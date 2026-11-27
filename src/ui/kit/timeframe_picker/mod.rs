@@ -253,7 +253,7 @@ fn typed_row(ui: &mut Ui, timeframe: Timeframe, highlighted: bool) -> bool {
     }
     let label = galley(
         ui,
-        &format!("Chart {timeframe}"),
+        &tr!("Chart {timeframe}", timeframe = timeframe),
         size::BODY,
         MEDIUM,
         theme::text_primary(),
@@ -318,5 +318,5 @@ fn footer(ui: &mut Ui) {
     let (rect, _) =
         ui.allocate_exact_size(vec2(ui.available_width(), FOOTER_HEIGHT), Sense::hover());
     let row = rect.with_min_x(rect.left() + HEADING_INSET);
-    hint_row(ui, row, footer_hints(), FOOTER_TEXT, &["move"]);
+    hint_row(ui, row, footer_hints(), FOOTER_TEXT, &[tr!("move")]);
 }

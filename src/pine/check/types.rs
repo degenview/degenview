@@ -90,6 +90,18 @@ impl Ty {
         }
     }
 
+    /// Whether a variable declared as `self` may hold a value of type `given`. A call may widen what
+    /// it passes (a `map<int, float>` for a `map<float, float>` parameter, as TradingView takes it),
+    /// but a variable holding the value would share a map whose types differ from its own, which
+    /// TradingView refuses.
+    pub fn assignable(&self, given: &Self) -> bool {
+        match self.accepts(given) {
+            None => false,
+            Some(Fit::Widened) => !matches!(self, Self::Map(..)),
+            Some(_) => true,
+        }
+    }
+
     /// The type as a script spells it, for diagnostics.
     pub fn describe(&self) -> String {
         match self {

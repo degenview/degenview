@@ -63,7 +63,11 @@ ShowLanguageDialog=auto
 ; only when the system's is not listed, and otherwise follows it. The app inside does not read the
 ; installer's choice; it follows its own Language setting.
 Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "de"; MessagesFile: "compiler:Languages\German.isl"
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+; Inno Setup ships no Chinese file, so this one is ours (a translation of its own message list).
+Name: "zh"; MessagesFile: "ChineseSimplified.isl"
+Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -75,6 +79,7 @@ Source: "{#ExePath}"; DestDir: "{app}"; DestName: "degenview.exe"; Flags: ignore
 Source: "..\..\assets\fonts\OFL-JetBrainsMono.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\OFL-NotoSansSymbols2.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\OFL-Inter.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\..\assets\fonts\OFL-NotoSansSC.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\README.md"; DestDir: "{app}\licenses"; DestName: "FONTS.md"; Flags: ignoreversion
 
 [Icons]

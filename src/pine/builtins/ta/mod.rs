@@ -12,6 +12,7 @@ pub mod extra;
 
 use crate::model::Kline;
 use crate::pine::runtime::value::RuntimeValue;
+use extra::derived;
 
 /// What one call site remembers between bars.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -21,8 +22,8 @@ pub struct State {
     pub results: Vec<RuntimeValue>,
     /// The source series, one entry per evaluation, `na` included.
     pub inputs: Vec<RuntimeValue>,
-    /// The bar's high, low and close, one entry per evaluation — the history `ta.sar` and
-    /// `ta.supertrend` read.
+    /// The bar's high, low and close, one entry per evaluation — the history `ta.sar` reads
+    /// (`ta.dmi` keeps the previous high and low here).
     pub highs: Vec<f64>,
     pub lows: Vec<f64>,
     pub closes: Vec<f64>,
@@ -36,20 +37,24 @@ pub struct State {
     pub derived: Vec<extra::Derived>,
     /// `ta.pivot_point_levels` state: the period since the last anchor and the levels it last set.
     pub pivot: Option<extra::PivotPeriod>,
-    /// `ta.macd`'s fast, slow and signal averages. Boxed: `State` is cloned on every realtime tick
-    /// and only a `ta.macd` site has legs.
-    pub macd: Option<Box<[MacdLeg; 3]>>,
-    /// `timeframe.change`: the open time of the bar the site last ran on, and of the bar it ran on
-    /// before that. Boxed like `macd`: `State` is cloned on every realtime tick, and only a
-    /// `timeframe.change` site has bars.
-    pub bar_times: Option<Box<BarTimes>>,
+    /// `ta.dmi`'s four smoothed series, each the state of its own `ta.rma`. Boxed: `State` is cloned on every realtime tick, and
+    /// only a `ta.dmi` site has smoothers.
+    pub dmi: Option<Box<[State; 4]>>,
+    /// `timeframe.change`: the periods found by the bar the site last ran on and by the one before.
+    /// Boxed: `State` is cloned on every realtime tick, and only a `timeframe.change` site has them.
+    pub periods: Option<Box<Periods>>,
 }
 
-/// The bars a call site has run on, newest first. Only a bar the site ran on is recorded, so a site
-/// under an `if` or a short-circuit sees the last bar it ran on, not the chart's previous bar.
+/// What a `timeframe.change` site found on the last two bars it ran on. Only a bar the site ran on
+/// is recorded, so a site under an `if` or a short-circuit sees the last bar it ran on, not the
+/// chart's previous bar.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BarTimes {
+pub struct Periods {
+    /// The open time of the latest of those bars.
+    pub bar: i64,
+    /// Where the period its last run found opens.
     pub latest: i64,
+    /// The same for the bar before it, `None` on the first bar the site ran on.
     pub before: Option<i64>,
 }
 
@@ -65,40 +70,6 @@ pub struct Supertrend {
 /// `ta.macd`'s lengths when a call leaves them out (TradingView requires all three; the session
 /// binds them in `inline_call`).
 pub const MACD_DEFAULTS: [i64; 3] = [12, 26, 9];
-
-/// One exponential average of `ta.macd`. A missing value gives no result and leaves the average
-/// as it was, so a gap neither restarts the seed nor moves the line (TradingView ignores `na`).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct MacdLeg {
-    /// The first `length` values, until the average exists; empty afterwards.
-    seed: Vec<f64>,
-    last: Option<f64>,
-}
-
-impl MacdLeg {
-    /// Folds `value` in: the average of the first `length` values seeds it, `alpha * x + (1 - alpha)
-    /// * prior` continues it.
-    fn step(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
-        let x = value?;
-        if length == 0 {
-            return None;
-        }
-        if let Some(prior) = self.last {
-            let alpha = 2.0 / (length as f64 + 1.0);
-            let next = alpha * x + (1.0 - alpha) * prior;
-            self.last = Some(next);
-            return Some(next);
-        }
-        self.seed.push(x);
-        if self.seed.len() < length {
-            return None;
-        }
-        let average = self.seed.iter().sum::<f64>() / length as f64;
-        self.seed = Vec::new();
-        self.last = Some(average);
-        Some(average)
-    }
-}
 
 /// The `ta.*` names `evaluate` computes from one source series and a length. The bar-relative ones
 /// (`ta.sar`, `ta.supertrend`) go through `evaluate_price` instead.
@@ -158,7 +129,8 @@ pub fn evaluate(
     let inputs = &state.inputs;
     let result = match name {
         "ta.sma" => sma(inputs, count),
-        "ta.ema" | "ta.rma" => exponential(name, source, state, count),
+        "ta.ema" => optional(derived(state, 0).ema(source.number(), count)),
+        "ta.rma" => optional(derived(state, 0).rma(source.number(), count)),
         "ta.highest" => extremum(inputs, count, f64::max),
         "ta.lowest" => extremum(inputs, count, f64::min),
         "ta.change" => change(inputs, if count > 0 { count } else { 1 }),
@@ -167,8 +139,8 @@ pub fn evaluate(
         "ta.falling" => trend(inputs, count, false),
         "ta.mom" | "ta.roc" => momentum(inputs, count, name == "ta.roc"),
         "ta.rsi" => extra::rsi(&mut *state, length),
-        "ta.median" => statistic(inputs, count, median),
-        "ta.range" => statistic(inputs, count, |values| {
+        "ta.median" => skipping_statistic(inputs, count, median),
+        "ta.range" => skipping_statistic(inputs, count, |values| {
             let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             let low = values.iter().copied().fold(f64::INFINITY, f64::min);
             if values.is_empty() { 0.0 } else { high - low }
@@ -176,13 +148,13 @@ pub fn evaluate(
         "ta.dev" => statistic(inputs, count, mean_deviation),
         "ta.swma" => statistic(inputs, 4, |v| (v[0] + 2.0 * v[1] + 2.0 * v[2] + v[3]) / 6.0),
         "ta.cmo" => cmo(inputs, count),
-        "ta.cci" => cci(inputs, count),
+        "ta.cci" => cci(inputs, count, state.results.last()),
         "ta.hma" => hma(inputs, count),
         "ta.highestbars" => extremum_bars(inputs, count, true),
         "ta.lowestbars" => extremum_bars(inputs, count, false),
         "ta.percentrank" => percent_rank(inputs, count),
         "ta.linreg" => linreg(inputs, count, second.int_value().unwrap_or(0)),
-        "math.sum" => statistic(inputs, count, |values| values.iter().sum()),
+        "math.sum" => skipping_statistic(inputs, count, |values| values.iter().sum()),
         "ta.max" => running_extreme(source, state.results.last(), f64::max),
         "ta.min" => running_extreme(source, state.results.last(), f64::min),
         "ta.cross" | "ta.crossover" | "ta.crossunder" => {
@@ -199,11 +171,13 @@ pub fn evaluate(
 }
 
 /// Evaluates a `ta.*` that reads the bar's own high/low/close rather than a source series
-/// (`ta.sar`, `ta.supertrend`). The session calls this once per bar per call site.
+/// (`ta.sar`, `ta.supertrend`). The session calls this once per bar per call site;
+/// `previous_close` is the chart's `close[1]`, which `ta.supertrend` measures against.
 pub fn evaluate_price(
     name: &str,
     arguments: &[RuntimeValue],
     bar: &Kline,
+    previous_close: Option<f64>,
     state: &mut State,
 ) -> RuntimeValue {
     match name {
@@ -231,7 +205,7 @@ pub fn evaluate_price(
                 .get(1)
                 .and_then(RuntimeValue::number)
                 .unwrap_or(10.0);
-            evaluate_supertrend(state, bar, factor, period)
+            evaluate_supertrend(state, bar, previous_close, factor, period)
         }
         _ => RuntimeValue::Na,
     }
@@ -356,14 +330,19 @@ fn advance_sar(
 /// down and -1 while it is up. A port of the reference code TradingView prints for it, `nz()`
 /// quirks included: the lower band holds 0 and the upper band is `na` until the ATR exists, so the
 /// line is 0 on the first bar, `na` until the bar before the ATR's first, and real from there.
-fn evaluate_supertrend(state: &mut State, bar: &Kline, factor: f64, period: f64) -> RuntimeValue {
-    let previous_close = state.closes.last().copied();
+fn evaluate_supertrend(
+    state: &mut State,
+    bar: &Kline,
+    previous_close: Option<f64>,
+    factor: f64,
+    period: f64,
+) -> RuntimeValue {
     let atr_was_missing = state
         .results
         .last()
         .and_then(RuntimeValue::number)
         .is_none();
-    let atr = evaluate_atr(state, bar, period.max(1.0) as i64).number();
+    let atr = evaluate_atr(state, bar, previous_close, period.max(1.0) as i64).number();
 
     let (previous_upper, previous_lower, previous_line) =
         state.supertrend.map_or((0.0, 0.0, f64::NAN), |previous| {
@@ -411,6 +390,19 @@ fn nz(value: f64) -> f64 {
     if value.is_nan() { 0.0 } else { value }
 }
 
+/// `ta.tr(handle_na)`: the true range against the chart's previous close, `na` on a bar with none
+/// (the first) unless `handle_na`, which gives the bar's high minus low.
+pub fn true_range_checked(
+    bar: &Kline,
+    previous_close: Option<f64>,
+    handle_na: bool,
+) -> Option<f64> {
+    match previous_close {
+        Some(_) => Some(true_range(bar, previous_close)),
+        None => handle_na.then_some(bar.high - bar.low),
+    }
+}
+
 /// True range: the widest of the bar's range and its gaps from the previous close.
 pub fn true_range(bar: &Kline, previous_close: Option<f64>) -> f64 {
     (bar.high - bar.low)
@@ -443,24 +435,26 @@ pub fn evaluate_cum(source: &RuntimeValue, state: &mut State) -> RuntimeValue {
     result
 }
 
-/// The open time of the bar before the one at `open_time` that the site ran on (`None` the first
-/// time it runs), noting this bar. A site that runs several times in one bar (a loop) sees the same
-/// earlier bar every time. `timeframe.change` compares with it.
-pub fn previous_bar_time(open_time: i64, state: &mut State) -> Option<i64> {
-    let Some(times) = state.bar_times.as_deref_mut() else {
-        state.bar_times = Some(Box::new(BarTimes {
-            latest: open_time,
-            before: None,
-        }));
-        return None;
+/// Notes that a run on the bar that opens at `bar` found the period that opens at `period`, and
+/// returns the period of the previous bar the site ran on (`None` the first time). A site that runs
+/// several times in one bar (a loop) compares each run with that same earlier period and leaves what
+/// its last run found for the next bar, whatever timeframe each run named. `timeframe.change`
+/// compares with it.
+pub fn previous_period(bar: i64, period: i64, state: &mut State) -> Option<i64> {
+    let before = match state.periods.as_deref() {
+        Some(periods) if periods.bar == bar => periods.before,
+        periods => periods.map(|periods| periods.latest),
     };
-    if times.latest != open_time {
-        *times = BarTimes {
-            latest: open_time,
-            before: Some(times.latest),
-        };
+    let periods = Periods {
+        bar,
+        latest: period,
+        before,
+    };
+    match state.periods.as_deref_mut() {
+        Some(slot) => *slot = periods,
+        None => state.periods = Some(Box::new(periods)),
     }
-    times.before
+    before
 }
 
 /// `ta.barssince(condition)`: bars since the condition was last true (0 on a true bar), `na`
@@ -567,28 +561,22 @@ pub fn evaluate_vwap_variable(
     value
 }
 
-/// `ta.dmi(diLength, adxSmoothing)`: `[+DI, −DI, ADX]` from the RMA-smoothed directional movement
-/// and true range. The call site's own state remembers the previous bar; each smoothed series
-/// keeps its history under `key * 16 + n`.
+/// `ta.dmi(diLength, adxSmoothing)`: `[+DI, -DI, ADX]` from the RMA-smoothed directional movement
+/// and true range. The call site's own state remembers the previous bar's high and low and holds
+/// the four smoothed series (the true range, both movements and the directional index).
+/// `previous_close` is the chart's `close[1]`: the true range is `na` on the first bar, as
+/// `ta.tr` is, so every average starts on the bar after it.
 pub fn evaluate_dmi(
-    states: &mut crate::pine::runtime::fast_hash::FastMap<usize, State>,
-    key: usize,
+    state: &mut State,
     bar: &Kline,
+    previous_close: Option<f64>,
     di_length: i64,
     adx_smoothing: i64,
 ) -> RuntimeValue {
-    let (previous_high, previous_low, previous_close) = {
-        let own = states.entry(key).or_default();
-        let previous = (
-            own.highs.last().copied(),
-            own.lows.last().copied(),
-            own.closes.last().copied(),
-        );
-        own.highs.push(bar.high);
-        own.lows.push(bar.low);
-        own.closes.push(bar.close);
-        previous
-    };
+    let previous_high = state.highs.last().copied();
+    let previous_low = state.lows.last().copied();
+    state.highs.push(bar.high);
+    state.lows.push(bar.low);
     let (mut plus_move, mut minus_move) = (RuntimeValue::Na, RuntimeValue::Na);
     if let (Some(high), Some(low)) = (previous_high, previous_low) {
         let up = bar.high - high;
@@ -596,15 +584,23 @@ pub fn evaluate_dmi(
         plus_move = float(if up > down && up > 0.0 { up } else { 0.0 });
         minus_move = float(if down > up && down > 0.0 { down } else { 0.0 });
     }
+    let smoothers = state.dmi.get_or_insert_with(Default::default);
     let mut smooth = |index: usize, value: RuntimeValue, length: i64| {
-        let state = states
-            .entry(key.wrapping_mul(16).wrapping_add(index))
-            .or_default();
-        evaluate("ta.rma", &value, &RuntimeValue::Na, length, state)
+        evaluate(
+            "ta.rma",
+            &value,
+            &RuntimeValue::Na,
+            length,
+            &mut smoothers[index],
+        )
     };
-    let range = smooth(1, float(true_range(bar, previous_close)), di_length);
-    let plus_smoothed = smooth(2, plus_move, di_length);
-    let minus_smoothed = smooth(3, minus_move, di_length);
+    let range = smooth(
+        0,
+        true_range_checked(bar, previous_close, false).map_or(RuntimeValue::Na, float),
+        di_length,
+    );
+    let plus_smoothed = smooth(1, plus_move, di_length);
+    let minus_smoothed = smooth(2, minus_move, di_length);
     let (mut plus, mut minus, mut strength) =
         (RuntimeValue::Na, RuntimeValue::Na, RuntimeValue::Na);
     if let (Some(r), Some(p), Some(m)) = (
@@ -618,7 +614,7 @@ pub fn evaluate_dmi(
         minus = float(minus_di);
         strength = float((plus_di - minus_di).abs() / if total == 0.0 { 1.0 } else { total });
     }
-    let adx = smooth(4, strength, adx_smoothing)
+    let adx = smooth(3, strength, adx_smoothing)
         .number()
         .map_or(RuntimeValue::Na, |value| float(100.0 * value));
     RuntimeValue::Tuple(vec![plus, minus, adx])
@@ -656,11 +652,13 @@ pub fn evaluate_correlation(
 
 /// `ta.atr(length)`: Wilder's RMA of the true range, seeded from the simple average of the first
 /// `length` true ranges. The state's `inputs` hold the true-range series.
-pub fn evaluate_atr(state: &mut State, bar: &Kline, length: i64) -> RuntimeValue {
-    let range = true_range(bar, state.closes.last().copied());
-    state.highs.push(bar.high);
-    state.lows.push(bar.low);
-    state.closes.push(bar.close);
+pub fn evaluate_atr(
+    state: &mut State,
+    bar: &Kline,
+    previous_close: Option<f64>,
+    length: i64,
+) -> RuntimeValue {
+    let range = true_range(bar, previous_close);
     state.inputs.push(float(range));
     let count = state.inputs.len();
     let length = usize::try_from(length).unwrap_or(0);
@@ -696,7 +694,7 @@ pub fn evaluate_dispersion(
 ) -> RuntimeValue {
     state.inputs.push(source.clone());
     let count = usize::try_from(length).unwrap_or(0);
-    let result = optional(last_window(&state.inputs, count).and_then(|window| {
+    let result = optional(last_valid(&state.inputs, count).and_then(|window| {
         let figure = if biased {
             variance(&window)
         } else if window.len() < 2 {
@@ -824,26 +822,6 @@ fn sma(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
     optional(last_valid(inputs, length).map(|values| values.iter().sum::<f64>() / length as f64))
 }
 
-/// EMA and RMA differ only in alpha. Both seed from the simple average of the first `length`
-/// values.
-fn exponential(name: &str, source: &RuntimeValue, state: &State, length: usize) -> RuntimeValue {
-    if length == 0 {
-        return RuntimeValue::Na;
-    }
-    let Some(prior) = state.results.last().and_then(RuntimeValue::number) else {
-        return sma(&state.inputs, length);
-    };
-    let Some(x) = source.number() else {
-        return RuntimeValue::Na;
-    };
-    let alpha = if name == "ta.ema" {
-        2.0 / (length as f64 + 1.0)
-    } else {
-        1.0 / length as f64
-    };
-    float(alpha * x + (1.0 - alpha) * prior)
-}
-
 fn extremum(inputs: &[RuntimeValue], length: usize, pick: fn(f64, f64) -> f64) -> RuntimeValue {
     optional(last_valid(inputs, length).and_then(|values| values.into_iter().reduce(pick)))
 }
@@ -860,20 +838,33 @@ fn change(inputs: &[RuntimeValue], offset: usize) -> RuntimeValue {
     float(current - previous)
 }
 
+/// `ta.wma`: weights 1 to `length`, newest heaviest. A missing bar gives `na`; in the windows
+/// after it the missing bar's slot holds the last value that existed before it (TradingView's
+/// rule, measured), so the average is `na` only on the bar itself.
 fn wma(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
-    let Some(window) = last_window(inputs, length) else {
+    if length == 0 || length > inputs.len() || latest(inputs).is_none() {
         return RuntimeValue::Na;
-    };
-    let weighted: f64 = window
-        .iter()
-        .enumerate()
-        .map(|(index, value)| (index + 1) as f64 * value)
-        .sum();
+    }
+    let start = inputs.len() - length;
+    let mut held: Option<f64> = None;
+    let mut weighted = 0.0;
+    for (offset, input) in inputs[start..].iter().enumerate() {
+        let value = match input.number() {
+            Some(value) => Some(value),
+            None if offset == 0 => inputs[..start].iter().rev().find_map(RuntimeValue::number),
+            None => held,
+        };
+        let Some(value) = value else {
+            return RuntimeValue::Na;
+        };
+        held = Some(value);
+        weighted += (offset + 1) as f64 * value;
+    }
     float(weighted / (length * (length + 1) / 2) as f64)
 }
 
 fn stdev(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
-    let Some(window) = last_window(inputs, length) else {
+    let Some(window) = last_valid(inputs, length) else {
         return RuntimeValue::Na;
     };
     float(variance(&window).sqrt())
@@ -958,11 +949,10 @@ pub fn evaluate_macd(
 ) -> RuntimeValue {
     let value = source.number();
     let length = |length: i64| usize::try_from(length).unwrap_or(0);
-    let legs = state.macd.get_or_insert_with(Box::default);
-    let fast = legs[0].step(value, length(fast));
-    let slow = legs[1].step(value, length(slow));
+    let fast = derived(state, 0).ema(value, length(fast));
+    let slow = derived(state, 1).ema(value, length(slow));
     let line = fast.zip(slow).map(|(fast, slow)| fast - slow);
-    let signal = legs[2].step(line, length(signal));
+    let signal = derived(state, 2).ema(line, length(signal));
     RuntimeValue::Tuple(vec![
         optional(line),
         optional(signal),
@@ -1019,6 +1009,17 @@ fn statistic(
     optional(last_window(inputs, length).map(|window| compute(&window)))
 }
 
+/// `compute` over the last `length` inputs that exist: a missing bar is skipped, and on it the
+/// statistic keeps the value of the bar before (TradingView's rule for `ta.stdev`, `ta.median`,
+/// `ta.range` and `math.sum`; `ta.dev` is strict there).
+fn skipping_statistic(
+    inputs: &[RuntimeValue],
+    length: usize,
+    compute: impl FnOnce(&[f64]) -> f64,
+) -> RuntimeValue {
+    optional(last_valid(inputs, length).map(|window| compute(&window)))
+}
+
 fn median(values: &[f64]) -> f64 {
     let mut sorted = values.to_vec();
     sorted.sort_by(f64::total_cmp);
@@ -1053,26 +1054,22 @@ fn cmo(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
     let changes: Vec<f64> = window.windows(2).map(|pair| pair[1] - pair[0]).collect();
     let up: f64 = changes.iter().filter(|c| **c > 0.0).sum();
     let down: f64 = -changes.iter().filter(|c| **c < 0.0).sum::<f64>();
-    float(if up + down == 0.0 {
-        0.0
-    } else {
-        100.0 * (up - down) / (up + down)
-    })
+    // Nothing moved: 0 / 0, which is `na` on TradingView.
+    optional((up + down != 0.0).then(|| 100.0 * (up - down) / (up + down)))
 }
 
-/// Commodity channel index: the distance from the mean in units of 0.015 mean deviations.
-fn cci(inputs: &[RuntimeValue], length: usize) -> RuntimeValue {
+/// Commodity channel index: the distance from the mean in units of 0.015 mean deviations. A window
+/// of equal values has no deviation to divide by, and TradingView repeats the previous value there.
+fn cci(inputs: &[RuntimeValue], length: usize, previous: Option<&RuntimeValue>) -> RuntimeValue {
     let Some(window) = last_window(inputs, length) else {
         return RuntimeValue::Na;
     };
+    if window.iter().all(|value| *value == window[0]) {
+        return previous.cloned().unwrap_or(RuntimeValue::Na);
+    }
     let current = window[window.len() - 1];
     let mean = window.iter().sum::<f64>() / length as f64;
-    let deviation = mean_deviation(&window);
-    float(if deviation == 0.0 {
-        0.0
-    } else {
-        (current - mean) / (0.015 * deviation)
-    })
+    float((current - mean) / (0.015 * mean_deviation(&window)))
 }
 
 /// The weighted average of the `length` values ending at `end` (inclusive), or None.
@@ -1192,12 +1189,14 @@ mod tests {
         assert_eq!(feed(RuntimeValue::Na), RuntimeValue::Na);
         // sma looks at the last two non-na values (2 and 4), skipping the gap.
         assert_eq!(feed(float(4.0)), float(3.0));
-        // wma needs the last two inputs themselves to be numbers.
+        // wma is na on the missing bar, and after it the bar's slot holds the value before it.
         let mut wma = State::default();
-        for value in [float(1.0), RuntimeValue::Na, float(3.0)] {
-            evaluate("ta.wma", &value, &RuntimeValue::Na, 2, &mut wma);
-        }
-        assert_eq!(wma.results.last(), Some(&RuntimeValue::Na));
+        let results: Vec<RuntimeValue> = [float(1.0), RuntimeValue::Na, float(3.0)]
+            .iter()
+            .map(|value| evaluate("ta.wma", value, &RuntimeValue::Na, 2, &mut wma))
+            .collect();
+        assert_eq!(results[1], RuntimeValue::Na);
+        assert_eq!(results[2], float((1.0 + 2.0 * 3.0) / 3.0));
     }
 
     #[test]
@@ -1404,35 +1403,31 @@ mod tests {
     }
 
     #[test]
-    fn rsi_skips_missing_values_instead_of_restarting() {
+    fn rsi_has_no_value_while_its_change_is_missing_and_keeps_its_averages() {
         let gaps = [
             Some(1.0),
-            None,
             Some(2.0),
-            None,
             Some(3.0),
-            None,
             Some(4.0),
             None,
-            Some(5.0),
+            Some(6.0),
+            Some(7.0),
+            Some(6.0),
         ];
-        // Changes are between the valid values; a missing bar repeats the last result.
+        // The missing bar and the one after it have no change, so no value; the averages are as
+        // they were when the changes come back.
         let values = run_rsi_with_gaps(&gaps, 3);
+        assert_eq!(&values[..5], [None, None, None, Some(100.0), None]);
+        assert_eq!(values[5], None, "the change across the gap is missing too");
+        assert_eq!(values[6], Some(100.0));
+        let loss = values[7].expect("a loss now");
+        assert!((loss - (100.0 - 100.0 / (1.0 + 2.0 / 3.0 / (1.0 / 3.0)))).abs() < 1e-9);
+        let gaps = [Some(1.0), None, Some(2.0), None, Some(3.0)];
         assert_eq!(
-            values,
-            [
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(100.0),
-                Some(100.0),
-                Some(100.0)
-            ]
+            run_rsi_with_gaps(&gaps, 3),
+            [None; 5],
+            "no change ever exists"
         );
-        assert_eq!(run_rsi_with_gaps(&gaps, 1)[2], Some(100.0));
         // Leading `na` (a warm-up) changes nothing: same values as without it.
         let plain = numbers(&run("ta.rsi", &[10.0, 11.0, 10.5, 11.5, 11.0], 3));
         let mut padded = vec![None, None];
@@ -1552,8 +1547,8 @@ mod tests {
         assert_eq!(numbers(&run("ta.cmo", &[1.0, 2.0, 3.0], 2))[2], Some(100.0));
         assert_eq!(
             numbers(&run("ta.cmo", &[1.0, 1.0, 1.0], 2))[2],
-            Some(0.0),
-            "no movement"
+            None,
+            "no movement is 0 / 0"
         );
         assert!(close(
             numbers(&run("ta.cmo", &[1.0, 3.0, 2.0], 2))[2],
@@ -1563,9 +1558,13 @@ mod tests {
         assert!(close(cci[2], (3.0 - 2.0) / (0.015 * (2.0 / 3.0))));
         assert_eq!(
             numbers(&run("ta.cci", &[5.0, 5.0, 5.0], 3))[2],
-            Some(0.0),
-            "flat: no deviation"
+            None,
+            "flat from the start: nothing to repeat"
         );
+        let held = numbers(&run("ta.cci", &[1.0, 2.0, 3.0, 3.0, 3.0, 3.0], 3));
+        assert!(held[3].is_some());
+        assert_eq!(held[4], held[3], "a flat window repeats the previous value");
+        assert_eq!(held[5], held[3]);
     }
 
     #[test]
@@ -1735,6 +1734,7 @@ mod tests {
                 "ta.sar",
                 &[float(0.02), float(0.02), float(0.2)],
                 bar,
+                None,
                 &mut state,
             ));
         }
@@ -1759,9 +1759,15 @@ mod tests {
         let mut state = State::default();
         let results: Vec<(Option<f64>, i64)> = bars
             .iter()
-            .map(|bar| {
-                let value =
-                    evaluate_price("ta.supertrend", &[float(3.0), float(5.0)], bar, &mut state);
+            .enumerate()
+            .map(|(index, bar)| {
+                let value = evaluate_price(
+                    "ta.supertrend",
+                    &[float(3.0), float(5.0)],
+                    bar,
+                    index.checked_sub(1).map(|before| bars[before].close),
+                    &mut state,
+                );
                 let RuntimeValue::Tuple(parts) = value else {
                     panic!("expected [line, direction], got {value:?}");
                 };
@@ -1785,7 +1791,11 @@ mod tests {
     fn run_atr(bars: &[Kline], length: i64) -> Vec<Option<f64>> {
         let mut state = State::default();
         bars.iter()
-            .map(|bar| evaluate_atr(&mut state, bar, length).number())
+            .enumerate()
+            .map(|(index, bar)| {
+                let previous_close = index.checked_sub(1).map(|before| bars[before].close);
+                evaluate_atr(&mut state, bar, previous_close, length).number()
+            })
             .collect()
     }
 
@@ -1934,14 +1944,15 @@ mod tests {
 
     #[test]
     fn dmi_reads_an_uptrend_as_plus_over_minus() {
-        let mut states = crate::pine::runtime::fast_hash::FastMap::default();
+        let mut state = State::default();
         let mut last = RuntimeValue::Na;
         for i in 0..60 {
             let base = 100.0 + i as f64 * 2.0;
+            let before = (i > 0).then_some(base - 2.0);
             last = evaluate_dmi(
-                &mut states,
-                7,
+                &mut state,
                 &candle(base + 1.0, base - 1.0, base),
+                before,
                 14,
                 14,
             );
@@ -1955,7 +1966,7 @@ mod tests {
             minus < 1.0e-9 && (0.0..=100.0).contains(&adx),
             "{minus} {adx}"
         );
-        let early = evaluate_dmi(&mut Default::default(), 1, &candle(2.0, 1.0, 1.5), 14, 14);
+        let early = evaluate_dmi(&mut State::default(), &candle(2.0, 1.0, 1.5), None, 14, 14);
         assert!(matches!(early, RuntimeValue::Tuple(ref p) if p[0] == RuntimeValue::Na));
     }
 

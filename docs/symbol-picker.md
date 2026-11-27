@@ -18,6 +18,12 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 
 ## What it does
 
+What a row can be used for in the open mode is decided once (`offer.rs`, `Offer`): what Return does,
+whether it does anything, and what else is offered (add as a chart, compare). The footer's key hints,
+the preview's button and menu, the row's right-click menu, the keys and the row clicks all read it, so
+a new mode or action is added there. The footer therefore hints ⇧↵ and ⌥↵ exactly when the button's
+menu offers them: not for a market already on the chart, nor for an add that Return already does.
+
 - **Opens searching for the market on the focused chart** (`Chart::picker_query`): the exchange's own
   name for Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Alpaca and CoinGecko, the base token for a DEX pair, nothing for a
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
@@ -29,7 +35,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   watchlist click on the focused chart replaces the same way; Tab Linking's follow does not, as it is
   not this tab's own edit. **⇧Return or the row's plus adds** a chart instead. **Right-clicking a row** opens
   a menu with `Replace <the chart's market>` (only in Chart mode with a chart focused) and
-  `Add as new chart`, with the keys that do the same (`list.rs`, `context_menu`); the row becomes the
+  `Add to this tab`, with the keys that do the same (`list.rs`, `context_menu`); the row becomes the
   highlighted one. With no market chart focused, or in Add mode, Return adds one. The footer names
   what Return will do ("Replace ETHUSDT", "Add chart", "Add card", "Add to Favorites").
 - **Compare** ([chart overlays](chart-overlays.md)): **⌥Return**, the compare button left of a highlighted
@@ -58,7 +64,8 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     then the row's name; an event's title for a prediction market).
 - **Tabs** All, Stocks, Crypto, Predictions, Dashboards, Watchlists (Tab cycles the tabs of the mode)
   and a filter pull-down at their right: the exchange ("All venues"), the prediction provider, or on
-  Dashboards the portfolio ("All Portfolios"). All is crypto and stocks together; prediction markets
+  Dashboards the portfolio ("All Portfolios"). With venues of several categories the venue list is headed
+  "Crypto exchanges", "DEX & aggregators" and "Stocks & forex" (`search::venue_group`). All is crypto and stocks together; prediction markets
   and indices never appear in All or Watchlists. Futures, forex, commodities and ETF tabs are not
   offered because no provider here lists them.
   - **Watchlists** lists the markets of the user's watchlists, one captioned group per list in the
@@ -102,22 +109,39 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     "Nothing matches “zzz”. Searched:
     …" with the venues asked (the pull-down's one, or the tab's). Return on no result does nothing.
     Two sources are never merged into one row.
-- **Rows** show the market as its exchange names it (`BTCUSDT`, `BTC-USD`, `AAPL`), what it trades
-  under it (`BTC / USDT`, the company, a prediction's event), the exchange and its kind, a check when
-  the market is already on a chart of the tab, and a plus on the highlighted row.
-- **Detail panel** (hidden below 760 px of window width): artwork, price and change from the quote feed (the percent at two decimals, with the amount
-  beside it, trimmed of trailing zeros, only while both fit),
-  "Open 24/7" for crypto or the stock's market state, the exchange, and "Also trades as": the other
-  dollar markets of the asset on Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and MEXC (`SymbolSearch::related`, read from the locally
-  held exchange lists). Clicking one of them replaces the chart. A prediction market shows the event's
-  artwork and title, its chance, the provider and what the provider says about the event
-  (`EventStats`: volume, 24-hour volume, liquidity, open interest, end date, category, and its
-  description under ABOUT, as many lines as fit) instead; an index or a card says what it charts.
+- **Rows** sit on shared columns (`columns.rs`, computed once per list): artwork, the market as its
+  exchange names it over its pair (`BTC / USDT`), **Description**, **Venue** (logo, exchange, kind) and
+  the marks: a check when the market is already on a chart of the tab, a plus on the highlighted row.
+  Room for the compare button is kept whenever the chart takes overlays, so nothing shifts under the
+  pointer. Hairlines separate rows, except against the highlighted box and captions. Captions
+  ("Symbol", "Description", "Venue") stay above the scrolling list on All, Stocks, Crypto, Forex and
+  Watchlists. A list too narrow for 110 pt of description drops that column and says the description
+  under the symbol instead. Prediction, index and portfolio rows run their titles across Symbol and
+  Description and share the Venue column.
+- **Detail panel** (300 to 344 pt; hidden when the *sheet* is narrower than 760 pt): small artwork,
+  ticker and what it trades, price and change from the quote feed (the percent at two decimals, with
+  the amount beside it, trimmed of trailing zeros, only while both fit), one line with the exchange
+  and, to its right, "Open 24/7" for crypto or the stock's market state (a long exchange name is cut
+  before that is), the **last day's chart** (below), "Also trades as" (the other dollar markets of
+  the asset on Binance, Coinbase, OKX, Kraken, Bybit, Gate.io and MEXC, `SymbolSearch::related`;
+  clicking one uses it) and a **button** doing what Return does ("Replace chart", "Add chart",
+  "Compare", "Add to watchlist", "Add card"), with a chevron for the other actions. It is greyed
+  when Compare or a watchlist already has the market, and an event header has none.
+  `detail/layout.rs` places every part (the renderer only draws into its rects): other markets are
+  dropped first, and under 360 pt the padding tightens. A prediction market shows the event's artwork
+  and title, its chance, the provider, its chance's last day when there is room, and what the
+  provider says about the event (`EventStats`); an index or a card says what it charts.
+- **The chart** (`detail/chart.rs`) is the last 24 hours in 15-minute closes (a stock's last session),
+  ending at the quoted price and coloured as the change is. It is fetched through
+  `service::market::trend::TrendLoader::last_day` only once the highlight has rested 200 ms, and a
+  queued fetch for a market scrolled past is dropped, so arrowing asks the providers for nothing.
+  "No chart for this market" when the provider has none; failures are asked again when the picker is
+  next opened. There is deliberately no range picker.
 - **Empty box**: recent picks (shared with the new-tab page and the portfolio asset picker), else
-  popular markets (`picker_kit::suggestions`).
-- **Tab bar width** (`fit_tabs`): the six tabs and the pull-down do not fit at the 520 px minimum
-  width with roomy padding, so the row gives up room in order: tab padding 28 → 20, the pull-down to
-  its icon, tab padding 14. The tab titles are measured, not guessed.
+  popular markets (`model::market::well_known`, the one list the new tab's starter tiles use too).
+- **Tab bar width** (`fit_tabs`): the tabs, drawn as pills in one well, and the pull-down do not fit
+  at the narrowest width with roomy padding, so the row gives up room in order: tab padding 28 → 20, the pull-down to
+  its icon, tab padding 12. The tab titles are measured, not guessed.
 
 ## Names
 
@@ -128,6 +152,28 @@ Coinbase `base_currency`, DEXScreener token symbols), and `DataSource::base_asse
 out of any spelling for artwork, alerts and paper tickets. Portfolios keep their stored
 `BASE/QUOTE` label (`SearchResult::pair_label`). DEXScreener's `PEPE/WETH` is the DEX's own name and
 stays.
+
+## Asset names
+
+The Description column and the line under the preview's ticker come from
+`service::market::names::Directory` through `describe.rs`. They are market data and never translated.
+
+| Provider | Name from | Otherwise |
+|---|---|---|
+| Gate.io | `base_name`, `quote_name` | coin ranking, currency table |
+| MEXC | `fullName` | same |
+| Binance, Coinbase, OKX, Bybit, Kraken | none in the lists used | coin ranking, Gate.io/MEXC names, currency table |
+| CoinGecko | `/search` `name` | coin ranking by id, the title-cased id |
+| DEXScreener | `baseToken.name`, `quoteToken.name` | nothing: a ticker would name another token |
+| Alpaca | the company, without "Common Stock" and the like | the well-known companies (`model::market::well_known`) |
+| Oanda | `displayName`, when it says more than the id | currency table only |
+| Polymarket, Kalshi | the event's title | |
+
+The coin ranking is the top 250 by market cap (`service::market::coin_index`, shared with the icon
+resolver); the biggest coin owns a ticker. A long-tail ticker that means different coins on two
+exchanges can borrow the wrong name. The ranking and the Gate.io/MEXC lists load in the background
+when the picker first opens; until then, and if they fail, those descriptions are blank. Recents
+store the pair and the provider's names. Searching "bitcoin" does not find exchange pairs by name.
 
 ## Ranking
 
@@ -167,7 +213,7 @@ providers.
 
 ## Verified and not
 
-Unit tests cover the ranking, the search state, the keyboard (arrows, Return, ⇧Return, Tab, Esc),
+Unit tests cover the names and their fallbacks, the columns and the preview's layout, the ranking, the search state, the keyboard (arrows, Return, ⇧Return, Tab, Esc),
 scopes, modes and venues, the prediction grouping and ticking, the dashboards lists and filters,
 recents and popular markets, the tab bar's fitting, the workspace replace/add/prefill behaviour
 (including a prediction market keeping its title, artwork and lines) and layout at several widths.

@@ -55,8 +55,8 @@ pub const MAX_DECIMALS: u8 = 12;
 const MAX_WRITTEN_DECIMALS: usize = 16;
 /// Digits shown after the zeros of a small price.
 const SMALL_DIGITS: usize = 3;
-/// Past this a price has no decimals: it is large enough that they are noise.
-const GROUPED_FROM: f64 = 1_000.0;
+/// From this decade up (the thousands) a price has no decimals: they are noise.
+const GROUPED_FROM_DECADE: i32 = 3;
 
 /// A chart's price display: pinned decimal places or automatic, and how a tiny price reads.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -179,31 +179,44 @@ impl PriceFormat {
 /// Significant digits automatic precision keeps below 1.
 const SMALL_SIGNIFICANT: usize = 4;
 
-/// The places automatic precision gives a price (>= 0.001): none once it is large enough that
-/// decimals are noise, two from 1, then enough to keep four significant digits (`0.5864`,
-/// `0.05864`, `0.003142`). Under 0.001 the zeros are counted instead.
+/// The places automatic precision gives `magnitude`: none from 1,000, two from 1, then enough to
+/// keep four significant digits. The formatter counts zeros itself for prices under 0.001, but
+/// tick spacing can still ask for the precision of a size that small.
 fn auto_places(magnitude: f64) -> usize {
-    if magnitude >= GROUPED_FROM {
-        0
-    } else if magnitude >= 1.0 {
-        2
-    } else {
+    places_at_decade(decade(magnitude))
+}
+
+/// The places of every price whose first digit sits in `decade` (`3` is the thousands, `-1` the
+/// tenths): a decade is a property of the price as it is, not of the label it rounds to.
+fn places_at_decade(decade: i32) -> usize {
+    match decade {
+        GROUPED_FROM_DECADE.. => 0,
+        0..=2 => 2,
         // 0.5 has no zeros after the point, 0.05 has one: the digits start that much later.
-        let (_, exponent) = scientific(magnitude);
-        (-exponent) as usize - 1 + SMALL_SIGNIFICANT
+        _ => SMALL_SIGNIFICANT + (-decade - 1) as usize,
     }
+}
+
+/// The power of ten `magnitude` starts at: `3` for 3,456, `-1` for 0.9999. Read from the number's
+/// own digits, so it does not move when a label rounds up to the next decade. Zero and what is
+/// not finite have none and read `0`.
+fn decade(magnitude: f64) -> i32 {
+    let text = format!("{magnitude:e}");
+    text.split_once('e')
+        .and_then(|(_, exponent)| exponent.parse().ok())
+        .unwrap_or_default()
 }
 
 /// The least places an axis label has: what a price of this size is printed with, but for a price
 /// under 1 taken from the tick spacing, not the label's own size. The labels of one axis cross
 /// 0.1 or 0.01 and would otherwise change places in the middle of the column (`0.11`, `0.10`,
-/// `0.090`).
+/// `0.090`). A step of 0.1 takes the places of the ones (`0.80`, `0.90`, `1.00`).
 fn tick_places(value: f64, step: f64) -> usize {
     let magnitude = value.abs();
     if magnitude >= 1.0 || !step.is_finite() || step <= 0.0 {
         return auto_places(magnitude);
     }
-    auto_places(magnitude).min(auto_places(step * 10.0))
+    auto_places(magnitude).min(places_at_decade(decade(step) + 1))
 }
 
 /// Decimal places that tell apart two ticks `step` apart: `0.5` needs one, `0.25` two, `5` none.
@@ -288,6 +301,42 @@ mod tests {
         assert_eq!(AUTO.format(0.003_14), "0.003140");
         assert_eq!(AUTO.format(0.001_234_6), "0.001235");
         assert_eq!(AUTO.format(1_234_567.8), "1,234,568");
+    }
+
+    #[test]
+    fn automatic_precision_uses_the_price_before_rounding_to_a_new_decade() {
+        assert_eq!(AUTO.format(0.9999), "0.9999");
+        // Four significant digits, not the three of a label that rounds to 0.100.
+        assert_eq!(AUTO.format(0.09999), "0.09999");
+        assert_eq!(AUTO.format(0.0995), "0.09950");
+    }
+
+    #[test]
+    fn a_decade_is_read_from_the_number_not_from_a_rounded_label() {
+        assert_eq!(decade(3_456.0), 3);
+        assert_eq!(decade(1_000.0), 3);
+        assert_eq!(decade(999.999), 2);
+        assert_eq!(decade(1.0), 0);
+        assert_eq!(decade(0.999_999_999_999_999_9), -1);
+        assert_eq!(decade(0.1), -1);
+        assert_eq!(decade(0.000_5), -4);
+        assert_eq!(decade(0.0), 0);
+        assert_eq!(decade(f64::NAN), 0);
+    }
+
+    #[test]
+    fn automatic_places_never_fail_around_a_power_of_ten() {
+        for exponent in -30..=4 {
+            let power = 10f64.powi(exponent);
+            let below = f64::from_bits(power.to_bits() - 1);
+            let above = f64::from_bits(power.to_bits() + 1);
+            for price in [below, power, above] {
+                let _ = AUTO.format(price);
+                let _ = AUTO.plain(price);
+                let _ = AUTO.tick_size(price);
+                let _ = AUTO.format_tick(price, price / 10.0);
+            }
+        }
     }
 
     #[test]
@@ -388,6 +437,18 @@ mod tests {
         // A finer step is not cut to the coarser column.
         assert_eq!(AUTO.format_tick(0.058_5, 0.000_5), "0.05850");
         assert_eq!(AUTO.format_tick(0.058_55, 0.000_05), "0.05855");
+    }
+
+    #[test]
+    fn a_step_of_a_tenth_takes_the_places_of_the_ones() {
+        // 0.8, 0.9, 1.0 and 1.1 are one column: the labels under 1 do not write more places.
+        let labels: Vec<_> = [0.8, 0.9, 1.0, 1.1]
+            .into_iter()
+            .map(|value| AUTO.format_tick(value, 0.1))
+            .collect();
+        assert_eq!(labels, ["0.80", "0.90", "1.00", "1.10"]);
+        // Just below a tenth is a finer step, not the same one with noise.
+        assert_eq!(AUTO.format_tick(0.8, 0.099), "0.8000");
     }
 
     #[test]

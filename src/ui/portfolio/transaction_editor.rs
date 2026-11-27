@@ -3,15 +3,15 @@
 //! `model::portfolio::editor`) that returns an outcome; the host saves it to the ledger and
 //! reports a rejection back through `TransactionEditorState::failed`.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::portfolio::editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::ui::chart::picker_kit::{art, widgets};
 use crate::ui::icons::Icon;
 use crate::ui::kit::date_picker;
 use crate::ui::kit::sheet;
+use crate::ui::kit::sheet_parts::card_background;
 use crate::ui::kit::{self, TabItem};
-use crate::ui::portfolio::sheet_parts::card_background;
 use crate::ui::portfolio::transactions::{asset_subtitle, type_name, type_tint};
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Id, Rect, RichText, Stroke, Vec2};
@@ -241,8 +241,11 @@ fn field(
                 };
                 let suffix_width = measure(suffix, kit::size::BODY, kit::REGULAR);
                 let market_width = if accessory {
-                    measure(tr!("Market"), kit::size::CAPTION, kit::SEMIBOLD)
-                        + 2.0 * ui.spacing().button_padding.x
+                    measure(
+                        tr_c!("fill with the market price", "Market"),
+                        kit::size::CAPTION,
+                        kit::SEMIBOLD,
+                    ) + 2.0 * ui.spacing().button_padding.x
                         + 7.0
                 } else {
                     0.0
@@ -260,7 +263,7 @@ fn field(
                     && ui
                         .add(
                             egui::Button::new(kit::text(
-                                tr!("Market"),
+                                tr_c!("fill with the market price", "Market"),
                                 kit::size::CAPTION,
                                 kit::SEMIBOLD,
                                 theme::text_primary(),
@@ -390,13 +393,13 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
         &[
             TabItem {
                 value: Category::Buy,
-                title: tr!("Buy"),
+                title: tr_c!("side", "Buy"),
                 icon: Icon::Plus,
                 count: 0,
             },
             TabItem {
                 value: Category::Sell,
-                title: tr!("Sell"),
+                title: tr_c!("side", "Sell"),
                 icon: Icon::ArrowDown,
                 count: 0,
             },

@@ -32,6 +32,7 @@ pub mod check;
 pub mod datetime;
 #[cfg(test)]
 mod extract;
+mod list;
 mod locale;
 mod plural_forms;
 mod preference;
@@ -43,9 +44,20 @@ mod tests;
 #[cfg(test)]
 pub use active::with_locale;
 pub use active::{current, preference, revision, set};
+pub use list::{join_list, join_sentences};
 pub use locale::{Locale, resolve};
 pub use preference::Preference;
 pub use template::fill;
+
+/// A name put inside a sentence ("Make this the default {tool}"): in lower case, except in a
+/// language that capitalises its nouns.
+pub fn in_sentence(name: &str) -> String {
+    if current().capitalizes_nouns() {
+        name.to_owned()
+    } else {
+        name.to_lowercase()
+    }
+}
 
 /// The text of a message in the language in use, `context` being `""` when it has none.
 pub fn translate(context: &'static str, key: &'static str) -> &'static str {
@@ -61,7 +73,7 @@ pub fn translate(context: &'static str, key: &'static str) -> &'static str {
 /// English text written where a macro cannot run (a `static` table) and translated where it is
 /// used: gettext's `N_()`. Made with `tr_noop!`, so the text is in the catalogs, and read with
 /// [`Marked::text`], so it is in the language of the frame that draws it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Marked(&'static str);
 
 impl Marked {
@@ -73,6 +85,11 @@ impl Marked {
         Self(text)
     }
 
+    /// Whether there is no text to show.
+    pub fn is_empty(self) -> bool {
+        self.0.is_empty()
+    }
+
     /// The text in the language in use.
     pub fn text(self) -> &'static str {
         if self.0.is_empty() {
@@ -81,9 +98,8 @@ impl Marked {
         translate("", self.0)
     }
 
-    /// The English text, the message's key: for what must not change with the language, never for
-    /// showing. Tests compare by it.
-    #[cfg(test)]
+    /// The English text, the message's key: for what must not change with the language (what an MCP
+    /// client reads, a test compares), never for showing.
     pub fn msgid(self) -> &'static str {
         self.0
     }

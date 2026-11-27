@@ -145,6 +145,11 @@ pub fn body(
             },
         );
         ui.add_space(10.0);
+        const BUTTON_GAP: f32 = 6.0;
+        let buttons = SnapshotScale::ALL
+            .iter()
+            .map(|scale| kit::sheet_button_width(ui, scale.label(), true) + BUTTON_GAP)
+            .sum::<f32>();
         card::card_reserving(
             ui,
             Icon::Camera,
@@ -152,9 +157,9 @@ pub fn body(
             Some(tr!(
                 "Images are drawn again at the scale, not enlarged, so text stays sharp."
             )),
-            260.0,
+            buttons + BUTTON_GAP,
             |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.spacing_mut().item_spacing.x = BUTTON_GAP;
                 for scale in SnapshotScale::ALL.into_iter().rev() {
                     let current = scale == input.prefs.scale;
                     if kit::sheet_button(ui, scale.label(), current, true).clicked() && !current {
@@ -233,7 +238,7 @@ fn approved_hint(consented: &[String]) -> String {
     } else {
         tr!(
             "You agreed to upload to {hosts}. DegenView asks again for any other host.",
-            hosts = consented.join(", ")
+            hosts = crate::i18n::join_list(consented)
         )
     }
 }
@@ -274,7 +279,7 @@ mod tests {
     fn the_privacy_card_names_the_destinations_agreed_to() {
         assert!(approved_hint(&[]).contains("asks before the first upload"));
         let hint = approved_hint(&["api.imgbb.com".into(), "b.example:8443".into()]);
-        assert!(hint.contains("api.imgbb.com, b.example:8443"));
+        assert!(hint.contains("api.imgbb.com and b.example:8443"));
     }
 
     #[test]

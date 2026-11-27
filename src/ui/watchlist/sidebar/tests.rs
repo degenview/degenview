@@ -477,6 +477,62 @@ fn keys_reach_a_selected_row_that_is_drawn() {
     );
 }
 
+/// One frame of the sidebar with a dialog over it.
+fn show_under_modal(
+    ctx: &egui::Context,
+    state: &mut WatchlistSidebarState,
+    lists: &[Watchlist],
+    events: Vec<egui::Event>,
+) -> Vec<WatchlistAction> {
+    let flags = Flags::default();
+    let quote = |_: &InstrumentId| None;
+    let input = WatchlistSidebarInput {
+        lists,
+        flags: &flags,
+        quote: &quote,
+        trends: &HashMap::new(),
+        focused_market: None,
+        load_failed: false,
+        error: None,
+        import_report: None,
+    };
+    let mut actions = Vec::new();
+    let mut output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(320.0, 600.0))),
+            events,
+            ..Default::default()
+        },
+        |ui| {
+            actions = show(ui, state, &input);
+            egui::Modal::new(egui::Id::new("over-the-sidebar")).show(ui.ctx(), |ui| {
+                ui.label("A dialog");
+            });
+        },
+    );
+    output.textures_delta.clear();
+    actions
+}
+
+#[test]
+fn keys_never_reach_a_row_under_a_dialog() {
+    let (list, [btc, ..], _) = sample_list();
+    let lists = vec![list.clone()];
+    for under in [egui::Key::Delete, egui::Key::Backspace, egui::Key::Enter] {
+        let ctx = egui::Context::default();
+        let mut state = primed(&ctx, &lists, btc);
+        show_under_modal(&ctx, &mut state, &lists, Vec::new());
+        let actions = show_under_modal(&ctx, &mut state, &lists, key(under));
+        assert!(
+            !actions.iter().any(|action| matches!(
+                action,
+                WatchlistAction::Open(_) | WatchlistAction::RemoveEntry { .. }
+            )),
+            "{under:?} reached the list: {actions:?}"
+        );
+    }
+}
+
 #[test]
 fn keys_never_reach_a_row_inside_a_collapsed_section() {
     let (mut list, [_, _, sol], section) = sample_list();

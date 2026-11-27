@@ -188,7 +188,7 @@ fn series_result(name: &str) -> Option<ValueType> {
         "table.new" => Some(ValueType::Table),
         "linefill.new" => Some(ValueType::Linefill),
         "polyline.new" => Some(ValueType::Polyline),
-        "array.from" | "array.copy" | "array.slice" | "ta.pivot_point_levels" => {
+        "array.from" | "array.copy" | "array.slice" | "str.split" | "ta.pivot_point_levels" => {
             Some(ValueType::Array)
         }
         _ if is_ta_float(name) => Some(ValueType::Float),
@@ -346,22 +346,5 @@ fn is_numeric(kind: &ValueType) -> bool {
 
 /// The source-spelling of a value type, for diagnostics (`int`, `float`, …).
 pub fn value_type_name(kind: ValueType) -> &'static str {
-    match kind {
-        ValueType::Int => "int",
-        ValueType::Float => "float",
-        ValueType::Bool => "bool",
-        ValueType::String => "string",
-        ValueType::Color => "color",
-        ValueType::Line => "line",
-        ValueType::Label => "label",
-        ValueType::Box => "box",
-        ValueType::Table => "table",
-        ValueType::Linefill => "linefill",
-        ValueType::Polyline => "polyline",
-        ValueType::Array => "array",
-        ValueType::Object => "object",
-        ValueType::Map => "map",
-        ValueType::Matrix => "matrix",
-        ValueType::Time => "time",
-    }
+    kind.name()
 }

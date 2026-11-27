@@ -177,7 +177,7 @@ fn windowed_statistics_follow_the_reference_formulas() {
     );
     close_to(&session, "alma", 104.685_673_600_238_26);
     close_to(&session, "nearest", 105.0);
-    close_to(&session, "linear", 104.6);
+    close_to(&session, "linear", 105.0);
     close_to(&session, "median", 103.0);
     // close 101…105: odd values 101, 103, 105 map to 2.0 (three of them), even ones to 1.0.
     close_to(&session, "common", 2.0);
@@ -716,7 +716,7 @@ fn a_zone_the_table_lacks_is_warned_about() {
 }
 
 #[test]
-fn ratios_with_nothing_to_divide_are_na_not_nan() {
+fn ratios_with_nothing_to_divide_are_na_or_what_tradingview_gives() {
     // A flat market: no money flow in either direction, and a zero-width range.
     let session = run(
         "flat = 100.0\n\
@@ -725,7 +725,9 @@ fn ratios_with_nothing_to_divide_are_na_not_nan() {
          plain = ta.wpr(3)",
         5,
     );
-    assert_eq!(value(&session, "flow"), RuntimeValue::Na);
+    // No down flow is 100 whether or not there is an up flow (TradingView, probe P10).
+    assert_eq!(value(&session, "flow"), RuntimeValue::Float(100.0));
+    // A source sitting on a flat window repeats the previous %K, and there is none yet.
     assert_eq!(value(&session, "pos"), RuntimeValue::Na);
     // The bars themselves still span 4 points, so %R is defined.
     assert!(matches!(value(&session, "plain"), RuntimeValue::Float(_)));
@@ -1735,6 +1737,129 @@ fn a_for_in_whose_index_and_value_hide_globals_gives_both_back() {
 }
 
 #[test]
+fn a_for_in_over_an_empty_map_does_not_enter_the_body() {
+    let session = run(
+        "var map<float, float> a = map.new<float, float>()\n\
+         visits = 0\n\
+         for [ext1, ext2] in a\n    visits += 1\n    continue\n",
+        2,
+    );
+    assert_eq!(value(&session, "visits"), RuntimeValue::Int(0));
+}
+
+#[test]
+fn a_for_in_reads_float_keys_and_current_values_in_insertion_order() {
+    let session = run(
+        "a = map.new<float, float>()\n\
+         a.put(3, 10)\n\
+         a.put(1.5, 20)\n\
+         a.put(3.0, 11)\n\
+         first_key = 0.0\n\
+         first_value = 0.0\n\
+         last_key = 0.0\n\
+         last_value = 0.0\n\
+         for [k, v] in a\n    if k == 3.0\n        first_key := k\n        first_value := v\n        a.put(1.5, 21)\n        continue\n    last_key := k\n    last_value := v\n\
+         size = a.size()\n\
+         key_from_copy = a.copy().keys().get(0)\n",
+        2,
+    );
+    assert_eq!(value(&session, "first_key"), RuntimeValue::Float(3.0));
+    assert_eq!(value(&session, "first_value"), RuntimeValue::Float(11.0));
+    assert_eq!(value(&session, "last_key"), RuntimeValue::Float(1.5));
+    assert_eq!(value(&session, "last_value"), RuntimeValue::Float(21.0));
+    assert_eq!(value(&session, "size"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "key_from_copy"), RuntimeValue::Float(3.0));
+}
+
+#[test]
+fn a_for_in_rejects_map_key_changes_through_an_alias_even_before_break() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\n\
+         a = map.new<string, int>()\n\
+         a.put(\"first\", 1)\n\
+         alias = a\n\
+         for [k, v] in a\n    alias.remove(k)\n    alias.put(\"second\", v)\n    break\n",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(crate::pine::runtime::session::RunError::Script(error)) = session.evaluate(&bars(1))
+    else {
+        panic!("changing keys in the iterated map must fail");
+    };
+    assert_eq!(error.code, "PINE4039");
+}
+
+/// The code of the runtime error a script ends in.
+fn runtime_error_code(body: &str) -> String {
+    let program = compiler::compile(
+        &format!("//@version=6\nindicator(\"T\")\n{body}"),
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(crate::pine::runtime::session::RunError::Script(error)) = session.evaluate(&bars(1))
+    else {
+        panic!("the script must fail: {body}");
+    };
+    error.code
+}
+
+#[test]
+fn a_typed_map_refuses_what_the_checker_could_not_see_it_was_given() {
+    // `keep` hides the type from the checker, so the map itself has to refuse it.
+    let keep = "keep(x) =>\n    x\n";
+    for write in [
+        "m.put(keep(\"a\"), 1.0)",
+        "m.put(1, keep(\"b\"))",
+        "m.put(keep(1.5), 1.0)",
+    ] {
+        let body = format!("{keep}m = map.new<int, float>()\n{write}\n");
+        assert_eq!(runtime_error_code(&body), "PINE4040", "{write}");
+    }
+    let body = format!(
+        "{keep}m = map.new<int, float>()\nm.put(1, 1.5)\nn = map.new<string, float>()\n\
+         n.put(\"a\", 1.0)\nm.put_all(keep(n))\n"
+    );
+    assert_eq!(runtime_error_code(&body), "PINE4040");
+}
+
+#[test]
+fn put_all_copies_every_pair_of_another_map() {
+    let session = run(
+        "m = map.new<string, float>()\n\
+         n = map.new<string, int>()\n\
+         n.put(\"a\", 1)\n\
+         n.put(\"b\", 2)\n\
+         m.put(\"a\", 0.5)\n\
+         m.put_all(n)\n\
+         size = m.size()\n\
+         a = m.get(\"a\")\n",
+        1,
+    );
+    assert_eq!(value(&session, "size"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "a"), RuntimeValue::Float(1.0));
+}
+
+#[test]
 fn a_for_in_counters_keep_their_last_values_in_their_history() {
     // Nothing is hidden: the previous bar's last index and element are what `[1]` reads.
     let session = run(
@@ -2514,10 +2639,10 @@ fn pivot_point_levels_come_back_as_an_array_in_the_documented_order() {
     close_to(&session, "running", (104.0 + 100.0 + 103.0) / 3.0);
 }
 
-#[test]
-fn an_unknown_pivot_type_stops_the_script() {
+/// The error a one-statement script stops with over two bars; panics when it runs.
+fn failure_of(statement: &str) -> String {
     let program = compiler::compile(
-        "//@version=6\nindicator(\"T\")\nlevels = ta.pivot_point_levels(\"Nope\", true)",
+        &format!("//@version=6\nindicator(\"T\")\n{statement}"),
         Limits::default(),
         &NoLibraries,
     );
@@ -2532,9 +2657,40 @@ fn an_unknown_pivot_type_stops_the_script() {
         None,
     );
     let Err(error) = session.evaluate(&bars(2)) else {
-        panic!("an unknown type must fail");
+        panic!("{statement} must fail");
     };
-    assert!(format!("{error:?}").contains("Traditional"), "{error:?}");
+    format!("{error:?}")
+}
+
+#[test]
+fn an_unknown_pivot_type_stops_the_script() {
+    let error = failure_of("levels = ta.pivot_point_levels(\"Nope\", true)");
+    assert!(error.contains("Traditional"), "{error}");
+}
+
+#[test]
+fn a_developing_woodie_pivot_stops_the_script() {
+    // TradingView: "If used together, the indicator will return a runtime error" (RE10128).
+    let error = failure_of("levels = ta.pivot_point_levels(\"Woodie\", bar_index == 1, true)");
+    assert!(
+        error.contains("RE10128") && error.contains("developing"),
+        "{error}"
+    );
+    let other = failure_of("levels = ta.pivot_point_levels(\"Woodie\", true, developing = true)");
+    assert!(other.contains("RE10128"), "{other}");
+}
+
+#[test]
+fn a_woodie_pivot_that_is_not_developing_runs() {
+    let session = run(
+        "levels = ta.pivot_point_levels(\"Woodie\", bar_index == 2)\n\
+         p = array.get(levels, 0)\n\
+         flagged = ta.pivot_point_levels(\"Woodie\", bar_index == 2, false)\n\
+         q = array.get(flagged, 0)",
+        3,
+    );
+    assert_eq!(value(&session, "p"), value(&session, "q"));
+    assert!(matches!(value(&session, "p"), RuntimeValue::Float(_)));
 }
 
 #[test]
@@ -3581,4 +3737,124 @@ fn a_timeframe_change_in_a_loop_compares_every_run_with_the_previous_bar() {
         changes_counted("for i = 0 to 2\n    n += timeframe.change(\"5\") ? 1 : 0"),
         RuntimeValue::Int(9)
     );
+}
+
+/// TradingView keeps the opening time of the period the previous run fell in, by that run's own
+/// timeframe, and compares it with this run's (probes R6, R8): bars are a minute apart here.
+#[test]
+fn a_timeframe_that_changes_between_runs_compares_the_periods_each_run_found() {
+    // Even bars name 5-minute periods, odd bars 10-minute ones. The periods differ at bars 6 to 10
+    // and 16 to 19; comparing the previous bar under the current timeframe would count two.
+    assert_eq!(
+        changes_counted("n += timeframe.change(bar_index % 2 == 0 ? \"5\" : \"10\") ? 1 : 0"),
+        RuntimeValue::Int(9)
+    );
+}
+
+#[test]
+fn the_runs_of_a_bar_compare_with_what_the_last_run_of_the_previous_bar_found() {
+    // The previous bar's last run named a 10-minute period, which both runs of this bar compare with.
+    let session = run(
+        "var int five = 0\nvar int ten = 0\n\
+         for i = 0 to 1\n    changed = timeframe.change(i == 0 ? \"5\" : \"10\")\n    \
+         five += i == 0 and changed ? 1 : 0\n    ten += i == 1 and changed ? 1 : 0",
+        20,
+    );
+    assert_eq!(
+        value(&session, "five"),
+        RuntimeValue::Int(11),
+        "bars 5-10 and 15-19"
+    );
+    assert_eq!(value(&session, "ten"), RuntimeValue::Int(1), "bar 10");
+}
+
+#[test]
+fn an_empty_timeframe_is_the_charts_own() {
+    // TradingView, probe R8: `""` changes on every bar after the first run.
+    assert_eq!(
+        changes_counted("n += timeframe.change(\"\") ? 1 : 0"),
+        RuntimeValue::Int(19)
+    );
+}
+
+/// `body` over the regular-session 30-minute bars of 9, 10 and 11 November 2026 on a US stock.
+fn run_on_a_stock(body: &str) -> Session {
+    // 9 Nov 2026 14:30 UTC, the New York open.
+    let open = crate::pine::time::calendar::make(2026, 11, 9, 14, 30, 0, 0).unwrap();
+    run_over_sessions(open, &[0, 1, 2], body)
+}
+
+/// `body` over the 13 regular-session 30-minute bars of each of `days`, counted from the one whose
+/// session opens at `open`.
+fn run_over_sessions(open: i64, days: &[i64], body: &str) -> Session {
+    const MINUTE_MS: i64 = 60_000;
+    let data: Vec<Kline> = days
+        .iter()
+        .flat_map(|day| {
+            (0..13).map(move |bar| open + day * 1_440 * MINUTE_MS + bar * 30 * MINUTE_MS)
+        })
+        .zip(bars(13 * days.len()))
+        .map(|(open_time, bar)| Kline {
+            open_time,
+            close_time: open_time + 30 * MINUTE_MS,
+            ..bar
+        })
+        .collect();
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let symbol = SymbolInfo {
+        kind: "stock".to_owned(),
+        grid: crate::model::market::bucket::Grid::UsEquities,
+        ..SymbolInfo::default()
+    };
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        symbol,
+        None,
+        None,
+    );
+    session.fixed_bar_seconds = Some(1_800.0);
+    session.evaluate(&data).expect("runs");
+    session
+}
+
+#[test]
+fn a_stocks_four_hour_periods_are_its_sessions() {
+    // 09:30 and 13:30 New York open a period each day, not the UTC clock's four hours (TradingView,
+    // probe R9: 35 over eighteen sessions).
+    let session = run_on_a_stock("var int n = 0\nn += timeframe.change(\"240\") ? 1 : 0");
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn a_stocks_day_opens_with_its_session() {
+    // The day and the session's first four hours both open at 09:30, so a call that names the day
+    // before noon and four hours after changes only at 13:30 and at the next open (probe R9).
+    let session = run_on_a_stock(
+        "var int n = 0\n\
+         n += timeframe.change(hour(time, \"America/New_York\") < 12 ? \"D\" : \"240\") ? 1 : 0",
+    );
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(5));
+}
+
+#[test]
+fn after_a_holiday_a_stocks_week_begins_with_the_first_day_that_trades() {
+    // Monday 31 August to Friday 4 September 2026, then Tuesday 8 and Wednesday 9: the 7th is Labor
+    // Day. The call names the day before noon and the week after, and is counted from the 8th. On
+    // the 8th both periods open with that day's first bar, so noon is no change (TradingView,
+    // probe Q2).
+    let open = crate::pine::time::calendar::make(2026, 8, 31, 13, 30, 0, 0).unwrap();
+    let session = run_over_sessions(
+        open,
+        &[0, 1, 2, 3, 4, 8, 9],
+        "var int n = 0\n\
+         changed = timeframe.change(hour(time, \"America/New_York\") < 12 ? \"D\" : \"W\")\n\
+         n += dayofmonth >= 8 and month == 9 and changed ? 1 : 0",
+    );
+    // The open of the 8th, the open of the 9th and noon of the 9th.
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(3));
 }

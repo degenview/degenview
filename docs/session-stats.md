@@ -79,9 +79,10 @@ condition about the gap or the previous day leaves out a day that has no previou
   range is the first *hourly* bar, not 30 minutes, the time of a fill is only known to the bar
   (reported as a bar index, with the hours it covers), and weekly or longer timeframes are
   refused (`Unavailable::TooCoarse`, `UNSUPPORTED` over MCP). The first-bar questions need 1H.
-- **A stock's first hourly bar may start before 09:30** (Alpaca's hourly bars are on the clock
-  hour and include extended hours), so a day's open may be a pre-market price. The result carries
-  `Note::BoundaryOpen`; the daily timeframe has no such blur.
+- **A stock's hourly bars are cut on its session** (09:30, `bucket::Grid::UsEquities`), so a
+  day's open is the session's open. Bars that began before 09:30 (a source with clock-hour bars)
+  would make it a pre-market price; the result then carries `Note::BoundaryOpen`. The daily
+  timeframe has no such blur.
 - **A market that trades round the clock has almost no gaps**, so gap questions on crypto are
   mostly empty; the result says why (`Note::NoGaps`).
 - **"The halves agree"** means the older and newer half's Wilson intervals overlap. Edge-stats

@@ -23,9 +23,7 @@ pub(super) fn server_section(
             ui,
             Icon::LockFill,
             tr!("Enable MCP Server"),
-            Some(tr!(
-                "Lets AI assistants and automation on this Mac inspect DegenView, within the permissions below. Off until you turn it on."
-            )),
+            Some(crate::platform::mcp_enable_hint()),
             |ui| {
                 let mut enabled = input.settings.enabled;
                 if card::switch_enabled(ui, &mut enabled, !locked) {

@@ -1,6 +1,8 @@
 //! Runtime values, ported from `PineRuntimeValue.swift` + `PineRefKind.swift`. These are the
 //! leaf types every other runtime module builds on.
 
+use crate::pine::syntax::token::ValueType;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RefKind {
     Array,
@@ -35,6 +37,32 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
+    /// Whether this value is of exactly the declared type `kind`, without widening: an `int` is not a
+    /// `float`. An `int` and a `time` are the same value, and a handle is of the kind it refers to.
+    pub fn is_kind(&self, kind: ValueType) -> bool {
+        match (kind, self) {
+            (ValueType::Int | ValueType::Time, Self::Int(_))
+            | (ValueType::Float, Self::Float(_))
+            | (ValueType::Bool, Self::Bool(_))
+            | (ValueType::String, Self::String(_))
+            | (ValueType::Color, Self::Color(_)) => true,
+            (kind, Self::Ref(handle, _)) => matches!(
+                (kind, handle),
+                (ValueType::Line, RefKind::Line)
+                    | (ValueType::Label, RefKind::Label)
+                    | (ValueType::Box, RefKind::Box)
+                    | (ValueType::Table, RefKind::Table)
+                    | (ValueType::Linefill, RefKind::Linefill)
+                    | (ValueType::Polyline, RefKind::Polyline)
+                    | (ValueType::Array, RefKind::Array)
+                    | (ValueType::Map, RefKind::Map)
+                    | (ValueType::Matrix, RefKind::Matrix)
+                    | (ValueType::Object, RefKind::Object)
+            ),
+            _ => false,
+        }
+    }
+
     pub fn number(&self) -> Option<f64> {
         match self {
             Self::Int(value) => Some(*value as f64),

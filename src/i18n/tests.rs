@@ -405,6 +405,11 @@ fn a_windows_path_has_the_same_reference_as_on_any_other_os() {
 
 // MARK: The catalogs
 
+/// Names no language translates and no translation brings in on its own. One that appears from
+/// nowhere belongs to another message: entries joined by position can trade places, and each still
+/// reads as good text.
+const PLATFORM_NAMES: [&str; 3] = ["Windows", "macOS", "Linux"];
+
 /// What is wrong with a catalog beside the messages in the source.
 fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<String> {
     let unique = unique_messages(source);
@@ -425,6 +430,13 @@ fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<Strin
             problems.push(format!(
                 "{msgid:?} is counted in one place and not in the other"
             ));
+        }
+        for platform in PLATFORM_NAMES {
+            if !msgid.contains(platform) && texts.iter().any(|text| text.contains(platform)) {
+                problems.push(format!(
+                    "the translation of {msgid:?} names {platform}, which the message does not"
+                ));
+            }
         }
         // A translation uses the values the source passes, and a plain one all of them.
         let allowed: BTreeSet<&str> = used.args.iter().map(String::as_str).collect();
@@ -450,6 +462,16 @@ fn problems_in_catalog(catalog: &Catalog, source: &[(String, Use)]) -> Vec<Strin
     problems
 }
 
+/// The messages of the source a catalog gives no translation for: not listed, left empty or
+/// marked fuzzy. Each of them would show in English.
+fn untranslated(catalog: &Catalog, source: &[(String, Use)]) -> Vec<String> {
+    unique_messages(source)
+        .keys()
+        .filter(|(context, msgid)| catalog.get(context, msgid).is_none())
+        .map(|(context, msgid)| format!("{context:?} {msgid:?} has no translation"))
+        .collect()
+}
+
 #[test]
 fn every_catalog_matches_the_messages_in_the_source() {
     let source = messages_in_source();
@@ -459,7 +481,8 @@ fn every_catalog_matches_the_messages_in_the_source() {
         };
         let catalog =
             Catalog::parse(po).unwrap_or_else(|error| panic!("{}: {error}", locale.tag()));
-        let problems = problems_in_catalog(&catalog, &source);
+        let mut problems = problems_in_catalog(&catalog, &source);
+        problems.extend(untranslated(&catalog, &source));
         assert!(
             problems.is_empty(),
             "{}:\n{}",
@@ -531,8 +554,44 @@ msgstr[2] "{count} оповещений"
     let wrong_context = russian("msgid \"Jan\"\nmsgstr \"янв\"\n");
     assert_eq!(problems_in_catalog(&wrong_context, &source).len(), 1);
 
+    let swapped = russian("msgid \"Save\"\nmsgstr \"Сохранить в Windows\"\n");
+    assert_eq!(problems_in_catalog(&swapped, &source).len(), 1);
+
     let not_counted = russian("msgid \"{count} alert\"\nmsgstr \"{count} оповещение\"\n");
     assert_eq!(problems_in_catalog(&not_counted, &source).len(), 1);
+}
+
+#[test]
+fn a_message_a_catalog_would_show_in_english_is_reported() {
+    let source = [
+        used(Kind::Plain, "Save", &[]),
+        used(Kind::Plain, "Open", &[]),
+        used(Kind::Plain, "Close", &[]),
+        used(Kind::Context("month".into()), "May", &[]),
+    ];
+    let catalog = russian(
+        r#"msgid "Save"
+msgstr "Сохранить"
+
+msgid "Open"
+msgstr ""
+
+#, fuzzy
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "May"
+msgstr "Май"
+"#,
+    );
+    assert_eq!(
+        untranslated(&catalog, &source),
+        [
+            r#""" "Close" has no translation"#,
+            r#""" "Open" has no translation"#,
+            r#""month" "May" has no translation"#,
+        ]
+    );
 }
 
 #[test]
@@ -689,9 +748,10 @@ fn the_plural_formulas_translators_write_agree_with_cldr() {
     use super::plural_forms::PluralForms;
     use icu_plurals::PluralRules;
 
-    let formulas: [(&str, usize, &str); 9] = [
+    let formulas: [(&str, usize, &str); 10] = [
         ("de", 2, "n != 1"),
         ("es", 2, "n != 1"),
+        ("zh", 1, "0"),
         ("fr", 2, "n > 1"),
         ("pt-BR", 2, "n > 1"),
         ("ja", 1, "0"),
@@ -741,4 +801,103 @@ fn the_plural_formulas_translators_write_agree_with_cldr() {
             "{tag}: the counts reach more forms than nplurals says"
         );
     }
+}
+
+// MARK: Names in sentences
+
+#[test]
+fn a_name_inside_a_sentence_keeps_its_capital_only_where_nouns_have_one() {
+    use super::{Locale, in_sentence, with_locale};
+    with_locale(Locale::ENGLISH, || {
+        assert_eq!(in_sentence("Trend line"), "trend line");
+    });
+    with_locale(Locale::from_tag("de").expect("German is offered"), || {
+        assert_eq!(in_sentence("Trendlinie"), "Trendlinie");
+    });
+}
+
+// MARK: Lists
+
+#[test]
+fn a_list_is_joined_the_way_the_language_joins_it() {
+    use super::{Locale, join_list, with_locale};
+    let items = ["Mon", "Tue", "Wed"];
+    with_locale(Locale::ENGLISH, || {
+        assert_eq!(join_list(&items), "Mon, Tue, and Wed");
+        assert_eq!(join_list(&items[..2]), "Mon and Tue");
+        assert_eq!(join_list(&items[..1]), "Mon");
+        assert_eq!(join_list::<&str>(&[]), "");
+    });
+    with_locale(Locale::from_tag("de").expect("German is offered"), || {
+        assert_eq!(join_list(&items), "Mon, Tue und Wed");
+    });
+    with_locale(Locale::from_tag("es").expect("Spanish is offered"), || {
+        assert_eq!(join_list(&items), "Mon, Tue y Wed");
+    });
+    with_locale(Locale::from_tag("zh").expect("Chinese is offered"), || {
+        assert_eq!(join_list(&items), "Mon、Tue和Wed");
+        assert_eq!(join_list(&items[..2]), "Mon和Tue");
+    });
+    // The pseudo-locale writes lists as English, like its dates.
+    with_locale(Locale::PSEUDO, || {
+        assert_eq!(join_list(&items), "Mon, Tue, and Wed")
+    });
+}
+
+#[test]
+fn sentences_are_joined_with_the_space_their_language_puts_between_them() {
+    use super::join_sentences;
+    assert_eq!(
+        join_sentences(&["One.", "Two.", "Three"]),
+        "One. Two. Three"
+    );
+    assert_eq!(
+        join_sentences(&["一。", "二！", "三？", "四"]),
+        "一。二！三？四"
+    );
+    assert_eq!(join_sentences(&["", "Only."]), "Only.");
+    assert_eq!(join_sentences::<&str>(&[]), "");
+}
+
+// MARK: Words only a Mac has
+
+/// Files whose every message is shown on a Mac only, or is worded per platform.
+const MAC_WORDING_FILES: [&str; 3] = [
+    "src/platform.rs",
+    "src/ui/settings/sync.rs",
+    "src/host/sync/mod.rs",
+];
+
+/// Messages elsewhere that only iCloud Sync, which exists on a Mac alone, can bring up.
+const ICLOUD_MESSAGES: [&str; 6] = [
+    "Keep your watchlists, layouts, drawings, templates, scripts, portfolios and paper trading the same on every Mac.",
+    "Paused: two Macs changed this account. Placing an order here takes it over.",
+    "Running on another Mac. Placing an order here takes it over.",
+    "Stop Watching on This Mac",
+    "This alert came from another Mac and is switched off on this one, so it notifies from one Mac only. Choose Watch on This Mac to turn it on here too.",
+    "Watch on This Mac",
+];
+
+fn names_a_mac(message: &str) -> bool {
+    message
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| matches!(word, "Mac" | "Macs") || word.eq_ignore_ascii_case("keychain"))
+}
+
+#[test]
+fn only_a_mac_is_called_a_mac() {
+    let wrong: Vec<String> = messages_in_source()
+        .into_iter()
+        .filter(|(file, used)| {
+            names_a_mac(&used.key)
+                && !MAC_WORDING_FILES.contains(&file.as_str())
+                && !ICLOUD_MESSAGES.contains(&used.key.as_str())
+        })
+        .map(|(file, used)| format!("{file}:{}: {}", used.line, used.key))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "shown on Windows and Linux too, so word it per platform in `platform.rs`:\n{}",
+        wrong.join("\n")
+    );
 }

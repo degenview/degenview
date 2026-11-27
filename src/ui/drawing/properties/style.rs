@@ -3,7 +3,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, color_card, color_well, dash_card, toggle_row};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::drawings::style::{DrawingStyle, Emoji, LineEnd, StatsPosition};
 use crate::model::{Caps, Geometry, PitchforkVariant, Tool};
 use crate::ui::chart::settings::style::{number_field, picker_row};
@@ -310,7 +310,7 @@ impl DrawingProperties {
         toggle_row(
             ui,
             Icon::ChartLine,
-            tr!("Bars"),
+            tr_c!("number of bars", "Bars"),
             tr!("How many bars the arrow spans."),
             &mut stats.bars,
         );

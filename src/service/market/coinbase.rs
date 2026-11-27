@@ -1,6 +1,7 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
+use crate::clock::now_ms;
 use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
@@ -203,7 +204,7 @@ impl Coinbase {
         let span = granularity * PAGE_BUCKETS * 1_000;
         let mut candles: Vec<Kline> = Vec::new();
         let mut window_start = None;
-        let mut upper = end_ms;
+        let mut upper = first_upper(end_ms, now_ms(), granularity);
         for page in 0..MAX_PAGES {
             if candles.len() >= needed || upper <= start_ms {
                 break;
@@ -249,6 +250,12 @@ impl Coinbase {
         )?;
         parse_page(&body, granularity)
     }
+}
+
+/// Where paging back towards `end_ms` begins. No candle opens later than one bucket from now, and
+/// a page that lies wholly in the future comes back empty, which reads as the end of the history.
+fn first_upper(end_ms: i64, now_ms: i64, granularity: i64) -> i64 {
+    end_ms.min(now_ms.saturating_add(granularity * 1_000))
 }
 
 /// `[time s, low, high, open, close, volume]`, newest first.
@@ -406,7 +413,7 @@ mod tests {
         let hourly: Vec<Kline> = (1..=8)
             .map(|index| candle(midnight + index * hour, hour, 100.0 + index as f64))
             .collect();
-        let folded = bucket::fold(&hourly, Timeframe::HOUR_4, false);
+        let folded = bucket::Grid::Utc.fold(&hourly, Timeframe::HOUR_4, false);
         let opens: Vec<i64> = folded.iter().map(|bar| bar.open_time).collect();
         assert_eq!(opens, [midnight, midnight + 4 * hour, midnight + 8 * hour]);
         // The whole 04:00 bar: open of 04:00, close of 07:00, extremes and volume over the four.
@@ -415,7 +422,7 @@ mod tests {
         assert_eq!((whole.low, whole.high), (103.0, 108.0));
         assert_eq!(whole.volume, 4.0);
         // A page cut by the request drops the bucket it only half has.
-        let cut = bucket::fold(&hourly, Timeframe::HOUR_4, true);
+        let cut = bucket::Grid::Utc.fold(&hourly, Timeframe::HOUR_4, true);
         assert_eq!(
             cut.first().map(|bar| bar.open_time),
             Some(midnight + 4 * hour)
@@ -429,7 +436,7 @@ mod tests {
         let candles: Vec<Kline> = (0..4)
             .map(|index| candle(midnight + index * quarter, quarter, 10.0 + index as f64))
             .collect();
-        let folded = bucket::fold(&candles, Timeframe::MINUTE_30, false);
+        let folded = bucket::Grid::Utc.fold(&candles, Timeframe::MINUTE_30, false);
         assert_eq!(folded.len(), 2);
         assert_eq!(folded[1].open_time, midnight + 2 * quarter);
         assert_eq!((folded[1].open, folded[1].close), (12.0, 13.5));
@@ -461,7 +468,7 @@ mod tests {
                 volume: 2.0,
             },
         ];
-        let weekly = bucket::fold(&daily, Timeframe::WEEK_1, false);
+        let weekly = bucket::Grid::Utc.fold(&daily, Timeframe::WEEK_1, false);
         assert_eq!(weekly.len(), 1);
         assert_eq!(weekly[0].open_time, monday);
         assert_eq!(weekly[0].high, 12.0);

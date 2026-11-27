@@ -3,7 +3,7 @@
 
 use eframe::egui;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{VenueInfo, VenueKind};
 use crate::ui::broker::badge::LIVE;
@@ -56,7 +56,7 @@ pub fn show(ui: &mut egui::Ui, venues: &[VenueInfo]) -> Option<TradingVenue> {
                     ));
                     let (label, tone) = match info.kind {
                         VenueKind::Live => (tr!("Real money"), Tone::Warning),
-                        VenueKind::Test => (tr!("Test"), Tone::Neutral),
+                        VenueKind::Test => (tr_c!("test environment badge", "Test"), Tone::Neutral),
                         VenueKind::Simulated => (tr!("Simulated"), Tone::Neutral),
                     };
                     kit::status_badge(ui, label, tone);

@@ -9,42 +9,65 @@
 //! It opens searching for the market the focused chart shows, so a different exchange or quote
 //! of the same asset is one keystroke away. See `docs/symbol-picker.md`.
 
+pub mod columns;
 pub mod dashboards;
+mod describe;
 mod detail;
+mod footer;
 mod list;
 mod lookup;
+mod names;
+mod notice;
+mod offer;
 pub mod predictions;
+mod results;
 pub mod search;
+mod tabs;
 pub mod watchlists;
 
 use super::picker_kit::recents::{self, RecentMarket};
-use super::picker_kit::widgets;
 use crate::i18n::{tr, tr_n};
 use crate::model::portfolio::Portfolio;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::{DataSource, InstrumentId};
-use crate::service::{self, ProviderError, SearchResult};
+use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
-use crate::ui::icons::{self, Icon};
-use crate::ui::kit::hints::{Hint, hint_row};
-use crate::ui::kit::loading::LoadingIndicator;
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::icons::Icon;
+use crate::ui::kit;
 use crate::ui::theme;
 use dashboards::{Tile, TilePick};
-use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
-use list::RowState;
+use detail::PreviewChart;
+use detail::action::Actions;
+use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Stroke, Ui, Vec2, pos2, vec2};
+use footer::Footer;
 use lookup::Lookup;
+use names::Names;
+use notice::{Notice, SettingsPage};
+use offer::{Offer, Overlay};
 use predictions::EventHead;
+use results::Rows;
 use search::{Backend, Listing, Scope, SymbolSearch};
+use tabs::{Filter, FilterMenu};
 use watchlists::WatchlistGroup;
+#[cfg(test)]
+use {
+    footer::market_label,
+    notice::{NOTICE_HEIGHT, notice_button_rect},
+    tabs::{FILTER_COMPACT, FILTER_GAP, TabFit, fit_tabs, tab_room},
+};
 
 const SIZE: Vec2 = vec2(1000.0, 660.0);
-const PADDING: f32 = 16.0;
-const TABS: f32 = 44.0;
-const FOOTER: f32 = 44.0;
-const DETAIL: f32 = 372.0;
-/// The detail panel is dropped below this window width, so the list keeps room.
+/// The narrowest the picker gets: still wide enough for every tab plus the pull-down's icon.
+const MIN_WIDTH: f32 = 560.0;
+const PADDING: f32 = 20.0;
+const TABS: f32 = 52.0;
+const FOOTER: f32 = 52.0;
+/// The detail panel's share of the sheet, and the narrowest and widest it gets.
+const DETAIL_SHARE: f32 = 0.344;
+const DETAIL_MIN: f32 = 300.0;
+const DETAIL_MAX: f32 = 344.0;
+/// The detail panel is dropped when the sheet is narrower than this, so the list keeps room.
 const DETAIL_MIN_WIDTH: f32 = 760.0;
 /// The search field asks for focus this many frames: the first only measures the modal.
 const FOCUS_FRAMES: u8 = 3;
@@ -69,6 +92,8 @@ pub enum Output {
     WatchlistCard(PortfolioCard),
     /// Open Settings on the Alpaca page; the picker stays open.
     OpenAlpacaSettings,
+    /// Open Settings on the Oanda page; the picker stays open.
+    OpenOandaSettings,
 }
 
 /// What the picker was opened for.
@@ -178,6 +203,7 @@ pub struct SymbolPicker {
     /// The portfolio the Dashboards tab's cards cover; `None` covers them all.
     card_scope: Option<u64>,
     search: SymbolSearch,
+    caches: Caches,
     /// The prediction events listed, and which show their choices.
     events: predictions::Events,
     /// The choices ticked to chart together, as the pick that charts them.
@@ -197,9 +223,35 @@ pub struct SymbolPicker {
     select_all: bool,
     /// The user's watchlists, fed by the workspace while the Watchlists tab shows.
     watchlists: Vec<WatchlistGroup>,
-    needs_alpaca: bool,
-    /// The Alpaca notice's button was pressed.
-    settings_requested: bool,
+    pick_needs_credentials: Option<SettingsPage>,
+    /// The Settings page a notice's button asked to open.
+    settings_request: Option<SettingsPage>,
+}
+
+/// What survives closing the picker: reopening keeps what was read and asks again for what
+/// failed.
+struct Caches {
+    /// What the markets' assets are called.
+    names: Names,
+    /// The preview's chart of the highlighted market.
+    chart: PreviewChart,
+}
+
+impl Caches {
+    fn new(backend: Backend) -> Self {
+        Self {
+            names: Names::default(),
+            chart: PreviewChart::new(backend.candles),
+        }
+    }
+
+    /// The same caches for a freshly opened picker.
+    fn reopened(&self) -> Self {
+        Self {
+            names: self.names.reopened(),
+            chart: self.chart.reopened(),
+        }
+    }
 }
 
 impl SymbolPicker {
@@ -208,6 +260,11 @@ impl SymbolPicker {
     }
 
     fn with_backend(store: SharedStore, backend: Backend) -> Self {
+        Self::fresh(store, backend, Caches::new(backend))
+    }
+
+    /// A closed picker with nothing typed, over `caches`.
+    fn fresh(store: SharedStore, backend: Backend, caches: Caches) -> Self {
         Self {
             store,
             backend,
@@ -219,6 +276,7 @@ impl SymbolPicker {
             venue: None,
             card_scope: None,
             search: SymbolSearch::new(backend),
+            caches,
             events: predictions::Events::default(),
             ticked: None,
             trending: predictions::Trending::new(backend.trending),
@@ -231,8 +289,8 @@ impl SymbolPicker {
             focus_frames: 0,
             select_all: false,
             watchlists: Vec::new(),
-            needs_alpaca: false,
-            settings_requested: false,
+            pick_needs_credentials: None,
+            settings_request: None,
         }
     }
 
@@ -271,8 +329,7 @@ impl SymbolPicker {
     }
 
     fn open_for(&mut self, current: &str, mode: PickMode) {
-        let store = self.store.clone();
-        *self = Self::with_backend(store, self.backend);
+        *self = Self::fresh(self.store.clone(), self.backend, self.caches.reopened());
         self.recents = self
             .store
             .lock()
@@ -337,6 +394,7 @@ impl SymbolPicker {
         }
         let search_id = Id::new("symbol_picker_search");
         self.claim_keys(ctx, search_id);
+        self.caches.names.poll(ctx, self.backend);
         let keys = Keys::read(ctx);
 
         let listing = self.listing(ctx);
@@ -358,7 +416,7 @@ impl SymbolPicker {
 
         let screen = ctx.content_rect().size();
         let size = vec2(
-            SIZE.x.min(screen.x - 48.0).max(520.0),
+            SIZE.x.min(screen.x - 48.0).max(MIN_WIDTH),
             SIZE.y.min(screen.y - 48.0).max(400.0),
         );
         let related = self
@@ -406,8 +464,11 @@ impl SymbolPicker {
             select_all(ctx, search_id, &self.query);
             self.select_all = false;
         }
-        if std::mem::take(&mut self.settings_requested) {
-            output = Some(Output::OpenAlpacaSettings);
+        if let Some(page) = std::mem::take(&mut self.settings_request) {
+            output = Some(match page {
+                SettingsPage::Alpaca => Output::OpenAlpacaSettings,
+                SettingsPage::Oanda => Output::OpenOandaSettings,
+            });
         }
         if keys.close || clicked_outside {
             self.close();
@@ -559,7 +620,7 @@ impl SymbolPicker {
                 });
                 return Rows::of_items(items, head.as_deref());
             }
-            Scope::All | Scope::Stocks | Scope::Crypto => {}
+            Scope::All | Scope::Stocks | Scope::Crypto | Scope::Forex => {}
         }
         if !lookup.is_empty() {
             let head = lookup.unsupported.as_ref().map(|prefix| {
@@ -659,52 +720,42 @@ impl SymbolPicker {
         env.replacing.filter(|_| self.mode == PickMode::Chart)
     }
 
-    /// Whether `result` is the focused chart's own market or one already compared on it.
-    fn overlaid(env: &Env, result: &SearchResult) -> bool {
-        let market = InstrumentId::new(result.source, &result.full_symbol);
-        env.overlaid.iter().any(|id| id.is_same_market(&market))
-    }
-
-    /// Whether a market can be drawn over another chart: a crypto or stock market can.
-    fn comparable(result: &SearchResult) -> bool {
-        search::PROVIDERS.contains(&result.source)
-    }
-
-    /// What Return does on `item`: fold an event, or use what the row stands for.
+    /// What Return, ⇧Return or ⌥Return does on `item`: fold an event, or use what the row stands
+    /// for.
     fn use_item(&mut self, item: &Item, keys: &Keys, env: &Env) -> Option<Output> {
+        if let Item::Event(head) = item {
+            self.events.fold(&head.title);
+            return None;
+        }
+        let offer = Offer::of(self.mode, Some(item), env);
         let kind = if keys.add {
             self.add_kind()
-        } else if keys.overlay && env.can_overlay && self.mode != PickMode::Watchlist {
+        } else if keys.overlay && offer.overlay != Overlay::Unavailable {
             PickKind::Overlay
         } else {
+            // A prediction market or an index is not drawn over a chart.
             self.default_kind()
         };
+        // A market already drawn on the chart is not drawn twice.
+        if kind == PickKind::Overlay
+            && item
+                .market()
+                .is_some_and(|result| offer::overlaid(env, result))
+        {
+            return None;
+        }
+        let pick = self.pick_of(item)?;
+        self.commit(pick, kind, env)
+    }
+
+    /// What using `item` picks; an event is only folded open.
+    fn pick_of(&self, item: &Item) -> Option<Pick> {
         match item {
-            Item::Event(head) => {
-                self.events.fold(&head.title);
-                None
-            }
+            Item::Event(_) => None,
             Item::Market(result) | Item::Choice(result) => {
-                // A market that is already drawn on the chart is not drawn twice, and a
-                // prediction market or an index is not drawn over a chart at all.
-                let kind = if kind == PickKind::Overlay && !Self::comparable(result) {
-                    self.default_kind()
-                } else {
-                    kind
-                };
-                if kind == PickKind::Overlay && Self::overlaid(env, result) {
-                    return None;
-                }
-                self.commit(Pick::Market(self.selection(result)), kind, env)
+                Some(Pick::Market(self.selection(result)))
             }
-            Item::Tile(tile) => {
-                let kind = if kind == PickKind::Overlay {
-                    self.default_kind()
-                } else {
-                    kind
-                };
-                self.commit(Self::tile_pick(tile), kind, env)
-            }
+            Item::Tile(tile) => Some(Self::tile_pick(tile)),
         }
     }
 
@@ -748,10 +799,11 @@ impl SymbolPicker {
     /// Validates a pick, records it as recent and hands it to the host. A watchlist's own pick
     /// of what the list already holds is refused: nothing is added, so nothing is acknowledged.
     fn commit(&mut self, pick: Pick, kind: PickKind, env: &Env) -> Option<Output> {
-        if kind == PickKind::Watchlist && self.held(env, &pick.instrument()) {
+        if kind == PickKind::Watchlist && offer::holds_market(self.mode, &pick.instrument(), env) {
             self.added = None;
             return None;
         }
+        self.pick_needs_credentials = None;
         let output = match pick {
             Pick::Card(card) => {
                 if kind == PickKind::Watchlist {
@@ -761,10 +813,10 @@ impl SymbolPicker {
                 }
             }
             Pick::Market(result) => {
-                if result.source == DataSource::Alpaca
-                    && service::keychain::api_keys::alpaca_credentials().is_none()
+                if let Some(page) = SettingsPage::for_source(result.source)
+                    && !page.has_credentials()
                 {
-                    self.needs_alpaca = true;
+                    self.pick_needs_credentials = Some(page);
                     return None;
                 }
                 if self.mode != PickMode::Watchlist
@@ -807,13 +859,13 @@ impl SymbolPicker {
         let mut picked = None;
         let search_area = Rect::from_min_size(
             full.min + vec2(PADDING, PADDING),
-            vec2(full.width() - 2.0 * PADDING, 44.0),
+            vec2(full.width() - 2.0 * PADDING, kit::search_box::LARGE_HEIGHT),
         );
         let mut field = ui.new_child(egui::UiBuilder::new().max_rect(search_area));
         let focus = self.focus_frames > 0;
         self.focus_frames = self.focus_frames.saturating_sub(1);
         let placeholder = self.placeholder();
-        let event = kit::search_box::search_box(
+        let event = kit::search_box::large_search_box(
             &mut field,
             Icon::Magnifier,
             &mut self.query,
@@ -828,15 +880,21 @@ impl SymbolPicker {
             }
             self.search.edited();
             self.highlight = 0;
-            self.needs_alpaca = false;
+            self.pick_needs_credentials = None;
             self.added = None;
         }
 
         let tabs = Rect::from_min_size(
-            pos2(full.left(), search_area.bottom() + 6.0),
+            pos2(full.left(), search_area.bottom() + 4.0),
             vec2(full.width(), TABS),
         );
-        let (scope, filter) = self.tab_row(ui, tabs);
+        let (scope, filter) = tabs::tab_row(
+            ui,
+            tabs,
+            Scope::tabs(self.mode),
+            self.scope,
+            self.filter_menu(),
+        );
         if let Some(scope) = scope {
             self.set_scope(scope);
         }
@@ -857,7 +915,9 @@ impl SymbolPicker {
         );
 
         let detail_width = if full.width() >= DETAIL_MIN_WIDTH {
-            DETAIL
+            (full.width() * DETAIL_SHARE)
+                .clamp(DETAIL_MIN, DETAIL_MAX)
+                .round()
         } else {
             0.0
         };
@@ -878,115 +938,65 @@ impl SymbolPicker {
                 panel.y_range(),
                 Stroke::new(1.0, theme::separator()),
             );
-            if let Some(item) = &self.highlighted {
+            if let Some(item) = self.highlighted.clone() {
+                let names = item
+                    .market()
+                    .map(|result| self.caches.names.of(result))
+                    .unwrap_or_default();
+                let offer = Offer::of(self.mode, Some(&item), env);
                 let shown = detail::Detail {
-                    item,
+                    item: &item,
+                    names,
                     quote: env.quote,
                     related,
+                    actions: Actions::of(&offer, self.default_kind()),
                 };
-                if let Some(other) = detail::show(ui, panel, &shown) {
+                let out = detail::show(ui, panel, &shown, &mut self.caches.chart);
+                if let Some(other) = out.related {
                     picked = Some((Pick::Market(other), self.default_kind()));
+                }
+                if let Some(kind) = out.action {
+                    picked = self.pick_of(&item).map(|pick| (pick, kind));
                 }
             }
         }
-        if let Some(hit) = self.footer(
-            ui,
-            Rect::from_min_max(pos2(full.left(), footer_top + 1.0), full.max),
-            env,
-        ) {
-            picked = Some(hit);
+        let footer_area = Rect::from_min_max(pos2(full.left(), footer_top + 1.0), full.max);
+        if footer::show(ui, footer_area, self.footer(env))
+            && let Some(ticked) = &self.ticked
+        {
+            picked = Some((Pick::Market(ticked.clone()), self.default_kind()));
         }
         picked
     }
 
-    /// The tabs and the filter at their right. Returns what was chosen this frame.
-    fn tab_row(&self, ui: &mut Ui, area: Rect) -> (Option<Scope>, Option<Filter>) {
-        let tabs = Scope::tabs(self.mode);
-        let menu = self.filter_menu();
-        let full_filter = menu.as_ref().map(|menu| filter_width(ui, &menu.label));
-        let widths: Vec<f32> = tabs
-            .iter()
-            .map(|tab| {
-                kit::galley(
-                    ui,
-                    tab.title(),
-                    15.0,
-                    if *tab == self.scope { SEMIBOLD } else { MEDIUM },
-                    theme::text_secondary(),
-                    f32::INFINITY,
-                )
-                .size()
-                .x
-            })
-            .collect();
-        let fit = fit_tabs(&widths, full_filter, area.width() - 2.0 * PADDING);
-
-        // A language whose tabs do not fit even in the tightest row is cut where the pull-down
-        // starts, never drawn under it.
-        let tabs_right = full_filter.map_or(area.right(), |full| {
-            let filter = if fit.compact { FILTER_COMPACT } else { full };
-            area.right() - PADDING - filter - FILTER_GAP
-        });
-        let painter = ui.painter().with_clip_rect(Rect::from_min_max(
-            area.min,
-            pos2(tabs_right, area.bottom()),
-        ));
-        let mut scope = None;
-        let mut x = area.left() + PADDING;
-        for tab in tabs {
-            let active = tab == self.scope;
-            let label = kit::galley(
-                ui,
-                tab.title(),
-                15.0,
-                if active { SEMIBOLD } else { MEDIUM },
-                if active {
-                    theme::text_primary()
-                } else {
-                    theme::text_secondary()
-                },
-                f32::INFINITY,
-            );
-            let width = label.size().x + fit.padding;
-            let rect = Rect::from_min_size(pos2(x, area.top()), vec2(width, area.height()));
-            let response = ui
-                .interact(
-                    rect,
-                    Id::new(("symbol_picker_tab", tab as u8)),
-                    Sense::click(),
-                )
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            let response = crate::ui::accessibility::label(response, tab.title());
-            let color = if active || response.hovered() {
-                theme::text_primary()
-            } else {
-                theme::text_secondary()
-            };
-            painter.galley(
-                pos2(
-                    rect.center().x - label.size().x / 2.0,
-                    rect.center().y - label.size().y / 2.0,
-                ),
-                label,
-                color,
-            );
-            if active {
-                painter.rect_filled(
-                    Rect::from_min_max(
-                        pos2(rect.left() + 8.0, rect.bottom() - 2.0),
-                        pos2(rect.right() - 8.0, rect.bottom()),
-                    ),
-                    1.0,
-                    theme::text_primary(),
-                );
-            }
-            if response.clicked() {
-                scope = Some(tab);
-            }
-            x += width;
+    /// What the footer says about the highlighted row.
+    fn footer(&self, env: &Env) -> Footer<'_> {
+        let offer = Offer::of(self.mode, self.highlighted.as_ref(), env);
+        let count = predictions::ticked_count(self.ticked.as_ref());
+        Footer {
+            offer,
+            return_hint: footer::return_hint(
+                offer,
+                self.highlighted.as_ref(),
+                env.replacing,
+                &self.list_name,
+            ),
+            ticked: (count >= 1).then(|| self.ticked_label(count)),
+            added: self.added.as_deref(),
         }
-        let filter = menu.and_then(|menu| self.filter_button(ui, area, &menu, fit.compact));
-        (scope, filter)
+    }
+
+    /// What the footer's button for `count` ticked choices says.
+    fn ticked_label(&self, count: usize) -> String {
+        match self.mode {
+            PickMode::Watchlist => tr_n!(count, "Add {count} choice", "Add {count} choices"),
+            _ => tr_n!(count, "Chart {count} choice", "Chart {count} choices"),
+        }
+    }
+
+    /// The card under the list, if a provider needs a login or could not be searched.
+    fn notice(&self, listing: &Listing, lookup: &Lookup) -> Option<Notice> {
+        notice::notice_for(listing, lookup, self.scope, self.pick_needs_credentials)
     }
 
     /// What the search box asks for: a watchlist's picker names the list it adds to.
@@ -1002,630 +1012,13 @@ impl SymbolPicker {
     /// Dashboards tab the portfolios. `None` when there is nothing to choose between.
     fn filter_menu(&self) -> Option<FilterMenu> {
         if self.scope == Scope::Dashboards {
-            if self.portfolios.is_empty() {
-                return None;
-            }
-            let current = self.card_scope_in_use();
-            let mut entries = vec![(Filter::Portfolio(None), tr!("All Portfolios").to_owned())];
-            entries.extend(self.portfolios.iter().map(|portfolio| {
-                (
-                    Filter::Portfolio(Some(portfolio.id)),
-                    portfolio.name.clone(),
-                )
-            }));
-            let label = entries
-                .iter()
-                .find(|(filter, _)| *filter == Filter::Portfolio(current))
-                .map_or_else(
-                    || tr!("All Portfolios").to_owned(),
-                    |(_, name)| name.clone(),
-                );
-            return Some(FilterMenu {
-                label,
-                active: current.is_some(),
-                tip: tr!("Filter by portfolio"),
-                entries,
-                current: Filter::Portfolio(current),
-            });
-        }
-        let venues = self.scope.venues();
-        if venues.is_empty() {
-            return None;
-        }
-        // A venue typed as a prefix wins over the pull-down, so the pull-down says what is searched.
-        let venue = self.lookup().venue;
-        let mut entries = vec![(Filter::Venue(None), tr!("All venues").to_owned())];
-        entries.extend(
-            venues
-                .iter()
-                .map(|venue| (Filter::Venue(Some(*venue)), venue.display_name().to_owned())),
-        );
-        Some(FilterMenu {
-            label: venue
-                .map_or(tr!("All venues"), |venue| venue.display_name())
-                .to_owned(),
-            active: venue.is_some(),
-            tip: tr!("Filter by exchange"),
-            entries,
-            current: Filter::Venue(venue),
-        })
-    }
-
-    /// The pull-down at the right of the tabs; just its icon when the tabs need the room.
-    fn filter_button(
-        &self,
-        ui: &mut Ui,
-        area: Rect,
-        menu: &FilterMenu,
-        compact: bool,
-    ) -> Option<Filter> {
-        let galley = kit::galley(
-            ui,
-            &menu.label,
-            14.0,
-            MEDIUM,
-            theme::text_secondary(),
-            180.0,
-        );
-        let width = if compact {
-            FILTER_COMPACT
+            FilterMenu::portfolios(&self.portfolios, self.card_scope_in_use())
         } else {
-            filter_width_of(galley.size().x)
-        };
-        let rect = Rect::from_min_size(
-            pos2(area.right() - PADDING - width, area.center().y - 16.0),
-            vec2(width, 32.0),
-        );
-        let response = ui
-            .interact(rect, Id::new("symbol_picker_venue"), Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        let response = crate::ui::accessibility::label(response, menu.tip);
-        let response = if compact {
-            response.on_hover_text(&menu.label)
-        } else {
-            response
-        };
-        let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-        if response.hovered() || open {
-            ui.painter().rect_filled(rect, 6.0, theme::ink(10));
-        }
-        let color = if menu.active {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        };
-        let mut x = rect.left() + 8.0;
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(pos2(x + 8.0, rect.center().y), Vec2::splat(16.0)),
-            Icon::Filter,
-            color,
-        );
-        x += 22.0;
-        if !compact {
-            ui.painter().galley(
-                pos2(x, rect.center().y - galley.size().y / 2.0),
-                galley.clone(),
-                color,
-            );
-            x += galley.size().x + 6.0;
-        } else {
-            x += 2.0;
-        }
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(pos2(x + 5.0, rect.center().y), Vec2::splat(10.0)),
-            Icon::ChevronDown,
-            theme::text_secondary(),
-        );
-
-        // The chosen row keeps a check at its edge, which the width `fitted_menu_rows` gives a row
-        // does not include: an empty hint adds the little room that keeps its label whole.
-        let rows: Vec<(&str, Option<&str>)> = menu
-            .entries
-            .iter()
-            .map(|(_, label)| (label.as_str(), Some("")))
-            .collect();
-        let mut chosen = None;
-        kit::fitted_menu_rows(ui, &response, egui::RectAlign::BOTTOM_END, &rows, |ui| {
-            kit::menu_scope(ui, 0.0);
-            for (filter, label) in &menu.entries {
-                let mut row = kit::MenuRow::new(label);
-                row.reserve_icon = false;
-                row.current = *filter == menu.current;
-                if kit::menu_row(ui, row).clicked() {
-                    chosen = Some(*filter);
-                    ui.close();
-                }
-            }
-        });
-        chosen
-    }
-
-    /// The rows, or what stands in for them. Returns a pick.
-    fn list(
-        &mut self,
-        ui: &mut Ui,
-        area: Rect,
-        listing: &Listing,
-        rows: &Rows,
-        env: &Env,
-    ) -> Option<(Pick, PickKind)> {
-        let mut picked = None;
-        // The Alpaca notice sits at the bottom of the list's own area, under the rows.
-        let notice = self.notice(listing);
-        let reserved = notice.as_ref().map_or(0.0, |_| NOTICE_HEIGHT + 20.0);
-        let content = Rect::from_min_max(area.min, pos2(area.max.x, area.max.y - reserved));
-        if let Some(notice) = &notice {
-            let card = Rect::from_min_max(
-                pos2(area.left() + PADDING - 6.0, content.bottom() + 6.0),
-                pos2(area.right() - (PADDING - 6.0) - 8.0, area.bottom() - 14.0),
-            );
-            if show_notice(ui, card, notice) {
-                self.settings_requested = true;
-            }
-        }
-        let mut body = ui
-            .new_child(egui::UiBuilder::new().max_rect(content.shrink2(vec2(PADDING - 6.0, 6.0))));
-        body.set_clip_rect(content);
-        let lookup = self.lookup();
-        let empty_query = lookup.is_empty();
-        let topics = self.scope == Scope::Predictions && empty_query;
-        if rows.items.is_empty() && rows.note.is_none() && !topics {
-            self.empty_state(&mut body, listing, &lookup);
-            return None;
-        }
-        let pointer_moved = ui.input(|input| input.pointer.delta() != Vec2::ZERO);
-        let reveal = std::mem::take(&mut self.reveal);
-        let width = body.available_width();
-        let replacing = self.replacing(env);
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(&mut body, |ui| {
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                ui.set_width(width - 8.0);
-                if topics {
-                    self.topics(ui, rows);
-                }
-                for (index, item) in rows.items.iter().enumerate() {
-                    if let Some(head) = rows.head_before(index) {
-                        section_heading(ui, head);
-                    }
-                    let state = self.row_state(index, item, env);
-                    let (response, out) = match item {
-                        Item::Market(result) => {
-                            list::row(ui, result, state, replacing, ui.available_width())
-                        }
-                        Item::Choice(result) => predictions::rows::choice(
-                            ui,
-                            result,
-                            predictions::is_ticked(self.ticked.as_ref(), result),
-                            state,
-                            ui.available_width(),
-                        ),
-                        Item::Event(head) => predictions::rows::event_header(
-                            ui,
-                            head,
-                            state.highlighted,
-                            ui.available_width(),
-                        ),
-                        Item::Tile(tile) => dashboards::row(ui, tile, state, ui.available_width()),
-                    };
-                    if reveal && state.highlighted {
-                        response.scroll_to_me(None);
-                    }
-                    if (out.hovered && pointer_moved) || out.opened_menu {
-                        self.highlight = index;
-                    }
-                    if out.tick {
-                        self.tick(item);
-                    }
-                    if out.fold
-                        && let Item::Event(head) = item
-                    {
-                        self.events.fold(&head.title);
-                    }
-                    let kind = if out.overlay {
-                        Some(PickKind::Overlay)
-                    } else if out.add {
-                        Some(self.add_kind())
-                    } else if out.pick {
-                        // A click on a market already drawn here, while comparing, does nothing.
-                        (!(self.mode == PickMode::Compare && state.overlaid))
-                            .then(|| self.default_kind())
-                    } else {
-                        None
-                    };
-                    if let Some(kind) = kind {
-                        picked = match item {
-                            Item::Market(result) | Item::Choice(result) => {
-                                Some((Pick::Market(result.clone()), kind))
-                            }
-                            Item::Tile(tile) => Some((Self::tile_pick(tile), kind)),
-                            Item::Event(_) => None,
-                        };
-                    }
-                }
-                if let Some(note) = &rows.note {
-                    note_line(ui, note);
-                }
-            });
-        picked
-    }
-
-    /// Whether `market` is already where a pick would put it: on a chart of the tab, or in the
-    /// watchlist being added to.
-    fn held(&self, env: &Env, market: &InstrumentId) -> bool {
-        let held = if self.mode == PickMode::Watchlist {
-            env.in_list
-        } else {
-            env.on_tab
-        };
-        held.iter().any(|id| id.is_same_market(market))
-    }
-
-    /// How `item`'s row is drawn: highlighted, already held, drawn over the chart.
-    fn row_state(&self, index: usize, item: &Item, env: &Env) -> RowState {
-        let on_chart = match item {
-            Item::Market(result) | Item::Choice(result) => {
-                self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
-            }
-            Item::Tile(tile) => match &tile.pick {
-                TilePick::Gauge(result) => {
-                    self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
-                }
-                TilePick::Card(card) if self.mode == PickMode::Watchlist => {
-                    self.held(env, &card.instrument_id())
-                }
-                TilePick::Card(card) => env.cards_on_tab.iter().any(|on| on.same_card(card)),
-            },
-            Item::Event(_) => false,
-        };
-        let market = item.market().filter(|_| !matches!(item, Item::Event(_)));
-        RowState {
-            highlighted: index == self.highlight,
-            on_chart,
-            overlaid: market.is_some_and(|result| Self::overlaid(env, result)),
-            can_overlay: env.can_overlay
-                && self.mode != PickMode::Watchlist
-                && market.is_some_and(Self::comparable),
-            comparing: self.mode == PickMode::Compare,
-            watchlist: self.mode == PickMode::Watchlist,
-            indent: if self.scope == Scope::Predictions && matches!(item, Item::Market(_)) {
-                predictions::rows::ART_INDENT
-            } else {
-                0.0
-            },
+            // A venue typed as a prefix wins over the pull-down, so the pull-down says what is
+            // searched.
+            FilterMenu::venues(&self.scope.venues(), self.lookup().venue)
         }
     }
-
-    /// The topic chips of the Predictions tab, above the trending events.
-    fn topics(&mut self, ui: &mut Ui, rows: &Rows) {
-        section_heading(ui, tr!("Popular topics"));
-        let width = ui.available_width() - 20.0;
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            ui.vertical(|ui| {
-                ui.set_width(width);
-                if let Some(topic) = predictions::rows::topic_chips(ui, width) {
-                    self.query = topic.to_owned();
-                    self.search.ask_now();
-                    self.highlight = 0;
-                }
-            });
-        });
-        ui.add_space(8.0);
-        if rows.items.is_empty() {
-            if self.trending.is_loading() {
-                let (area, _) = ui.allocate_exact_size(vec2(width, 100.0), Sense::hover());
-                ui.put(
-                    Rect::from_center_size(area.center(), Vec2::splat(32.0)),
-                    LoadingIndicator::new().size(32.0),
-                );
-            } else if self.lookup().venue == Some(DataSource::Kalshi) {
-                note_line(
-                    ui,
-                    tr!("Kalshi cannot list its busiest markets. Search for one, or pick a topic."),
-                );
-            }
-        }
-    }
-
-    fn empty_state(&self, ui: &mut Ui, listing: &Listing, lookup: &Lookup) {
-        let query = self.query.trim();
-        let empty_query = lookup.is_empty();
-        match self.scope {
-            Scope::Watchlists => {
-                let (title, detail) = if self.watchlists.is_empty() {
-                    (
-                        tr!("No watchlist markets yet"),
-                        tr!("Crypto and stocks you add to a watchlist show up here.").to_owned(),
-                    )
-                } else {
-                    (
-                        tr!("No results"),
-                        tr!(
-                            "Nothing in your watchlists matches “{query}”.",
-                            query = query
-                        ),
-                    )
-                };
-                widgets::no_results(ui, title, &detail);
-                return;
-            }
-            Scope::Dashboards => {
-                widgets::no_results(
-                    ui,
-                    tr!("No results"),
-                    &tr!(
-                        "No index or portfolio view matches “{query}”.",
-                        query = query
-                    ),
-                );
-                return;
-            }
-            Scope::All | Scope::Stocks | Scope::Crypto | Scope::Predictions => {}
-        }
-        if let Some(venue) = lookup.outside(self.scope) {
-            widgets::no_results(
-                ui,
-                tr!("No results"),
-                &tr!(
-                    "{venue} has no markets under {tab}. Try another tab.",
-                    venue = lookup::short_name(venue),
-                    tab = self.scope.title()
-                ),
-            );
-        } else if empty_query {
-            widgets::no_results(
-                ui,
-                tr!("Search stocks and crypto"),
-                tr!("Type a ticker, a company or a pair: BTC, AAPL, ETHUSDT."),
-            );
-        } else if listing.searching {
-            let rect = ui.available_rect_before_wrap();
-            ui.put(
-                Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
-                LoadingIndicator::new().size(40.0),
-            );
-        } else if let Some((source, error)) = listing
-            .errors
-            .iter()
-            .find(|(source, _)| *source != DataSource::Alpaca)
-        {
-            widgets::no_results(
-                ui,
-                &tr!(
-                    "{venue} could not be searched",
-                    venue = source.display_name()
-                ),
-                &error.to_string(),
-            );
-        } else {
-            let searched = lookup
-                .searched(self.scope)
-                .into_iter()
-                .map(lookup::short_name)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let detail = match &lookup.unsupported {
-                Some(prefix) => tr!(
-                    "{prefix} isn't supported. Searched: {searched}.",
-                    prefix = prefix,
-                    searched = searched
-                ),
-                None if self.scope == Scope::Predictions => tr!(
-                    "No market matches “{query}”. Searched: {searched}. Try a topic like Bitcoin or the Fed.",
-                    query = query,
-                    searched = searched
-                ),
-                None => tr!(
-                    "Nothing matches “{query}”. Searched: {searched}.",
-                    query = query,
-                    searched = searched
-                ),
-            };
-            widgets::no_results(ui, tr!("No results"), &detail);
-        }
-    }
-
-    /// What the card under the list says, when stocks cannot be searched or opened: Alpaca keys
-    /// are missing (the search said so, or a stock was picked without them) or its search failed.
-    fn notice(&self, listing: &Listing) -> Option<Notice> {
-        let failure = listing
-            .errors
-            .iter()
-            .find(|(source, _)| *source == DataSource::Alpaca)
-            .map(|(_, error)| error);
-        match failure {
-            Some(ProviderError::MissingKey) => {
-                Some(Notice::missing_key(tr!("Stocks need an Alpaca key")))
-            }
-            Some(error) => Some(Notice {
-                title: tr!("Stocks could not be searched"),
-                detail: error.to_string(),
-                settings: false,
-            }),
-            None if self.needs_alpaca => {
-                Some(Notice::missing_key(tr!("Set up Alpaca to open a stock")))
-            }
-            None => None,
-        }
-    }
-
-    /// The keys that work here, and the button that charts ticked choices together. A narrow
-    /// picker drops the least needed hints rather than run past its edge.
-    fn footer(&self, ui: &mut Ui, area: Rect, env: &Env) -> Option<(Pick, PickKind)> {
-        let mut hit = None;
-        let mut hints = vec![
-            Hint::new(&["↑", "↓"], tr!("Navigate")),
-            Hint::new(&["↵"], self.return_hint(env)),
-        ];
-        let market = self.highlighted.as_ref().and_then(Item::market);
-        if self.mode == PickMode::Chart
-            && env.replacing.is_some()
-            && !matches!(self.highlighted, Some(Item::Event(_)))
-        {
-            hints.push(Hint::new(&["⇧", "↵"], tr!("Add as new chart")));
-        }
-        if self.mode == PickMode::Chart && env.can_overlay && market.is_some_and(Self::comparable) {
-            hints.push(Hint::new(&["⌥", "↵"], tr!("Compare")));
-        }
-        hints.push(Hint::new(&["Tab"], tr!("Switch tab")));
-        hints.push(Hint::new(&["Esc"], tr!("Close")));
-
-        // What sits at the right edge: the button for ticked choices, else what was just added.
-        let together = self
-            .ticked
-            .as_ref()
-            .filter(|ticked| predictions::ticked_count(Some(ticked)) >= 1);
-        let mut right = area.right() - PADDING;
-        if let Some(ticked) = together {
-            let label = self.ticked_label(predictions::ticked_count(Some(ticked)));
-            let width = kit::galley(
-                ui,
-                &label,
-                13.0,
-                MEDIUM,
-                Color32::PLACEHOLDER,
-                f32::INFINITY,
-            )
-            .size()
-            .x + 32.0;
-            let width = width.max(76.0);
-            let button = Rect::from_min_size(
-                pos2(right - width, area.center().y - 14.0),
-                vec2(width, 28.0),
-            );
-            let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(button));
-            if widgets::sheet_button(&mut cell, &label, true, true).clicked() {
-                hit = Some((Pick::Market(ticked.clone()), self.default_kind()));
-            }
-            right = button.left() - 16.0;
-        } else if let Some(added) = &self.added {
-            let galley = kit::galley(
-                ui,
-                &tr!("Added {market}", market = added),
-                13.0,
-                REGULAR,
-                theme::text_secondary(),
-                (area.width() * 0.4).max(80.0),
-            );
-            let left = right - galley.size().x;
-            ui.painter().galley(
-                pos2(left, area.center().y - galley.size().y / 2.0),
-                galley,
-                theme::text_secondary(),
-            );
-            icons::paint(
-                ui.painter(),
-                Rect::from_center_size(pos2(left - 14.0, area.center().y), Vec2::splat(14.0)),
-                Icon::Check,
-                theme::UP,
-            );
-            right = left - 30.0;
-        }
-
-        let row = Rect::from_min_max(
-            pos2(area.left() + PADDING, area.top()),
-            pos2(right, area.bottom()),
-        );
-        hint_row(
-            ui,
-            row,
-            hints,
-            13.0,
-            &[
-                tr!("Compare"),
-                tr!("Add as new chart"),
-                tr!("Switch tab"),
-                tr!("Navigate"),
-            ],
-        );
-        hit
-    }
-
-    /// What the footer's button for `count` ticked choices says.
-    fn ticked_label(&self, count: usize) -> String {
-        match self.mode {
-            PickMode::Watchlist => tr_n!(count, "Add {count} choice", "Add {count} choices"),
-            _ => tr_n!(count, "Chart {count} choice", "Chart {count} choices"),
-        }
-    }
-
-    /// What Return does on the highlighted row, in the footer's words.
-    fn return_hint(&self, env: &Env) -> String {
-        let list = &self.list_name;
-        let to_watchlist = |market: Option<&SearchResult>| match market {
-            Some(market)
-                if self.held(env, &InstrumentId::new(market.source, &market.full_symbol)) =>
-            {
-                tr!("Already in {list}", list = list)
-            }
-            Some(market) => tr!(
-                "Add {market} to {list}",
-                market = market_label(market),
-                list = list
-            ),
-            None => tr!("Add to {list}", list = list),
-        };
-        match &self.highlighted {
-            Some(Item::Event(head)) => {
-                return if head.open {
-                    tr!("Hide choices")
-                } else {
-                    tr!("Show choices")
-                }
-                .to_owned();
-            }
-            Some(Item::Tile(Tile {
-                pick: TilePick::Card(card),
-                ..
-            })) => {
-                return match self.mode {
-                    PickMode::Watchlist if self.held(env, &card.instrument_id()) => {
-                        tr!("Already in {list}", list = list)
-                    }
-                    PickMode::Watchlist => to_watchlist(None),
-                    _ => tr!("Add card").to_owned(),
-                };
-            }
-            _ => {}
-        }
-        match (self.mode, self.replacing(env)) {
-            (PickMode::Compare, _) if env.replacing.is_some() => {
-                tr!(
-                    "Compare with {market}",
-                    market = env.replacing.unwrap_or_default()
-                )
-            }
-            (PickMode::Compare, _) => tr!("Compare").to_owned(),
-            (PickMode::Chart, Some(current)) => tr!("Replace {market}", market = current),
-            (PickMode::Chart | PickMode::Add, _) => tr!("Add chart").to_owned(),
-            (PickMode::Watchlist, _) => {
-                to_watchlist(self.highlighted.as_ref().and_then(Item::market))
-            }
-        }
-    }
-}
-
-/// The longest market name the footer's Return hint spells out; an event's title is longer.
-const HINT_NAME_CHARS: usize = 28;
-
-/// A market as the footer names it before it is picked: its venue and its name, as the row has them.
-fn market_label(result: &SearchResult) -> String {
-    // A lone "Yes" says nothing: a prediction market is named by its event.
-    let name = match &result.event {
-        Some(event) if !event.title.is_empty() => event.title.clone(),
-        _ => pick_name(result),
-    };
-    let name = if name.chars().count() > HINT_NAME_CHARS {
-        let cut: String = name.chars().take(HINT_NAME_CHARS - 1).collect();
-        format!("{}…", cut.trim_end())
-    } else {
-        name
-    };
-    format!("{} · {name}", lookup::short_name(result.source))
 }
 
 /// What a market is called when a watchlist took it: the event, for choices charted together.
@@ -1634,245 +1027,6 @@ fn pick_name(result: &SearchResult) -> String {
         Some(event) if event.series.len() > 1 && !event.title.is_empty() => event.title.clone(),
         _ => list::name(result).to_owned(),
     }
-}
-
-/// What the pull-down at the right of the tabs filters by.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Filter {
-    /// The markets of one exchange (`None`: every exchange of the tab).
-    Venue(Option<DataSource>),
-    /// The cards of one portfolio (`None`: every portfolio).
-    Portfolio(Option<u64>),
-}
-
-/// The pull-down's choices and how it reads now.
-struct FilterMenu {
-    label: String,
-    /// Something narrower than "all" is chosen.
-    active: bool,
-    tip: &'static str,
-    entries: Vec<(Filter, String)>,
-    current: Filter,
-}
-
-/// The room the pull-down takes when it is reduced to its icon and chevron.
-const FILTER_COMPACT: f32 = 48.0;
-/// The gap between the tabs and the pull-down.
-const FILTER_GAP: f32 = 8.0;
-/// Space a tab adds around its label, from roomy to tight.
-const TAB_PADDINGS: [f32; 3] = [28.0, 20.0, 14.0];
-
-/// How wide the pull-down is with `label` written out: the icon, the label and the chevron, with
-/// as much room after the chevron as before the icon.
-fn filter_width_of(label: f32) -> f32 {
-    8.0 + 16.0 + 6.0 + label + 6.0 + 10.0 + 8.0
-}
-
-fn filter_width(ui: &Ui, label: &str) -> f32 {
-    filter_width_of(
-        kit::galley(ui, label, 14.0, MEDIUM, theme::text_secondary(), 180.0)
-            .size()
-            .x,
-    )
-}
-
-/// How the tab row spends its room.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct TabFit {
-    /// Space each tab adds around its label.
-    padding: f32,
-    /// The pull-down shows only its icon.
-    compact: bool,
-}
-
-/// Fits tabs with labels `labels` wide and a pull-down `filter` wide (`None`: there is none)
-/// into `room`: first roomy tabs, then tighter tabs, then the pull-down reduced to its icon.
-fn fit_tabs(labels: &[f32], filter: Option<f32>, room: f32) -> TabFit {
-    let attempts = [
-        (TAB_PADDINGS[0], false),
-        (TAB_PADDINGS[1], false),
-        (TAB_PADDINGS[1], true),
-        (TAB_PADDINGS[2], true),
-    ];
-    for (padding, compact) in attempts {
-        let tabs: f32 = labels.iter().map(|label| label + padding).sum();
-        let filter = filter.map_or(0.0, |full| {
-            FILTER_GAP + if compact { FILTER_COMPACT } else { full }
-        });
-        if tabs + filter <= room {
-            return TabFit { padding, compact };
-        }
-    }
-    TabFit {
-        padding: TAB_PADDINGS[2],
-        compact: true,
-    }
-}
-
-/// The rows the list holds, the captions above groups of them (`(first row, caption)`) and a
-/// note under them.
-#[derive(Default)]
-struct Rows {
-    items: Vec<Item>,
-    heads: Vec<(usize, String)>,
-    note: Option<String>,
-}
-
-impl Rows {
-    fn of(results: Vec<SearchResult>, head: Option<&str>) -> Self {
-        Self::of_items(results.into_iter().map(Item::Market).collect(), head)
-    }
-
-    fn of_items(items: Vec<Item>, head: Option<&str>) -> Self {
-        let heads = head
-            .filter(|_| !items.is_empty())
-            .map(|head| vec![(0, head.to_owned())])
-            .unwrap_or_default();
-        Self {
-            items,
-            heads,
-            note: None,
-        }
-    }
-
-    fn head_before(&self, row: usize) -> Option<&str> {
-        self.heads
-            .iter()
-            .find(|(first, _)| *first == row)
-            .map(|(_, head)| head.as_str())
-    }
-}
-
-const NOTICE_HEIGHT: f32 = 60.0;
-const NOTICE_BUTTON_HEIGHT: f32 = 28.0;
-/// The button's gap to the card's right edge: the one it has above and below.
-const NOTICE_BUTTON_INSET: f32 = (NOTICE_HEIGHT - NOTICE_BUTTON_HEIGHT) / 2.0;
-
-/// A card under the list: a title, one line of detail and, when Settings can fix it, a button.
-struct Notice {
-    title: &'static str,
-    detail: String,
-    settings: bool,
-}
-
-impl Notice {
-    fn missing_key(title: &'static str) -> Self {
-        Self {
-            title,
-            detail: tr!("Add your free Alpaca API keys in Settings to search and chart US stocks.")
-                .to_owned(),
-            settings: true,
-        }
-    }
-}
-
-/// Where the notice's button of `width` sits: at the card's right, as far from its edge as from its
-/// top and bottom.
-fn notice_button_rect(card: Rect, width: f32) -> Rect {
-    let size = vec2(width, NOTICE_BUTTON_HEIGHT);
-    Rect::from_min_size(
-        pos2(
-            card.right() - NOTICE_BUTTON_INSET - size.x,
-            card.center().y - size.y / 2.0,
-        ),
-        size,
-    )
-}
-
-/// Draws `notice` in `card`; returns whether its button was pressed.
-fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
-    ui.painter()
-        .rect_filled(card, kit::CARD_RADIUS, theme::card_fill(false));
-    ui.painter().rect_stroke(
-        card,
-        kit::CARD_RADIUS,
-        Stroke::new(1.0, theme::card_border(false)),
-        egui::StrokeKind::Inside,
-    );
-    let badge = Rect::from_center_size(
-        pos2(card.left() + 14.0 + 17.0, card.center().y),
-        Vec2::splat(34.0),
-    );
-    kit::paint_card_badge(ui, badge, Icon::Key);
-
-    let mut pressed = false;
-    let mut right = card.right() - NOTICE_BUTTON_INSET;
-    if notice.settings {
-        let label = tr!("Open Settings");
-        let button = notice_button_rect(card, kit::sheet_button_width(ui, label, false));
-        let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(button));
-        pressed = widgets::sheet_button(&mut cell, label, false, true).clicked();
-        right = button.left() - 12.0;
-    }
-    let text_left = badge.right() + 12.0;
-    let width = (right - text_left).max(40.0);
-    let title = kit::galley(
-        ui,
-        notice.title,
-        14.0,
-        SEMIBOLD,
-        theme::text_primary(),
-        width,
-    );
-    let detail = kit::galley_rows(
-        ui,
-        &notice.detail,
-        12.5,
-        REGULAR,
-        theme::text_secondary(),
-        width,
-        2,
-    );
-    let block = title.size().y + 2.0 + detail.size().y;
-    let top = card.center().y - block / 2.0;
-    let detail_top = top + title.size().y + 2.0;
-    ui.painter()
-        .galley(pos2(text_left, top), title, theme::text_primary());
-    ui.painter()
-        .galley(pos2(text_left, detail_top), detail, theme::text_secondary());
-    pressed
-}
-
-/// A small capitalised caption above a group of rows.
-fn section_heading(ui: &mut Ui, title: &str) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
-    let galley = kit::galley(
-        ui,
-        &title.to_uppercase(),
-        11.5,
-        SEMIBOLD,
-        theme::text_tertiary(),
-        rect.width(),
-    );
-    ui.painter().galley(
-        pos2(
-            rect.left() + 10.0,
-            rect.center().y - galley.size().y / 2.0 + 2.0,
-        ),
-        galley,
-        theme::text_tertiary(),
-    );
-}
-
-/// A line of explanation under the rows, wrapped inside the list.
-fn note_line(ui: &mut Ui, text: &str) {
-    let galley = kit::paragraph(
-        ui,
-        text,
-        13.0,
-        REGULAR,
-        theme::text_secondary(),
-        ui.available_width() - 20.0,
-    );
-    let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), galley.size().y + 20.0),
-        Sense::hover(),
-    );
-    ui.painter().galley(
-        pos2(rect.left() + 10.0, rect.top() + 10.0),
-        galley,
-        theme::text_secondary(),
-    );
 }
 
 /// Selects all of `text` in the text field `id`, replacing a cursor left over from an earlier sheet.

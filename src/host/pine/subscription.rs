@@ -6,6 +6,7 @@
 use crate::host::pine::KlineSecurityDataProvider;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::chart::synthetic::Construction;
+use crate::model::market::bucket::Grid;
 use crate::model::pine::instance::PineInstance;
 use crate::model::{Kline, Timeframe};
 use crate::pine::compiler::program::SymbolInfo;
@@ -290,12 +291,16 @@ pub fn symbol_info(symbol_key: &str) -> SymbolInfo {
         .split_once(':')
         .map(|(_, symbol)| symbol)
         .unwrap_or(symbol_key);
+    let source = symbol_key
+        .split_once(':')
+        .and_then(|(prefix, _)| crate::model::market::venue::source_for_prefix(prefix));
     SymbolInfo {
         ticker: ticker.to_owned(),
         ticker_id: symbol_key.to_owned(),
         currency: "USD".to_owned(),
         kind: "crypto".to_owned(),
         base_currency: None,
+        grid: source.map_or(Grid::Utc, |source| source.grid()),
         ..SymbolInfo::default()
     }
 }
@@ -576,5 +581,17 @@ mod tests {
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn a_subscriptions_symbol_carries_the_grid_of_its_market() {
+        // A stock (by its exchange or by Alpaca's slug) is cut on the session, a crypto pair on the
+        // UTC day, a key with no market the UTC day too.
+        for key in ["NASDAQ:AAPL", "ALPACA:AAPL", "NYSE:IBM"] {
+            assert_eq!(symbol_info(key).grid, Grid::UsEquities, "{key}");
+        }
+        for key in ["BINANCE:BTCUSDT", "COINBASE:ETH-USD", "BTCUSDT"] {
+            assert_eq!(symbol_info(key).grid, Grid::Utc, "{key}");
+        }
     }
 }

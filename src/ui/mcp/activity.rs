@@ -5,7 +5,7 @@
 //! the store: the only thing it asks of the host is [`McpAction::ClearActivity`], and only after
 //! the sheet's own "Clear the log?" question has been answered.
 
-use crate::i18n::{tr, tr_n};
+use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::mcp::activity::{
     ACTIVITY_PAGE_SIZE, McpActivityClient, McpActivityFilter, McpActivityRange, McpActivityStatus,
     Paging, clients_in,
@@ -199,7 +199,7 @@ fn status_tone(status: McpActivityStatus) -> Tone {
 fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Tone) {
     match (entry.status(), entry.kind) {
         (Some(status), _) => (status.label(), status_tone(status)),
-        (None, McpAuditKind::Gap) => (tr!("Gap"), Tone::Warning),
+        (None, McpAuditKind::Gap) => (tr_c!("audit log row", "Gap"), Tone::Warning),
         (None, _) => (tr!("Cleared"), Tone::Neutral),
     }
 }
@@ -224,14 +224,13 @@ fn row_detail(entry: &McpAuditEntry) -> String {
                 parts.push(entry.client_name.clone());
             }
             if !entry.targets.is_empty() {
-                parts.push(
-                    entry
+                parts.push(crate::i18n::join_list(
+                    &entry
                         .targets
                         .iter()
                         .map(|target| target_text(&target.kind, &target.id))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                );
+                        .collect::<Vec<_>>(),
+                ));
             }
             if !entry.code.is_empty() {
                 parts.push(entry.code.clone());
@@ -331,12 +330,13 @@ fn row_tooltip(entry: &McpAuditEntry, utc_offset_secs: i64) -> String {
     if !entry.targets.is_empty() {
         lines.push(tr!(
             "Named: {targets}",
-            targets = entry
-                .targets
-                .iter()
-                .map(|target| target_text(&target.kind, &target.id))
-                .collect::<Vec<_>>()
-                .join(", ")
+            targets = crate::i18n::join_list(
+                &entry
+                    .targets
+                    .iter()
+                    .map(|target| target_text(&target.kind, &target.id))
+                    .collect::<Vec<_>>()
+            )
         ));
     }
     if !entry.request_id.is_empty() {
@@ -476,9 +476,7 @@ pub fn preview(ui: &mut Ui, state: &mut ActivityState, input: &ActivityInput) {
     section(
         ui,
         tr!("Recent activity"),
-        Some(tr!(
-            "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained."
-        )),
+        Some(crate::platform::mcp_recent_activity_hint()),
         |ui| {
             if input.entries.is_empty() {
                 card(ui, |ui| {
@@ -556,9 +554,7 @@ pub fn sheet(
                 ui,
                 Icon::List,
                 tr!("Activity log"),
-                tr!(
-                    "What connected clients asked DegenView to do. Kept on this Mac only; it holds ids and results, never what a request contained."
-                ),
+                crate::platform::mcp_activity_log_hint(),
                 theme::text_secondary(),
             );
         });
@@ -1110,7 +1106,7 @@ mod tests {
         assert_eq!(row_title(&done), "Get pine report");
         assert_eq!(
             row_detail(&done),
-            "Client a · workspace 46, chart 3 · 312 ms"
+            "Client a · workspace 46 and chart 3 · 312 ms"
         );
         let failed = call(2, "a", McpAuditOutcome::Failed);
         assert_eq!(outcome_tag(&failed).0, "Failed");
@@ -1162,7 +1158,7 @@ mod tests {
             "Tool: degenview_get_pine_report",
             "Result: Failed (NOT_FOUND)",
             "Took 312 ms",
-            "Named: workspace 46, chart 3",
+            "Named: workspace 46 and chart 3",
             "Request id: req-9",
             "Entry id: 7",
         ] {

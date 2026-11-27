@@ -333,8 +333,14 @@ fn a_name_another_script_has_cannot_be_taken_but_the_scripts_own_can() {
     assert_eq!(manager.name_problem("MINE", Some(&id)), None);
     manager.rename_script(&id, "Mine").unwrap();
     assert_eq!(manager.open.as_ref().unwrap().name, "Mine");
-    // A name that is not valid is explained.
-    assert!(manager.rename_script(&id, "a/b").is_err());
+    // A name no file can have is taken as the nearest one that can, and said so first.
+    assert_eq!(
+        manager.name_note("a/b", Some(&id)).as_deref(),
+        Some("Will be saved as “a-b”.")
+    );
+    assert_eq!(manager.name_note(" plain name ", Some(&id)), None);
+    manager.rename_script(&id, "a/b").unwrap();
+    assert_eq!(manager.open.as_ref().unwrap().name, "a-b");
     let _ = std::fs::remove_dir_all(root);
 }
 

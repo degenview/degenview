@@ -1,7 +1,7 @@
 //! Drag-and-drop affordances for the chart grid, as the Swift app draws them. Nothing shows
-//! until a chart is being dragged; then the cards, the gaps and the grid's right edge become
-//! drop targets, each with its own cue: an accent line where the chart would land, and a strip
-//! on the right that, held over for a moment, previews the new column.
+//! until a chart is being dragged; then the cards, the space under them and the grid's right
+//! edge become drop targets, each with its own cue: an accent line where the chart would land,
+//! and a strip on the right that, held over for a moment, previews the new column.
 
 use crate::i18n::tr;
 use crate::ui::icons::{self, Icon};
@@ -14,8 +14,6 @@ use std::time::{Duration, Instant};
 pub const NEW_COLUMN_STRIP_WIDTH: f32 = 56.0;
 /// How long the pointer must rest on the strip before the new column is previewed.
 pub const PREVIEW_DELAY: Duration = Duration::from_millis(300);
-/// How far a card's drop zone reaches into the gap around it.
-const CARD_REACH: f32 = 4.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DropTarget {
@@ -44,15 +42,12 @@ pub struct Zones {
 
 impl Zones {
     /// The strip wins over the grid beneath it, a card over its column, and a column takes
-    /// everything not on a card, the gaps around the cards included.
+    /// everything not on a card.
     pub fn target_at(&self, pos: Pos2) -> Option<DropTarget> {
         if self.new_column.is_some_and(|rect| rect.contains(pos)) {
             return Some(DropTarget::NewColumn);
         }
-        if let Some((column, chart, _)) = self
-            .cards
-            .iter()
-            .find(|(_, _, rect)| rect.expand2(vec2(0.0, CARD_REACH)).contains(pos))
+        if let Some((column, chart, _)) = self.cards.iter().find(|(_, _, rect)| rect.contains(pos))
         {
             return Some(DropTarget::Before {
                 column: *column,
@@ -116,9 +111,9 @@ impl GridDrag {
 }
 
 /// The 3pt accent line that marks where the chart would be inserted, inset 8pt from the
-/// card's edges and centred on the seam.
+/// card's sides, along its top edge.
 pub fn insert_line_above(ui: &Ui, card: Rect) {
-    let y = card.top() - 1.0;
+    let y = card.top() + 1.5;
     ui.painter().rect_filled(
         Rect::from_min_max(
             pos2(card.left() + 8.0, y - 1.5),
@@ -175,10 +170,17 @@ pub fn new_column_strip(ui: &Ui, rect: Rect, active: bool) {
 /// The new column's placeholder: a dashed accent card with "New column" in it.
 pub fn new_column_placeholder(ui: &Ui, rect: Rect) {
     let painter = ui.painter();
-    painter.rect_filled(rect, 10.0, theme::with_alpha(kit::ACCENT, 0.08));
+    painter.rect_filled(rect, 0.0, theme::with_alpha(kit::ACCENT, 0.08));
     let stroke = Stroke::new(2.0, kit::ACCENT);
+    let edge = rect.shrink(1.0);
     painter.extend(Shape::dashed_line(
-        &rounded_outline(rect.shrink(1.0), 9.0),
+        &[
+            edge.left_top(),
+            edge.right_top(),
+            edge.right_bottom(),
+            edge.left_bottom(),
+            edge.left_top(),
+        ],
         stroke,
         7.0,
         5.0,
@@ -216,26 +218,6 @@ pub fn new_column_placeholder(ui: &Ui, rect: Rect) {
         label,
         kit::ACCENT,
     );
-}
-
-/// A closed path around `rect` with corners of `radius`, for dashing.
-fn rounded_outline(rect: Rect, radius: f32) -> Vec<Pos2> {
-    let radius = radius.min(rect.width() / 2.0).min(rect.height() / 2.0);
-    let corners = [
-        (pos2(rect.right() - radius, rect.top() + radius), -90.0_f32),
-        (pos2(rect.right() - radius, rect.bottom() - radius), 0.0),
-        (pos2(rect.left() + radius, rect.bottom() - radius), 90.0),
-        (pos2(rect.left() + radius, rect.top() + radius), 180.0),
-    ];
-    let mut points = Vec::with_capacity(4 * 9 + 1);
-    for (centre, start) in corners {
-        for step in 0..=8 {
-            let angle = (start + step as f32 * 90.0 / 8.0).to_radians();
-            points.push(centre + vec2(angle.cos(), angle.sin()) * radius);
-        }
-    }
-    points.push(points[0]);
-    points
 }
 
 /// A small label that follows the pointer while a chart is dragged, so it is clear what is
@@ -315,13 +297,10 @@ mod tests {
                 chart: 11
             })
         );
-        // The gap just under a card still belongs to the card below it.
+        // The space between two zones is the column's.
         assert_eq!(
             zones.target_at(pos2(50.0, 106.0)),
-            Some(DropTarget::Before {
-                column: 1,
-                chart: 11
-            })
+            Some(DropTarget::Append { column: 1 })
         );
         assert_eq!(
             zones.target_at(pos2(50.0, 300.0)),
@@ -377,17 +356,5 @@ mod tests {
         );
         drag.reset();
         assert_eq!(drag.previewed(), None);
-    }
-
-    #[test]
-    fn the_outline_is_closed_and_stays_inside_its_rect() {
-        let rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(80.0, 60.0));
-        let points = rounded_outline(rect, 9.0);
-        assert_eq!(points.first(), points.last());
-        assert!(
-            points
-                .iter()
-                .all(|point| rect.expand(0.01).contains(*point))
-        );
     }
 }

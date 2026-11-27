@@ -2,6 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: DegenView\n"
 "Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: 2026-11-26 00:00+0000\n"
 "Last-Translator: DegenView\n"
 "Language-Team: Spanish (Spain)\n"
 "Language: es\n"
@@ -104,6 +105,10 @@ msgstr "+{count} más"
 #: src/ui/portfolio/cards/top_performers.rs
 msgid "+{hidden} more"
 msgstr "+{hidden} más"
+
+#: src/ui/settings/broker_words.rs
+msgid "-----BEGIN EC PRIVATE KEY----- … (or a base64 Ed25519 key)"
+msgstr "-----BEGIN EC PRIVATE KEY----- … (o una clave Ed25519 en base64)"
 
 #: src/model/editor_theme/roles.rs
 msgid "//@version=6 and the other //@ directives."
@@ -257,6 +262,10 @@ msgstr "Solo es un dibujo: nunca envía una orden y lo que muestra es hipotétic
 msgid "A faint market name behind the candles. Off."
 msgstr "Un nombre de mercado tenue detrás de las velas. Desactivado."
 
+#: src/model/pine/bundled/mod.rs
+msgid "A fractal is a bar whose high (or low) is the highest (lowest) of the bars either side of it. Each is confirmed after those bars close, and the mark is placed back on the bar. Fractals are often used as support, resistance and stop levels."
+msgstr "Un fractal es una barra cuyo máximo (o mínimo) es el más alto (más bajo) de las barras a ambos lados. Cada uno se confirma cuando esas barras cierran, y la marca se coloca sobre la barra original. Los fractales se usan a menudo como niveles de soporte, resistencia y stop."
+
 #: src/ui/alert/editor.rs
 msgid "A fresh current price is required for percentage alerts."
 msgstr "Las alertas porcentuales necesitan un precio actual reciente."
@@ -316,6 +325,10 @@ msgstr "Un tramo inventado entre los dos puntos: no es una previsión y nunca so
 #: src/model/indicators/catalog.rs
 msgid "A moving average that weights recent closes more. Choose its period from the chip on the chart (9, 20, 50, 100 or 200)."
 msgstr "Una media móvil que da más peso a los cierres recientes. Elige su periodo en la etiqueta del gráfico (9, 20, 50, 100 o 200)."
+
+#: src/model/pine/bundled/mod.rs
+msgid "A moving average with bands set by the Average True Range, so the channel follows volatility. Closes outside the channel suggest a strong move; a flat, narrow channel suggests a range."
+msgstr "Una media móvil con bandas definidas por el Average True Range, de modo que el canal sigue la volatilidad. Los cierres fuera del canal sugieren un movimiento fuerte; un canal plano y estrecho sugiere un rango."
 
 #: src/pine_studio/editor/symbols.rs
 msgid "A name is letters, digits and underscores, and does not start with a digit."
@@ -390,6 +403,14 @@ msgstr "Un token no tiene espacios y solo contiene letras, dígitos y símbolos 
 msgid "A trade appears here once a position is closed."
 msgstr "Una operación aparece aquí cuando se cierra una posición."
 
+#: src/model/pine/bundled/mod.rs
+msgid "A trailing stop that accelerates toward price."
+msgstr "Un stop móvil que se acelera hacia el precio."
+
+#: src/model/pine/bundled/mod.rs
+msgid "A volume-weighted RSI, 0 to 100."
+msgstr "Un RSI ponderado por volumen, de 0 a 100."
+
 #: src/model/drawings/tool.rs
 msgid "ABCD pattern"
 msgstr "Patrón ABCD"
@@ -397,6 +418,14 @@ msgstr "Patrón ABCD"
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "ABOUT"
 msgstr "ACERCA DE"
+
+#: src/model/pine/bundled/mod.rs
+msgid "ADX / DMI"
+msgstr "ADX / DMI"
+
+#: src/model/pine/bundled/mod.rs
+msgid "ADX measures how strong a trend is, not which way: above about 25 there is a trend. +DI over -DI means the trend is up, the reverse that it is down."
+msgstr "El ADX mide la fuerza de una tendencia, no su dirección: por encima de 25 aproximadamente hay tendencia. +DI sobre -DI indica que la tendencia es alcista; lo contrario, que es bajista."
 
 #: src/ui/settings/window.rs
 msgid "AI Assistant"
@@ -426,6 +455,10 @@ msgstr "Credenciales de la API"
 msgid "API key configured"
 msgstr "Clave de API configurada"
 
+#: src/ui/settings/broker_words.rs
+msgid "API key name"
+msgstr "Nombre de la API key"
+
 #: src/ui/settings/ai.rs
 msgid "API key saved"
 msgstr "Clave de API guardada"
@@ -433,6 +466,10 @@ msgstr "Clave de API guardada"
 #: src/ui/webhook/editor.rs
 msgid "API token or key"
 msgstr "Token o clave de API"
+
+#: src/model/pine/bundled/mod.rs
+msgid "ATR"
+msgstr "ATR"
 
 #: src/ui/chart/settings/style.rs
 msgid "ATR length"
@@ -466,6 +503,10 @@ msgstr "Aceptada"
 msgid "Access"
 msgstr "Acceso"
 
+#: src/ui/settings/api_keys.rs
+msgid "Access Token"
+msgstr "Token de acceso"
+
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Access token (optional)"
 msgstr "Token de acceso (opcional)"
@@ -474,6 +515,10 @@ msgstr "Token de acceso (opcional)"
 #: src/ui/drawing/properties/tests.rs src/ui/settings/brokers.rs
 msgid "Account"
 msgstr "Cuenta"
+
+#: src/ui/settings/api_keys.rs
+msgid "Account ID"
+msgstr "ID de cuenta"
 
 #: src/ui/paper/account_sheet.rs
 msgid "Account name"
@@ -643,10 +688,6 @@ msgstr "Añadir otra copia"
 msgid "Add as New Chart"
 msgstr "Añadir como gráfico nuevo"
 
-#: src/ui/chart/symbol_picker/list.rs src/ui/chart/symbol_picker/mod.rs
-msgid "Add as new chart"
-msgstr "Añadir como gráfico nuevo"
-
 #: src/ui/trade/venue_pill.rs
 msgid "Add broker…"
 msgstr "Añadir bróker…"
@@ -736,6 +777,10 @@ msgstr "Añade el indicador al gráfico."
 msgid "Add the secret value that {token} stands for."
 msgstr "Añade el valor secreto que representa {token}."
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "Añade la clave de API de este proveedor en Ajustes para ver sus cotizaciones"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr "Añade este script al gráfico activo antes de crear una alerta."
@@ -769,6 +814,12 @@ msgstr "Añadir a favoritos"
 msgid "Add to the URL as ?token="
 msgstr "Añadir a la URL como ?token="
 
+#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/list.rs
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Add to this tab"
+msgstr "Añadir a esta pestaña"
+
 #: src/ui/chart/card/header.rs src/ui/chart/symbol_picker/list.rs
 msgid "Add to watchlist"
 msgstr "Añadir a la lista de seguimiento"
@@ -801,9 +852,17 @@ msgstr "Añade tus claves de API de Alpaca en Ajustes."
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Añade tu clave de API de ImgBB en Ajustes ▸ Capturas para compartir."
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
-msgstr "Añade tus claves de API gratuitas de Alpaca en Ajustes para buscar acciones de EE. UU. y verlas en un gráfico."
+#: src/service/watchlist_quotes/provider.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "Añade tus credenciales de Oanda en Ajustes para ver sus cotizaciones"
+
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your Oanda credentials to search forex, metals and index CFDs."
+msgstr "Añade tus credenciales de Oanda para buscar divisas, metales y CFD sobre índices."
+
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your free Alpaca API keys to search and chart US stocks."
+msgstr "Añade tus claves de API gratuitas de Alpaca para buscar acciones de EE. UU. y verlas en un gráfico."
 
 #: src/pine_studio/ai/host.rs
 msgid "Add your {provider} API key to start"
@@ -852,6 +911,10 @@ msgstr "{market} añadido"
 #: src/ui/settings/mcp/server.rs
 msgid "Address"
 msgstr "Dirección"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Adds the bar's volume on an up close and subtracts it on a down close, with a moving average of the total as its signal. Rising OBV while price is flat suggests accumulation."
+msgstr "Suma el volumen de la barra si cierra al alza y lo resta si cierra a la baja, con una media móvil del total como señal. Un OBV al alza con el precio plano sugiere acumulación."
 
 #: src/ui/portfolio/transactions.rs
 msgid "Adjustment"
@@ -1174,6 +1237,10 @@ msgid "Altcoin Market Cap"
 msgstr "Capitalización de altcoins"
 
 #: src/ui/chart/cmc_gauge.rs
+msgid "Altcoin Season"
+msgstr "Temporada de altcoins"
+
+#: src/ui/chart/cmc_gauge.rs
 msgid "Altcoin Season  100"
 msgstr "Temporada de altcoins  100"
 
@@ -1201,7 +1268,7 @@ msgstr "Siempre visible"
 msgid "Ambiguous Section"
 msgstr "Sección ambigua"
 
-#: src/ui/drawing/properties/forecast_pages.rs src/ui/trade/order_sheet/form.rs
+#: src/ui/drawing/properties/forecast_pages.rs
 msgid "Amount"
 msgstr "Importe"
 
@@ -1209,9 +1276,17 @@ msgstr "Importe"
 msgid "An API key has no spaces and is at most 128 plain characters."
 msgstr "Una clave de API no tiene espacios y consta de 128 caracteres simples como máximo."
 
+#: src/model/pine/bundled/mod.rs
+msgid "An EMA with bands a multiple of the ATR away."
+msgstr "Una EMA con bandas a un múltiplo del ATR de distancia."
+
 #: src/ui/settings/network/mod.rs
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr "Un proxy HTTP que admite CONNECT, como la mayoría."
+
+#: src/ui/settings/api_keys.rs
+msgid "An access token works only in the environment it was generated in."
+msgstr "Un token de acceso solo funciona en el entorno en el que se generó."
 
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from anywhere else is refused as if the token were wrong."
@@ -1256,6 +1331,10 @@ msgstr "Perfil de volumen anclado"
 #: src/ui/drawing/properties/style.rs
 msgid "Angle"
 msgstr "Ángulo"
+
+#: src/model/fib/gann.rs
+msgid "Angles"
+msgstr "Ángulos"
 
 #: src/ui/settings/sync.rs
 msgid "Another Mac deleted it. Everything on this Mac is still here."
@@ -1356,6 +1435,10 @@ msgstr "Aplicado. Deshacer recupera el script anterior."
 msgid "Applies every change as one undo step"
 msgstr "Aplica todos los cambios como un solo paso de deshacer"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Applies the Stochastic to the RSI instead of price. It reaches the ends of its range far more often than RSI itself, so it times turns earlier and gives more false ones."
+msgstr "Aplica el Estocástico al RSI en lugar del precio. Llega a los extremos de su rango con mucha más frecuencia que el propio RSI, así que anticipa los giros pero da más señales falsas."
+
 #: src/ui/paper/account_sheet.rs
 msgid "Applies to every market. 1× means no borrowing."
 msgstr "Se aplica a todos los mercados. 1× significa sin endeudamiento."
@@ -1453,13 +1536,29 @@ msgstr "Arco"
 msgid "Archived"
 msgstr "Archivada"
 
-#: src/model/chart/kind.rs src/ui/snapshot_studio/window/toolbar.rs
+#: src/model/fib/gann.rs
+msgid "Arcs"
+msgstr "Arcos"
+
+#: src/model/fib/gann.rs
+msgid "Arcs background"
+msgstr "Fondo de los arcos"
+
+#: src/model/chart/kind.rs
 msgid "Area"
 msgstr "Área"
 
 #: src/model/editor_theme/roles.rs
 msgid "Arithmetic, comparison, assignment and ?: operators."
 msgstr "Operadores aritméticos, de comparación, de asignación y ?:."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Aroon"
+msgstr "Aroon"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Aroon Up and Aroon Down, each 0 to 100, say how many bars ago the highest high and the lowest low were. A strong Aroon Up with a weak Aroon Down is an uptrend."
+msgstr "Aroon Up y Aroon Down, cada uno de 0 a 100, indican hace cuántas barras estuvieron el máximo más alto y el mínimo más bajo. Un Aroon Up fuerte con un Aroon Down débil es una tendencia alcista."
 
 #: src/model/cursor/mod.rs src/model/drawings/style.rs
 #: src/model/drawings/tool.rs
@@ -1533,6 +1632,10 @@ msgstr "Ask {price}"
 #: src/ui/market_flow/book/ladder.rs
 msgid "Ask {size} ({worth})"
 msgstr "Ask {size} ({worth})"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr "Solo se pregunta una vez. Más adelante, elige «Importar desde TradingView» en el menú de diseños."
 
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
@@ -1648,6 +1751,10 @@ msgstr "Media"
 msgid "Average Cost"
 msgstr "Coste medio"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Average True Range: the typical bar size including gaps."
+msgstr "Average True Range: el tamaño típico de una barra, incluidos los gaps."
+
 #: src/ui/drawing/properties/forecast_pages.rs
 msgid "Average high-low"
 msgstr "Media máximo-mínimo"
@@ -1663,6 +1770,10 @@ msgstr "Coste medio"
 #: src/pine_studio/drawer/figures.rs src/ui/pine/report.rs
 msgid "Avg trade"
 msgstr "Operación media"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Awesome Oscillator"
+msgstr "Awesome Oscillator"
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "B"
@@ -1775,9 +1886,7 @@ msgid "Bar {time}"
 msgstr "Barra {time}"
 
 #: src/model/chart/kind.rs src/model/pattern/bars.rs
-#: src/pine_studio/profiler/ui.rs src/ui/chart/card/crosshair.rs
-#: src/ui/chart/settings/style.rs src/ui/drawing/properties/forecast_pages.rs
-#: src/ui/drawing/properties/style.rs src/ui/replay/bar.rs
+#: src/ui/chart/card/crosshair.rs src/ui/chart/settings/style.rs
 msgid "Bars"
 msgstr "Barras"
 
@@ -1879,6 +1988,10 @@ msgstr "Bid {price}"
 msgid "Bid {size} ({worth})"
 msgstr "Bid {size} ({worth})"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Bill Williams' histogram: a 5-period average of the midpoint minus a 34-period one. Green bars are rising and red bars falling; crossing zero is a momentum shift."
+msgstr "El histograma de Bill Williams: una media de 5 periodos del punto medio menos una de 34. Las barras verdes suben y las rojas bajan; cruzar el cero indica un cambio de impulso."
+
 #: src/ui/market_flow/mod.rs
 msgid "Binance and Bybit announce them as they happen."
 msgstr "Binance y Bybit las anuncian según ocurren."
@@ -1894,6 +2007,10 @@ msgstr "Binance envía como máximo la última liquidación de cada mercado por 
 #: src/model/portfolio/mod.rs
 msgid "Bitcoin"
 msgstr "Bitcoin"
+
+#: src/ui/chart/cmc_gauge.rs
+msgid "Bitcoin Season"
+msgstr "Temporada de Bitcoin"
 
 #: src/ui/chart/picker_kit/suggestions.rs
 msgid "Bitcoin price"
@@ -2050,6 +2167,10 @@ msgstr "Traer al frente"
 msgid "Bring to front"
 msgstr "Traer al frente"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
+msgstr "Trae tu configuración de TradingView"
+
 #: src/model/alert/mod.rs src/model/portfolio/mod.rs
 msgid "British Pound"
 msgstr "Libra esterlina"
@@ -2098,6 +2219,11 @@ msgstr "Construye sus propias barras a partir de las del mercado. Los scripts y 
 msgid "Built in: JetBrains Mono. Or any monospaced font installed on this Mac."
 msgstr "Integrada: JetBrains Mono. O cualquier fuente monoespaciada instalada en este Mac."
 
+#: src/platform.rs
+msgid ""
+"Built in: JetBrains Mono. Or any monospaced font installed on this computer."
+msgstr "Integrada: JetBrains Mono. O cualquier fuente monoespaciada instalada en este ordenador."
+
 #: src/ui/chart/indicator_picker/mod.rs src/ui/chart/indicator_strip.rs
 #: src/ui/chart/settings/templates/mod.rs src/ui/settings/pine_studio/mod.rs
 msgid "Built-in"
@@ -2139,11 +2265,7 @@ msgstr "Giro alcista"
 msgid "Buttons"
 msgstr "Botones"
 
-#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
-#: src/trading/edit/mod.rs src/ui/broker/panel.rs
-#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
-#: src/ui/portfolio/transactions.rs src/ui/trade/fields.rs
-#: src/ui/trade/order_sheet/open_orders.rs
+#: src/ui/trade/fields.rs
 msgid "Buy"
 msgstr "Comprar"
 
@@ -2183,6 +2305,10 @@ msgstr "Comprar {quantity}{symbol} @ {price} stop limit"
 msgid "Buy {symbol} stop"
 msgstr "Comprar {symbol} stop"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Buying and selling pressure over N bars, -1 to +1."
+msgstr "Presión de compra y de venta durante N barras, de -1 a +1."
+
 #: src/ui/portfolio/import_preview.rs src/ui/portfolio/transactions.rs
 msgid "By Type"
 msgstr "Por tipo"
@@ -2206,6 +2332,10 @@ msgstr "Bybit ha rechazado la solicitud (HTTP 403): no está disponible en todos
 #: src/ui/drawing/properties/coordinates.rs
 msgid "C"
 msgstr "C"
+
+#: src/model/pine/bundled/mod.rs
+msgid "CCI"
+msgstr "CCI"
 
 #: src/ui/chart/cmc_gauge.rs
 msgid "CMC Altcoin Season Index, {value} out of 100, {classification}."
@@ -2285,6 +2415,7 @@ msgstr "No se puede operar este mercado aquí"
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/pine_studio/mod.rs
 #: src/ui/watchlist/sidebar/modals.rs src/ui/webhook/editor.rs
 #: src/ui/window/update_sheet/mod.rs src/ui/workspace/layout_prompts.rs
+#: src/workspace/chart/snapshot/mod.rs
 msgid "Cancel"
 msgstr "Cancelar"
 
@@ -2410,7 +2541,7 @@ msgid_plural "Canceled {done} of {total} orders. {error} (and {count} more)"
 msgstr[0] "Se cancelaron {done} de {total} órdenes. {error} (y {count} más)"
 msgstr[1] "Se cancelaron {done} de {total} órdenes. {error} (y {count} más)"
 
-#: src/model/broker/ticket.rs src/model/mcp/activity.rs src/ui/broker/panel.rs
+#: src/model/broker/ticket.rs src/ui/broker/panel.rs
 msgid "Cancelled"
 msgstr "Cancelada"
 
@@ -2459,6 +2590,10 @@ msgstr "Centrar en el mercado"
 #: src/ui/settings/mcp/security.rs
 msgid "Certificate"
 msgstr "Certificado"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Chaikin Money Flow"
+msgstr "Flujo de dinero de Chaikin"
 
 #: src/pine_studio/drawer/simulation.rs
 msgid "Chance of a loss"
@@ -2664,6 +2799,10 @@ msgid_plural "Chart {count} choices"
 msgstr[0] "Mostrar {count} opción en gráfico"
 msgstr[1] "Mostrar {count} opciones en gráfico"
 
+#: src/ui/kit/timeframe_picker/mod.rs
+msgid "Chart {timeframe}"
+msgstr "Graficar {timeframe}"
+
 #: src/ui/chart/card/overlay_card.rs src/ui/chart/settings/overlay.rs
 msgid "Chart's scale"
 msgstr "Escala del gráfico"
@@ -2746,6 +2885,10 @@ msgstr "Camb."
 msgid "Chg%"
 msgstr "Camb. %"
 
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "Elegir qué importar"
+
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
 msgstr "Elige una exportación de transacciones de CoinMarketCap"
@@ -2805,6 +2948,10 @@ msgstr "Elige el aspecto de tu editor de Pine Script."
 #: src/ui/portfolio/tab/bar.rs
 msgid "Choose portfolio"
 msgstr "Elegir cartera"
+
+#: src/ui/settings/broker_words.rs
+msgid "Choose the ECDSA signature algorithm if you are offered one."
+msgstr "Elige el algoritmo de firma ECDSA si te lo ofrecen."
 
 #: src/ui/portfolio/tab/mod.rs
 msgid "Choose the asset this transaction is for."
@@ -3217,8 +3364,7 @@ msgstr "Colorea según el valor frente al de la barra anterior en lugar de la ap
 msgid "Colour {hex}"
 msgstr "Color {hex}"
 
-#: src/model/chart/kind.rs src/ui/watchlist/sidebar/header.rs
-#: src/ui/watchlist/sidebar/menus.rs
+#: src/model/chart/kind.rs
 msgid "Columns"
 msgstr "Columnas"
 
@@ -3241,6 +3387,10 @@ msgstr "Comisión"
 #: src/trading/broker/backend.rs
 msgid "Committed to open orders"
 msgstr "Comprometido en órdenes abiertas"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Commodity Channel Index: distance from the average price."
+msgstr "Commodity Channel Index: distancia al precio medio."
 
 #: src/pine_studio/library/empty_library.rs src/pine_studio/library/picker.rs
 msgid "Community scripts"
@@ -3286,6 +3436,10 @@ msgstr "Símbolo comparado"
 #: src/model/chart/object_tree.rs
 msgid "Compared symbols"
 msgstr "Símbolos comparados"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Compares the close with the high-low range of the last N bars, smoothed into %K and %D. Above the upper level is overbought and below the lower level is oversold."
+msgstr "Compara el cierre con el rango máximo-mínimo de las últimas N barras, suavizado en %K y %D. Por encima del nivel superior hay sobrecompra y por debajo del inferior, sobreventa."
 
 #: src/pine_studio/preview/state.rs
 msgid "Compile failed"
@@ -3348,6 +3502,10 @@ msgstr "Conectar"
 #: src/ui/settings/window.rs
 msgid "Connect Alpaca to chart US stocks and ETFs in DegenView."
 msgstr "Conecta Alpaca para ver acciones y ETF de EE. UU. en los gráficos de DegenView."
+
+#: src/ui/settings/window.rs
+msgid "Connect Oanda to chart forex, metals and index CFDs in DegenView."
+msgstr "Conecta Oanda para ver gráficos de divisas, metales y CFD sobre índices en DegenView."
 
 #: src/ui/settings/window.rs
 msgid "Connect a broker to trade for real from your charts. Paper trading is separate."
@@ -3610,9 +3768,18 @@ msgstr "Copiar respuesta"
 msgid "Copy style"
 msgstr "Copiar estilo"
 
+#: src/ui/settings/api_keys.rs
+msgid ""
+"Copy the account ID and the token here. Oanda only shows the token once."
+msgstr "Copia aquí el ID de cuenta y el token. Oanda solo muestra el token una vez."
+
 #: src/ui/chart/session_stats_view/mod.rs
 msgid "Copy the answer"
 msgstr "Copiar la respuesta"
+
+#: src/ui/settings/broker_words.rs
+msgid "Copy the key name and the private key (shown once) into the fields below."
+msgstr "Copia el nombre de la clave y la clave privada (solo se muestra una vez) en los campos de abajo."
 
 #: src/ui/settings/about.rs
 msgid "Copy the version and build date for a bug report"
@@ -3725,12 +3892,34 @@ msgid "Could not remove it from the keyring: {reason}"
 msgstr "No se ha podido quitar del llavero: {reason}"
 
 #: src/ui/settings/api_keys.rs
+msgid "Could not remove the credentials: {error}"
+msgstr "No se han podido eliminar las credenciales: {error}"
+
+#: src/ui/settings/api_keys.rs
 msgid "Could not remove the key: {error}"
 msgstr "No se ha podido quitar la clave: {error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "Could not remove the keys: {error}"
 msgstr "No se han podido quitar las claves: {error}"
+
+#: src/platform.rs
+msgid ""
+"Could not replace the Keychain key, so nothing was changed ({error}). Delete "
+"the “{item}” item in Keychain Access, then restart DegenView."
+msgstr "No se ha podido sustituir la clave del Llavero, así que no se ha cambiado nada ({error}). Elimina el elemento “{item}” en Acceso a Llaveros y reinicia DegenView."
+
+#: src/platform.rs
+msgid ""
+"Could not replace the key in Windows Credential Manager, so nothing was "
+"changed ({error}). Delete the “{item}” item there, then restart DegenView."
+msgstr "No se ha podido sustituir la clave en el Administrador de credenciales de Windows, así que no se ha cambiado nada ({error}). Elimina allí el elemento “{item}” y reinicia DegenView."
+
+#: src/platform.rs
+msgid ""
+"Could not replace the key in secure storage, so nothing was changed ({error})."
+" Delete the “{item}” item in your keyring, then restart DegenView."
+msgstr "No se ha podido sustituir la clave en el almacenamiento seguro, así que no se ha cambiado nada ({error}). Elimina el elemento “{item}” de tu llavero y reinicia DegenView."
 
 #: src/host/sync/mod.rs
 msgid "Could not save changes from iCloud: {error}"
@@ -3816,6 +4005,10 @@ msgstr "No se ha podido activar la sincronización con iCloud: {error}"
 msgid "Could not unpack the download: {error}"
 msgstr "No se ha podido descomprimir la descarga: {error}"
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Could not upload the snapshot"
+msgstr "No se pudo subir la captura"
+
 #: src/host/sync/mod.rs
 msgid "Could not use this Apple Account: {error}"
 msgstr "No se ha podido usar esta cuenta de Apple: {error}"
@@ -3887,6 +4080,10 @@ msgstr "No se ha podido guardar “{layout}”: {error}"
 #: src/model/chart/price_format.rs
 msgid "Count the zeros"
 msgstr "Contar los ceros"
+
+#: src/model/chart/context/mod.rs src/ui/chart/settings/canvas.rs
+msgid "Countdown to bar close"
+msgstr "Cuenta atrás al cierre de la barra"
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Counterclockwise"
@@ -3985,6 +4182,10 @@ msgstr "Crear una lista de seguimiento"
 msgid "Create a watchlist from the menu above."
 msgstr "Crea una lista de seguimiento desde el menú de arriba."
 
+#: src/ui/settings/api_keys.rs
+msgid "Create an Oanda account."
+msgstr "Crea una cuenta de Oanda."
+
 #: src/ui/paper/header.rs
 msgid "Create one to practise trading with simulated money."
 msgstr "Crea una para practicar trading con dinero simulado."
@@ -4020,6 +4221,21 @@ msgstr "Credenciales"
 #: src/ui/settings/brokers.rs
 msgid "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade."
 msgstr "Las credenciales se guardan en el almacenamiento seguro del sistema y nunca salen de este Mac. No se sincronizan y ningún script, alerta u otro programa puede usarlas para operar."
+
+#: src/platform.rs
+msgid ""
+"Credentials are stored in your system's secure storage and never leave this "
+"computer. They are not synced, and no script, alert or other program can use "
+"them to trade."
+msgstr "Las credenciales se guardan en el almacenamiento seguro del sistema y nunca salen de este ordenador. No se sincronizan y ningún script, alerta u otro programa puede usarlas para operar."
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials removed. Oanda charts need them to load."
+msgstr "Credenciales eliminadas. Los gráficos de Oanda las necesitan para cargarse."
+
+#: src/ui/settings/api_keys.rs
+msgid "Credentials saved"
+msgstr "Credenciales guardadas"
 
 #: src/model/cursor/mod.rs
 msgid "Cross"
@@ -4061,6 +4277,10 @@ msgstr "Cripto"
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr "Las criptomonedas y acciones que añadas a una lista de seguimiento aparecerán aquí."
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Crypto exchanges"
+msgstr "Exchanges de criptomonedas"
 
 #: src/ui/alert/editor.rs src/ui/paper/account_sheet.rs
 msgid "Currency"
@@ -4164,6 +4384,10 @@ msgstr "D"
 #: src/ui/chart/symbol_picker/search.rs
 msgid "DEX"
 msgstr "DEX"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "DEX & aggregators"
+msgstr "DEX y agregadores"
 
 #: src/ui/chart/object_tree/mod.rs
 msgid "DRAWINGS"
@@ -4289,6 +4513,10 @@ msgstr "DegenView no encontró ninguna carpeta para la caché, así que no se gu
 #: src/app/window.rs
 msgid "DegenView couldn’t save which tabs are open, so they may not reopen after a restart. It keeps trying in the background."
 msgstr "DegenView no ha podido guardar qué pestañas están abiertas, así que puede que no se reabran tras reiniciar. Sigue intentándolo en segundo plano."
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
+msgstr "DegenView la ha encontrado en este ordenador. Tú eliges qué se importa."
 
 #: src/service/update/install/mod.rs
 msgid "DegenView is missing from {target} and the previous version is in {old}. Move it back, then try the update again."
@@ -4656,6 +4884,20 @@ msgstr "Desconectado"
 msgid "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}"
 msgstr "Desconectado, pero la clave NO se pudo quitar de este Mac y volverá a conectarse al iniciar DegenView. Quítala en tu llavero o vuelve a intentarlo: {error}"
 
+#: src/platform.rs
+msgid ""
+"Disconnected, but the key could NOT be removed from this computer and will "
+"connect again when DegenView starts. Remove it in Windows Credential Manager, "
+"or try again: {error}"
+msgstr "Desconectado, pero la clave NO se pudo quitar de este ordenador y volverá a conectarse al iniciar DegenView. Quítala en el Administrador de credenciales de Windows o vuelve a intentarlo: {error}"
+
+#: src/platform.rs
+msgid ""
+"Disconnected, but the key could NOT be removed from this computer and will "
+"connect again when DegenView starts. Remove it in your keyring, or try again: "
+"{error}"
+msgstr "Desconectado, pero la clave NO se pudo quitar de este ordenador y volverá a conectarse al iniciar DegenView. Quítala en tu llavero o vuelve a intentarlo: {error}"
+
 #: src/ui/settings/brokers.rs
 msgid "Disconnected."
 msgstr "Desconectado."
@@ -4663,6 +4905,10 @@ msgstr "Desconectado."
 #: src/ui/settings/brokers.rs
 msgid "Disconnected. The key was removed from this Mac."
 msgstr "Desconectado. La clave se quitó de este Mac."
+
+#: src/platform.rs
+msgid "Disconnected. The key was removed from this computer."
+msgstr "Desconectado. La clave se quitó de este ordenador."
 
 #: src/ui/chart/indicator_picker/sections.rs
 msgid "Discover"
@@ -4686,6 +4932,14 @@ msgstr "Descartar todo"
 msgid "Distance"
 msgstr "Distancia"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Distance of the close below the recent high, 0 to -100."
+msgstr "Distancia del cierre por debajo del máximo reciente, de 0 a -100."
+
+#: src/ui/settings/broker_words.rs
+msgid "Do not tick Transfer. DegenView never moves funds and does not need it."
+msgstr "No marques Transfer. DegenView nunca mueve fondos y no lo necesita."
+
 #: src/ui/settings/about.rs
 msgid "Documentation"
 msgstr "Documentación"
@@ -4702,11 +4956,15 @@ msgstr "No sincronizar"
 msgid "Don't stop at this bar"
 msgstr "No detenerse en esta barra"
 
-#: src/model/mcp/activity.rs src/ui/chart/indicator_picker/mod.rs
-#: src/ui/chart/settings/mod.rs src/ui/chart/settings/templates/mod.rs
-#: src/ui/mcp/activity.rs src/ui/portfolio/asset_detail.rs
-#: src/ui/portfolio/sheets.rs src/ui/settings/mcp/credentials.rs
-#: src/ui/settings/mcp/permissions_sheet.rs src/ui/watchlist/sidebar/modals.rs
+#: src/model/pine/bundled/mod.rs
+msgid "Donchian Channels"
+msgstr "Canales de Donchian"
+
+#: src/ui/chart/indicator_picker/mod.rs src/ui/chart/settings/mod.rs
+#: src/ui/chart/settings/templates/mod.rs src/ui/mcp/activity.rs
+#: src/ui/portfolio/asset_detail.rs src/ui/portfolio/sheets.rs
+#: src/ui/settings/mcp/credentials.rs src/ui/settings/mcp/permissions_sheet.rs
+#: src/ui/watchlist/sidebar/modals.rs
 msgid "Done"
 msgstr "Hecho"
 
@@ -4891,6 +5149,10 @@ msgstr "Se dibuja mientras el precio rompe mínimos."
 msgid "Draws one value of each bar. Scripts and indicators still read the real OHLC."
 msgstr "Dibuja un valor de cada barra. Los scripts y los indicadores siguen leyendo el OHLC real."
 
+#: src/model/pine/bundled/mod.rs
+msgid "Draws the highest high and lowest low over a window with their midpoint. A close beyond a band is a breakout, which is the entry rule of the classic turtle system."
+msgstr "Dibuja el máximo más alto y el mínimo más bajo de una ventana con su punto medio. Un cierre fuera de una banda es una ruptura, que es la regla de entrada del clásico sistema de las tortugas."
+
 #: src/ui/chart/settings/style.rs
 msgid "Draws the market's own open, high, low and close."
 msgstr "Dibuja la apertura, el máximo, el mínimo y el cierre propios del mercado."
@@ -4996,6 +5258,12 @@ msgstr "Cada ejecución es más corta de lo que distingue el reloj ({resolution}
 #: src/ui/settings/ai.rs
 msgid "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced."
 msgstr "La conversación de cada script con el asistente se guarda en este Mac para que siga ahí tras reiniciar. Nunca se sincroniza."
+
+#: src/platform.rs
+msgid ""
+"Each script's conversation with the assistant is kept on this computer so it "
+"is there after a restart. It is never synced."
+msgstr "La conversación de cada script con el asistente se guarda en este ordenador para que siga ahí tras reiniciar. Nunca se sincroniza."
 
 #: src/pine_studio/drawer/trades.rs
 msgid "Each trade is listed here once the strategy closes it."
@@ -5320,6 +5588,10 @@ msgstr "Escribe abajo su dirección de subida. Añade el token de acceso si el s
 msgid "Enter the address of this Mac to listen on"
 msgstr "Introduce la dirección de este Mac en la que escuchar"
 
+#: src/platform.rs
+msgid "Enter the address of this computer to listen on"
+msgstr "Introduce la dirección de este ordenador en la que escuchar"
+
 #: src/model/chart/snapshot/mod.rs
 msgid "Enter the address uploads are sent to."
 msgstr "Introduce la dirección a la que se envían las subidas."
@@ -5361,6 +5633,10 @@ msgstr "Entrada"
 #: src/ui/mcp/activity.rs
 msgid "Entry id: {id}"
 msgstr "ID de entrada: {id}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Environment"
+msgstr "Entorno"
 
 #: src/ui/settings/window.rs
 msgid "Ephemeral"
@@ -5647,9 +5923,17 @@ msgstr "Cae {percent}"
 msgid "Families"
 msgstr "Familias"
 
+#: src/model/fib/gann.rs
+msgid "Fan lines"
+msgstr "Líneas del abanico"
+
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Far"
 msgstr "Lejos"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Fast minus slow average of the bar midpoint."
+msgstr "Media rápida menos media lenta del punto medio de la barra."
 
 #: src/pine_studio/library/script_actions.rs
 #: src/ui/chart/indicator_picker/mod.rs
@@ -5818,6 +6102,10 @@ msgstr "Color de relleno"
 msgid "Fill in this Mac's address on the local network"
 msgstr "Rellena la dirección de este Mac en la red local"
 
+#: src/platform.rs
+msgid "Fill in this computer's address on the local network"
+msgstr "Rellena la dirección de este ordenador en la red local"
+
 #: src/ui/settings/window.rs
 msgid "Fill sound"
 msgstr "Sonido de ejecución"
@@ -5982,6 +6270,10 @@ msgstr "Primer extremo"
 msgid "First line"
 msgstr "Primera línea"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Fits a straight line through the last N closes and draws bands a multiple of the standard deviation above and below it. The slope is the trend and the bands show how stretched price is from it."
+msgstr "Ajusta una recta a los últimos N cierres y dibuja bandas a un múltiplo de la desviación típica por encima y por debajo. La pendiente es la tendencia y las bandas muestran cuánto se ha estirado el precio respecto a ella."
+
 #: src/ui/chart/settings/overlay.rs
 msgid "Fitted to the height of the chart. Its price is in the tag and the legend, not on the axis."
 msgstr "Ajustada a la altura del gráfico. Su precio está en la etiqueta y en la leyenda, no en el eje."
@@ -6091,6 +6383,10 @@ msgstr "Solo se evalúa en primer plano"
 msgid "Foreground only"
 msgstr "Solo en primer plano"
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Forex"
+msgstr "Divisas"
+
 #: src/ui/settings/snapshots.rs
 msgid "Forget"
 msgstr "Olvidar"
@@ -6171,7 +6467,7 @@ msgstr "Cuadrado de Gann"
 msgid "Gann square fixed"
 msgstr "Cuadrado de Gann fijo"
 
-#: src/ui/chart/session_stats_view/mod.rs src/ui/mcp/activity.rs
+#: src/ui/chart/session_stats_view/mod.rs
 msgid "Gap"
 msgstr "Gap"
 
@@ -6224,6 +6520,10 @@ msgid "Getting ready"
 msgstr "Preparando"
 
 #: src/ui/settings/api_keys.rs
+msgid "Getting your credentials"
+msgstr "Obtener las credenciales"
+
+#: src/ui/settings/api_keys.rs
 msgid "Getting your keys"
 msgstr "Cómo obtener tus claves"
 
@@ -6254,6 +6554,10 @@ msgstr "Aplica los colores y el lienzo de este gráfico a todos los gráficos de
 #: src/ui/chart/settings/templates/mod.rs
 msgid "Gives every chart in this workspace this chart's type, colors and canvas. Symbols, timeframes, indicators, scripts, alerts and drawings stay as they are."
 msgstr "Aplica el tipo, los colores y el lienzo de este gráfico a todos los gráficos de este espacio de trabajo. Los símbolos, marcos temporales, indicadores, scripts, alertas y dibujos no cambian."
+
+#: src/ui/settings/broker_words.rs
+msgid "Go to API keys and create a Secret API key for the portfolio you want to trade."
+msgstr "Ve a API keys y crea una Secret API key para la cartera con la que quieras operar."
 
 #: src/native_bridge.rs src/pine_studio/editor/navigation.rs
 #: src/pine_studio/menu_bar/edit.rs
@@ -6291,6 +6595,10 @@ msgstr "Codicia"
 #: src/model/tab/link/mod.rs src/model/watchlist/mod.rs
 msgid "Green"
 msgstr "Verde"
+
+#: src/model/fib/mod.rs
+msgid "Grid"
+msgstr "Cuadrícula"
 
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Grid color"
@@ -6766,6 +7074,10 @@ msgstr "Cómo se escriben los precios en el eje, la cruz y las lecturas."
 msgid "How problems show up"
 msgstr "Cómo se muestran los problemas"
 
+#: src/model/pine/bundled/mod.rs
+msgid "How recently the highest high and lowest low happened."
+msgstr "Hace cuánto ocurrieron el máximo más alto y el mínimo más bajo."
+
 #: src/model/portfolio/card.rs
 msgid "How the portfolio splits across assets"
 msgstr "Cómo se reparte la cartera entre activos"
@@ -6797,6 +7109,14 @@ msgstr "Tono"
 #: src/ui/chart/object_tree/mod.rs
 msgid "INDICATORS"
 msgstr "INDICADORES"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Ichimoku Cloud"
+msgstr "Nube Ichimoku"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Ichimoku Kinko Hyo draws a conversion and a base line and a cloud between two leading spans shifted forward. Price above the cloud is bullish, below is bearish, inside is indecision. The lagging span is not drawn."
+msgstr "Ichimoku Kinko Hyo dibuja una línea de conversión, una línea base y una nube entre dos líneas adelantadas. Un precio sobre la nube es alcista, bajo ella es bajista y dentro indica indecisión. La línea retrasada no se dibuja."
 
 #: src/ui/settings/window.rs
 msgid "If the background item is disabled or unavailable, alerts keep evaluating while DegenView is open."
@@ -6918,9 +7238,22 @@ msgid_plural "Imported “{name}”. {count} values in the file were not usable 
 msgstr[0] "“{name}” importado. {count} valor del archivo no se ha podido usar y se omitió, por ejemplo: {value}"
 msgstr[1] "“{name}” importado. {count} valores del archivo no se pudieron usar y se omitieron, por ejemplo: {value}"
 
+#: src/ui/tradingview/result.rs
+msgid "Importing…"
+msgstr "Importando…"
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "Importar…"
+
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "En Pine Studio"
+
+#: src/ui/settings/api_keys.rs
+msgid ""
+"In Account Management, open Personal Access Tokens and generate a token."
+msgstr "En la gestión de la cuenta, abre la sección de tokens de acceso personal y genera un token."
 
 #: src/ui/watchlist/sidebar/detail.rs
 msgid "In lists"
@@ -6933,6 +7266,14 @@ msgstr "Con beneficio"
 #: src/ui/chart/settings/compare.rs
 msgid "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "En la búsqueda de símbolos (⌘K), ⌥↵ añade el mercado resaltado a este gráfico."
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "En el menú de diseños de la barra de herramientas"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "En la barra lateral de listas de seguimiento"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -6967,7 +7308,6 @@ msgstr "Aumentar"
 msgid "Indent guides"
 msgstr "Guías de sangría"
 
-#: src/pine_studio/debug/panel/bar_break.rs
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Index"
 msgstr "Índice"
@@ -7122,6 +7462,10 @@ msgstr "Elemento no encontrado"
 msgid "Iterations"
 msgstr "Iteraciones"
 
+#: src/ui/settings/broker_words.rs
+msgid "Its answers are fixed examples. The balances, orders and fills do not change when you place, edit or cancel an order, and it has no live prices."
+msgstr "Sus respuestas son ejemplos fijos. Los saldos, las órdenes y las ejecuciones no cambian al enviar, modificar o cancelar una orden, y no tiene precios en directo."
+
 #: src/host/mcp/confirmation.rs
 msgid "Its drawings go with it."
 msgstr "Sus dibujos se eliminan con él."
@@ -7249,6 +7593,10 @@ msgstr "Conserva lo que has escrito. Al guardar se sobrescribirá el archivo."
 #: src/ui/settings/sync.rs
 msgid "Keeps your watchlists, layouts, drawings, templates, scripts, portfolios and paper-trading accounts the same on every Mac signed in to your Apple Account. Everything also stays on this Mac."
 msgstr "Mantiene iguales tus listas de seguimiento, diseños, dibujos, plantillas, scripts, carteras y cuentas de trading simulado en todos los Mac con tu cuenta de Apple. Todo se queda también en este Mac."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Keltner Channels"
+msgstr "Canales de Keltner"
 
 #: src/platform.rs
 msgid "Kept in Windows Credential Manager and inserted wherever you place it, in the URL or a header."
@@ -7484,9 +7832,21 @@ msgstr "Hombro izquierdo"
 msgid "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control."
 msgstr "Permite que asistentes de IA y automatizaciones de este Mac inspeccionen DegenView, con permisos que controlas tú."
 
+#: src/platform.rs
+msgid ""
+"Let AI assistants and automation on this computer inspect DegenView, with "
+"permissions you control."
+msgstr "Permite que asistentes de IA y automatizaciones de este ordenador inspeccionen DegenView, con permisos que controlas tú."
+
 #: src/ui/settings/mcp/server.rs
 msgid "Lets AI assistants and automation on this Mac inspect DegenView, within the permissions below. Off until you turn it on."
 msgstr "Permite que asistentes de IA y automatizaciones de este Mac inspeccionen DegenView, dentro de los permisos de abajo. Desactivado hasta que lo actives."
+
+#: src/platform.rs
+msgid ""
+"Lets AI assistants and automation on this computer inspect DegenView, within "
+"the permissions below. Off until you turn it on."
+msgstr "Permite que asistentes de IA y automatizaciones de este ordenador inspeccionen DegenView, dentro de los permisos de abajo. Desactivado hasta que lo actives."
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Level"
@@ -7500,6 +7860,7 @@ msgstr "Color del nivel"
 msgid "Level {ratio}"
 msgstr "Nivel {ratio}"
 
+#: src/model/fib/gann.rs src/model/fib/mod.rs
 #: src/ui/drawing/properties/fib_pages.rs src/ui/drawing/properties/mod.rs
 #: src/ui/pine/logs_view/mod.rs
 msgid "Levels"
@@ -7534,6 +7895,10 @@ msgstr "Licencia"
 msgid "Light"
 msgstr "Claro"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Like RSI but built from the typical price times volume. Above 80 is overbought and below 20 oversold; a new price extreme that MFI does not confirm is a divergence. It needs volume."
+msgstr "Como el RSI, pero construido con el precio típico por el volumen. Por encima de 80 hay sobrecompra y por debajo de 20, sobreventa; un nuevo extremo de precio que el MFI no confirma es una divergencia. Necesita volumen."
+
 #: src/model/broker/ticket.rs
 msgid "Limit"
 msgstr "Limit"
@@ -7551,8 +7916,7 @@ msgstr "Limit, post-only"
 msgid "Limited"
 msgstr "Limitado"
 
-#: src/model/chart/kind.rs src/ui/chart/settings/overlay.rs
-#: src/ui/drawing/properties/style.rs
+#: src/ui/chart/settings/overlay.rs src/ui/drawing/properties/style.rs
 msgid "Line"
 msgstr "Línea"
 
@@ -7711,6 +8075,10 @@ msgstr "Línea {line}: {reason}"
 #: src/pine_studio/profiler/marks.rs
 msgid "Line {line}: {snippet}"
 msgstr "Línea {line}: {snippet}"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Linear Regression Bands"
+msgstr "Bandas de regresión lineal"
 
 #: src/model/drawings/tool.rs src/ui/chart/settings/canvas.rs
 msgid "Lines"
@@ -8056,6 +8424,10 @@ msgstr "Línea inferior"
 msgid "Lower the size to see the smaller ones."
 msgstr "Reduce el tamaño para ver las más pequeñas."
 
+#: src/model/pine/bundled/mod.rs
+msgid "MACD"
+msgstr "MACD"
+
 #: src/ui/settings/mcp/server.rs src/ui/settings/window.rs
 msgid "MCP Server"
 msgstr "Servidor MCP"
@@ -8063,6 +8435,12 @@ msgstr "Servidor MCP"
 #: src/host/mcp/mod.rs
 msgid "MCP credentials cannot be protected against edits to the database on this Mac ({error})"
 msgstr "Las credenciales de MCP no se pueden proteger contra ediciones de la base de datos en este Mac ({error})"
+
+#: src/platform.rs
+msgid ""
+"MCP credentials cannot be protected against edits to the database on this "
+"computer ({error})"
+msgstr "Las credenciales de MCP no se pueden proteger contra ediciones de la base de datos en este ordenador ({error})"
 
 #: src/service/watchlist_quotes/provider.rs
 msgid "MEXC refused the request (HTTP 403): it is not available in every country"
@@ -8165,9 +8543,8 @@ msgstr "Marcador"
 msgid "Marker size"
 msgstr "Tamaño del marcador"
 
-#: src/model/broker/ticket.rs src/trading/confirm.rs src/trading/edit/mod.rs
-#: src/ui/broker/panel.rs src/ui/market_flow/mod.rs
-#: src/ui/portfolio/transaction_editor.rs src/ui/trade/tables.rs
+#: src/trading/confirm.rs src/trading/edit/mod.rs src/ui/broker/panel.rs
+#: src/ui/market_flow/mod.rs src/ui/trade/tables.rs
 msgid "Market"
 msgstr "Mercado"
 
@@ -8210,6 +8587,10 @@ msgstr "Los mercados en la escala del gráfico se dibujan desde donde empieza el
 #: src/ui/workspace/empty_state/tabs.rs
 msgid "Markets you open will show up here."
 msgstr "Los mercados que abras aparecerán aquí."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Marks swing highs and lows confirmed by the bars on each side."
+msgstr "Marca los máximos y mínimos de oscilación confirmados por las barras de cada lado."
 
 #: src/model/indicators/catalog.rs
 msgid "Marks where a Supertrend (10, 3) changes direction."
@@ -8283,6 +8664,10 @@ msgstr "Mediciones mostradas junto a la línea."
 msgid "Measurers"
 msgstr "Medición"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Measures how far the typical price is from its moving average in units of the mean deviation. Readings beyond +100 or -100 mark an unusually strong move."
+msgstr "Mide cuánto se aleja el precio típico de su media móvil, en unidades de desviación media. Lecturas más allá de +100 o -100 marcan un movimiento inusualmente fuerte."
+
 #: src/pine_studio/drawer/simulation.rs src/ui/drawing/properties/style.rs
 msgid "Median"
 msgstr "Mediana"
@@ -8355,9 +8740,9 @@ msgstr "Estilo de la línea central"
 msgid "Middle point"
 msgstr "Punto central"
 
-#: src/native_bridge.rs src/ui/window/chrome.rs
-msgid "Minimize"
-msgstr "Minimizar"
+#: src/model/pine/bundled/mod.rs
+msgid "Midline averages and a projected cloud that frames the trend."
+msgstr "Medias de la línea central y una nube proyectada que enmarca la tendencia."
 
 #: src/model/paper/ticket.rs
 msgid "Minimum is {minimum}."
@@ -8426,6 +8811,10 @@ msgstr "Líneas {first}–{last} modificadas"
 #: src/model/indicators/catalog.rs
 msgid "Momentum"
 msgstr "Momentum"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Money Flow Index"
+msgstr "Índice de flujo de dinero"
 
 #: src/model/drawings/style.rs src/model/market/timeframe/mod.rs
 msgid "Monthly candles"
@@ -8543,6 +8932,14 @@ msgstr "Subir"
 #: src/ui/chart/settings/canvas.rs
 msgid "Move, collapse, maximize and remove, on each script pane."
 msgstr "Mover, contraer, maximizar y quitar, en cada panel de script."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Moving Average Convergence Divergence with signal and histogram."
+msgstr "Moving Average Convergence Divergence con línea de señal e histograma."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Moving Average Ribbon"
+msgstr "Cinta de medias móviles"
 
 #: src/ui/snapshot_studio/window/preview.rs
 msgid "Moving the picture is not available for several charts"
@@ -8909,6 +9306,10 @@ msgstr "Sin sección"
 msgid "No Symbols"
 msgstr "Sin símbolos"
 
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "No, gracias"
+
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
 msgid "No Transactions"
@@ -8961,6 +9362,10 @@ msgstr "Sin puntos de interrupción"
 #: src/pine_studio/debug/panel/lists.rs
 msgid "No call stack"
 msgstr "Sin pila de llamadas"
+
+#: src/ui/chart/symbol_picker/detail/chart.rs
+msgid "No chart for this market"
+msgstr "No hay gráfico para este mercado"
 
 #: src/ui/settings/mcp/clients.rs
 msgid "No clients yet. Generate a credential above to connect one."
@@ -9057,6 +9462,10 @@ msgstr "Ninguna fuente monoespaciada instalada coincide."
 #: src/ui/paper/tables.rs
 msgid "No journal entries"
 msgstr "Sin entradas en el diario"
+
+#: src/ui/settings/broker_words.rs
+msgid "No key is used, so there is nothing to grant. Press Connect."
+msgstr "No se usa ninguna clave, así que no hay nada que conceder. Pulsa Conectar."
 
 #: src/ui/settings/ai.rs
 msgid "No key needed for a local server"
@@ -9276,7 +9685,8 @@ msgstr "Ningún día de la semana está activado, así que ningún día cumple."
 msgid "No working orders"
 msgstr "Sin órdenes pendientes"
 
-#: src/ui/paper/account_sheet.rs src/ui/settings/mcp/permissions_sheet.rs
+#: src/model/chart/snapshot/studio.rs src/ui/paper/account_sheet.rs
+#: src/ui/settings/mcp/permissions_sheet.rs
 msgid "None"
 msgstr "Ninguno"
 
@@ -9396,7 +9806,7 @@ msgstr "Aún sin usar. Elige dónde va con Usar secreto."
 msgid "Not watching here"
 msgstr "No se vigila aquí"
 
-#: src/model/drawings/tool.rs src/trading/confirm.rs
+#: src/model/drawings/tool.rs
 msgid "Note"
 msgstr "Nota"
 
@@ -9484,6 +9894,10 @@ msgstr "Nada en este gráfico coincide con el filtro."
 #: src/pine_studio/profiler/ui.rs
 msgid "Nothing profiled yet"
 msgstr "Nada perfilado todavía"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr "No se sustituye nada"
 
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
@@ -9597,6 +10011,10 @@ msgstr "Números"
 msgid "O columns"
 msgstr "Columnas O"
 
+#: src/model/pine/bundled/mod.rs
+msgid "OBV"
+msgstr "OBV"
+
 #: src/ui/chart/settings/canvas.rs
 msgid "OHLC values"
 msgstr "Valores OHLC"
@@ -9607,6 +10025,18 @@ msgstr "Valores OHLC"
 #: src/ui/settings/sync.rs src/ui/workspace/layout_prompts.rs
 msgid "OK"
 msgstr "Aceptar"
+
+#: src/service/market/error.rs
+msgid "Oanda error: {error}"
+msgstr "Error de Oanda: {error}"
+
+#: src/model/watchlist/text.rs
+msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
+msgstr "Los instrumentos de Oanda se escriben con el formato BASE_QUOTE, como EUR_USD"
+
+#: src/service/watchlist_quotes/provider.rs
+msgid "Oanda refused your access token. Check it in Settings"
+msgstr "Oanda ha rechazado tu token de acceso. Revísalo en Ajustes"
 
 #: src/model/chart/context/mod.rs src/ui/chart/object_tree/mod.rs
 msgid "Object tree"
@@ -9637,6 +10067,10 @@ msgstr "Si está desactivado, solo se muestran mientras la posición está selec
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Off: this credential works from this Mac only."
 msgstr "Desactivado: esta credencial solo funciona desde este Mac."
+
+#: src/platform.rs
+msgid "Off: this credential works from this computer only."
+msgstr "Desactivado: esta credencial solo funciona desde este ordenador."
 
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Offset point"
@@ -9693,6 +10127,10 @@ msgstr "En la ocurrencia número"
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "On this chart"
 msgstr "En este gráfico"
+
+#: src/model/pine/bundled/mod.rs
+msgid "On-Balance Volume: a running total of signed volume."
+msgstr "On-Balance Volume: un total acumulado del volumen con signo."
 
 #: src/ui/alert/editor.rs
 msgid "Once"
@@ -9803,6 +10241,10 @@ msgid "Open"
 msgstr "Abrir"
 
 #: src/ui/chart/symbol_picker/detail.rs
+msgid "Open 24/5"
+msgstr "Abierto 24/5"
+
+#: src/ui/chart/symbol_picker/detail.rs
 msgid "Open 24/7"
 msgstr "Abierto 24/7"
 
@@ -9898,6 +10340,14 @@ msgstr "Abre la página de la API y copia tu clave de API."
 msgid "Open the Alpaca dashboard"
 msgstr "Abrir el panel de Alpaca"
 
+#: src/ui/settings/broker_words.rs
+msgid "Open the Coinbase Developer Platform (portal.cdp.coinbase.com) and sign in."
+msgstr "Abre Coinbase Developer Platform (portal.cdp.coinbase.com) e inicia sesión."
+
+#: src/ui/settings/api_keys.rs
+msgid "Open the Oanda API documentation"
+msgstr "Abrir la documentación de la API de Oanda"
+
 #: src/ui/settings/about.rs
 msgid "Open the release page on GitHub"
 msgstr "Abrir la página de la versión en GitHub"
@@ -9914,9 +10364,19 @@ msgstr "Abrir {layout}"
 msgid "Open, high, low and close under the crosshair, with volume where the market has it."
 msgstr "Apertura, máximo, mínimo y cierre bajo la cruz, con volumen si el mercado lo tiene."
 
+#: src/service/llm/mod.rs
+msgid "OpenAI-compatible"
+msgstr "Compatible con OpenAI"
+
 #: src/ui/settings/ai.rs
 msgid "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
 msgstr "OpenRouter, Ollama, LM Studio y similares. Usa https://, o http:// para un servidor en este Mac."
+
+#: src/platform.rs
+msgid ""
+"OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a "
+"server on this computer."
+msgstr "OpenRouter, Ollama, LM Studio y similares. Usa https://, o http:// para un servidor en este ordenador."
 
 #: src/model/editor_theme/roles.rs
 msgid "Operators"
@@ -10167,6 +10627,10 @@ msgstr "El trading simulado no está disponible para este gráfico."
 #: src/ui/paper/panel/mod.rs src/ui/paper/panel_gallery.rs
 msgid "Paper trading settings"
 msgstr "Ajustes del trading simulado"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Parabolic SAR"
+msgstr "Parabolic SAR"
 
 #: src/model/drawings/tool.rs
 msgid "Parallel channel"
@@ -10738,6 +11202,10 @@ msgstr "Proveedor de mercados de predicción"
 msgid "Predictions"
 msgstr "Predicciones"
 
+#: src/ui/tradingview/result.rs
+msgid "Preparing the preview…"
+msgstr "Preparando la vista previa…"
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Preset"
 msgstr "Preajuste"
@@ -10754,6 +11222,10 @@ msgstr "Vista previa"
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
 msgstr "Gráfico de vista previa"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
+msgstr "Primero, vista previa"
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Preview it, then add it to any chart."
@@ -10823,6 +11295,10 @@ msgstr "Etiquetas de precio"
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Price level"
 msgstr "Nivel de precio"
+
+#: src/model/fib/gann.rs src/model/fib/mod.rs
+msgid "Price levels"
+msgstr "Niveles de precio"
 
 #: src/model/drawings/tool.rs
 msgid "Price note"
@@ -10912,6 +11388,10 @@ msgstr "Día anterior"
 #: src/ui/settings/snapshots.rs
 msgid "Privacy"
 msgstr "Privacidad"
+
+#: src/ui/settings/broker_words.rs
+msgid "Private key"
+msgstr "Clave privada"
 
 #: src/pine_studio/drawer/mod.rs
 msgid "Problems"
@@ -11054,6 +11534,10 @@ msgstr "Pregunta"
 #: src/native_bridge.rs
 msgid "Quit {app}"
 msgstr "Salir de {app}"
+
+#: src/model/pine/bundled/mod.rs
+msgid "RSI"
+msgstr "RSI"
 
 #: src/model/drawings/style.rs
 msgid "Radiation"
@@ -11219,6 +11703,10 @@ msgstr "P&G bruto realizado {amount} antes de comisiones"
 msgid "Realtime"
 msgstr "Tiempo real"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "Reconstruido a partir de sus dibujos"
+
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
 #: src/ui/workspace/empty_state/tabs.rs
@@ -11293,6 +11781,10 @@ msgstr "Normal"
 msgid "Rejected"
 msgstr "Rechazada"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Relative Strength Index, 14 periods, 0 to 100."
+msgstr "Relative Strength Index, 14 periodos, de 0 a 100."
+
 #: src/model/editor_theme/typography.rs
 msgid "Relaxed"
 msgstr "Relajado"
@@ -11357,6 +11849,10 @@ msgstr "Quitar punto de interrupción"
 #: src/ui/portfolio/cards/mod.rs
 msgid "Remove Chart"
 msgstr "Quitar gráfico"
+
+#: src/ui/settings/api_keys.rs
+msgid "Remove Credentials"
+msgstr "Eliminar credenciales"
 
 #: src/pine_studio/library/script_actions.rs
 msgid "Remove Favorite"
@@ -11526,6 +12022,10 @@ msgstr "Quitar {name} de este gráfico"
 msgid "Remove {title}"
 msgstr "Quitar {title}"
 
+#: src/ui/settings/card.rs
+msgid "Removed"
+msgstr "Eliminado"
+
 #: src/ui/settings/sync.rs
 msgid "Removed from iCloud"
 msgstr "Eliminado de iCloud"
@@ -11640,6 +12140,10 @@ msgstr "Sustituir"
 #: src/ui/settings/ai.rs src/ui/settings/api_keys.rs
 msgid "Replace API Key"
 msgstr "Reemplazar clave de API"
+
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Replace chart"
+msgstr "Sustituir gráfico"
 
 #: src/ui/drawing/layer/menu.rs src/ui/drawing/properties/content.rs
 msgid "Replace image…"
@@ -12331,6 +12835,10 @@ msgstr "Guarda primero el diseño y así el autoguardado podrá mantenerlo al d�
 msgid "Save this chart's look, or give it another."
 msgstr "Guarda el aspecto de este gráfico o dale otro."
 
+#: src/ui/settings/card.rs
+msgid "Saved"
+msgstr "Guardado"
+
 #: src/host/settings/mod.rs
 msgid "Saved conversations cleared."
 msgstr "Conversaciones guardadas borradas."
@@ -12391,6 +12899,10 @@ msgstr "Guarda el tipo, los colores y el lienzo de este gráfico para que cualqu
 msgid "Saving adds a second one that fires at the same time."
 msgstr "Al guardar se añade una segunda que se dispara a la vez."
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Saving or copying an image never uploads anything."
+msgstr "Guardar o copiar una imagen nunca sube nada."
+
 #: src/ui/settings/snapshots.rs
 msgid "Saving or copying an image never uploads anything. Sharing uploads the image to the host that is on, and DegenView asks once before the first upload to each. A host's Test button sends a one-pixel image to check the settings."
 msgstr "Guardar o copiar una imagen nunca sube nada. Compartir sube la imagen al host que esté activado, y DegenView pregunta una vez antes de la primera subida a cada uno. El botón Prueba de un host envía una imagen de un píxel para comprobar los ajustes."
@@ -12420,7 +12932,7 @@ msgstr "Escala de {name}"
 msgid "Scale text"
 msgstr "Texto de escala"
 
-#: src/model/drawings/style.rs src/ui/chart/settings/canvas.rs
+#: src/ui/chart/settings/canvas.rs
 msgid "Scales"
 msgstr "Escalas"
 
@@ -12452,22 +12964,6 @@ msgstr "Script eliminado"
 #: src/pine_studio/sheets.rs
 msgid "Script name"
 msgstr "Nombre del script"
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "Los nombres de script no pueden contener caracteres de control."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "Los nombres de script no pueden contener “{character}”."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "Los nombres de script no pueden empezar por un punto."
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "Los nombres de script deben tener {limit} bytes o menos."
 
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
@@ -12700,6 +13196,10 @@ msgstr "Seleccionar todo"
 msgid "Select Bar on Chart"
 msgstr "Seleccionar barra en el gráfico"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "Seleccionar todo"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "Selecciona un indicador"
@@ -12711,6 +13211,10 @@ msgstr "Seleccionar barra"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "Seleccionar barra en el gráfico"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "No seleccionar nada"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -12752,11 +13256,7 @@ msgstr "Selección"
 msgid "Self-signed for this address. A client must trust exactly this certificate: compare the fingerprint, never click through a warning."
 msgstr "Autofirmado para esta dirección. Un cliente debe confiar exactamente en este certificado: compara la huella y no ignores nunca una advertencia."
 
-#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
-#: src/trading/edit/mod.rs src/ui/broker/panel.rs
-#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
-#: src/ui/portfolio/transactions.rs src/ui/trade/fields.rs
-#: src/ui/trade/order_sheet/open_orders.rs
+#: src/ui/trade/fields.rs
 msgid "Sell"
 msgstr "Vender"
 
@@ -12926,9 +13426,21 @@ msgstr "Configurar"
 msgid "Set up Alpaca to open a stock"
 msgstr "Configurar Alpaca para abrir una acción"
 
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Set up Oanda to search forex"
+msgstr "Configura Oanda para buscar divisas"
+
+#: src/service/market/error.rs
+msgid "Set up this provider's API key in Settings first."
+msgstr "Configura primero la clave de API de este proveedor en Ajustes."
+
 #: src/service/market/error.rs
 msgid "Set up your Alpaca API key before using stock charts."
 msgstr "Configura tu clave de API de Alpaca antes de usar gráficos de acciones."
+
+#: src/service/market/error.rs
+msgid "Set up your Oanda account in Settings before using Oanda charts."
+msgstr "Configura tu cuenta de Oanda en Ajustes antes de usar sus gráficos."
 
 #: src/app/window.rs src/ui/chart/card/overlay_card.rs
 #: src/ui/drawing/layer/menu.rs src/ui/window/tab_bar/mod.rs
@@ -13220,6 +13732,10 @@ msgstr "Muestra el texto del archivo. Deshacer recupera tus cambios."
 msgid "Shows this asset's transactions"
 msgstr "Muestra las transacciones de este activo"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Shows where the close is relative to the highest high of the last N bars. Above -20 is overbought and below -80 is oversold. It is the Stochastic turned upside down."
+msgstr "Muestra dónde está el cierre respecto al máximo más alto de las últimas N barras. Por encima de -20 hay sobrecompra y por debajo de -80, sobreventa. Es el Estocástico invertido."
+
 #: src/ui/chart/settings/appearance.rs
 msgid "Shows {count} decimal place on the price axis."
 msgid_plural "Shows {count} decimal places on the price axis."
@@ -13276,10 +13792,17 @@ msgstr "Simulación"
 msgid "Sine line"
 msgstr "Línea sinusoidal"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Six averages (SMA, EMA, WMA or HMA) from a first length in equal steps. A fanned-out ribbon means a strong trend, a tangle means a range, and the order of the lines flips when the trend does."
+msgstr "Seis medias (SMA, EMA, WMA o HMA) desde una primera longitud en pasos iguales. Una cinta abierta en abanico indica una tendencia fuerte, un enredo indica un rango, y el orden de las líneas se invierte cuando cambia la tendencia."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Six moving averages of increasing length."
+msgstr "Seis medias móviles de longitud creciente."
+
 #: src/trading/confirm.rs src/trading/edit/mod.rs src/ui/broker/panel.rs
-#: src/ui/drawing/properties/content.rs src/ui/drawing/properties/text.rs
 #: src/ui/market_flow/book/tape.rs src/ui/market_flow/mod.rs
-#: src/ui/paper/tables.rs src/ui/snapshot_studio/window/toolbar.rs
+#: src/ui/paper/tables.rs
 msgid "Size"
 msgstr "Tamaño"
 
@@ -13349,7 +13872,7 @@ msgstr "Capturas"
 msgid "Snowman"
 msgstr "Muñeco de nieve"
 
-#: src/model/chart/canvas/mod.rs src/model/chart/kind.rs
+#: src/model/chart/kind.rs
 msgid "Solid"
 msgstr "Sólido"
 
@@ -13615,6 +14138,14 @@ msgstr "Paso {number} de {count}"
 msgid "Steps of the chart's last printed price place."
 msgstr "Pasos del último decimal de precio mostrado en el gráfico."
 
+#: src/model/pine/bundled/mod.rs
+msgid "Stochastic"
+msgstr "Estocástico"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Stochastic RSI"
+msgstr "RSI estocástico"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Stock"
 msgstr "Acción"
@@ -13627,6 +14158,10 @@ msgstr "Las velas de acciones vienen de Alpaca. Añade tus claves en Ajustes par
 #: src/ui/chart/symbol_picker/search.rs src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
 msgstr "Acciones"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Stocks & forex"
+msgstr "Acciones y divisas"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Stocks could not be searched"
@@ -14061,8 +14596,7 @@ msgstr "Nombre de la plantilla"
 msgid "Templates"
 msgstr "Plantillas"
 
-#: src/ui/settings/provider_card.rs src/ui/trade/connect_list.rs
-#: src/ui/webhook/settings.rs
+#: src/ui/settings/provider_card.rs src/ui/webhook/settings.rs
 msgid "Test"
 msgstr "Probar"
 
@@ -14165,6 +14699,11 @@ msgstr "Eso no es una dirección web."
 msgid "That is this Mac's own address. Turn the switch off to listen here only"
 msgstr "Esa es la propia dirección de este Mac. Desactiva el interruptor para escuchar solo aquí"
 
+#: src/platform.rs
+msgid ""
+"That is this computer's own address. Turn the switch off to listen here only"
+msgstr "Esa es la propia dirección de este ordenador. Desactiva el interruptor para escuchar solo aquí"
+
 #: src/model/chart/context/mod.rs
 msgid "That item is gone, so nothing was changed."
 msgstr "Ese elemento ya no existe, así que no se ha cambiado nada."
@@ -14261,6 +14800,16 @@ msgstr "No se ha podido leer la clave del Llavero que protege las credenciales d
 msgid "The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off."
 msgstr "Falta la clave del Llavero que protege las credenciales de MCP guardadas, así que no es posible fiarse de ellas. El servidor sigue apagado."
 
+#: src/platform.rs
+msgid ""
+"The Keychain key was replaced but the saved MCP state could not be cleared. "
+"Choose Reset MCP Access again."
+msgstr "La clave del Llavero se ha sustituido, pero no se ha podido borrar el estado de MCP guardado. Vuelve a elegir Restablecer acceso MCP."
+
+#: src/model/pine/bundled/mod.rs
+msgid "The Stochastic formula applied to RSI."
+msgstr "La fórmula del Estocástico aplicada al RSI."
+
 #: src/ui/trade/order_sheet/form.rs
 msgid "The account cannot afford the smallest order here."
 msgstr "La cuenta no puede permitirse aquí la orden mínima."
@@ -14297,6 +14846,10 @@ msgstr "El ángulo de la flecha tal como se dibuja en pantalla."
 #: src/pine_studio/ai/mod.rs
 msgid "The assistant stopped unexpectedly."
 msgstr "El asistente se ha detenido inesperadamente."
+
+#: src/model/pine/bundled/mod.rs
+msgid "The average price weighted by volume since the start of the day, with bands a multiple of the volume-weighted standard deviation away. Traders use it as the fair price of the session. It needs volume."
+msgstr "El precio medio ponderado por volumen desde el inicio del día, con bandas a un múltiplo de la desviación típica ponderada por volumen. Los traders lo usan como el precio justo de la sesión. Necesita volumen."
 
 #: src/ui/chart/settings/appearance.rs
 msgid "The axis reads prices; equal price differences are equally tall."
@@ -14345,6 +14898,10 @@ msgstr "El bróker no ha podido previsualizar este cambio ({error}). No se puede
 #: src/trading/broker/backend.rs
 msgid "The broker does not know this order any more."
 msgstr "El bróker ya no conoce esta orden."
+
+#: src/trading/broker/backend.rs
+msgid "The broker gave no answer for this order."
+msgstr "El bróker no ha respondido sobre esta orden."
 
 #: src/ui/broker/panel.rs
 msgid "The broker is asked to cancel. An order can still fill before the cancel reaches it, and it stays listed until the broker confirms."
@@ -14490,6 +15047,10 @@ msgstr "El máximo del día supera el máximo del día anterior."
 msgid "The day's low goes below the previous day's low."
 msgstr "El mínimo del día cae por debajo del mínimo del día anterior."
 
+#: src/model/pine/bundled/mod.rs
+msgid "The difference between a fast and a slow EMA, a signal line of that difference, and a histogram of the gap. The histogram is darker while momentum is growing. A MACD line crossing its signal is the classic trigger."
+msgstr "La diferencia entre una EMA rápida y una lenta, una línea de señal de esa diferencia y un histograma de la brecha. El histograma es más oscuro mientras el impulso crece. Que la línea MACD cruce su señal es el disparador clásico."
+
 #: src/service/update/archive.rs
 msgid "The download contains an unsafe file path."
 msgstr "La descarga contiene una ruta de archivo no segura."
@@ -14578,6 +15139,10 @@ msgstr "La primera barra visible vale 100; el resto son 100 más su variación."
 msgid "The guide of the block the caret is in."
 msgstr "La guía del bloque donde está el cursor de texto."
 
+#: src/model/pine/bundled/mod.rs
+msgid "The highest high and lowest low of the last N bars."
+msgstr "El máximo más alto y el mínimo más bajo de las últimas N barras."
+
 #: src/model/editor_theme/roles.rs
 msgid "The highlighted row of the suggestion list."
 msgstr "La fila resaltada de la lista de sugerencias."
@@ -14590,6 +15155,10 @@ msgstr "Las tenencias que más han ganado en un intervalo"
 msgid "The image is too large to upload."
 msgstr "La imagen es demasiado grande para subirla."
 
+#: src/host/tradingview/mod.rs
+msgid "The import stopped unexpectedly. Some of it may already have been added."
+msgstr "La importación se ha detenido de forma inesperada. Puede que ya se haya añadido una parte."
+
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."
 msgstr "El script del indicador aún no se ha cargado. Inténtalo de nuevo en un momento."
@@ -14601,6 +15170,24 @@ msgstr "El diario está vacío"
 #: src/ui/settings/ai.rs
 msgid "The key could not be saved for later ({error}). It works until you quit DegenView."
 msgstr "No se ha podido guardar la clave para más adelante ({error}). Funciona hasta que salgas de DegenView."
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage that protects the saved MCP credentials could not be"
+" read, so the server stays off. Restart DegenView to try again."
+msgstr "No se ha podido leer la clave del almacenamiento seguro que protege las credenciales de MCP guardadas, así que el servidor sigue apagado. Reinicia DegenView para volver a intentarlo."
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage that protects the saved MCP credentials is missing, "
+"so they cannot be trusted. The server stays off."
+msgstr "Falta la clave del almacenamiento seguro que protege las credenciales de MCP guardadas, así que no es posible fiarse de ellas. El servidor sigue apagado."
+
+#: src/platform.rs
+msgid ""
+"The key in secure storage was replaced but the saved MCP state could not be "
+"cleared. Choose Reset MCP Access again."
+msgstr "La clave del almacenamiento seguro se ha sustituido, pero no se ha podido borrar el estado de MCP guardado. Vuelve a elegir Restablecer acceso MCP."
 
 #: src/platform.rs
 msgid "The key stays in Windows Credential Manager on this computer."
@@ -14617,6 +15204,14 @@ msgstr "La clave permanece en el almacenamiento seguro de este ordenador."
 #: src/ui/workspace/toolbar.rs
 msgid "The last autosave could not be written. Choose Save layout."
 msgstr "No se ha podido escribir el último autoguardado. Elige Guardar diseño."
+
+#: src/ui/chart/settings/canvas.rs
+msgid "The last price's tag shows the price alone."
+msgstr "La etiqueta del último precio muestra solo el precio."
+
+#: src/model/pine/bundled/mod.rs
+msgid "The least-squares line of recent closes with deviation bands."
+msgstr "La recta de mínimos cuadrados de los cierres recientes con bandas de desviación."
 
 #: src/ui/chart/settings/style.rs
 msgid "The left tick is the open, the right the close."
@@ -14685,6 +15280,10 @@ msgstr "La lista de modelos se ha detenido inesperadamente."
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/mcp/security.rs
 msgid "The most a credential with remote access can do, even on this Mac."
 msgstr "Lo máximo que puede hacer una credencial con acceso remoto, incluso en este Mac."
+
+#: src/platform.rs
+msgid "The most a credential with remote access can do, even on this computer."
+msgstr "Lo máximo que puede hacer una credencial con acceso remoto, incluso en este ordenador."
 
 #: src/ui/settings/mcp/permissions_sheet.rs src/ui/settings/mcp/security.rs
 msgid "The most any credential can do. Each one can only narrow this."
@@ -14878,6 +15477,12 @@ msgstr "Los mismos precios, escritos como los mostrará este gráfico."
 msgid "The same size, different candles."
 msgstr "El mismo tamaño, velas distintas."
 
+#: src/platform.rs
+msgid ""
+"The saved MCP credentials do not match the seal kept in secure storage, so "
+"they were changed outside DegenView. The server stays off."
+msgstr "Las credenciales de MCP guardadas no coinciden con el sello guardado en el almacenamiento seguro, así que se han modificado fuera de DegenView. El servidor sigue apagado."
+
 #: src/host/mcp/mod.rs
 msgid "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off."
 msgstr "Las credenciales de MCP guardadas no coinciden con el sello guardado en el Llavero, así que se han modificado fuera de DegenView. El servidor sigue apagado."
@@ -15030,6 +15635,10 @@ msgstr "La tabla se queda aquí por mucho que se desplace el gráfico."
 msgid "The test stopped unexpectedly."
 msgstr "La prueba se ha detenido inesperadamente."
 
+#: src/ui/chart/settings/canvas.rs
+msgid "The time left in the forming bar, under the last price. Not shown on Renko, Kagi, Line Break, Point & Figure and Range charts, in a replay, or for markets without clock-cut bars."
+msgstr "El tiempo que le queda a la barra en formación, bajo el último precio. No se muestra en gráficos Renko, Kagi, Line Break, Point & Figure y Range, en una repetición ni en mercados sin barras cortadas por reloj."
+
 #: src/ui/chart/symbol_picker/predictions/trending.rs
 msgid "The trending list stopped loading."
 msgstr "La lista de tendencias ha dejado de cargarse."
@@ -15086,6 +15695,10 @@ msgstr "Todo el gráfico que tiene el foco"
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr "La alerta de {symbol} se ha eliminado. Se conserva su historial de disparos."
 
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), where most of the drawings are"
+msgstr "El gráfico de {symbol}: su símbolo no tiene mercado, así que se abre en {market} ({exchange}), donde están la mayoría de los dibujos"
+
 #: src/pine_studio/menu_bar/mod.rs src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr "Tema"
@@ -15141,6 +15754,10 @@ msgstr "No hay ninguna actualización lista para instalar."
 #: src/ui/chart/card/snapshot.rs
 msgid "There is nothing on this chart to take a picture of yet."
 msgstr "Aún no hay nada en este gráfico que capturar."
+
+#: src/ui/settings/broker_words.rs
+msgid "There is nothing to create: Coinbase's sandbox needs no API key."
+msgstr "No hay nada que crear: el sandbox de Coinbase no necesita ninguna API key."
 
 #: src/ui/trade/order_sheet/form.rs
 msgid "There is nothing to spend."
@@ -15250,6 +15867,10 @@ msgstr "Esto modifica la orden en el bróker. Un precio nuevo puede hacerte perd
 #: src/ui/chart/card/snapshot.rs
 msgid "This chart cannot be saved as an image."
 msgstr "Este gráfico no se puede guardar como imagen."
+
+#: src/model/chart/context/mod.rs
+msgid "This chart has no bars that close on a clock"
+msgstr "Este gráfico no tiene barras que cierren a una hora fija"
 
 #: src/model/broker/chart.rs
 msgid "This chart has no market to trade."
@@ -15374,6 +15995,13 @@ msgstr "A esta versión le falta su entorno de iCloud."
 msgid "This removes the key from this Mac and stops the connection. Orders already placed stay live at the broker. It does not revoke the key: to do that, delete it in the broker's own settings."
 msgstr "Esto quita la clave de este Mac y detiene la conexión. Las órdenes ya enviadas siguen activas en el bróker. No revoca la clave: para eso, elimínala en los ajustes del propio bróker."
 
+#: src/platform.rs
+msgid ""
+"This removes the key from this computer and stops the connection. Orders "
+"already placed stay live at the broker. It does not revoke the key: to do "
+"that, delete it in the broker's own settings."
+msgstr "Esto quita la clave de este ordenador y detiene la conexión. Las órdenes ya enviadas siguen activas en el bróker. No revoca la clave: para eso, elimínala en los ajustes del propio bróker."
+
 #: src/ui/alert/center.rs
 msgid "This rule type is not supported by this version."
 msgstr "Esta versión no admite este tipo de regla."
@@ -15456,6 +16084,10 @@ msgstr "Patrón de tres impulsos"
 msgid "Three quarters by"
 msgstr "Tres cuartos en"
 
+#: src/ui/settings/broker_words.rs
+msgid "Tick View, and Trade only if you want to place orders from DegenView."
+msgstr "Marca View y, solo si quieres enviar órdenes desde DegenView, también Trade."
+
 #: src/ui/portfolio/asset_picker.rs
 msgid "Ticker symbol (e.g. BTC or PEPE)"
 msgstr "Símbolo ticker (p. ej., BTC o PEPE)"
@@ -15493,6 +16125,10 @@ msgstr "Vigencia"
 #: src/ui/drawing/properties/style.rs
 msgid "Time label"
 msgstr "Etiqueta de hora"
+
+#: src/model/fib/gann.rs src/model/fib/mod.rs
+msgid "Time levels"
+msgstr "Niveles de tiempo"
 
 #: src/ui/replay/bar.rs
 msgid "Time of the replay cursor, in your time zone"
@@ -15533,6 +16169,10 @@ msgstr "Minúsculo"
 #: src/ui/mcp/activity.rs
 msgid "To"
 msgstr "Hasta"
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "To share this chart, DegenView uploads its image to {destination}."
+msgstr "Para compartir este gráfico, DegenView sube su imagen a {destination}."
 
 #: src/ui/drawing/content/sheet.rs
 msgid "To show its text and the author's picture, DegenView sends this post's link to {host}, asks X's embed service for the author's picture and downloads it from X's image server. The few lines and the picture it gets back are kept on the card. Nothing else is sent: no account, no cookies, nothing about your charts."
@@ -15680,6 +16320,10 @@ msgstr "Comisión de trading ({percent}%)"
 msgid "Trading settings"
 msgstr "Ajustes de trading"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
+msgstr "TradingView no cambia"
+
 #: src/model/chart/kind.rs
 msgid "Traditional"
 msgstr "Tradicional"
@@ -15735,6 +16379,10 @@ msgstr "Ángulo de tendencia"
 msgid "Trend line"
 msgstr "Línea de tendencia"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Trend strength (ADX) with the +DI and -DI direction lines."
+msgstr "Fuerza de la tendencia (ADX) con las líneas de dirección +DI y -DI."
+
 #: src/model/drawings/tool.rs
 msgid "Trend-based fib extension"
 msgstr "Extensión de Fibonacci basada en tendencia"
@@ -15785,6 +16433,7 @@ msgstr "Volver a intentar…"
 
 #: src/pine_studio/ai/panel.rs src/pine_studio/profiler/ui.rs
 #: src/ui/broker/panel.rs src/ui/trade/order_sheet/status.rs
+#: src/workspace/chart/snapshot/mod.rs
 msgid "Try again"
 msgstr "Volver a intentar"
 
@@ -15963,6 +16612,10 @@ msgstr "Respuesta inesperada de MEXC"
 msgid "Unexpected OKX response"
 msgstr "Respuesta inesperada de OKX"
 
+#: src/service/watchlist_quotes/provider.rs
+msgid "Unexpected Oanda response"
+msgstr "Respuesta inesperada de Oanda"
+
 #: src/model/broker/ticket.rs src/ui/settings/window.rs
 msgid "Unknown"
 msgstr "Desconocido"
@@ -16116,6 +16769,10 @@ msgstr "Actualizando DegenView…"
 msgid "Updating {percent}%"
 msgstr "Actualizando {percent}%"
 
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Upload"
+msgstr "Subir"
+
 #: src/ui/settings/sync.rs
 msgid "Upload This Mac's Data Again"
 msgstr "Volver a subir los datos de este Mac"
@@ -16123,6 +16780,10 @@ msgstr "Volver a subir los datos de este Mac"
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Upload address"
 msgstr "Dirección de subida"
+
+#: src/workspace/chart/snapshot/mod.rs
+msgid "Upload this chart image?"
+msgstr "¿Subir la imagen de este gráfico?"
 
 #: src/service/snapshot/providers/self_hosted.rs
 msgid "Upload to a server you run"
@@ -16180,9 +16841,21 @@ msgstr "Usar el predeterminado"
 msgid "Use from other machines"
 msgstr "Usar desde otros equipos"
 
+#: src/platform.rs
+msgid "Use https://, or http:// only for a server on this Mac."
+msgstr "Usa https://, o http:// solo para un servidor en este Mac."
+
+#: src/platform.rs
+msgid "Use https://, or http:// only for a server on this computer."
+msgstr "Usa https://, o http:// solo para un servidor en este ordenador."
+
 #: src/ui/settings/sync.rs
 msgid "Use iCloud's Data"
 msgstr "Usar los datos de iCloud"
+
+#: src/ui/settings/broker_words.rs
+msgid "Use it to try the order ticket and its previews without a real account. Nothing here reaches your Coinbase account."
+msgstr "Úsalo para probar el ticket de la orden y sus vistas previas sin una cuenta real. Nada de esto llega a tu cuenta de Coinbase."
 
 #: src/model/webhook/policy.rs
 msgid "Use letters, numbers and - _ . only."
@@ -16296,6 +16969,10 @@ msgstr "Usando {server} del sistema"
 msgid "Using {server} from this page"
 msgstr "Usando {server} de esta página"
 
+#: src/model/pine/bundled/mod.rs
+msgid "VWAP"
+msgstr "VWAP"
+
 #: src/ui/portfolio/import_preview.rs
 msgid "Validating and importing…"
 msgstr "Validando e importando…"
@@ -16385,6 +17062,10 @@ msgstr "Versión {version} - {date}"
 msgid "Vertical"
 msgstr "Vertical"
 
+#: src/model/fib/gann.rs
+msgid "Vertical background"
+msgstr "Fondo vertical"
+
 #: src/ui/chart/settings/canvas.rs
 msgid "Vertical grid lines"
 msgstr "Líneas verticales de la cuadrícula"
@@ -16434,6 +17115,10 @@ msgstr "Ver transacciones"
 #: src/ui/settings/brokers.rs
 msgid "View balances and orders"
 msgstr "Ver saldos y órdenes"
+
+#: src/ui/settings/broker_words.rs
+msgid "View lets DegenView read balances and orders. Trade lets it place and cancel orders. Transfer is never needed."
+msgstr "View permite a DegenView leer saldos y órdenes. Trade le permite enviar y cancelar órdenes. Transfer nunca hace falta."
 
 #: src/ui/settings/brokers.rs
 msgid "View only"
@@ -16493,6 +17178,10 @@ msgstr "Barras de volumen"
 #: src/model/chart/kind.rs
 msgid "Volume Candles"
 msgstr "Velas de volumen"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Volume weighted average price, restarted each day, with bands."
+msgstr "Precio medio ponderado por volumen, reiniciado cada día, con bandas."
 
 #: src/model/drawings/tool.rs
 msgid "Volume-based"
@@ -16735,6 +17424,10 @@ msgstr "Webhooks…"
 msgid "Weekly candles"
 msgstr "Velas semanales"
 
+#: src/model/pine/bundled/mod.rs
+msgid "Weights each bar's volume by where it closed inside its range and sums over N bars. Above zero means closes lean toward the highs (buying pressure). It needs volume."
+msgstr "Pondera el volumen de cada barra según dónde cerró dentro de su rango y suma sobre N barras. Por encima de cero, los cierres se inclinan hacia los máximos (presión compradora). Necesita volumen."
+
 #: src/ui/settings/appearance.rs
 msgid "What a chart tab shows. The layout name and the price follow the tab's focused chart."
 msgstr "Lo que muestra una pestaña de gráfico. El nombre del diseño y el precio siguen al gráfico activo de la pestaña."
@@ -16743,9 +17436,21 @@ msgstr "Lo que muestra una pestaña de gráfico. El nombre del diseño y el prec
 msgid "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained."
 msgstr "Lo que los clientes conectados pidieron a DegenView, de más reciente a más antiguo. Solo se guarda en este Mac y contiene ids y resultados, nunca el contenido de una solicitud."
 
+#: src/platform.rs
+msgid ""
+"What connected clients asked DegenView to do, newest first. Kept on this "
+"computer only, and holds ids and results, never what a request contained."
+msgstr "Lo que los clientes conectados pidieron a DegenView, de más reciente a más antiguo. Solo se guarda en este ordenador y contiene ids y resultados, nunca el contenido de una solicitud."
+
 #: src/ui/mcp/activity.rs
 msgid "What connected clients asked DegenView to do. Kept on this Mac only; it holds ids and results, never what a request contained."
 msgstr "Lo que los clientes conectados pidieron a DegenView. Solo se guarda en este Mac; contiene ids y resultados, nunca el contenido de una solicitud."
+
+#: src/platform.rs
+msgid ""
+"What connected clients asked DegenView to do. Kept on this computer only; it "
+"holds ids and results, never what a request contained."
+msgstr "Lo que los clientes conectados pidieron a DegenView. Solo se guarda en este ordenador; contiene ids y resultados, nunca el contenido de una solicitud."
 
 #: src/pine_studio/ai/panel.rs
 msgid "What could go wrong with this logic?"
@@ -16803,6 +17508,10 @@ msgstr "Servicio al que Copiar enlace, Abrir en una pestaña nueva y Tuitear ima
 msgid "Where the baseline sits, as a percentage of the chart's height from the bottom."
 msgstr "Dónde se sitúa la línea base, como porcentaje de la altura del gráfico desde abajo."
 
+#: src/model/pine/bundled/mod.rs
+msgid "Where the close sits inside the recent range, 0 to 100."
+msgstr "Dónde se sitúa el cierre dentro del rango reciente, de 0 a 100."
+
 #: src/ui/drawing/properties/style.rs
 msgid "Where the median starts and ends."
 msgstr "Dónde empieza y termina la mediana."
@@ -16841,6 +17550,26 @@ msgstr "Ancho"
 #: src/ui/drawing/properties/coordinates.rs
 msgid "Width point"
 msgstr "Punto del ancho"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Wilder's Average True Range, in price units or as a percent of the close. It measures volatility, not direction, and is widely used to size stops and positions."
+msgstr "El Average True Range de Wilder, en unidades de precio o como porcentaje del cierre. Mide la volatilidad, no la dirección, y se usa mucho para dimensionar stops y posiciones."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Wilder's Parabolic Stop and Reverse puts a dot below the bars while the trend is up and above them while it is down, speeding up as the trend runs. A dot that flips side is a reversal signal."
+msgstr "El Parabolic Stop and Reverse de Wilder pone un punto bajo las barras mientras la tendencia sube y sobre ellas mientras baja, acelerando a medida que avanza la tendencia. Un punto que cambia de lado es una señal de giro."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Wilder's momentum oscillator: the average gain over the average loss across the last N bars, scaled from 0 to 100. Above the upper level is conventionally overbought and below the lower level oversold."
+msgstr "El oscilador de impulso de Wilder: la ganancia media sobre la pérdida media de las últimas N barras, escalada de 0 a 100. Por encima del nivel superior suele considerarse sobrecompra y por debajo del inferior, sobreventa."
+
+#: src/model/pine/bundled/mod.rs
+msgid "Williams %R"
+msgstr "Williams %R"
+
+#: src/model/pine/bundled/mod.rs
+msgid "Williams Fractals"
+msgstr "Fractales de Williams"
 
 #: src/ui/portfolio/statistics/win_rate.rs
 msgid "Win Rate"
@@ -17124,6 +17853,10 @@ msgstr "bajista"
 msgid "bullish"
 msgstr "alcista"
 
+#: src/trading/broker/backend.rs src/ui/broker/chart_trading.rs
+msgid "cancel requested"
+msgstr "cancelación solicitada"
+
 #: src/ui/chart/symbol_picker/detail.rs
 msgid "chance"
 msgstr "probabilidad"
@@ -17185,6 +17918,10 @@ msgstr "p. ej., Inversión a largo plazo"
 #: src/pine_studio/debug/panel/lists.rs
 msgid "e.g. bar_index > 100 and close > open"
 msgstr "p. ej. bar_index > 100 and close > open"
+
+#: src/trading/broker/backend.rs
+msgid "edit requested"
+msgstr "modificación solicitada"
 
 #: src/model/session_stats/mod.rs
 msgid "every day"
@@ -17591,10 +18328,6 @@ msgstr[1] "{amount} días"
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "{amount} vs invested"
 msgstr "{amount} frente a lo invertido"
-
-#: src/ui/settings/mcp/mod.rs
-msgid "{areas} +{more} more"
-msgstr "{areas} +{more} más"
 
 #: src/ui/portfolio/cards/value_chart.rs
 msgid "{arrow} {amount}"
@@ -18036,6 +18769,10 @@ msgid_plural "{count} months ago"
 msgstr[0] "hace {count} mes"
 msgstr[1] "hace {count} meses"
 
+#: src/ui/settings/mcp/mod.rs
+msgid "{count} more"
+msgstr "{count} más"
+
 #: src/ui/workspace/empty_state/tiles.rs
 msgid "{count} more favorite"
 msgid_plural "{count} more favorites"
@@ -18065,6 +18802,10 @@ msgid "{count} named order on “{account}”"
 msgid_plural "{count} named orders on “{account}”"
 msgstr[0] "una orden con nombre en “{account}”"
 msgstr[1] "{count} órdenes con nombre en “{account}”"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "{count} de {total} seleccionados"
 
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
@@ -18351,7 +19092,7 @@ msgstr "HISTORIAL {days}D"
 msgid "{days}d"
 msgstr "{days}d"
 
-#: src/ui/drawing/render.rs
+#: src/model/chart/countdown/mod.rs src/ui/drawing/render.rs
 msgid "{days}d {hours}h"
 msgstr "{days}d {hours}h"
 
@@ -19235,6 +19976,10 @@ msgid "{what}, on"
 msgstr "{what}, activado"
 
 #: src/model/broker/ticket.rs
+msgid "{what}. {reason}"
+msgstr "{what}. {reason}"
+
+#: src/model/broker/ticket.rs
 msgid "{what}: {filled} filled."
 msgstr "{what}: ejecutado {filled}."
 
@@ -19293,6 +20038,12 @@ msgstr "“{name}” ya está en esta lista de seguimiento."
 #: src/ui/settings/pine_studio/mod.rs
 msgid "“{name}” is not installed on this Mac, so the default is used until it is."
 msgstr "“{name}” no está instalada en este Mac, así que se usa la predeterminada hasta que lo esté."
+
+#: src/platform.rs
+msgid ""
+"“{name}” is not installed on this computer, so the default is used until "
+"it is."
+msgstr "“{name}” no está instalada en este ordenador, así que se usa la predeterminada hasta que lo esté."
 
 #: src/ui/webhook/editor.rs
 msgid "“{name}” looks like a credential"
@@ -19362,6 +20113,26 @@ msgstr "✓ Aceptado"
 msgid "✕ Rejected"
 msgstr "✕ Rechazado"
 
+#: src/model/mcp/activity.rs
+msgctxt "MCP call"
+msgid "Cancelled"
+msgstr "Cancelada"
+
+#: src/model/mcp/activity.rs
+msgctxt "MCP call"
+msgid "Done"
+msgstr "Hecho"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Live"
+msgstr "Real"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Practice"
+msgstr "Demo"
+
 #: src/model/chart/object_tree.rs
 msgctxt "a numbered drawing, such as Trend Line 3"
 msgid "{name} {number}"
@@ -19371,6 +20142,16 @@ msgstr "{name} {number}"
 msgctxt "a post on X"
 msgid "Post"
 msgstr "Publicación"
+
+#: src/ui/mcp/activity.rs
+msgctxt "audit log row"
+msgid "Gap"
+msgstr "Hueco"
+
+#: src/model/chart/canvas/mod.rs
+msgctxt "background"
+msgid "Solid"
+msgstr "Sólido"
 
 #: src/model/paper/format.rs
 msgctxt "badge"
@@ -19427,6 +20208,11 @@ msgctxt "badge"
 msgid "TP"
 msgstr "TP"
 
+#: src/pine_studio/debug/panel/bar_break.rs
+msgctxt "bar index"
+msgid "Index"
+msgstr "Índice"
+
 #: src/ui/drawing/layer/menu.rs
 msgctxt "bold button"
 msgid "B"
@@ -19436,6 +20222,11 @@ msgstr "N"
 msgctxt "changed lines of the script"
 msgid "Change"
 msgstr "Cambio"
+
+#: src/model/chart/kind.rs
+msgctxt "chart type"
+msgid "Line"
+msgstr "Línea"
 
 #: src/pine_studio/editor/completion.rs
 msgctxt "completion kind"
@@ -19482,10 +20273,35 @@ msgctxt "completion kind"
 msgid "your symbol"
 msgstr "tu símbolo"
 
+#: src/ui/portfolio/transaction_editor.rs
+msgctxt "fill with the market price"
+msgid "Market"
+msgstr "Mercado"
+
 #: src/pine_studio/debug/panel/lists.rs
 msgctxt "hit count field"
 msgid "n"
 msgstr "n"
+
+#: src/model/drawings/style.rs
+msgctxt "icon"
+msgid "Scales"
+msgstr "Balanza"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "Elegir"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "Listo"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "Vista previa"
 
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
@@ -19529,6 +20345,11 @@ msgstr "Ayuda"
 
 #: src/native_bridge.rs
 msgctxt "menu bar"
+msgid "Minimize"
+msgstr "Minimizar"
+
+#: src/native_bridge.rs
+msgctxt "menu bar"
 msgid "View"
 msgstr "Visualización"
 
@@ -19551,6 +20372,12 @@ msgstr "1h"
 msgctxt "net over the last minute, column head"
 msgid "1m"
 msgstr "1m"
+
+#: src/pine_studio/profiler/ui.rs src/ui/drawing/properties/forecast_pages.rs
+#: src/ui/drawing/properties/style.rs src/ui/replay/bar.rs
+msgctxt "number of bars"
+msgid "Bars"
+msgstr "Barras"
 
 #: src/ui/market_flow/book/ladder.rs
 msgctxt "order book"
@@ -19601,6 +20428,11 @@ msgstr "COMPRA"
 msgctxt "order side in a sentence"
 msgid "SELL"
 msgstr "VENTA"
+
+#: src/ui/trade/order_sheet/form.rs
+msgctxt "order size"
+msgid "Amount"
+msgstr "Cantidad"
 
 #: src/trading/paper/backend.rs
 msgctxt "order status"
@@ -19658,8 +20490,8 @@ msgctxt "order type"
 msgid "Limit"
 msgstr "Limit"
 
-#: src/trading/broker/backend.rs src/trading/model.rs
-#: src/trading/paper/backend.rs
+#: src/model/broker/ticket.rs src/trading/broker/backend.rs
+#: src/trading/model.rs src/trading/paper/backend.rs src/ui/trade/tables.rs
 msgctxt "order type"
 msgid "Market"
 msgstr "Mercado"
@@ -19814,6 +20646,22 @@ msgctxt "select changes"
 msgid "None"
 msgstr "Ninguno"
 
+#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
+#: src/trading/edit/mod.rs src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs src/ui/trade/order_sheet/open_orders.rs
+msgctxt "side"
+msgid "Buy"
+msgstr "Compra"
+
+#: src/model/broker/ticket.rs src/model/paper/format.rs src/trading/draft.rs
+#: src/trading/edit/mod.rs src/ui/broker/panel.rs
+#: src/ui/market_flow/book/tape.rs src/ui/portfolio/transaction_editor.rs
+#: src/ui/portfolio/transactions.rs src/ui/trade/order_sheet/open_orders.rs
+msgctxt "side"
+msgid "Sell"
+msgstr "Venta"
+
 #: src/ui/watchlist/rows.rs
 msgctxt "sparkline column"
 msgid "1M"
@@ -19824,10 +20672,16 @@ msgctxt "stop button"
 msgid "Stop"
 msgstr "Detener"
 
-#: src/ui/settings/brokers.rs
+#: src/ui/settings/brokers.rs src/ui/trade/connect_list.rs
 msgctxt "test environment badge"
 msgid "Test"
 msgstr "Prueba"
+
+#: src/ui/drawing/properties/content.rs src/ui/drawing/properties/text.rs
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "text or image size"
+msgid "Size"
+msgstr "Tamaño"
 
 #: src/service/update/check.rs
 msgctxt "update channel"
@@ -19854,6 +20708,16 @@ msgctxt "venue kind"
 msgid "Test"
 msgstr "Prueba"
 
+#: src/trading/confirm.rs
+msgctxt "warning row"
+msgid "Note"
+msgstr "Aviso"
+
+#: src/ui/watchlist/sidebar/header.rs src/ui/watchlist/sidebar/menus.rs
+msgctxt "watchlist columns"
+msgid "Columns"
+msgstr "Columnas"
+
 #: src/ui/window/tab_link_menu/mod.rs
 msgctxt "what a link syncs, in a list"
 msgid "date range"
@@ -19873,3 +20737,270 @@ msgstr "símbolo"
 msgctxt "what a link syncs, in a list"
 msgid "time"
 msgstr "hora"
+
+#: src/ui/snapshot_studio/window/toolbar.rs
+msgctxt "what the image shows"
+msgid "Area"
+msgstr "Área"
+
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "Un tipo de gráfico que DegenView no dibuja: se usa el habitual"
+
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "Un símbolo de un exchange que DegenView no tiene se empareja con el mismo par en otro. Cambia u omite cualquiera."
+
+msgid "Added to DegenView"
+msgstr "Añadido a DegenView"
+
+msgid "Charts"
+msgstr "Gráficos"
+
+msgid "Choose Folder…"
+msgstr "Elegir carpeta…"
+
+msgid "Choose TradingView’s data folder"
+msgstr "Elige la carpeta de datos de TradingView"
+
+msgid "Couldn’t reach the exchanges"
+msgstr "No se pudo conectar con los exchanges"
+
+msgid "From the TradingView app."
+msgstr "Desde la app de TradingView."
+
+msgid "Import Complete"
+msgstr "Importación completada"
+
+msgid "Import from TradingView"
+msgstr "Importar desde TradingView"
+
+msgid "Import from TradingView…"
+msgstr "Importar desde TradingView…"
+
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "Instala la app de escritorio de TradingView, inicia sesión y abre los diseños y las listas de seguimiento que quieras traer."
+
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "Sus gráficos tenían intervalos distintos. Un diseño de DegenView tiene uno:"
+
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "Diseños, dibujos, listas de seguimiento y scripts que la app de TradingView ha cargado."
+
+msgid "Left out of the import"
+msgstr "Fuera de la importación"
+
+msgid "Match symbols to markets"
+msgstr "Empareja símbolos con mercados"
+
+msgid "No exchange here lists it"
+msgstr "Ningún exchange disponible lo cotiza"
+
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "No se encontraron diseños, listas de seguimiento ni scripts. Ábrelos primero en TradingView y vuelve a intentarlo."
+
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "Ninguno de sus gráficos tiene mercado, así que no se importa"
+
+msgid "Not found on any exchange"
+msgstr "No se encontró en ningún exchange"
+
+msgid "Nothing Was Added"
+msgstr "No se añadió nada"
+
+msgid "Nothing to Import Yet"
+msgstr "Todavía no hay nada que importar"
+
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "Aquí solo está lo que la app de TradingView ha abierto recientemente en este equipo. ¿Falta algo? Ábrelo allí y recarga."
+
+msgid "Open Layout"
+msgstr "Abrir diseño"
+
+msgid "Other exchange"
+msgstr "Otro exchange"
+
+msgid "Perpetuals and futures aren’t available"
+msgstr "Los perpetuos y los futuros no están disponibles"
+
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "Elige el mercado que sustituirá a este símbolo de TradingView."
+
+msgid "Pine scripts"
+msgstr "Scripts de Pine"
+
+msgid "Reading TradingView’s data…"
+msgstr "Leyendo los datos de TradingView…"
+
+msgid "Reload"
+msgstr "Recargar"
+
+msgid "Saved layouts"
+msgstr "Diseños guardados"
+
+msgid "Search Again"
+msgstr "Buscar de nuevo"
+
+msgid "Some things couldn’t be added"
+msgstr "Algunas cosas no se pudieron añadir"
+
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "Las acciones necesitan una clave de Alpaca (Ajustes)"
+
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "Se acorta el texto de {count} dibujo"
+msgstr[1] "Se acorta el texto de {count} dibujos"
+
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "No se encontraron los datos de la app de TradingView en este equipo."
+
+msgid "The comparison with {symbol}: it has no market"
+msgstr "La comparación con {symbol}: no tiene mercado"
+
+msgid "The script library couldn’t be opened."
+msgstr "No se pudo abrir la biblioteca de scripts."
+
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "El intervalo {interval} no es una temporalidad aquí"
+
+msgid "The {name} indicator"
+msgstr "El indicador {name}"
+
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "El gráfico {symbol}: su símbolo no tiene mercado"
+
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "Esta carpeta no contiene los datos de TradingView."
+
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "No se pudieron leer los datos de TradingView: {error}"
+
+msgid "Use Market"
+msgstr "Usar mercado"
+
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "Lo que se añadirá. No se sustituye nada tuyo."
+
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "símbolo emparejado"
+msgstr[1] "símbolos emparejados"
+
+msgid "the read stopped unexpectedly"
+msgstr "la lectura se detuvo inesperadamente"
+
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} gráfico"
+msgstr[1] "{count} gráficos"
+
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} gráfico que TradingView guarda pero no muestra"
+msgstr[1] "{count} gráficos que TradingView guarda pero no muestra"
+
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{count} dibujo en {symbol}, que no tiene mercado"
+msgstr[1] "{count} dibujos en {symbol}, que no tiene mercado"
+
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} dibujo que no se pudo leer"
+msgstr[1] "{count} dibujos que no se pudieron leer"
+
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} imagen: TradingView la guarda en línea"
+msgstr[1] "{count} imágenes: TradingView las guarda en línea"
+
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} posición con paso de precio desconocido"
+msgstr[1] "{count} posiciones con paso de precio desconocido"
+
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} símbolo sin mercado"
+msgstr[1] "{count} símbolos sin mercado"
+
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
+msgstr[0] "{count} dibujo {tool} no se puede importar"
+msgstr[1] "{count} dibujos {tool} no se pueden importar"
+
+msgid "{name} is added with its default settings"
+msgstr "{name} se añade con sus ajustes predeterminados"
+
+msgid "{name}: {error}"
+msgstr "{name}: {error}"
+
+msgid "A formula, not a single market"
+msgstr "Una fórmula, no un único mercado"
+
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} símbolo que es el mismo mercado que otro"
+msgstr[1] "{count} símbolos que son el mismo mercado que otros"
+
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} símbolo que no cabe en una lista de seguimiento"
+msgstr[1] "{count} símbolos que no caben en una lista de seguimiento"
+
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} dibujo de Fibonacci o Gann usa los niveles de DegenView"
+msgstr[1] "{count} dibujos de Fibonacci o Gann usan los niveles de DegenView"
+
+#: src/ui/window/chrome.rs
+msgctxt "window button"
+msgid "Minimize"
+msgstr "Minimizar"
+
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} dibujo fijado a la pantalla no se puede traer"
+msgstr[1] "{count} dibujos fijados a la pantalla no se pueden traer"
+
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} publicación se coloca a una altura estimada"
+msgstr[1] "{count} publicaciones se colocan a una altura estimada"
+
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} publicación cuyo lugar en el gráfico no se pudo calcular"
+msgstr[1] "{count} publicaciones cuyo lugar en el gráfico no se pudo calcular"
+
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} VWAP anclado pierde sus bandas porcentuales"
+msgstr[1] "{count} VWAP anclados pierden sus bandas porcentuales"
+
+msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it"
+msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
+msgstr[0] "{count} dibujo está en {symbol} ({exchange}): cambia el gráfico a ese mercado para verlo"
+msgstr[1] "{count} dibujos están en {symbol} ({exchange}): cambia el gráfico a ese mercado para verlos"
+
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr "Ninguno de sus símbolos tiene mercado, así que no se importa"
+
+msgid "Will be saved as “{name}”."
+msgstr "Se guardará como «{name}»."
+
+msgid "The script’s file would land outside the library."
+msgstr "El archivo del script quedaría fuera de la biblioteca."
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} publicación todavía se está colocando"
+msgstr[1] "{count} publicaciones todavía se están colocando"
+
+msgid "Looking up markets and prices…"
+msgstr "Buscando mercados y precios…"
+
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "Este Flatpak no puede buscar por sí solo los datos de TradingView."
+
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "Elige la carpeta de datos de TradingView: normalmente snap/tradingview/current/.config/TradingView o .config/TradingView en tu carpeta personal. Pulsa Ctrl+H para ver las carpetas ocultas."

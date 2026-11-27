@@ -106,16 +106,13 @@ fn limit_row(
 pub fn parse_interface(text: &str) -> Result<BindMode, String> {
     let text = text.trim().trim_start_matches('[').trim_end_matches(']');
     if text.is_empty() {
-        return Err(tr!("Enter the address of this Mac to listen on").into());
+        return Err(crate::platform::mcp_address_missing().into());
     }
     let address: IpAddr = text
         .parse()
         .map_err(|_| tr!("`{text}` is not an IP address", text = text))?;
     match BindMode::interface(address) {
-        Ok(BindMode::Loopback) => Err(tr!(
-            "That is this Mac's own address. Turn the switch off to listen here only"
-        )
-        .into()),
+        Ok(BindMode::Loopback) => Err(crate::platform::mcp_address_is_loopback().into()),
         Ok(bind) => Ok(bind),
         Err(error) => Err(error.to_string()),
     }
@@ -213,7 +210,7 @@ fn remote_rows(
         ui,
         state,
         tr!("Remote ceiling"),
-        tr!("The most a credential with remote access can do, even on this Mac."),
+        crate::platform::mcp_remote_ceiling_hint(),
         &input.settings.remote_ceiling,
         Editing::RemoteCeiling,
     );
@@ -245,7 +242,7 @@ fn bind_control(
     let changed = parsed.as_ref().is_ok_and(|parsed| *parsed != bind);
     let mut apply = kit::sheet_button(ui, tr!("Apply"), changed, changed).clicked();
     if kit::sheet_button(ui, tr!("Detect"), false, true)
-        .on_hover_text(tr!("Fill in this Mac's address on the local network"))
+        .on_hover_text(crate::platform::mcp_detect_address_hint())
         .clicked()
     {
         match detect_local_address() {

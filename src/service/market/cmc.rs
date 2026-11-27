@@ -11,11 +11,40 @@ use std::time::{Duration, Instant};
 
 const BASE: &str = "https://pro-api.coinmarketcap.com";
 
+/// What a reading is called. A value rather than the provider's English word, so the card can name
+/// it in the interface language.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Classification {
+    ExtremeFear,
+    Fear,
+    Neutral,
+    Greed,
+    ExtremeGreed,
+    BitcoinSeason,
+    AltcoinSeason,
+    /// A word CoinMarketCap added that this version does not know, shown as it came.
+    Unlisted(String),
+}
+
+impl Classification {
+    /// Reads Fear & Greed's `value_classification`, whose capitals vary.
+    fn from_fear_greed(word: &str) -> Self {
+        match word.to_ascii_lowercase().as_str() {
+            "extreme fear" => Self::ExtremeFear,
+            "fear" => Self::Fear,
+            "neutral" => Self::Neutral,
+            "greed" => Self::Greed,
+            "extreme greed" => Self::ExtremeGreed,
+            _ => Self::Unlisted(word.to_owned()),
+        }
+    }
+}
+
 /// The most recent reading behind a "Latest" chart.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LatestReading {
     pub value: f64,
-    pub classification: String,
+    pub classification: Classification,
     /// Altcoin Season only: the yearly extremes with their dates, and the altcoin market cap.
     pub yearly_high: Option<(f64, String)>,
     pub yearly_low: Option<(f64, String)>,
@@ -58,13 +87,13 @@ pub fn latest_reading(symbol: &str) -> Option<LatestReading> {
 }
 
 /// Bitcoin Season up to 25, Altcoin Season from 75.
-fn season_classification(index: f64) -> &'static str {
+fn season_classification(index: f64) -> Classification {
     if index <= 25.0 {
-        "Bitcoin Season"
+        Classification::BitcoinSeason
     } else if index >= 75.0 {
-        "Altcoin Season"
+        Classification::AltcoinSeason
     } else {
-        "Neutral"
+        Classification::Neutral
     }
 }
 
@@ -81,7 +110,7 @@ fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
             time.unwrap_or_else(now_ms),
             LatestReading {
                 value: index,
-                classification: season_classification(index).to_owned(),
+                classification: season_classification(index),
                 yearly_high: extreme("yearly_high", "yearly_high_date"),
                 yearly_low: extreme("yearly_low", "yearly_low_date"),
                 altcoin_market_cap: data.get("altcoin_marketcap").and_then(Value::as_f64),
@@ -94,7 +123,9 @@ fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
             time.unwrap_or_else(now_ms),
             LatestReading {
                 value: data.get("value")?.as_f64()?,
-                classification: text("value_classification").unwrap_or_default(),
+                classification: Classification::from_fear_greed(
+                    &text("value_classification").unwrap_or_default(),
+                ),
                 yearly_high: None,
                 yearly_low: None,
                 altcoin_market_cap: None,
@@ -306,6 +337,7 @@ impl MarketSource for CoinMarketCap {
                 event: None,
                 base: None,
                 quote: None,
+                names: Default::default(),
             })
             .collect())
     }
@@ -410,7 +442,7 @@ mod tests {
         .unwrap();
         let (_, reading) = parse_latest(ALTCOIN_LATEST, &altcoin).unwrap();
         assert_eq!(reading.value, 60.0);
-        assert_eq!(reading.classification, "Neutral");
+        assert_eq!(reading.classification, Classification::Neutral);
         assert_eq!(reading.yearly_high, Some((64.0, "2026-09-27".to_owned())));
         assert_eq!(reading.yearly_low, Some((14.0, "2025-12-19".to_owned())));
         assert_eq!(reading.altcoin_market_cap, Some(1.5e12));
@@ -422,10 +454,22 @@ mod tests {
         let (time, reading) = parse_latest(FEAR_GREED_LATEST, &fear).unwrap();
         assert!(time > 0);
         assert_eq!(reading.value, 56.0);
-        assert_eq!(reading.classification, "Neutral");
+        assert_eq!(reading.classification, Classification::Neutral);
         assert_eq!(reading.yearly_high, None);
-        assert_eq!(season_classification(80.0), "Altcoin Season");
-        assert_eq!(season_classification(25.0), "Bitcoin Season");
+        assert_eq!(season_classification(80.0), Classification::AltcoinSeason);
+        assert_eq!(season_classification(25.0), Classification::BitcoinSeason);
+    }
+
+    #[test]
+    fn provider_words_become_classifications() {
+        for (word, classification) in [
+            ("Extreme fear", Classification::ExtremeFear),
+            ("Extreme Greed", Classification::ExtremeGreed),
+            ("greed", Classification::Greed),
+            ("Panic", Classification::Unlisted("Panic".to_owned())),
+        ] {
+            assert_eq!(Classification::from_fear_greed(word), classification);
+        }
     }
 
     #[test]
@@ -433,7 +477,7 @@ mod tests {
         let day = 86_400_000;
         let reading = LatestReading {
             value: 50.0,
-            classification: String::new(),
+            classification: Classification::Neutral,
             yearly_high: None,
             yearly_low: None,
             altcoin_market_cap: None,

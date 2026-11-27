@@ -16,10 +16,11 @@
 //!   belonging to it when it overlaps 09:30–16:00 on a weekday; every other market is taken to
 //!   trade round the clock and a day is the UTC date (the same two kinds of symbol the Pine
 //!   `session.*` variables know). Daily bars are one day each, by their UTC date.
-//! - This build has no bars under an hour. On hourly bars the day opens with the first bar's open,
-//!   so for a US stock the first bar may begin before 09:30 and its open may be an extended-hours
-//!   price; that is flagged in [`Note::BoundaryOpen`] rather than corrected. Daily bars of a stock
-//!   are the provider's own.
+//! - This build has no bars under an hour. On hourly bars the day opens with the first bar's open.
+//!   A US stock's hourly bars are cut on its session (09:30, `bucket::Grid::UsEquities`), so that
+//!   is the session's open; bars that begin before 09:30 would make it an extended-hours price,
+//!   which is flagged in [`Note::BoundaryOpen`] rather than corrected. Daily bars of a stock are
+//!   the provider's own.
 //! - A gap is the day's open against the previous day's close, so a market that trades round the
 //!   clock has almost none and its gap statistics are mostly empty. A gap is "filled" when a later
 //!   bar's range touches the previous close; the day it opens on counts, the bar it opens in counts.
@@ -35,6 +36,7 @@
 use crate::format::days_from_civil;
 use crate::i18n::tr;
 use crate::model::market::kline::Kline;
+use crate::model::market::session;
 use crate::pine::time::calendar;
 use crate::pine::time::trading_session::MarketSessions;
 
@@ -315,7 +317,7 @@ impl Filter {
     fn describe_in(&self, words: &Words) -> String {
         let mut parts = Vec::new();
         if !self.weekdays.is_all() {
-            parts.push(words.weekdays.join(", "));
+            parts.push(crate::i18n::join_list(&words.weekdays));
         }
         if self.gap != Side::Any || self.gap_min_pct.is_some() || self.gap_max_pct.is_some() {
             let side = match self.gap {
@@ -447,8 +449,8 @@ pub struct Timing {
 /// A caveat the result carries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Note {
-    /// A stock's first hourly bar may start before the open, so the day's open may be a pre-market
-    /// price.
+    /// A session's first bar starts before the open (bars on the clock hour, not cut on the
+    /// session), so the day's open may be a pre-market price.
     BoundaryOpen,
     /// Nothing qualified; for a gap outcome on a market that trades round the clock, that is why.
     NoGaps,
@@ -629,6 +631,16 @@ fn sessions(bars: &[Kline], bar_ms: i64, hours: MarketHours, intraday: bool) -> 
     days
 }
 
+/// Whether the first bar of some session opens before the regular open (09:30 New York), so that
+/// session's open is a pre-market price. Bars cut on the session (`bucket::Grid::UsEquities`)
+/// never do; hourly bars on the clock hour do.
+fn opens_before_the_session(bars: &[Kline], days: &[Day]) -> bool {
+    days.iter().any(|day| {
+        let first = bars[day.start].open_time;
+        first < session::open_ms(session::local_day(first))
+    })
+}
+
 /// What one day says about a question: `None` when it does not qualify, else whether the outcome
 /// happened and at which bar.
 struct Verdict {
@@ -802,7 +814,7 @@ pub fn compute(
         .flatten();
 
     let mut notes = Vec::new();
-    if intraday && hours == MarketHours::UsStock {
+    if intraday && hours == MarketHours::UsStock && opens_before_the_session(bars, &days) {
         notes.push(Note::BoundaryOpen);
     }
     if estimate.n == 0 && outcome == Outcome::GapFill && hours == MarketHours::Continuous {

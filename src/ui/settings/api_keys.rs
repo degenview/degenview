@@ -1,33 +1,40 @@
-//! Settings ▸ Alpaca and Settings ▸ CoinMarketCap: the API keys that unlock US stock data and
-//! raise the market-index rate limits. Pages over the shared key stores; saving, removing and the
-//! CoinMarketCap connection test happen here, since the stores are process-wide, but every rule
-//! (what may be saved, what the status says) is a plain function tested against in-memory stores.
+//! Settings ▸ Alpaca, Settings ▸ Oanda and Settings ▸ CoinMarketCap: the API keys that unlock US
+//! stock data, Oanda's forex and CFD markets, and raise the market-index rate limits. Pages over
+//! the shared key stores; saving, removing and the connection tests happen here, since the stores
+//! are process-wide, but every rule (what may be saved, what the status says) is a plain function
+//! tested against in-memory stores.
 
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::oanda::OandaEnvironment;
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
-    AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
+    AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, CredentialPair,
+    CredentialsStore, OandaCredentials, OandaCredentialsStore,
 };
-use crate::service::work_queue::{self, Pending};
+use crate::service::work_queue;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{Autosave, Tone, destructive_button, field, open_button};
 use crate::ui::settings::brokers::step_row;
 use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::connection_test::ConnectionTest;
 use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
 
+pub type AlpacaForm = CredentialForm<AlpacaCredentials>;
+pub type OandaForm = CredentialForm<OandaCredentials>;
+
 #[derive(Default)]
-pub struct AlpacaForm {
-    pub key_id: String,
-    pub secret_key: String,
-    /// Whether the saved credentials have been read into the fields yet (reading may prompt).
+pub struct CredentialForm<C> {
+    credentials: C,
     loaded: bool,
-    pub is_saved: bool,
-    pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), ProviderError>>>,
+    is_saved: bool,
+    /// What saving or removing last said.
+    status: Option<StatusMessage>,
+    /// A test of the credentials in the fields.
+    test: ConnectionTest<C, Result<(), ProviderError>>,
     autosave: Autosave,
 }
 
@@ -36,99 +43,137 @@ pub struct CmcForm {
     pub api_key: String,
     loaded: bool,
     pub configured: bool,
+    /// What saving or removing last said.
     pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), ProviderError>>>,
+    /// A test of the saved key.
+    test: ConnectionTest<(), Result<(), ProviderError>>,
     autosave: Autosave,
 }
 
 #[derive(Default)]
 pub struct ApiKeysState {
     pub alpaca: AlpacaForm,
+    pub oanda: OandaForm,
     pub cmc: CmcForm,
 }
 
-// MARK: Alpaca rules
+pub trait CredentialFormCopy: CredentialPair + PartialEq + Send + 'static {
+    const SOURCE: DataSource;
+    fn saved_label() -> &'static str;
+    fn removed_message() -> &'static str;
+    fn remove_error(error: String) -> String;
+}
 
-impl AlpacaForm {
-    /// Fills the fields from the saved credentials, once.
-    pub fn load(&mut self, store: &AlpacaCredentialsStore) {
+impl CredentialFormCopy for AlpacaCredentials {
+    const SOURCE: DataSource = DataSource::Alpaca;
+
+    fn saved_label() -> &'static str {
+        tr!("Keys saved")
+    }
+
+    fn removed_message() -> &'static str {
+        tr!("Keys removed. Stock charts need keys to load.")
+    }
+
+    fn remove_error(error: String) -> String {
+        tr!("Could not remove the keys: {error}", error = error)
+    }
+}
+
+impl CredentialFormCopy for OandaCredentials {
+    const SOURCE: DataSource = DataSource::Oanda;
+
+    fn saved_label() -> &'static str {
+        tr!("Credentials saved")
+    }
+
+    fn removed_message() -> &'static str {
+        tr!("Credentials removed. Oanda charts need them to load.")
+    }
+
+    fn remove_error(error: String) -> String {
+        tr!("Could not remove the credentials: {error}", error = error)
+    }
+}
+
+impl<C: CredentialFormCopy> CredentialForm<C> {
+    fn load(&mut self, store: &CredentialsStore<C>) {
         if self.loaded {
             return;
         }
         self.loaded = true;
         self.is_saved = store.is_configured();
         if self.is_saved {
-            let saved = store.credentials();
-            self.key_id = saved.key_id;
-            self.secret_key = saved.secret_key;
+            self.credentials = store.credentials();
         }
     }
 
-    pub fn can_save(&self) -> bool {
-        !self.key_id.trim().is_empty() && !self.secret_key.trim().is_empty()
+    fn can_save(&self) -> bool {
+        self.credentials.is_configured()
     }
 
-    pub fn badge(&self) -> (&'static str, Tone) {
+    fn badge(&self) -> (&'static str, Tone) {
         if self.is_saved {
-            (tr!("Keys saved"), Tone::Good)
+            (C::saved_label(), Tone::Good)
         } else {
             (tr!("Not configured"), Tone::Neutral)
         }
     }
 
-    pub fn save(&mut self, store: &AlpacaCredentialsStore) {
-        let credentials = AlpacaCredentials {
-            key_id: self.key_id.clone(),
-            secret_key: self.secret_key.clone(),
-        };
-        self.status = Some(match store.save(&credentials) {
+    fn save(&mut self, store: &CredentialsStore<C>) {
+        self.status = Some(match store.save(&self.credentials) {
             Ok(()) => {
-                self.is_saved = true;
+                self.is_saved = self.can_save();
                 StatusMessage::saved_securely()
             }
             Err(error) => StatusMessage::error(tr!("Could not save: {error}", error = error.0)),
         });
     }
 
-    pub fn is_testing(&self) -> bool {
-        self.test.is_some()
+    fn save_if_due(&mut self, ctx: &egui::Context, store: &CredentialsStore<C>) {
+        if self.autosave.due(ctx) && self.can_save() {
+            self.save(store);
+        }
     }
 
-    /// Asks Alpaca for a bar with the typed keys, on Alpaca's workers; `poll_test` picks up the
-    /// answer.
-    pub fn start_test(
+    fn is_testing(&self) -> bool {
+        self.test.is_running()
+    }
+
+    fn start_test(
         &mut self,
         repaint: Option<&egui::Context>,
-        test: impl FnOnce(String, String) -> Result<(), ProviderError> + Send + 'static,
+        test: impl FnOnce(C) -> Result<(), ProviderError> + Send + 'static,
     ) {
-        if self.test.is_some() {
-            return;
-        }
         self.status = None;
-        let (key_id, secret_key) = (self.key_id.clone(), self.secret_key.clone());
-        self.test = Some(work_queue::start_for(
-            DataSource::Alpaca,
-            repaint,
-            move || test(key_id, secret_key),
-        ));
+        let credentials = self.credentials.clone();
+        let tested = credentials.clone();
+        self.test.start(tested, || {
+            work_queue::start_for(C::SOURCE, repaint, move || test(credentials))
+        });
     }
 
-    /// Takes the connection test's answer when it has arrived.
-    pub fn poll_test(&mut self) {
-        take_test_answer(&mut self.test, &mut self.status);
+    fn poll_test(&mut self) {
+        self.test.follow(&self.credentials, connection_status);
     }
 
-    pub fn remove(&mut self, store: &AlpacaCredentialsStore) {
-        self.status = Some(match store.save(&AlpacaCredentials::default()) {
+    /// The lines under the buttons: what the test of these credentials said, and what saving
+    /// did.
+    fn statuses(&self) -> impl Iterator<Item = &StatusMessage> {
+        [self.test.answer(&self.credentials), self.status.as_ref()]
+            .into_iter()
+            .flatten()
+    }
+
+    fn remove(&mut self, store: &CredentialsStore<C>) {
+        self.autosave.cancel();
+        self.status = Some(match store.save(&C::default()) {
             Ok(()) => {
-                self.key_id.clear();
-                self.secret_key.clear();
+                self.credentials = C::default();
                 self.is_saved = false;
-                StatusMessage::ok(tr!("Keys removed. Stock charts need keys to load."))
+                StatusMessage::ok(C::removed_message())
             }
-            Err(error) => {
-                StatusMessage::error(tr!("Could not remove the keys: {error}", error = error.0))
-            }
+            Err(error) => StatusMessage::error(C::remove_error(error.0)),
         });
     }
 }
@@ -148,7 +193,7 @@ impl CmcForm {
     }
 
     pub fn is_testing(&self) -> bool {
-        self.test.is_some()
+        self.test.is_running()
     }
 
     pub fn badge(&self) -> (&'static str, Tone) {
@@ -176,6 +221,7 @@ impl CmcForm {
     }
 
     pub fn save(&mut self, store: &CoinMarketCapKeyStore) {
+        self.test.forget();
         self.status = Some(match store.save(&self.api_key) {
             Ok(()) => {
                 self.configured = true;
@@ -187,6 +233,7 @@ impl CmcForm {
     }
 
     pub fn remove(&mut self, store: &CoinMarketCapKeyStore) {
+        self.test.forget();
         self.status = Some(match store.remove() {
             Ok(()) => {
                 self.api_key.clear();
@@ -206,39 +253,31 @@ impl CmcForm {
         repaint: Option<&egui::Context>,
         test: impl FnOnce() -> Result<(), ProviderError> + Send + 'static,
     ) {
-        if self.test.is_some() {
-            return;
-        }
         self.status = None;
-        self.test = Some(work_queue::SNAPSHOTS.start(repaint, test));
+        self.test
+            .start((), || work_queue::SNAPSHOTS.start(repaint, test));
     }
 
     /// Takes the connection test's answer when it has arrived.
     pub fn poll_test(&mut self) {
-        take_test_answer(&mut self.test, &mut self.status);
+        self.test.follow(&(), connection_status);
+    }
+
+    /// The lines under the buttons: what the test said, and what saving did.
+    pub fn statuses(&self) -> impl Iterator<Item = &StatusMessage> {
+        [self.test.answer(&()), self.status.as_ref()]
+            .into_iter()
+            .flatten()
     }
 }
 
-/// Turns a finished connection test into the status under its button.
-fn take_test_answer(
-    test: &mut Option<Pending<Result<(), ProviderError>>>,
-    status: &mut Option<StatusMessage>,
-) {
-    let Some(pending) = test else {
-        return;
-    };
-    let Some(outcome) = pending.poll_or(|| {
-        Err(ProviderError::other(tr!(
-            "The connection test stopped unexpectedly."
-        )))
-    }) else {
-        return;
-    };
-    *test = None;
-    *status = Some(match outcome {
-        Ok(()) => StatusMessage::ok(tr!("Connection successful.")),
-        Err(error) => StatusMessage::error(error.to_string()),
-    });
+/// What a finished connection test says under its button (`None`: its job ended without answering).
+fn connection_status(outcome: Option<Result<(), ProviderError>>) -> StatusMessage {
+    match outcome {
+        Some(Ok(())) => StatusMessage::ok(tr!("Connection successful.")),
+        Some(Err(error)) => StatusMessage::error(error.to_string()),
+        None => StatusMessage::error(tr!("The connection test stopped unexpectedly.")),
+    }
 }
 
 // MARK: Views
@@ -290,7 +329,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                     tr!("API Key ID"),
                     None,
                     "PK…",
-                    &mut form.key_id,
+                    &mut form.credentials.key_id,
                     false,
                 );
                 form.autosave.watch(&key_id, false);
@@ -301,7 +340,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                     tr!("Secret Key"),
                     Some(crate::platform::credential_stored_hint()),
                     "",
-                    &mut form.secret_key,
+                    &mut form.credentials.secret_key,
                     true,
                 );
                 form.autosave.watch(&secret, true);
@@ -313,25 +352,22 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 } else if kit::sheet_button(ui, tr!("Test Connection"), false, form.can_save())
                     .clicked()
                 {
-                    form.start_test(Some(ui.ctx()), |key_id, secret| {
-                        crate::service::alpaca_test_connection(&key_id, &secret)
+                    form.start_test(Some(ui.ctx()), |keys| {
+                        crate::service::alpaca_test_connection(&keys.key_id, &keys.secret_key)
                     });
                 }
                 if form.is_saved && destructive_button(ui, tr!("Remove Keys")).clicked() {
                     form.remove(store);
-                    form.autosave.cancel();
                 }
             });
         });
-        if let Some(status) = &form.status {
+        for status in form.statuses() {
             ui.add_space(8.0);
             status_message(ui, &status.text(), status.is_error);
         }
     });
     // Both keys are needed, so nothing is saved until both are there.
-    if form.autosave.due(ui.ctx()) && form.can_save() {
-        form.save(store);
-    }
+    form.save_if_due(ui.ctx(), store);
     section(ui, tr!("Getting your keys"), None, |ui| {
         card(ui, |ui| {
             step_row(ui, 1, tr!("Create a free Alpaca account."));
@@ -349,6 +385,106 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 ui,
                 tr!("Open the Alpaca dashboard"),
                 "https://app.alpaca.markets/",
+            );
+        });
+    });
+}
+
+pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCredentialsStore) {
+    let form = &mut state.oanda;
+    form.load(store);
+    form.poll_test();
+    if form.is_testing() {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(150));
+    }
+    let (text, tone) = form.badge();
+    kit::status_badge(ui, text, tone);
+    ui.add_space(18.0);
+    section(ui, tr!("API credentials"), None, |ui| {
+        card(ui, |ui| {
+            ui.vertical(|ui| {
+                kit::field_title(ui, tr!("Environment"));
+                let chosen = form.credentials.environment;
+                kit::segmented(
+                    ui,
+                    egui::Id::new("oanda-environment"),
+                    &OandaEnvironment::ALL.map(|environment| (environment, environment.label())),
+                    &mut form.credentials.environment,
+                );
+                if form.credentials.environment != chosen {
+                    form.autosave.touch();
+                }
+                kit::field_hint(
+                    ui,
+                    tr!("An access token works only in the environment it was generated in."),
+                );
+                ui.add_space(12.0);
+                let account_id = field(
+                    ui,
+                    "oanda-account-id",
+                    tr!("Account ID"),
+                    None,
+                    match form.credentials.environment {
+                        OandaEnvironment::Live => "001-…",
+                        OandaEnvironment::Practice => "101-…",
+                    },
+                    &mut form.credentials.account_id,
+                    false,
+                );
+                form.autosave.watch(&account_id, false);
+                ui.add_space(12.0);
+                let token = field(
+                    ui,
+                    "oanda-access-token",
+                    tr!("Access Token"),
+                    Some(crate::platform::credential_stored_hint()),
+                    "",
+                    &mut form.credentials.access_token,
+                    true,
+                );
+                form.autosave.watch(&token, true);
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                if form.is_testing() {
+                    ui.add(LoadingIndicator::new().size(14.0));
+                } else if kit::sheet_button(ui, tr!("Test Connection"), false, form.can_save())
+                    .clicked()
+                {
+                    form.start_test(Some(ui.ctx()), |login| {
+                        crate::service::oanda_test_connection(&login)
+                    });
+                }
+                if form.is_saved && destructive_button(ui, tr!("Remove Credentials")).clicked() {
+                    form.remove(store);
+                }
+            });
+        });
+        for status in form.statuses() {
+            ui.add_space(8.0);
+            status_message(ui, &status.text(), status.is_error);
+        }
+    });
+    // Both fields are needed, so nothing is saved until both are there.
+    form.save_if_due(ui.ctx(), store);
+    section(ui, tr!("Getting your credentials"), None, |ui| {
+        card(ui, |ui| {
+            step_row(ui, 1, tr!("Create an Oanda account."));
+            step_row(
+                ui,
+                2,
+                tr!("In Account Management, open Personal Access Tokens and generate a token."),
+            );
+            step_row(
+                ui,
+                3,
+                tr!("Copy the account ID and the token here. Oanda only shows the token once."),
+            );
+            link(
+                ui,
+                tr!("Open the Oanda API documentation"),
+                "https://developer.oanda.com/",
             );
         });
     });
@@ -402,7 +538,7 @@ pub fn coinmarketcap_body(
                 }
             });
         });
-        if let Some(status) = &form.status {
+        for status in form.statuses() {
             ui.add_space(8.0);
             status_message(ui, &status.text(), status.is_error);
         }
@@ -436,6 +572,10 @@ mod tests {
         CoinMarketCapKeyStore::with_backend(Box::new(MemoryBackend::default()))
     }
 
+    fn oanda_store() -> OandaCredentialsStore {
+        OandaCredentialsStore::with_backend(Box::new(MemoryBackend::default()))
+    }
+
     #[test]
     fn alpaca_saves_only_with_both_fields_and_reports_it() {
         let store = alpaca_store();
@@ -443,9 +583,9 @@ mod tests {
         form.load(&store);
         assert_eq!(form.badge(), ("Not configured", Tone::Neutral));
         assert!(!form.can_save());
-        form.key_id = " PK1 ".into();
+        form.credentials.key_id = " PK1 ".into();
         assert!(!form.can_save(), "the secret is missing too");
-        form.secret_key = "S1".into();
+        form.credentials.secret_key = "S1".into();
         assert!(form.can_save());
         form.save(&store);
         assert_eq!(form.status, Some(StatusMessage::saved_securely()));
@@ -466,21 +606,73 @@ mod tests {
         form.load(&store);
         assert!(form.is_saved);
         assert_eq!(
-            (form.key_id.as_str(), form.secret_key.as_str()),
+            (
+                form.credentials.key_id.as_str(),
+                form.credentials.secret_key.as_str()
+            ),
             ("PK9", "S9")
         );
-        form.key_id = "typed".into();
+        form.credentials.key_id = "typed".into();
         form.load(&store);
         assert_eq!(
-            form.key_id, "typed",
+            form.credentials.key_id, "typed",
             "a second load does not overwrite edits"
         );
         form.remove(&store);
-        assert!(!form.is_saved && form.key_id.is_empty() && form.secret_key.is_empty());
+        assert!(
+            !form.is_saved
+                && form.credentials.key_id.is_empty()
+                && form.credentials.secret_key.is_empty()
+        );
         assert_eq!(
             form.status,
             Some(StatusMessage::ok(
                 "Keys removed. Stock charts need keys to load."
+            ))
+        );
+        assert!(!store.is_configured());
+    }
+
+    #[test]
+    fn oanda_saves_only_with_both_fields_and_loads_them_back_once() {
+        let store = oanda_store();
+        let mut form = OandaForm::default();
+        form.load(&store);
+        assert_eq!(form.badge(), ("Not configured", Tone::Neutral));
+        assert!(!form.can_save());
+        form.credentials.account_id = " 001-001 ".into();
+        assert!(!form.can_save(), "the token is missing too");
+        form.credentials.access_token = "tok".into();
+        form.credentials.environment = OandaEnvironment::Practice;
+        assert!(form.can_save());
+        form.save(&store);
+        assert_eq!(form.status, Some(StatusMessage::saved_securely()));
+        assert_eq!(form.badge(), ("Credentials saved", Tone::Good));
+        assert_eq!(store.credentials().account_id, "001-001", "saved trimmed");
+
+        let mut reloaded = OandaForm::default();
+        reloaded.load(&store);
+        assert!(reloaded.is_saved);
+        assert_eq!(reloaded.credentials.environment, OandaEnvironment::Practice);
+        assert_eq!(
+            (
+                reloaded.credentials.account_id.as_str(),
+                reloaded.credentials.access_token.as_str()
+            ),
+            ("001-001", "tok")
+        );
+        reloaded.credentials.account_id = "typed".into();
+        reloaded.load(&store);
+        assert_eq!(
+            reloaded.credentials.account_id, "typed",
+            "a second load keeps edits"
+        );
+        reloaded.remove(&store);
+        assert!(!reloaded.is_saved && reloaded.credentials.account_id.is_empty());
+        assert_eq!(
+            reloaded.status,
+            Some(StatusMessage::ok(
+                "Credentials removed. Oanda charts need them to load."
             ))
         );
         assert!(!store.is_configured());
@@ -529,20 +721,60 @@ mod tests {
         };
         form.start_test(None, || Ok(()));
         assert!(form.is_testing());
-        assert_eq!(form.status, None, "a new test clears the old message");
+        assert_eq!(
+            form.statuses().next(),
+            None,
+            "a new test clears the old message"
+        );
         form.start_test(None, || {
             Err(ProviderError::other("ignored: one test at a time"))
         });
         wait_for_test(&mut form);
         assert!(!form.is_testing());
-        assert_eq!(
-            form.status,
-            Some(StatusMessage::ok("Connection successful."))
+        assert!(
+            form.statuses()
+                .eq([&StatusMessage::ok("Connection successful.")])
         );
 
         form.start_test(None, || Err(ProviderError::other("Invalid API key")));
         wait_for_test(&mut form);
-        assert_eq!(form.status, Some(StatusMessage::error("Invalid API key")));
+        assert!(
+            form.statuses()
+                .eq([&StatusMessage::error("Invalid API key")])
+        );
+
+        form.save(&cmc_store());
+        assert!(
+            form.statuses().all(|status| !status.is_error),
+            "an answer about the old key goes with it"
+        );
+    }
+
+    #[test]
+    fn a_test_of_other_credentials_than_the_fields_hold_says_nothing() {
+        let store = oanda_store();
+        let mut form = OandaForm::default();
+        form.credentials.account_id = "001-001".into();
+        form.credentials.access_token = "tok".into();
+        form.start_test(None, |_| Ok(()));
+        form.credentials.environment = OandaEnvironment::Practice;
+        form.save(&store);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while form.is_testing() && Instant::now() < deadline {
+            form.poll_test();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(form.statuses().eq([&StatusMessage::saved_securely()]));
+
+        // An answer that already arrived goes as soon as the fields change.
+        form.start_test(None, |_| Ok(()));
+        while form.is_testing() && Instant::now() < deadline {
+            form.poll_test();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(form.statuses().count(), 1);
+        form.credentials.access_token.push('x');
+        assert_eq!(form.statuses().count(), 0);
     }
 
     /// A setup step is longer in another language and wraps under its number; it does not run past

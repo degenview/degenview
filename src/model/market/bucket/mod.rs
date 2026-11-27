@@ -2,23 +2,30 @@
 //! ones. Every provider, the chart and Pine cut buckets here, so one market looks the same
 //! whichever source serves it.
 //!
-//! Buckets are anchored in UTC:
+//! Buckets are anchored in UTC (the [`Grid::Utc`] every crypto source shares):
 //!
 //! - **Seconds, minutes and hours** restart at midnight: a `22m` day has 65 full buckets and a
 //!   shorter last one that ends at 00:00 (a `7s` day ends the same way).
 //! - **Days** count from 1970-01-01: the day number floored to a multiple of the count.
-//! - **Weeks** start on Monday: the week number (from Monday 1969-12-29) floored to a multiple of
-//!   the count.
-//! - **Months** count from 1970-01: the month number floored to a multiple of the count, so `3M`
-//!   is the calendar quarter and `12M` the calendar year.
+//! - **Weeks** start on Monday and are counted from the first Monday of the year: the count starts
+//!   again there, so a year's last period can be shorter, and the days before that Monday belong
+//!   to the previous year's last period (TradingView, 2026-11-26).
+//! - **Months** are counted from January and start again each year, so `3M` is the calendar quarter
+//!   and `12M` the calendar year.
 //!
 //! A bucket closes 1 ms before the next opens.
+//!
+//! A US stock's intraday buckets are cut on its session instead ([`Grid::UsEquities`]: anchored at
+//! 09:30 New York, restarted by every session, cut at the 16:00 close, nothing outside it). A
+//! source says which grid its markets use (`DataSource::grid`) and plans with it ([`FoldPlan`]).
 
 use crate::format::{civil_from_days, days_from_civil};
 use crate::model::{Kline, TimeUnit, Timeframe};
 
+mod grid;
 mod plan;
 
+pub use grid::Grid;
 pub use plan::FoldPlan;
 
 const DAY_MS: i64 = 86_400_000;
@@ -39,10 +46,17 @@ pub fn bucket_start_ms(tf: Timeframe, t_ms: i64) -> i64 {
         }
         TimeUnit::Day => days.div_euclid(count) * count * DAY_MS,
         TimeUnit::Week => {
-            let weeks = (days + DAYS_BEFORE_FIRST_MONDAY).div_euclid(7);
-            (weeks.div_euclid(count) * count * 7 - DAYS_BEFORE_FIRST_MONDAY) * DAY_MS
+            let monday = days - (days + DAYS_BEFORE_FIRST_MONDAY).rem_euclid(7);
+            // A Monday is never before the first Monday of its own year.
+            let first = first_monday(civil_from_days(monday).0);
+            let length = count * 7;
+            (first + (monday - first).div_euclid(length) * length) * DAY_MS
         }
-        TimeUnit::Month => month_start_ms(month_index(days).div_euclid(count) * count),
+        TimeUnit::Month => {
+            let index = month_index(days);
+            let january = index - index.rem_euclid(12);
+            month_start_ms(january + (index - january).div_euclid(count) * count)
+        }
     }
 }
 
@@ -57,9 +71,23 @@ pub fn next_bucket_start_ms(tf: Timeframe, t_ms: i64) -> i64 {
             (start + tf.nominal_ms()).min(midnight + DAY_MS)
         }
         TimeUnit::Day => start + count * DAY_MS,
-        TimeUnit::Week => start + count * 7 * DAY_MS,
-        TimeUnit::Month => month_start_ms(month_index(start.div_euclid(DAY_MS)) + count),
+        // The next year's count cuts the last period of this one short.
+        TimeUnit::Week => {
+            let year = civil_from_days(start.div_euclid(DAY_MS)).0;
+            (start + count * 7 * DAY_MS).min(first_monday(year + 1) * DAY_MS)
+        }
+        TimeUnit::Month => {
+            let index = month_index(start.div_euclid(DAY_MS));
+            let next_january = index - index.rem_euclid(12) + 12;
+            month_start_ms((index + count).min(next_january))
+        }
     }
+}
+
+/// The first Monday of `year`, in days since the epoch.
+fn first_monday(year: i64) -> i64 {
+    let january = days_from_civil(year, 1, 1);
+    january + (-(january + DAYS_BEFORE_FIRST_MONDAY)).rem_euclid(7)
 }
 
 /// Months since 1970-01 of the month holding `days` (since the epoch).
@@ -71,53 +99,6 @@ fn month_index(days: i64) -> i64 {
 /// Midnight UTC on the first of the month `index` months after 1970-01.
 fn month_start_ms(index: i64) -> i64 {
     days_from_civil(1970 + index.div_euclid(12), index.rem_euclid(12) + 1, 1) * DAY_MS
-}
-
-/// Fold ascending candles into buckets of `tf`, the way Binance cuts them. Each bucket opens at
-/// its start and closes a millisecond before the next; the forming last bucket is kept.
-///
-/// `truncated` says the series starts where a request stopped rather than where the market
-/// began: its first bucket is then a fragment and is dropped, so no bar shows a range the data
-/// did not cover.
-pub fn fold(candles: &[Kline], tf: Timeframe, truncated: bool) -> Vec<Kline> {
-    let mut out: Vec<Kline> = Vec::new();
-    for candle in candles {
-        let bucket = bucket_start_ms(tf, candle.open_time);
-        match out.last_mut() {
-            Some(last) if last.open_time == bucket => last.absorb(candle),
-            _ => out.push(Kline {
-                open_time: bucket,
-                close_time: next_bucket_start_ms(tf, bucket) - 1,
-                ..candle.clone()
-            }),
-        }
-    }
-    if truncated
-        && let (Some(first), Some(bucket)) = (candles.first(), out.first())
-        && first.open_time > bucket.open_time
-        && out.len() > 1
-    {
-        out.remove(0);
-    }
-    out
-}
-
-/// The coarsest of the `natives` whose buckets nest exactly inside `target`'s, so `target` can be
-/// folded from it: `target` itself when it is native. None when no native does.
-///
-/// Intraday natives must divide the day (their buckets restart at midnight like every intraday
-/// bucket here; one that does not has an anchoring a provider chooses, not us) and, for an
-/// intraday target, divide the target. Days nest in days of a multiple of their count, and in
-/// weeks and months as single days; weeks in weeks, months in months.
-pub fn fold_base(target: Timeframe, natives: &[Timeframe]) -> Option<Timeframe> {
-    if natives.contains(&target) {
-        return Some(target);
-    }
-    natives
-        .iter()
-        .copied()
-        .filter(|native| nests_in(*native, target))
-        .max()
 }
 
 /// Whether every bucket of `base` lies inside one bucket of `target`, and every bucket of `target`

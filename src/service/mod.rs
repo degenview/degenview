@@ -15,6 +15,7 @@ pub mod sound;
 pub mod stream;
 pub mod system;
 pub mod taker_flow;
+pub mod tradingview;
 pub mod update;
 pub mod watchlist_quotes;
 pub mod webhook;
@@ -22,7 +23,9 @@ pub mod work_queue;
 
 pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
+pub use market::oanda::test_connection as oanda_test_connection;
 
+use crate::model::market::asset_name::AssetNames;
 use crate::model::{DataSource, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
@@ -44,6 +47,9 @@ pub struct SearchResult {
     pub base: Option<String>,
     /// What the pair is priced in (`USDT`, `USD`).
     pub quote: Option<String>,
+    /// What the provider calls the two sides (`Bitcoin`, `Tether`), when it says. Boxed, like an
+    /// event's figures, to keep a hit small enough to be an enum's variant.
+    pub names: Box<AssetNames>,
 }
 
 /// What separates an equity's ticker from its company name in [`SearchResult::symbol`].
@@ -64,7 +70,14 @@ impl SearchResult {
             event: None,
             base: None,
             quote: None,
+            names: Box::default(),
         }
+    }
+
+    /// The provider's own names for the market's two sides.
+    pub fn named(mut self, base: Option<&str>, quote: Option<&str>) -> Self {
+        self.names = Box::new(AssetNames::new(base, quote));
+        self
     }
 
     pub fn pair(mut self, base: impl Into<String>, quote: impl Into<String>) -> Self {
@@ -94,6 +107,13 @@ impl SearchResult {
             || self.source.base_asset(&self.symbol),
             |base| base.to_uppercase(),
         )
+    }
+
+    /// What the market is priced in: the provider's own quote, else read out of the symbol.
+    pub fn quote_asset(&self) -> Option<String> {
+        self.quote
+            .clone()
+            .or_else(|| self.source.quote_asset(&self.symbol))
     }
 
     /// `BASE/QUOTE` for a pair, else the symbol: the label portfolios keep for a market.
@@ -178,6 +198,12 @@ pub trait MarketSource {
         let _ = query;
         Ok(Vec::new())
     }
+
+    /// The names this venue publishes for the assets it lists, as `(upper-case ticker, name)`.
+    /// They describe the same assets on venues that publish none. Blocks: not for the frame loop.
+    fn asset_names(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
@@ -192,6 +218,7 @@ pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
         DataSource::CoinGecko => &market::coingecko::COINGECKO,
         DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
         DataSource::Alpaca => &market::alpaca::ALPACA,
+        DataSource::Oanda => &market::oanda::OANDA,
         DataSource::Polymarket => &market::polymarket::POLYMARKET,
         DataSource::Kalshi => &market::kalshi::KALSHI,
         DataSource::CoinMarketCap => &market::cmc::COIN_MARKET_CAP,

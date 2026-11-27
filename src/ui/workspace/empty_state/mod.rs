@@ -71,6 +71,7 @@ pub enum EmptyStateAction {
     RemoveRecent(usize),
     ClearRecents,
     ShowFavorites,
+    ImportTradingView,
 }
 
 pub struct EmptyStateOutput {
@@ -104,6 +105,10 @@ pub fn show(ui: &mut Ui, input: &EmptyStateInput, state: &mut EmptyStateState) -
                     ui.add_space(26.0);
                     if launcher(ui).clicked() {
                         frame.actions.push(EmptyStateAction::AddChart);
+                    }
+                    ui.add_space(12.0);
+                    if import_link(ui).clicked() {
+                        frame.actions.push(EmptyStateAction::ImportTradingView);
                     }
                 });
                 ui.add_space(24.0);
@@ -165,6 +170,39 @@ fn centred_line(ui: &mut Ui, text: &str, font: f32, weight: f32, color: Color32)
         galley,
         color,
     );
+}
+
+/// The way in for someone who already has charts elsewhere: a quiet, centred link.
+fn import_link(ui: &mut Ui) -> egui::Response {
+    let text = tr!("Import from TradingView\u{2026}");
+    let galley = kit::galley(
+        ui,
+        text,
+        size::SUBHEADLINE + 1.0,
+        REGULAR,
+        theme::text_secondary(),
+        ui.available_width(),
+    );
+    let (row, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), galley.size().y), Sense::hover());
+    let rect = Rect::from_center_size(row.center(), galley.size());
+    let response = ui
+        .interact(rect, ui.id().with("import-tradingview"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(response, text);
+    let color = if response.hovered() {
+        theme::text_primary()
+    } else {
+        theme::text_secondary()
+    };
+    ui.painter()
+        .galley_with_override_text_color(rect.min, galley, color);
+    ui.painter().hline(
+        rect.x_range(),
+        rect.bottom(),
+        egui::Stroke::new(1.0, color.gamma_multiply(0.5)),
+    );
+    response
 }
 
 /// A search box that is really a button: it opens the symbol picker, where the typing happens.
@@ -240,6 +278,9 @@ mod tests {
             symbol: symbol.into(),
             full_symbol: symbol.into(),
             source: DataSource::Binance,
+            base: None,
+            quote: None,
+            names: Default::default(),
         }
     }
 
@@ -315,6 +356,7 @@ mod tests {
 
     #[test]
     fn suggestions_always_include_stocks() {
+        use crate::model::market::well_known;
         let trends = HashMap::new();
         let input = EmptyStateInput {
             favorites: &[],
@@ -323,7 +365,9 @@ mod tests {
             layouts: &[],
             trends: &trends,
         };
-        assert_eq!(wanted(&input, Tab::Suggestions), 20);
+        // Every starter coin and stock asks for its week.
+        let starters = well_known::COINS.len() + well_known::STOCKS.len();
+        assert_eq!(wanted(&input, Tab::Suggestions), starters);
     }
 
     #[test]
@@ -362,6 +406,7 @@ mod tests {
     #[test]
     #[ignore = "writes images for a person to look at"]
     fn gallery_of_the_page() {
+        use crate::model::market::well_known;
         use crate::ui::render_tests::{Screen, gallery_dir};
         use crate::ui::theme::AppTheme;
         if gallery_dir().is_none() {
@@ -391,10 +436,7 @@ mod tests {
         ];
         // A week for every market on the page: some climbing, some falling.
         let mut trends = HashMap::new();
-        let symbols = [
-            "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK",
-        ];
-        for (index, base) in symbols.iter().enumerate() {
+        for (index, base) in well_known::COINS.map(|coin| coin.ticker).iter().enumerate() {
             let slope = if index % 4 == 1 { -0.6 } else { 1.0 };
             let week: Vec<f32> = (0..7)
                 .map(|day| 10.0 + slope * day as f32 + ((day * 5 + index * 3) % 4) as f32 * 0.7)
@@ -406,11 +448,10 @@ mod tests {
                 );
             }
         }
-        for (index, ticker) in [
-            "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
-        ]
-        .into_iter()
-        .enumerate()
+        for (index, ticker) in well_known::STOCKS
+            .map(|stock| stock.ticker)
+            .into_iter()
+            .enumerate()
         {
             let slope = if index % 3 == 1 { -0.5 } else { 0.8 };
             let week: Vec<f32> = (0..7)

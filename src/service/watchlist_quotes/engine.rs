@@ -147,7 +147,7 @@ impl Outcome {
             .max_by_key(|failure| match failure {
                 QuoteFailure::RateLimited => 3,
                 QuoteFailure::Failed(_) | QuoteFailure::Rejected(_) => 2,
-                QuoteFailure::CredentialsMissing => 1,
+                QuoteFailure::CredentialsMissing(_) => 1,
             })
     }
 }
@@ -576,9 +576,9 @@ impl Engine {
         }
         let source_answered = !outcome.quotes.is_empty();
         match outcome.worst_failure() {
-            Some(QuoteFailure::CredentialsMissing) => {
+            Some(QuoteFailure::CredentialsMissing(source)) => {
                 state.next_allowed_ms = now + 60_000;
-                state.last_error = Some(QuoteFailure::CredentialsMissing.message());
+                state.last_error = Some(QuoteFailure::CredentialsMissing(*source).message());
             }
             Some(failure) => {
                 let (low, high) = if matches!(failure, QuoteFailure::RateLimited) {
@@ -616,7 +616,7 @@ impl Engine {
                 updates.insert(
                     key.clone(),
                     match failure {
-                        QuoteFailure::CredentialsMissing => {
+                        QuoteFailure::CredentialsMissing(_) => {
                             WatchlistQuote::unsupported(Some(failure.message()))
                         }
                         _ => self.fallback(key, Some(failure.message())),
@@ -714,7 +714,7 @@ impl Engine {
     /// The source behind an instrument key (`SLUG:SYMBOL`).
     fn source_of(&self, key: &str) -> Option<DataSource> {
         let slug = key.split(':').next()?;
-        ALL_SOURCES
+        DataSource::ALL
             .into_iter()
             .find(|source| source.watchlist_slug() == slug)
     }
@@ -760,25 +760,9 @@ impl Engine {
     }
 }
 
-const ALL_SOURCES: [DataSource; 13] = [
-    DataSource::Binance,
-    DataSource::Coinbase,
-    DataSource::Okx,
-    DataSource::Kraken,
-    DataSource::Bybit,
-    DataSource::Gate,
-    DataSource::Mexc,
-    DataSource::CoinGecko,
-    DataSource::DexScreener,
-    DataSource::Alpaca,
-    DataSource::Polymarket,
-    DataSource::Kalshi,
-    DataSource::CoinMarketCap,
-];
-
 /// A stable order for sources, so rounds are deterministic.
 fn source_order(source: DataSource) -> u8 {
-    ALL_SOURCES
+    DataSource::ALL
         .iter()
         .position(|candidate| *candidate == source)
         .unwrap_or(usize::MAX) as u8
@@ -1574,7 +1558,8 @@ mod tests {
     #[test]
     fn missing_credentials_mark_stocks_unsupported_and_retry_after_a_minute() {
         let (engine, book, provider) = setup();
-        *provider.failure.lock().unwrap() = Some(QuoteFailure::CredentialsMissing);
+        *provider.failure.lock().unwrap() =
+            Some(QuoteFailure::CredentialsMissing(DataSource::Alpaca));
         let aapl = id(DataSource::Alpaca, "AAPL");
         lock(&engine).update(1, vec![aapl.clone()], true, T0);
         round(&engine, &provider, T0);

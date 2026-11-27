@@ -1,9 +1,9 @@
 //! Where a higher-timeframe bar opens and closes, for a bar length in seconds (as Pine states
-//! timeframes, a month being 30 days). The cutting is `model::market::bucket`'s: a length that is
-//! a whole timeframe (`30S`, `5` minutes, `1D`, `2W`, `3M`, `12M`) gets its buckets, quarters and
-//! years included. Any other length (90.5 seconds) floors onto the epoch.
+//! timeframes, a month being 30 days). The cutting is `model::market::bucket`'s, on the market's
+//! [`Grid`]: a length that is a whole timeframe (`30S`, `5` minutes, `1D`, `2W`, `3M`, `12M`) gets
+//! its buckets, quarters and years included. Any other length (90.5 seconds) floors onto the epoch.
 
-use crate::model::market::bucket;
+use crate::model::market::bucket::Grid;
 use crate::model::{TimeUnit, Timeframe};
 
 const MINUTE: i64 = 60;
@@ -65,8 +65,8 @@ pub fn nominal_length(open_time: i64, seconds: f64) -> f64 {
     if timeframe_of(nominal).is_none() {
         return seconds;
     }
-    let bucket_start = start(open_time, nominal);
-    let measured = (end(bucket_start, nominal) - bucket_start) as f64 / 1_000.0;
+    let bucket_start = start(Grid::Utc, open_time, nominal);
+    let measured = (end(Grid::Utc, bucket_start, nominal) - bucket_start) as f64 / 1_000.0;
     if bucket_start == open_time && (measured - seconds).abs() < 1.0 {
         nominal
     } else {
@@ -75,9 +75,9 @@ pub fn nominal_length(open_time: i64, seconds: f64) -> f64 {
 }
 
 /// The start of the bucket that contains `open_time`, for a bar length in seconds.
-pub fn start(open_time: i64, seconds: f64) -> i64 {
+pub fn start(grid: Grid, open_time: i64, seconds: f64) -> i64 {
     match timeframe_of(seconds) {
-        Some(timeframe) => bucket::bucket_start_ms(timeframe, open_time),
+        Some(timeframe) => grid.bucket_start_ms(timeframe, open_time),
         None => {
             let grid = epoch_grid_ms(seconds);
             open_time.div_euclid(grid) * grid
@@ -85,29 +85,44 @@ pub fn start(open_time: i64, seconds: f64) -> i64 {
     }
 }
 
-/// End of the bucket that opens at `start`: where the next one opens.
-pub fn end(start: i64, seconds: f64) -> i64 {
+/// End of the bucket that opens at `start`: where the next one opens, or where trading in it stops
+/// on a market whose day, week or month ends at its close (`Grid::session_end_ms`).
+pub fn end(grid: Grid, start: i64, seconds: f64) -> i64 {
     match timeframe_of(seconds) {
-        Some(timeframe) => bucket::next_bucket_start_ms(timeframe, start),
+        Some(timeframe) => grid.session_end_ms(timeframe, start),
         None => start + epoch_grid_ms(seconds),
+    }
+}
+
+/// End of the bar after the one that opens at `start`: on a market with closing hours the next bar
+/// does not open where this one ends (`Grid::following_end_ms`).
+pub fn following_end(grid: Grid, start: i64, seconds: f64) -> i64 {
+    match timeframe_of(seconds) {
+        Some(timeframe) => grid.following_end_ms(timeframe, start),
+        None => start + 2 * epoch_grid_ms(seconds),
     }
 }
 
 /// Where the bar that opens at `open_time` closes (exclusive), for a bar length in seconds: the end of
 /// its bucket. A month, quarter or year is the calendar's, not `seconds` (Pine's nominal 30 days)
 /// long, and a length that does not divide the day is cut at midnight.
-pub fn bar_end(open_time: i64, seconds: f64) -> i64 {
-    end(start(open_time, seconds), seconds)
+pub fn bar_end(grid: Grid, open_time: i64, seconds: f64) -> i64 {
+    end(grid, start(grid, open_time, seconds), seconds)
 }
 
 /// `time_close` of the bar that opens at `open_time`, for a bar length in seconds. A month, quarter
 /// or year closes where the calendar's does (TradingView, BTCUSDT 1M: October's bar is 31 days and
-/// February's 28, and the next bar opens at the close); any other bar closes `seconds` after it
-/// opens, as a stock's :30 hourly bar does off the UTC grid its bucket is cut on.
-pub fn close_time(open_time: i64, seconds: f64) -> i64 {
+/// February's 28, and the next bar opens at the close), and so do several weeks, whose last period
+/// of a year the next year's count cuts short (TradingView, `"3W"`: the one that opens on 29
+/// December 2025 closes on 5 January). Any other bar closes `seconds` after it opens, as a stock's
+/// :30 hourly bar does off the UTC grid its bucket is cut on.
+pub fn close_time(grid: Grid, open_time: i64, seconds: f64) -> i64 {
     let month = (30 * DAY) as f64;
-    if seconds >= month && (seconds / month).fract() == 0.0 {
-        bar_end(open_time, seconds)
+    let whole_months = seconds >= month && (seconds / month).fract() == 0.0;
+    let several_weeks = grid == Grid::Utc
+        && timeframe_of(seconds).is_some_and(|tf| tf.unit() == TimeUnit::Week && tf.count() > 1);
+    if whole_months || several_weeks {
+        bar_end(grid, open_time, seconds)
     } else {
         open_time + (seconds * 1_000.0) as i64
     }
@@ -117,6 +132,19 @@ pub fn close_time(open_time: i64, seconds: f64) -> i64 {
 mod tests {
     use super::*;
     use crate::pine::time::calendar;
+
+    // The UTC grid, which most of these cases are about.
+    fn start(open_time: i64, seconds: f64) -> i64 {
+        super::start(Grid::Utc, open_time, seconds)
+    }
+
+    fn end(start: i64, seconds: f64) -> i64 {
+        super::end(Grid::Utc, start, seconds)
+    }
+
+    fn close_time(open_time: i64, seconds: f64) -> i64 {
+        super::close_time(Grid::Utc, open_time, seconds)
+    }
 
     fn ms(year: i64, month: i64, day: i64, hour: i64) -> i64 {
         calendar::make(year, month, day, hour, 0, 0, 0).unwrap()

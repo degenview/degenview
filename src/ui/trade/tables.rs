@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use degenview_brokers::{Decimal, Side};
 use eframe::egui;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::trading::model::{OrderRow, RowStatus, Tone};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone as BadgeTone;
@@ -75,7 +75,7 @@ pub fn figure(value: Decimal) -> String {
 pub fn price_text(row: &OrderRow) -> String {
     match row.price {
         Some(price) => figure(price),
-        None if row.kind == "Market" => tr!("Market").to_owned(),
+        None if row.market_order => tr_c!("order type", "Market").to_owned(),
         None => "—".to_owned(),
     }
 }
@@ -348,6 +348,7 @@ pub(crate) fn sample_row() -> OrderRow {
         market: "BTC-USD".to_owned(),
         side: Side::Buy,
         kind: "Limit".to_owned(),
+        market_order: false,
         price: Some(d("89000.00")),
         trigger: None,
         filled: d("0.0004"),
@@ -394,13 +395,12 @@ mod tests {
     #[test]
     fn a_market_order_has_the_word_where_a_limit_has_its_price() {
         let mut market = row();
-        market.kind = "Market".to_owned();
+        market.market_order = true;
         market.price = None;
         assert_eq!(price_text(&market), "Market");
         assert_eq!(price_text(&row()), "89,000.00");
         let mut other = row();
         other.price = None;
-        other.kind = "Stop".to_owned();
         assert_eq!(price_text(&other), "—");
     }
 

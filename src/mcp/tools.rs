@@ -140,6 +140,7 @@ pub enum McpSource {
     Coingecko,
     Dexscreener,
     Alpaca,
+    Oanda,
 }
 
 impl McpSource {
@@ -155,6 +156,7 @@ impl McpSource {
             Self::Coingecko => DataSource::CoinGecko,
             Self::Dexscreener => DataSource::DexScreener,
             Self::Alpaca => DataSource::Alpaca,
+            Self::Oanda => DataSource::Oanda,
         }
     }
 }
@@ -192,7 +194,7 @@ impl McpIndicator {
         match self.target() {
             IndicatorTarget::BuiltIn(kind) => kind.menu_title(),
             IndicatorTarget::Bundled(id) => {
-                bundled::find(id).map_or(id, |indicator| indicator.name)
+                bundled::find(id).map_or(id, |indicator| indicator.name.msgid())
             }
         }
     }
@@ -389,6 +391,13 @@ impl DegenViewMcp {
 /// off the async worker: its first answer is a Keychain lookup.
 pub(super) async fn alpaca_configured() -> bool {
     tokio::task::spawn_blocking(crate::service::keychain::api_keys::alpaca_configured)
+        .await
+        .unwrap_or(false)
+}
+
+/// [`api_keys::oanda_configured`](crate::service::keychain::api_keys::oanda_configured), likewise.
+pub(super) async fn oanda_configured() -> bool {
+    tokio::task::spawn_blocking(crate::service::keychain::api_keys::oanda_configured)
         .await
         .unwrap_or(false)
 }

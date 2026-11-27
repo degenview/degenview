@@ -2,7 +2,7 @@
 
 use super::DrawingProperties;
 use super::rows::{Page, color_card, toggle_row};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::model::drawings::style::{HorizontalAlign, TextOrientation, VerticalAlign};
 use crate::model::{Caps, Tool};
 use crate::ui::chart::settings::style::{number_field, picker_row};
@@ -72,17 +72,23 @@ impl DrawingProperties {
             None,
             &mut style.text.color,
         );
-        if let Some(size) = card::card(ui, Icon::TextFormat, tr!("Size"), None, |ui| {
-            number_field(
-                ui,
-                Id::new("drawing-text-size"),
-                f64::from(style.text.size),
-                1.0,
-                f64::from(crate::model::drawings::style::TEXT_SIZE_RANGE.0)
-                    ..=f64::from(crate::model::drawings::style::TEXT_SIZE_RANGE.1),
-                0,
-            )
-        }) {
+        if let Some(size) = card::card(
+            ui,
+            Icon::TextFormat,
+            tr_c!("text or image size", "Size"),
+            None,
+            |ui| {
+                number_field(
+                    ui,
+                    Id::new("drawing-text-size"),
+                    f64::from(style.text.size),
+                    1.0,
+                    f64::from(crate::model::drawings::style::TEXT_SIZE_RANGE.0)
+                        ..=f64::from(crate::model::drawings::style::TEXT_SIZE_RANGE.1),
+                    0,
+                )
+            },
+        ) {
             style.text.size = size as f32;
         }
         toggle_row(ui, Icon::TextFormat, tr!("Bold"), "", &mut style.text.bold);

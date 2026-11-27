@@ -16,6 +16,7 @@ pub mod sync;
 pub mod tab;
 pub mod taker_flow;
 pub mod trading;
+pub mod tradingview;
 pub mod update;
 
 use crate::service::stream::Repaint;

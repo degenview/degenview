@@ -9,9 +9,9 @@ use eframe::egui;
 
 impl ChartWorkspace {
     pub(super) fn handle_keyboard(&mut self, ui: &egui::Ui) {
-        // The Studio has the keyboard: none of these shortcuts, the snapshot ones included, act
-        // on the charts under it.
-        if self.studio_open() {
+        // A sheet over the charts has the keyboard: none of these shortcuts, the snapshot ones
+        // included, act on the charts under it.
+        if self.sheet_over_charts() {
             return;
         }
         // Not under another picker, and not while typing: the field keeps Ctrl+K where it means

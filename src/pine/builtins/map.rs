@@ -3,14 +3,15 @@
 //! the arguments named by `parameters(name)` and calls `call`.
 
 use super::array::{Bound, new_array};
-use crate::pine::runtime::containers::{Map, MapKey};
+use crate::pine::runtime::containers::{Map, MapKey, Rejected};
 use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
-use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange, ValueType};
 
 /// Parameter names per operation (by member name, after `map.`), in positional order.
 pub fn parameters(name: &str) -> &'static [&'static str] {
     match name.strip_prefix("map.").unwrap_or(name) {
+        "new" => &[],
         "put" => &["id", "key", "value"],
         "get" | "contains" | "remove" => &["id", "key"],
         "put_all" => &["id", "id2"],
@@ -64,18 +65,46 @@ fn new_map(state: &mut RuntimeState, map: Map) -> RuntimeValue {
     RuntimeValue::Ref(RefKind::Map, id)
 }
 
+pub(crate) fn construct(state: &mut RuntimeState, types: [ValueType; 2]) -> RuntimeValue {
+    new_map(state, Map::typed(types))
+}
+
 fn key_of(
+    map: &Map,
     value: Option<&RuntimeValue>,
     name: &str,
     range: SourceRange,
 ) -> Result<MapKey, Diagnostic> {
-    value.and_then(MapKey::from_value).ok_or_else(|| {
-        runtime_error(
+    value
+        .and_then(|value| map.lookup_key(value))
+        .ok_or_else(|| {
+            runtime_error(
+                "PINE4027",
+                format!("{name} needs a number, bool, string or color as its key."),
+                range,
+            )
+        })
+}
+
+/// The error for a write a map's declared types refuse.
+fn refused(name: &str, rejected: Rejected, range: SourceRange) -> Diagnostic {
+    match rejected {
+        Rejected::Key(None) => runtime_error(
             "PINE4027",
             format!("{name} needs a number, bool, string or color as its key."),
             range,
-        )
-    })
+        ),
+        Rejected::Key(Some(kind)) => runtime_error(
+            "PINE4040",
+            format!("{name}: the key must be {}.", kind.name()),
+            range,
+        ),
+        Rejected::Value(kind) => runtime_error(
+            "PINE4040",
+            format!("{name}: the value must be {}.", kind.name()),
+            range,
+        ),
+    }
 }
 
 pub fn call(
@@ -104,12 +133,19 @@ pub fn call_positional(
     state: &mut RuntimeState,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
+    // Each operand sits where `parameters(name)` puts it, as `call` binds it by name: `put_all` has no
+    // key, so its second map is the second argument.
+    let parameters = parameters(name);
+    let operand = |names: &[&str]| {
+        let position = parameters.iter().position(|p| names.contains(p))?;
+        arguments.get(position)
+    };
     run(
         name,
         Operands {
-            id: arguments.first(),
-            key: arguments.get(1),
-            third: arguments.get(2),
+            id: operand(&["id"]),
+            key: operand(&["key"]),
+            third: operand(&["value", "id2"]),
         },
         state,
         range,
@@ -165,17 +201,19 @@ fn apply(
 ) -> Result<RuntimeValue, Diagnostic> {
     Ok(match member {
         "put" => {
-            let key = key_of(operands.key, name, range)?;
-            map.put(operands.third.cloned().unwrap_or(RuntimeValue::Na), key);
+            let key = operands.key.unwrap_or(&RuntimeValue::Na);
+            let value = operands.third.cloned().unwrap_or(RuntimeValue::Na);
+            map.insert(key, value)
+                .map_err(|rejected| refused(name, rejected, range))?;
             RuntimeValue::Void
         }
         "get" => map
-            .value(&key_of(operands.key, name, range)?)
+            .value(&key_of(map, operands.key, name, range)?)
             .cloned()
             .unwrap_or(RuntimeValue::Na),
-        "contains" => RuntimeValue::Bool(map.contains(&key_of(operands.key, name, range)?)),
+        "contains" => RuntimeValue::Bool(map.contains(&key_of(map, operands.key, name, range)?)),
         "remove" => map
-            .remove(&key_of(operands.key, name, range)?)
+            .remove(&key_of(map, operands.key, name, range)?)
             .unwrap_or(RuntimeValue::Na),
         "size" => RuntimeValue::Int(map.count() as i64),
         "clear" => {
@@ -206,11 +244,8 @@ fn apply(
                     range,
                 )
             })?;
-            for (key, value) in other.pairs() {
-                if let Some(key) = MapKey::from_value(&key) {
-                    map.put(value, key);
-                }
-            }
+            map.put_all(&other)
+                .map_err(|rejected| refused(name, rejected, range))?;
             RuntimeValue::Void
         }
         _ => {

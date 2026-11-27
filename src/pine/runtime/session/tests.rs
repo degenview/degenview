@@ -2,7 +2,10 @@ use super::expressions::price_scale;
 use super::*;
 use crate::pine::DiagnosticCategory;
 use crate::pine::Limits;
+use crate::pine::SourceRange;
+use crate::pine::builtins::array;
 use crate::pine::compiler::program::{BarEvent, BarPhase};
+use crate::pine::runtime::types::{BarFlags, RuntimeContext};
 
 fn bar() -> Kline {
     Kline {
@@ -546,6 +549,103 @@ fn evaluation_enforces_deadlines_and_cooperative_cancellation() {
     assert_eq!(cancelled.category, DiagnosticCategory::Cancellation);
 }
 
+/// A method call evaluates its receiver first, so a limit can be reached exactly there. It has to
+/// stop the script as that limit, not read as a function the engine does not know.
+#[test]
+fn a_limit_reached_at_a_method_receiver_keeps_its_own_error() {
+    let source = "//@version=6\nindicator(\"T\")\n\
+        levels = array.new_int(0)\n\
+        levels.push(1)\n\
+        line gone = na\n\
+        gone.delete()\n\
+        plot(levels.size())";
+    let program = crate::pine::compiler::compile(
+        source,
+        Limits::default(),
+        &crate::pine::compiler::NoLibraries,
+    );
+    let mut stopped = 0;
+    for instructions_per_bar in 0..100 {
+        let mut session = Session::new(
+            program.clone(),
+            HashMap::new(),
+            Limits {
+                instructions_per_bar,
+                ..Limits::default()
+            },
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        match session.evaluate(&[hourly(0)]) {
+            Ok(_) => {}
+            Err(RunError::Script(error)) => {
+                assert_eq!(error.code, "PINE8004", "{instructions_per_bar}: {error:?}");
+                stopped += 1;
+            }
+            Err(RunError::Rejection) => panic!("not a rejection"),
+        }
+    }
+    assert!(stopped > 0, "no limit in the sweep stopped the script");
+}
+
+/// An empty script's session, and a bar to call one of its builtins on directly. Nothing has
+/// been charged yet, so the first read a call makes is also the first check of the limits.
+fn idle_session() -> (Session, RuntimeContext) {
+    let program = crate::pine::compiler::compile(
+        "//@version=6\nindicator(\"T\")",
+        Limits::default(),
+        &crate::pine::compiler::NoLibraries,
+    );
+    let session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    (session, RuntimeContext::new(bar(), BarFlags::default()))
+}
+
+fn call_without_arguments(
+    session: &mut Session,
+    name: &str,
+    context: &mut RuntimeContext,
+) -> Result<RuntimeValue, Diagnostic> {
+    session.call(name, &[], None, 0, SourceRange::ZERO, context)
+}
+
+#[test]
+fn a_deadline_or_cancellation_at_a_method_receiver_keeps_its_own_error() {
+    let (mut late, mut context) = idle_session();
+    let levels = array::new_array(&mut late.working, Vec::new());
+    late.working.variables.insert("levels".into(), levels);
+    late.deadline_at = Some(Instant::now());
+    let deadline = call_without_arguments(&mut late, "levels.size", &mut context).unwrap_err();
+    assert_eq!(deadline.code, "PINE8007", "{deadline:?}");
+
+    let (mut cancelled, mut context) = idle_session();
+    let levels = array::new_array(&mut cancelled.working, Vec::new());
+    cancelled.working.variables.insert("levels".into(), levels);
+    cancelled.set_cancellation(Arc::new(AtomicBool::new(true)));
+    let error = call_without_arguments(&mut cancelled, "levels.size", &mut context).unwrap_err();
+    assert_eq!(error.code, "PINE8008", "{error:?}");
+}
+
+/// `line.all` builds a new array each time it is read.
+#[test]
+fn a_dotted_method_call_reads_its_receiver_once() {
+    let (mut session, mut context) = idle_session();
+    let before = session.working.next_reference;
+    let size = call_without_arguments(&mut session, "line.all.size", &mut context).unwrap();
+    assert_eq!(size, RuntimeValue::Int(0));
+    assert_eq!(session.working.next_reference, before + 1, "arrays built");
+    assert_eq!(session.working.instructions, 1, "instructions charged");
+}
+
 #[test]
 fn strategy_readings_follow_the_broker_and_keep_a_history() {
     let source = "//@version=6\nstrategy(\"T\")\n\
@@ -567,4 +667,81 @@ fn strategy_readings_follow_the_broker_and_keep_a_history() {
     assert!(matches!(variable("size"), Some(RuntimeValue::Float(size)) if size > 0.0));
     assert!(matches!(variable("before"), Some(RuntimeValue::Float(size)) if size > 0.0));
     assert!(matches!(variable("avg"), Some(RuntimeValue::Float(_))));
+}
+
+#[test]
+fn timeframe_change_with_a_varying_timeframe_rolls_back_with_realtime_ticks() {
+    // The live bar names an hour or two by its own close, which moves between ticks: every tick
+    // compares with what the last committed bar found, never with an earlier tick of its own bar.
+    let program = crate::pine::compiler::compile(
+        "//@version=6\nindicator(\"T\")\nplot(timeframe.change(close > 10 ? \"60\" : \"120\") ? 1 : 0)",
+        Limits::default(),
+        &crate::pine::compiler::NoLibraries,
+    );
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let priced = |hour: i64, close: f64| Kline {
+        close,
+        ..hourly(hour * 3_600_000)
+    };
+    // Hour 2 commits the two-hour period that opens at hour 2 (close below ten).
+    session
+        .load_history(&[priced(1, 5.0), priced(2, 5.0)], Some(3 * 3_600_000), None)
+        .unwrap();
+    let run = |session: &mut Session, hour: i64, close: f64, phase: BarPhase| {
+        session
+            .execute(
+                BarEvent {
+                    candle: priced(hour, close),
+                    phase,
+                },
+                true,
+                None,
+            )
+            .unwrap();
+        session.output().plots[0].values.last().copied().flatten()
+    };
+    // Hour 3: "120" finds the period hour 2 committed, "60" finds hour 3's own.
+    let tick = BarPhase::RealtimeTick { is_new: false };
+    assert_eq!(
+        run(
+            &mut session,
+            3,
+            5.0,
+            BarPhase::RealtimeTick { is_new: true }
+        ),
+        Some(0.0)
+    );
+    assert_eq!(run(&mut session, 3, 20.0, tick), Some(1.0));
+    assert_eq!(
+        run(&mut session, 3, 5.0, tick),
+        Some(0.0),
+        "the tick before left nothing behind"
+    );
+    assert_eq!(
+        run(
+            &mut session,
+            3,
+            20.0,
+            BarPhase::RealtimeClose { is_new: false }
+        ),
+        Some(1.0)
+    );
+    // Hour 4 compares with hour 3, which closed naming "60": hour 4's two-hour period differs.
+    assert_eq!(
+        run(
+            &mut session,
+            4,
+            5.0,
+            BarPhase::RealtimeTick { is_new: true }
+        ),
+        Some(1.0)
+    );
 }

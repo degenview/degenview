@@ -9,7 +9,7 @@ use crate::service::keychain::ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
-use crate::service::work_queue::{self, Pending};
+use crate::service::work_queue;
 use crate::ui::icons::Icon;
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{Autosave, destructive_button, field, open_button};
@@ -18,6 +18,7 @@ use crate::ui::kit::{
     error_notice::{self, ErrorEvent, ErrorNotice},
 };
 use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::connection_test::ConnectionTest;
 use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
@@ -43,13 +44,16 @@ pub struct AiSettingsState {
     /// The provider, model and server being edited; saved as they are typed (`autosave`).
     pub draft: AiPrefs,
     pub key_input: String,
+    /// What saving or removing last said.
     pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<usize, ErrorReport>>>,
+    /// A test of what the Test button would send.
+    test: ConnectionTest<TestRequest, Result<usize, ErrorReport>>,
     autosave: Autosave,
 }
 
 /// What the Test button needs to build its provider, taken from the page so the saved key can be
 /// read on the worker.
+#[derive(Clone, PartialEq)]
 pub struct TestRequest {
     kind: ProviderKind,
     base_url: String,
@@ -97,7 +101,7 @@ impl AiSettingsState {
     }
 
     pub fn is_testing(&self) -> bool {
-        self.test.is_some()
+        self.test.is_running()
     }
 
     /// Why the draft is not saved, if it is not.
@@ -176,6 +180,7 @@ impl AiSettingsState {
 
     pub fn remove_key(&mut self, store: &AiKeyStore) {
         store.remove(self.kind());
+        self.test.forget();
         self.key_input.clear();
         self.status = Some(StatusMessage::ok(tr!("Key removed.")));
     }
@@ -198,38 +203,43 @@ impl AiSettingsState {
         repaint: Option<&egui::Context>,
         provider: impl FnOnce() -> Result<Box<dyn LlmProvider>, LlmError> + Send + 'static,
     ) {
-        if self.test.is_some() {
-            return;
-        }
         self.status = None;
-        self.test = Some(work_queue::SNAPSHOTS.start(repaint, move || {
-            provider()
-                .and_then(|provider| provider.list_models())
-                .map(|models| models.len())
-                .map_err(|error| error.report())
-        }));
+        let tested = self.test_request();
+        self.test.start(tested, || {
+            work_queue::SNAPSHOTS.start(repaint, move || {
+                provider()
+                    .and_then(|provider| provider.list_models())
+                    .map(|models| models.len())
+                    .map_err(|error| error.report())
+            })
+        });
     }
 
     pub fn poll_test(&mut self) {
-        let Some(test) = &mut self.test else {
-            return;
-        };
-        let Some(outcome) = test.poll_or(|| {
-            Err(ErrorReport::message(tr!(
-                "The connection test stopped unexpectedly."
-            )))
-        }) else {
-            return;
-        };
-        self.test = None;
-        self.status = Some(match outcome {
-            Ok(count) => StatusMessage::ok(tr_n!(
+        let current = self.test_request();
+        self.test.follow(&current, |outcome| match outcome {
+            Some(Ok(count)) => StatusMessage::ok(tr_n!(
                 count,
                 "Connection successful. {count} model available.",
                 "Connection successful. {count} models available."
             )),
-            Err(report) => StatusMessage::failure(report),
+            Some(Err(report)) => StatusMessage::failure(report),
+            None => StatusMessage::failure(ErrorReport::message(tr!(
+                "The connection test stopped unexpectedly."
+            ))),
         });
+    }
+
+    /// What the page reports: what the test of this input said, and what saving did.
+    pub fn statuses(&self) -> impl Iterator<Item = StatusMessage> {
+        let tested = self.test.answer(&self.test_request()).cloned();
+        [tested, self.status.clone()].into_iter().flatten()
+    }
+
+    /// Puts away what the page reports, as closing its failure card does.
+    pub fn dismiss_statuses(&mut self) {
+        self.test.forget();
+        self.status = None;
     }
 }
 
@@ -307,9 +317,7 @@ pub fn body(
                             ui,
                             "ai-base-url",
                             tr!("Server Base URL"),
-                            Some(tr!(
-                                "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac."
-                            )),
+                            Some(crate::platform::ai_server_url_hint()),
                             "http://localhost:11434/v1",
                             &mut state.draft.compatible_base_url,
                             false,
@@ -368,7 +376,7 @@ pub fn body(
             });
         });
         // A failure with more to say is a card at the top; the rest is one line here.
-        if let Some(status) = state.status.as_ref().filter(|status| !needs_card(status)) {
+        for status in state.statuses().filter(|status| !needs_card(status)) {
             ui.add_space(8.0);
             status_message(ui, &status.text(), status.is_error);
         }
@@ -399,9 +407,7 @@ pub fn body(
         card(ui, |ui| {
             ui.add(
                 egui::Label::new(kit::text(
-                    tr!(
-                        "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced."
-                    ),
+                    crate::platform::ai_history_hint(),
                     kit::size::SUBHEADLINE + 1.0,
                     kit::REGULAR,
                     theme::text_secondary(),
@@ -423,18 +429,14 @@ pub(crate) fn needs_card(status: &StatusMessage) -> bool {
 
 /// The full error at the top of the page, where it is seen without scrolling, until it is dismissed or another result replaces it.
 fn failure_card(ui: &mut egui::Ui, state: &mut AiSettingsState) {
-    let Some(report) = state
-        .status
-        .as_ref()
-        .and_then(|status| status.report.as_ref())
-    else {
+    let Some(report) = state.statuses().find_map(|status| status.report) else {
         return;
     };
-    let notice = ErrorNotice::new("ai-settings", report)
+    let notice = ErrorNotice::new("ai-settings", &report)
         .detail_lines(4)
         .dismissable();
     if error_notice::show(ui, &notice) == Some(ErrorEvent::Dismiss) {
-        state.status = None;
+        state.dismiss_statuses();
     }
     ui.add_space(18.0);
 }
@@ -577,18 +579,15 @@ mod tests {
         state.start_test(None, move || Ok(Box::new(mock)));
         assert!(state.is_testing());
         wait_for_test(&mut state);
-        assert_eq!(
-            state.status,
-            Some(StatusMessage::ok(
-                "Connection successful. 2 models available."
-            ))
-        );
+        assert!(state.statuses().eq([StatusMessage::ok(
+            "Connection successful. 2 models available."
+        )]));
 
         let mut mock = MockProvider::replying(vec![]);
         mock.models = Err(LlmError::auth("bad key"));
         state.start_test(None, move || Ok(Box::new(mock)));
         wait_for_test(&mut state);
-        let status = state.status.clone().unwrap();
+        let status = state.statuses().next().unwrap();
         assert!(status.is_error);
         assert!(status.report.unwrap().detail.contains("bad key"));
     }
@@ -598,7 +597,29 @@ mod tests {
         let mut state = state();
         state.start_test(None, || Err(LlmError::Config("Add your key.".to_owned())));
         wait_for_test(&mut state);
-        assert_eq!(state.status, Some(StatusMessage::error("Add your key.")));
+        assert!(state.statuses().eq([StatusMessage::error("Add your key.")]));
+    }
+
+    #[test]
+    fn a_test_answers_only_for_the_key_and_provider_it_tried() {
+        let store = store();
+        let mut state = state();
+        state.key_input = "typed".to_owned();
+        state.start_test(None, || Err(LlmError::Config("refused".to_owned())));
+        wait_for_test(&mut state);
+        assert_eq!(state.statuses().count(), 1);
+        state.key_input.push('x');
+        assert_eq!(state.statuses().count(), 0);
+
+        state.start_test(None, || Err(LlmError::Config("refused".to_owned())));
+        state.select(ProviderKind::Anthropic);
+        wait_for_test(&mut state);
+        assert_eq!(state.statuses().count(), 0);
+
+        state.start_test(None, || Err(LlmError::Config("refused".to_owned())));
+        wait_for_test(&mut state);
+        state.remove_key(&store);
+        assert!(state.statuses().eq([StatusMessage::ok("Key removed.")]));
     }
 
     #[test]

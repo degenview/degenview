@@ -230,3 +230,123 @@ fn a_rewrite_changes_the_files_stamp_and_a_missing_file_has_none() {
     assert!(store.file_stamp("no-such-script").is_none());
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn every_way_a_name_comes_in_makes_a_file_every_system_accepts() {
+    let (mut store, root) = temp_store("portable-names");
+    let created = store
+        .create("RSI | MACD?", ScriptType::Indicator, None, false)
+        .unwrap();
+    assert_eq!(created.name, "RSI - MACD-");
+    // Another spelling of the same stored name is taken.
+    assert!(matches!(
+        store.create("RSI : MACD*", ScriptType::Indicator, None, false),
+        Err(ScriptStoreError::NameConflict)
+    ));
+    assert_eq!(store.rename(&created.id, "CON").unwrap().name, "Script CON");
+
+    let id = ScriptStore::fresh_id();
+    let adopted = store
+        .adopt(&id, "from: elsewhere", "plot(close)\n", false)
+        .unwrap();
+    assert_eq!(adopted.name, "from- elsewhere");
+    // A name that leads out of the library stays inside it.
+    let escaped = store
+        .adopt(&ScriptStore::fresh_id(), "../evil", "plot(close)\n", false)
+        .unwrap();
+    assert!(
+        root.join(format!("Scripts/{}.pine", escaped.name))
+            .is_file()
+    );
+    assert!(!root.join("evil.pine").exists());
+    store
+        .update_from_remote(&id, "a/b", "plot(open)\n", false)
+        .unwrap();
+    assert_eq!(store.script(&id).unwrap().unwrap().name, "a-b");
+    assert!(root.join("Scripts/a-b.pine").is_file());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A file an older version or another tool named stays as it is until it is renamed.
+#[cfg(not(windows))]
+#[test]
+fn a_file_already_named_otherwise_keeps_its_name() {
+    let (mut store, root) = temp_store("old-names");
+    std::fs::create_dir_all(root.join("Scripts")).unwrap();
+    std::fs::write(root.join("Scripts/A | B.pine"), "plot(close)\n").unwrap();
+    let found = store.all_scripts().unwrap().remove(0);
+    assert_eq!(found.name, "A | B");
+    store.save(&found.id, "plot(open)\n").unwrap();
+    // Neither an unchanged name nor the same name from another computer renames it.
+    store.rename(&found.id, "A | B").unwrap();
+    store
+        .update_from_remote(&found.id, "A | B", "plot(high)\n", true)
+        .unwrap();
+    assert!(root.join("Scripts/A | B.pine").is_file());
+    // A copy of it is a new file, so it takes a name every system accepts.
+    assert_eq!(store.duplicate(&found.id).unwrap().name, "A - B copy");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Numbering a name that is as long as names get has to make room for the number.
+#[test]
+fn two_long_names_are_told_apart_by_their_numbers() {
+    let (mut store, root) = temp_store("long-names");
+    let long = "x".repeat(200);
+    let first = store
+        .create(&long, ScriptType::Indicator, None, true)
+        .unwrap();
+    let second = store
+        .create("short", ScriptType::Indicator, None, true)
+        .unwrap();
+    store
+        .update_from_remote(&second.id, &long, &first.source, false)
+        .unwrap();
+    let renamed = store.script(&second.id).unwrap().unwrap().name;
+    assert!(renamed.ends_with(" 2") && renamed.len() == 200, "{renamed}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The filesystem decides which spellings are one file: APFS takes a precomposed and a decomposed
+/// accent for the same, whatever their letters compare as. A new script must not replace either.
+#[test]
+fn a_new_script_never_replaces_a_file_spelt_another_way() {
+    let (mut store, root) = temp_store("spellings");
+    let folder = root.join("Scripts");
+    std::fs::create_dir_all(&folder).unwrap();
+    let existing = folder.join("Cafe\u{301}.pine");
+    std::fs::write(&existing, "// mine\n").unwrap();
+    let created = store
+        .create(
+            "Caf\u{e9}",
+            ScriptType::Indicator,
+            Some("// theirs\n"),
+            true,
+        )
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&existing).unwrap(), "// mine\n");
+    assert_eq!(store.all_scripts().unwrap().len(), 2, "{}", created.name);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn claiming_a_name_never_takes_a_file_that_is_there() {
+    let (store, root) = temp_store("claim");
+    let folder = root.join("Scripts");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("Mine.pine"), "// mine\n").unwrap();
+    // Even when the list of names in use does not know of it.
+    assert!(matches!(
+        store.claim("Mine", Default::default(), false),
+        Err(ScriptStoreError::NameConflict)
+    ));
+    assert_eq!(
+        store.claim("Mine", Default::default(), true).unwrap(),
+        "Mine 2"
+    );
+    assert_eq!(
+        std::fs::read_to_string(folder.join("Mine.pine")).unwrap(),
+        "// mine\n"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

@@ -2,6 +2,7 @@
 
 use super::alerts::AlertRequest;
 use super::{ChartWorkspace, WorkspaceAction};
+use crate::host::tradingview::Start;
 use crate::i18n::tr;
 use crate::model::{ChartType, DataSource, Timeframe};
 use crate::ui::chart::settings::ChartSettingsState;
@@ -111,6 +112,9 @@ impl ChartWorkspace {
                 ToolbarAction::RenameLayout => rename_clicked = true,
                 ToolbarAction::ToggleAutosave => autosave_toggled = true,
                 ToolbarAction::OpenLayout(id) => open_id = Some(id),
+                ToolbarAction::ImportTradingView => {
+                    self.open_tradingview_import(Start::Welcome, ctx)
+                }
                 ToolbarAction::DeleteLayout(id) => delete_id = Some(id),
                 ToolbarAction::ToggleWatchlist => {
                     self.watchlist_pane.toggle();

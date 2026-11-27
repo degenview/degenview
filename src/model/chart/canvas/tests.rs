@@ -21,6 +21,7 @@ fn the_default_canvas_follows_the_theme_everywhere() {
     assert_eq!(canvas.crosshair.dash, LineDash::Dashed);
     assert_eq!(canvas.buttons.navigation, ButtonVisibility::OnHover);
     assert!(canvas.ohlc_readout);
+    assert!(canvas.bar_countdown);
     assert_eq!(
         canvas.margins,
         ChartMargins {
@@ -45,6 +46,7 @@ fn the_canvas_round_trips_through_json() {
     canvas.buttons.pane = ButtonVisibility::Never;
     canvas.margins.right = 42;
     canvas.ohlc_readout = false;
+    canvas.bar_countdown = false;
     let encoded = serde_json::to_string(&canvas).expect("serialize");
     let decoded: ChartCanvas = serde_json::from_str(&encoded).expect("deserialize");
     assert_eq!(decoded, canvas);
@@ -72,6 +74,29 @@ fn a_canvas_saved_before_the_readout_setting_shows_the_readout() {
         .expect("the key is written");
     let restored: ChartCanvas = serde_json::from_value(row).expect("decode");
     assert!(restored.ohlc_readout);
+}
+
+#[test]
+fn a_canvas_saved_before_the_countdown_setting_shows_the_countdown() {
+    let mut row = serde_json::to_value(ChartCanvas::default()).expect("serialize");
+    row.as_object_mut().expect("object").remove("bar_countdown");
+    let restored: ChartCanvas = serde_json::from_value(row).expect("decode");
+    assert!(restored.bar_countdown);
+}
+
+#[test]
+fn the_countdown_is_written_only_when_it_is_not_the_default() {
+    let key = |canvas: ChartCanvas| {
+        serde_json::to_value(canvas)
+            .expect("serialize")
+            .get("bar_countdown")
+            .cloned()
+    };
+    // A build that predates the setting reads and writes the same row back until it is turned off.
+    assert_eq!(key(ChartCanvas::default()), None);
+    let mut off = ChartCanvas::default();
+    off.bar_countdown = false;
+    assert_eq!(key(off), Some(serde_json::Value::Bool(false)));
 }
 
 #[test]

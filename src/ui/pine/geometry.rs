@@ -263,21 +263,90 @@ pub fn arrowhead(tip: Pos2, origin: Pos2, length: f32, half_width: f32) -> Optio
     ])
 }
 
-/// A line's endpoints, pushed out to the plot's edges along its slope when it extends left and/or
-/// right. Vertical lines never extend.
-pub fn extended_line(a: Pos2, b: Pos2, extend: LineExtend, rect: Rect) -> (Pos2, Pos2) {
-    if a.x == b.x {
-        return (a, b);
+/// A line's two points as drawn: `extend.left` runs it on past its first point and `extend.right`
+/// past its second, along the line's own direction, to where it leaves `bounds`. So a line written
+/// from right to left swaps the sides, and an upright one runs up or down.
+pub fn extended_line(start: Pos2, end: Pos2, extend: LineExtend, bounds: Rect) -> (Pos2, Pos2) {
+    let from = if extend.extends_left() {
+        run_out(end, start, bounds)
+    } else {
+        start
+    };
+    let to = if extend.extends_right() {
+        run_out(start, end, bounds)
+    } else {
+        end
+    };
+    (from, to)
+}
+
+/// `tip` pushed on, away from `tail`, to where it leaves `bounds`, by a side or by the top or
+/// bottom. A tip already past that edge stays, as does one on its tail, which has no direction.
+fn run_out(tail: Pos2, tip: Pos2, bounds: Rect) -> Pos2 {
+    let step = tip - tail;
+    let reach = |along: f32, from: f32, low: f32, high: f32| {
+        if along > 0.0 {
+            (high - from) / along
+        } else if along < 0.0 {
+            (low - from) / along
+        } else {
+            f32::INFINITY
+        }
+    };
+    let times = reach(step.x, tail.x, bounds.min.x, bounds.max.x).min(reach(
+        step.y,
+        tail.y,
+        bounds.min.y,
+        bounds.max.y,
+    ));
+    if times.is_finite() {
+        tail + step * times.max(1.0)
+    } else {
+        tip
     }
-    let slope = (b.y - a.y) / (b.x - a.x);
-    let (mut left, mut right) = if a.x < b.x { (a, b) } else { (b, a) };
+}
+
+/// The two triangles covering the band between two segments, given as its outline: `a0`, `a1`
+/// along one segment, then `b1`, `b0` back along the other. Where the outline crosses itself (the
+/// segments cross, or are written in opposite directions) the triangles meet at the crossing.
+pub fn band_triangles([a0, a1, b1, b0]: [Pos2; 4]) -> [[Pos2; 3]; 2] {
+    if let Some(cross) = crossing(a0, a1, b0, b1) {
+        [[a0, cross, b0], [cross, a1, b1]]
+    } else if let Some(cross) = crossing(a1, b1, b0, a0) {
+        [[a0, a1, cross], [cross, b1, b0]]
+    } else if side(a0, b1, a1) * side(a0, b1, b0) < 0.0 {
+        [[a0, a1, b1], [a0, b1, b0]]
+    } else {
+        // A dented outline: only the other diagonal lies inside it.
+        [[a1, b1, b0], [a1, b0, a0]]
+    }
+}
+
+/// Which side of the line through `a` and `b` the point `p` is on, by sign.
+fn side(a: Pos2, b: Pos2, p: Pos2) -> f32 {
+    let (along, to) = (b - a, p - a);
+    along.x * to.y - along.y * to.x
+}
+
+/// Where segments `ab` and `cd` meet, an end resting on the other segment included. Segments
+/// along one straight line have no single such point.
+fn crossing(a: Pos2, b: Pos2, c: Pos2, d: Pos2) -> Option<Pos2> {
+    let (at_a, at_b) = (side(c, d, a), side(c, d, b));
+    (at_a != at_b && at_a * at_b <= 0.0 && side(a, b, c) * side(a, b, d) <= 0.0)
+        .then(|| a + (b - a) * (at_a / (at_a - at_b)))
+}
+
+/// A box as drawn: each side it extends runs to the plot's edge, however far from it the box's
+/// own coordinates are, and `overshoot` past it so that side's border stays out of sight.
+pub fn extended_box(anchored: Rect, extend: LineExtend, plot: Rect, overshoot: f32) -> Rect {
+    let mut drawn = anchored;
     if extend.extends_left() {
-        left = Pos2::new(rect.min.x, left.y - slope * (left.x - rect.min.x));
+        drawn.min.x = drawn.min.x.min(plot.min.x - overshoot);
     }
     if extend.extends_right() {
-        right = Pos2::new(rect.max.x, right.y + slope * (rect.max.x - right.x));
+        drawn.max.x = drawn.max.x.max(plot.max.x + overshoot);
     }
-    (left, right)
+    drawn
 }
 
 /// The points of a polyline: straight, or with `curved` a Catmull-Rom spline through every point
@@ -977,23 +1046,103 @@ mod tests {
     }
 
     #[test]
+    fn extended_boxes_reach_the_plots_edges_from_any_distance() {
+        let plot = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
+        for x in [-10_000.0, -300.0, 40.0, 300.0, 10_000.0] {
+            let anchored = Rect::from_min_max(Pos2::new(x, 20.0), Pos2::new(x + 10.0, 30.0));
+            let drawn = |extend| extended_box(anchored, extend, plot, 2.0);
+            assert_eq!(drawn(LineExtend::None), anchored);
+            let right = drawn(LineExtend::Right);
+            assert_eq!(right.max.x, anchored.max.x.max(102.0), "from {x}");
+            assert_eq!(right.min, anchored.min);
+            let left = drawn(LineExtend::Left);
+            assert_eq!(left.min.x, anchored.min.x.min(-2.0), "from {x}");
+            assert_eq!(left.max, anchored.max);
+            let both = drawn(LineExtend::Both);
+            assert_eq!((both.min, both.max), (left.min, right.max));
+        }
+    }
+
+    #[test]
     fn extended_lines_follow_their_slope_to_the_plots_edges() {
         let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
         let (a, b) = (Pos2::new(40.0, 40.0), Pos2::new(60.0, 50.0));
+        let (west, east) = (Pos2::new(0.0, 20.0), Pos2::new(100.0, 70.0));
         assert_eq!(extended_line(a, b, LineExtend::None, rect), (a, b));
-        let (left, right) = extended_line(a, b, LineExtend::Both, rect);
-        assert_eq!(left, Pos2::new(0.0, 20.0));
-        assert_eq!(right, Pos2::new(100.0, 70.0));
-        let (left, right) = extended_line(b, a, LineExtend::Right, rect);
+        assert_eq!(extended_line(a, b, LineExtend::Both, rect), (west, east));
+        assert_eq!(extended_line(a, b, LineExtend::Right, rect), (a, east));
+        assert_eq!(extended_line(a, b, LineExtend::Left, rect), (west, b));
+        // Written from right to left, "right" still means past the second point.
+        assert_eq!(extended_line(b, a, LineExtend::Right, rect), (b, west));
+        assert_eq!(extended_line(b, a, LineExtend::Left, rect), (east, a));
+    }
+
+    #[test]
+    fn a_steep_line_ends_where_it_first_leaves() {
+        let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
+        let (low, high) = (Pos2::new(40.0, 60.0), Pos2::new(50.0, 30.0));
+        // Out by the top and the bottom, well short of the sides.
         assert_eq!(
-            (left, right),
-            (a, Pos2::new(100.0, 70.0)),
-            "order of the ends does not matter"
+            extended_line(low, high, LineExtend::Both, rect),
+            (Pos2::new(40.0 - 40.0 / 3.0, 100.0), Pos2::new(60.0, 0.0))
         );
-        let vertical = (Pos2::new(5.0, 0.0), Pos2::new(5.0, 9.0));
+    }
+
+    #[test]
+    fn upright_lines_extend_up_or_down_and_points_stay_put() {
+        let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0));
+        let (low, high) = (Pos2::new(5.0, 60.0), Pos2::new(5.0, 40.0));
+        let (floor, ceiling) = (Pos2::new(5.0, 100.0), Pos2::new(5.0, 0.0));
         assert_eq!(
-            extended_line(vertical.0, vertical.1, LineExtend::Both, rect),
-            vertical
+            extended_line(low, high, LineExtend::Right, rect),
+            (low, ceiling)
+        );
+        assert_eq!(
+            extended_line(low, high, LineExtend::Left, rect),
+            (floor, high)
+        );
+        assert_eq!(extended_line(low, low, LineExtend::Both, rect), (low, low));
+        // An end already past the edge it runs to is not pulled back.
+        let (near, past) = (Pos2::new(90.0, 5.0), Pos2::new(120.0, 5.0));
+        assert_eq!(
+            extended_line(near, past, LineExtend::Right, rect),
+            (near, past)
+        );
+    }
+
+    #[test]
+    fn a_band_between_two_segments_is_covered_however_they_lie() {
+        let at = Pos2::new;
+        // Side by side.
+        let [a0, a1, b1, b0] = [at(0.0, 0.0), at(10.0, 0.0), at(10.0, 4.0), at(0.0, 4.0)];
+        assert_eq!(
+            band_triangles([a0, a1, b1, b0]),
+            [[a0, a1, b1], [a0, b1, b0]]
+        );
+        // The segments cross: two triangles meeting where they do.
+        let [a0, a1, b1, b0] = [at(0.0, 0.0), at(10.0, 10.0), at(10.0, 0.0), at(0.0, 10.0)];
+        let middle = at(5.0, 5.0);
+        assert_eq!(
+            band_triangles([a0, a1, b1, b0]),
+            [[a0, middle, b0], [middle, a1, b1]]
+        );
+        // The segments run opposite ways: the ends' joins cross instead.
+        let [a0, a1, b1, b0] = [at(10.0, 0.0), at(0.0, 0.0), at(10.0, 10.0), at(0.0, 10.0)];
+        assert_eq!(
+            band_triangles([a0, a1, b1, b0]),
+            [[a0, a1, middle], [middle, b1, b0]]
+        );
+        // An end resting on the other join (`a0` on `a1`..`b1`): split there, not across it.
+        let [a0, a1, b1, b0] = [at(5.0, 5.0), at(0.0, 10.0), at(10.0, 0.0), at(10.0, 10.0)];
+        assert_eq!(
+            band_triangles([a0, a1, b1, b0]),
+            [[a0, a1, a0], [a0, b1, b0]]
+        );
+        // Dented at `b0`: split from there, so nothing is painted outside the outline.
+        let [a0, a1, b1, b0] = [at(0.0, 0.0), at(10.0, 5.0), at(0.0, 10.0), at(4.0, 5.0)];
+        assert_eq!(
+            band_triangles([a0, a1, b1, b0]),
+            [[a1, b1, b0], [a1, b0, a0]]
         );
     }
 

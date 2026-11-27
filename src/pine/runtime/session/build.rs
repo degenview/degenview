@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{DEFAULT_MINTICK, STRATEGY_SERIES, Session};
+use crate::model::market::bucket::Grid;
 use crate::pine::Limits;
 use crate::pine::compiler::program::{CompiledProgram, InputValue, SymbolInfo};
 use crate::pine::outputs::drawings;
@@ -113,7 +114,10 @@ impl Session {
         let history_builtins =
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let security_slices = security_slice::build(&program.statements);
-        let keeps_series_bars = replays_chart_bars(&program);
+        // A call a script skips is replayed from the log (`request.security`), and a stock's periods
+        // are named by the first bar the series has in them (`timeframe.change`).
+        let keeps_series_bars = calls(&program, "request.security")
+            || (symbol.grid != Grid::Utc && calls(&program, "timeframe.change"));
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -202,6 +206,7 @@ impl Session {
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
             footprints: Default::default(),
             series_bars: Vec::new(),
+            request_grid: None,
             replay_globals: None,
             keeps_series_bars,
             bar_seconds: 0.0,
@@ -342,20 +347,20 @@ fn history_builtin_names(
     names
 }
 
-/// Whether the script, or a library it imports, calls `request.security` anywhere (in a function
-/// body or a block too), so that a call site which skipped a chart bar has to replay it
-/// (`replay_skipped_bars`). Read off the parsed calls, so the way the call is spelled cannot hide
-/// it. `request.security_lower_tf` is not counted: it does not replay skipped chart bars.
-fn replays_chart_bars(program: &CompiledProgram) -> bool {
+/// Whether the script, or a library it imports, calls `function` anywhere (in a function body or a
+/// block too). Read off the parsed calls, so the way the call is spelled cannot hide it.
+fn calls(program: &CompiledProgram, function: &str) -> bool {
     let mut found = false;
     crate::pine::syntax::traversal::for_each_call(&program.statements, &mut |name, _| {
-        found |= name == "request.security";
+        found |= name == function;
     });
     found
-        || program
-            .imports
-            .iter()
-            .any(|import| import.library.as_deref().is_some_and(replays_chart_bars))
+        || program.imports.iter().any(|import| {
+            import
+                .library
+                .as_deref()
+                .is_some_and(|library| calls(library, function))
+        })
 }
 
 #[cfg(test)]
@@ -368,7 +373,7 @@ mod request_detection_tests {
         let source = format!("//@version=6\nindicator(\"T\")\n{body}\n");
         let program = compiler::compile(&source, Limits::default(), &NoLibraries);
         assert!(program.is_valid(), "{:?}", program.diagnostics);
-        replays_chart_bars(&program)
+        calls(&program, "request.security")
     }
 
     #[test]

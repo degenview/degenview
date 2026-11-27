@@ -29,6 +29,7 @@ use crate::model::paper::prefs::PaperPrefs;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
 use crate::ui::kit::{destructive_button, field};
+use crate::ui::settings::broker_words;
 use crate::ui::settings::card::StatusMessage;
 use crate::ui::settings::window::status_message;
 use crate::ui::{kit, theme};
@@ -158,13 +159,6 @@ pub fn status_detail(snapshot: &BrokerSnapshot) -> Option<String> {
     }
 }
 
-/// What disconnecting does, said plainly.
-pub fn disconnect_message() -> &'static str {
-    tr!(
-        "This removes the key from this Mac and stops the connection. Orders already placed stay live at the broker. It does not revoke the key: to do that, delete it in the broker's own settings."
-    )
-}
-
 // ---- View ----------------------------------------------------------------------------------------
 
 /// The height of a card's header row.
@@ -236,9 +230,7 @@ pub fn body(
         crate::ui::icons::inline(ui, Icon::LockFill, 12.0, theme::text_tertiary());
         ui.add(
             egui::Label::new(kit::text(
-                tr!(
-                    "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade."
-                ),
+                crate::platform::broker_credentials_hint(),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
                 theme::text_secondary(),
@@ -328,7 +320,7 @@ fn broker_card(
             &kit::Confirm {
                 icon: Icon::Trash,
                 title: &tr!("Disconnect {name}?", name = descriptor.display_name),
-                message: disconnect_message(),
+                message: crate::platform::broker_disconnect_message(),
                 destructive: tr!("Disconnect"),
             },
         ) {
@@ -632,11 +624,11 @@ fn setup_body(
 ) {
     let descriptor = broker.descriptor();
     titled_group(ui, tr!("Set up"), |ui| {
-        for (index, step) in descriptor.setup_steps.iter().enumerate() {
+        for (index, step) in broker_words::setup_steps(descriptor).iter().enumerate() {
             step_row(ui, index + 1, step);
         }
     });
-    muted(ui, descriptor.permission_note);
+    muted(ui, broker_words::permission_note(descriptor));
     gray_link(
         ui,
         &tr!("Read {name}'s instructions", name = descriptor.display_name),
@@ -652,17 +644,17 @@ fn setup_body(
             FieldKind::Pem => secret_block(
                 ui,
                 secret_block_id(descriptor.id, credential.key),
-                credential.label,
-                credential.hint,
+                broker_words::field_label(descriptor, credential),
+                broker_words::field_hint(descriptor, credential),
                 value,
             ),
             _ => {
                 field(
                     ui,
                     ("broker-credential", descriptor.id, credential.key),
-                    credential.label,
+                    broker_words::field_label(descriptor, credential),
                     None,
-                    credential.hint,
+                    broker_words::field_hint(descriptor, credential),
                     value,
                     credential.secret,
                 );
@@ -862,14 +854,13 @@ fn poll_operation(descriptor: &'static Descriptor, form: &mut BrokerForm) {
             StatusMessage::ok(tr!("Disconnected."))
         }
         (KeyOperation::Removing, Ok(())) => {
-            StatusMessage::ok(tr!("Disconnected. The key was removed from this Mac."))
+            StatusMessage::ok(crate::platform::broker_key_removed())
         }
         // The connection is stopped, but the key is still in the keychain: it connects again at
         // the next start unless it is removed there.
-        (KeyOperation::Removing, Err(error)) => StatusMessage::error(tr!(
-            "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}",
-            error = error
-        )),
+        (KeyOperation::Removing, Err(error)) => {
+            StatusMessage::error(crate::platform::broker_key_not_removed(error))
+        }
     });
 }
 
@@ -1247,8 +1238,8 @@ mod tests {
 
     #[test]
     fn disconnecting_is_honest_about_what_it_does_not_do() {
-        assert!(disconnect_message().contains("does not revoke"));
-        assert!(disconnect_message().contains("stay live"));
+        assert!(crate::platform::broker_disconnect_message().contains("does not revoke"));
+        assert!(crate::platform::broker_disconnect_message().contains("stay live"));
     }
 
     #[test]

@@ -140,7 +140,8 @@ pub fn watches(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_space(8.0);
-        let width = ui.available_width() - ADD_BUTTON - 6.0 - 8.0;
+        let button = kit::push_button_width(ui, None, tr!("Add"));
+        let width = ui.available_width() - button - 6.0 - 8.0;
         let id = ui.id().with("add-watch");
         let response = text_field(
             ui,
@@ -165,9 +166,6 @@ pub fn watches(
     });
     ui.add_space(6.0);
 }
-
-/// The width kept beside the add-expression field for its button.
-const ADD_BUTTON: f32 = 50.0;
 
 fn watch_editor(ui: &mut Ui, index: usize, state: &mut PanelUi, actions: &mut Vec<PanelAction>) {
     let Some((_, text)) = state.editing_watch.as_mut() else {

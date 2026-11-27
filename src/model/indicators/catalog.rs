@@ -168,9 +168,9 @@ impl CatalogEntry {
     fn bundled(indicator: &'static BundledIndicator) -> Self {
         Self {
             key: EntryKey::Bundled(indicator.id),
-            title: indicator.name.to_owned(),
-            summary: indicator.summary.to_owned(),
-            description: indicator.description.to_owned(),
+            title: indicator.name.text().to_owned(),
+            summary: indicator.summary.text().to_owned(),
+            description: indicator.description.text().to_owned(),
             family: Some(indicator.family),
             aliases: indicator
                 .aliases

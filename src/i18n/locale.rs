@@ -28,28 +28,54 @@ struct Language {
     /// cannot read the current language must still find theirs.
     native_name: &'static str,
     kind: Kind,
+    /// Whether a noun keeps its capital in the middle of a sentence, as in German.
+    capital_nouns: bool,
     /// The text of the language's `.po` catalog, compiled in.
     catalog: Option<&'static str>,
 }
 
 /// Every language, English first. Add a language here, with its catalog (`docs/localization.md`).
-const LANGUAGES: [Language; 3] = [
+const LANGUAGES: [Language; 6] = [
     Language {
         tag: "en",
         native_name: "English",
         kind: Kind::Source,
+        capital_nouns: false,
         catalog: None,
+    },
+    Language {
+        tag: "de",
+        native_name: "Deutsch",
+        kind: Kind::Natural,
+        capital_nouns: true,
+        catalog: Some(include_str!("../../assets/locales/de.po")),
     },
     Language {
         tag: "es",
         native_name: "Español",
         kind: Kind::Natural,
+        capital_nouns: false,
         catalog: Some(include_str!("../../assets/locales/es.po")),
+    },
+    Language {
+        tag: "zh",
+        native_name: "简体中文",
+        kind: Kind::Natural,
+        capital_nouns: false,
+        catalog: Some(include_str!("../../assets/locales/zh.po")),
+    },
+    Language {
+        tag: "ru",
+        native_name: "Русский",
+        kind: Kind::Natural,
+        capital_nouns: false,
+        catalog: Some(include_str!("../../assets/locales/ru.po")),
     },
     Language {
         tag: "en-XA",
         native_name: "Pseudo-locale (en-XA)",
         kind: Kind::Pseudo,
+        capital_nouns: false,
         catalog: None,
     },
 ];
@@ -65,7 +91,7 @@ impl Locale {
     /// and tests, which shows clipped text, fixed widths and text that was never put through
     /// `tr!`. `en-XA` is the standard tag for it.
     #[cfg(test)]
-    pub const PSEUDO: Locale = Locale(2);
+    pub const PSEUDO: Locale = Locale(5);
 
     /// How many languages there are.
     pub(super) const COUNT: usize = LANGUAGES.len();
@@ -106,6 +132,11 @@ impl Locale {
     /// The compiled-in catalog text, `None` for the source language and the pseudo-locale.
     pub(super) fn catalog_source(self) -> Option<&'static str> {
         self.row().catalog
+    }
+
+    /// Whether a noun keeps its capital in the middle of a sentence.
+    pub(super) fn capitalizes_nouns(self) -> bool {
+        self.row().capital_nouns
     }
 
     /// Whether this is a language people read, and not a tool for testing the interface.
@@ -266,6 +297,31 @@ mod tests {
     }
 
     #[test]
+    fn chinese_is_simplified_and_answers_every_region_that_writes_it_and_no_other_script() {
+        let fallbacker = LocaleFallbacker::new();
+        let have = ["es", "zh"];
+        let found = |requested| fallback_match(&fallbacker, requested, &have).map(|at| have[at]);
+        for requested in ["zh", "zh-CN", "zh_CN", "zh-SG", "zh-Hans", "zh-Hans-CN"] {
+            assert_eq!(found(requested), Some("zh"), "{requested}");
+        }
+        for requested in ["zh-TW", "zh-HK", "zh-Hant", "zh-Hant-TW"] {
+            assert_eq!(found(requested), None, "{requested}");
+        }
+    }
+
+    #[test]
+    fn german_answers_every_region_that_writes_it() {
+        let offered: Vec<Locale> = Locale::all().filter(|locale| locale.is_natural()).collect();
+        for requested in ["de", "de-DE", "de_AT", "de-CH", "de-LI", "de-LU"] {
+            assert_eq!(
+                Locale::negotiate(&[requested], &offered).tag(),
+                "de",
+                "{requested}"
+            );
+        }
+    }
+
+    #[test]
     fn the_pseudo_locale_is_only_chosen_by_its_exact_tag() {
         assert_eq!(Locale::negotiate(&["en-XA"], &BOTH), Locale::PSEUDO);
         assert_eq!(Locale::negotiate(&["en_xa"], &BOTH), Locale::PSEUDO);
@@ -347,7 +403,7 @@ mod tests {
 
     #[test]
     fn an_index_past_the_table_is_english() {
-        assert_eq!(Locale::from_index(2), Locale::PSEUDO);
+        assert_eq!(Locale::from_index(Locale::PSEUDO.index()), Locale::PSEUDO);
         assert_eq!(Locale::from_index(200), Locale::ENGLISH);
     }
 }

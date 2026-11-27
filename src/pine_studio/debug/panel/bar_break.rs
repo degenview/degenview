@@ -7,7 +7,7 @@ use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, Vec2, vec2};
 
 use super::widgets::text_field;
 use super::{Context, bar_time_text};
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_c};
 use crate::pine::debug::BarBreak;
 use crate::pine_studio::debug::{DebugPanel, PanelAction, parse_bar_break};
 use crate::ui::icons::{self, Icon};
@@ -127,7 +127,7 @@ fn index_field(ui: &mut Ui, context: &mut Context<'_>, bars: usize, armed_bar: O
                 ui,
                 id,
                 &mut context.state.bar_input,
-                tr!("Index"),
+                tr_c!("bar index", "Index"),
                 58.0,
                 true,
             )

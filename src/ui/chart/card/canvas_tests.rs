@@ -301,6 +301,24 @@ fn a_tiny_price_counts_its_zeros_on_the_axis_by_default() {
 }
 
 #[test]
+fn a_chart_drawn_across_a_decade_boundary_labels_its_axis_without_failing() {
+    // Prices that straddle 1, 0.1 and 0.01 from every side: the painter, not just the formatter.
+    for decade in [0.01, 1e-3, 1e-4] {
+        for step in 0..60 {
+            let scale = decade * (0.7 + f64::from(step) * 0.01);
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.candles = scaled_series(scale);
+            let (drawn, _) = harness.draw();
+            let labels = axis_texts(&drawn);
+            assert!(labels.len() >= 3, "{scale}: {labels:?}");
+            let mut distinct = labels.clone();
+            distinct.dedup();
+            assert_eq!(distinct.len(), labels.len(), "{scale}: {labels:?}");
+        }
+    }
+}
+
+#[test]
 fn writing_the_zeros_out_gives_plain_decimals() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness.candles = scaled_series(1e-7);
@@ -349,6 +367,187 @@ fn automatic_places_never_repeat_a_label_when_the_ticks_are_close() {
     );
     assert_eq!(tick_step(&[67_432.0]), 0.0);
     assert_eq!(tick_step(&[]), 0.0);
+}
+
+#[test]
+fn a_step_taken_from_ticks_does_not_carry_their_rounding_error() {
+    // 0.9 - 0.8 is 0.09999999999999998: the axis still counts in tenths.
+    assert_eq!(tick_step(&[0.8, 0.9]), 0.1);
+    assert_eq!(tick_step(&[0.8, 0.9, 1.0, 1.1]), 0.1);
+    let card = ChartCard::default();
+    let (scale, format) = (
+        PriceScale::linear(0.8, 1.1, 0.0, 100.0),
+        card.appearance.price_format(),
+    );
+    let labels: Vec<String> = [0.8, 0.9, 1.0, 1.1]
+        .iter()
+        .map(|tick| scale.tick_label(format, *tick, tick_step(&[0.8, 0.9, 1.0, 1.1])))
+        .collect();
+    assert_eq!(labels, ["0.80", "0.90", "1.00", "1.10"]);
+}
+
+#[test]
+fn every_axis_the_grid_can_draw_has_distinct_labels_with_the_same_places_below_one() {
+    let format = crate::model::PriceFormat::AUTO;
+    let mut axes = 0;
+    for exponent in -3..=3 {
+        for low in [1.0, 1.1, 1.5, 2.0, 2.5, 3.3, 5.0, 7.0, 8.0, 9.0, 9.5, 9.9] {
+            for span in [
+                0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.25, 0.3, 0.5, 1.0, 2.0, 5.0,
+            ] {
+                for budget in [2, 3, 5, 8, 12] {
+                    let minimum = low * 10f64.powi(exponent);
+                    let maximum = minimum * (1.0 + span);
+                    let ticks = chart::canvas::price_ticks(minimum, maximum, false, budget);
+                    if ticks.len() < 2 {
+                        continue;
+                    }
+                    axes += 1;
+                    let step = tick_step(&ticks);
+                    let labels: Vec<String> = ticks
+                        .iter()
+                        .map(|tick| format.format_tick(*tick, step))
+                        .collect();
+                    let context =
+                        format!("{minimum}..{maximum} x{budget}: {ticks:?} -> {labels:?}");
+                    let mut distinct = labels.clone();
+                    distinct.dedup();
+                    assert_eq!(distinct.len(), labels.len(), "{context}");
+                    // Labels of one decade under 1 write the same places. An axis that crosses a decade with a
+                    // step finer than its tenth still mixes them (0.0950 over 0.1000): `format_tick` sees
+                    // one tick at a time, so that needs the axis's places passed in, not a tighter test.
+                    let places: Vec<usize> = ticks
+                        .iter()
+                        .zip(&labels)
+                        .filter(|(tick, _)| (0.001..1.0).contains(&tick.abs()))
+                        .map(|(_, label)| label.split_once('.').map_or(0, |(_, rest)| rest.len()))
+                        .collect();
+                    let one_decade = ticks
+                        .iter()
+                        .filter(|tick| (0.001..1.0).contains(&tick.abs()))
+                        .map(|tick| tick.abs().log10().floor() as i32)
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                        <= 1;
+                    if one_decade {
+                        assert!(
+                            places.windows(2).all(|pair| pair[0] == pair[1]),
+                            "{context}"
+                        );
+                    }
+                    // A label reads the tick it labels, to the step's own precision.
+                    for (tick, label) in ticks.iter().zip(&labels) {
+                        let read: f64 = label.replace(',', "").parse().unwrap_or(f64::NAN);
+                        assert!((read - tick).abs() <= step * 0.5 + 1e-12, "{context}");
+                    }
+                }
+            }
+        }
+    }
+    assert!(axes > 1_000, "{axes}");
+}
+
+#[test]
+fn a_step_that_is_already_round_is_not_moved_by_the_nine_digit_snap() {
+    for exponent in -8..=8 {
+        for nice in ["1", "2", "2.5", "5"] {
+            let expected: f64 = format!("{nice}e{exponent}").parse().unwrap();
+            // Ticks as the grid makes them: whole multiples of the step, far from and near zero.
+            for first in [0, 1, 3, 7, 40, 999] {
+                let ticks: Vec<f64> = (0..4)
+                    .map(|index| f64::from(first + index) * expected)
+                    .collect();
+                let step = tick_step(&ticks);
+                assert_eq!(step, expected, "{nice}e{exponent} from {first}: {ticks:?}");
+                // Snapping a snapped step is a no-op.
+                assert_eq!(tick_step(&[0.0, step]), step, "{nice}e{exponent}");
+            }
+        }
+    }
+    // Nothing to measure stays nothing; a step is never snapped to zero or out of range.
+    assert_eq!(tick_step(&[1.0, 1.0]), 0.0);
+    assert!(tick_step(&[0.0, 1e-300]) > 0.0);
+    assert!(tick_step(&[0.0, 1e300]).is_finite());
+}
+
+#[test]
+fn an_axis_through_zero_or_below_it_has_distinct_labels() {
+    // A script pane's axis crosses zero: its labels never repeat and none fails.
+    let format = crate::model::PriceFormat::AUTO;
+    let mut axes = 0;
+    for exponent in -4..=3 {
+        for low in [-9.5, -5.0, -2.5, -1.2, -0.7, -0.15, -0.05, 0.0] {
+            for span in [0.02, 0.1, 0.3, 0.5, 1.0, 2.0, 7.0, 30.0] {
+                for budget in [2, 4, 6, 10] {
+                    let minimum = low * 10f64.powi(exponent);
+                    let maximum = minimum + span * 10f64.powi(exponent);
+                    let ticks = chart::canvas::price_ticks(minimum, maximum, false, budget);
+                    if ticks.len() < 2 {
+                        continue;
+                    }
+                    // A price under 0.001 counts its zeros and takes no places from its step, so
+                    // neighbours that close may read alike (the formatter's tiny-price rule).
+                    if ticks.iter().any(|tick| {
+                        tick.abs() > 1e-9
+                            && tick.abs() < crate::model::chart::price_format::SMALL_BELOW
+                    }) {
+                        continue;
+                    }
+                    axes += 1;
+                    let step = tick_step(&ticks);
+                    let labels: Vec<String> = ticks
+                        .iter()
+                        .map(|tick| {
+                            // As `pane_labels` writes it: zero up to rounding reads "0".
+                            if tick.abs() < (maximum - minimum) * 1e-9 {
+                                "0".to_owned()
+                            } else {
+                                format.format_tick(*tick, step)
+                            }
+                        })
+                        .collect();
+                    let mut distinct = labels.clone();
+                    distinct.dedup();
+                    assert_eq!(
+                        distinct.len(),
+                        labels.len(),
+                        "{minimum}..{maximum} x{budget}: {ticks:?} -> {labels:?}"
+                    );
+                }
+            }
+        }
+    }
+    assert!(axes > 500, "{axes}");
+}
+
+#[test]
+fn every_price_scale_mode_labels_an_axis_across_decade_boundaries_and_zero() {
+    for mode in PriceScaleMode::ALL {
+        // Prices from a decade above to below zero: the sample market, scaled then shifted.
+        for factor in [1e-4, 1e-3, 0.0095, 0.01, 0.0105, 0.05, 1.0] {
+            for shift in [0.0, 0.9, 1.0, 1.1, 1.3] {
+                let mut harness = Harness::new(ChartCanvas::default());
+                harness.scale_mode = mode;
+                harness.candles = scaled_series(factor)
+                    .into_iter()
+                    .map(|bar| Kline {
+                        open: bar.open - shift * 100.0 * factor,
+                        high: bar.high - shift * 100.0 * factor,
+                        low: bar.low - shift * 100.0 * factor,
+                        close: bar.close - shift * 100.0 * factor,
+                        ..bar
+                    })
+                    .collect();
+                let (drawn, _) = harness.draw();
+                let labels = axis_texts(&drawn);
+                let context = format!("{mode:?} x{factor} -{shift}: {labels:?}");
+                assert!(labels.len() >= 2, "{context}");
+                let mut distinct = labels.clone();
+                distinct.dedup();
+                assert_eq!(distinct.len(), labels.len(), "{context}");
+            }
+        }
+    }
 }
 
 // MARK: Background
@@ -1680,7 +1879,7 @@ pub(super) fn add_bundled(harness: &mut Harness, id: &str) {
     let indicator = crate::model::pine::bundled::find(id).expect("a bundled indicator");
     let instance = harness.card.add_pine_instance(
         Some(crate::model::pine::bundled::script_id(indicator)),
-        indicator.name,
+        indicator.name.msgid(),
         indicator.source,
     );
     let ran = |harness: &Harness| {
@@ -1743,7 +1942,7 @@ fn a_bundled_indicator_gets_the_placement_it_declares() {
             harness.card.pane_count(),
             usize::from(!indicator.overlay),
             "{}: {}",
-            indicator.name,
+            indicator.name.msgid(),
             if indicator.overlay {
                 "an overlay stays on the price pane"
             } else {

@@ -249,8 +249,9 @@ impl ChartWorkspace {
             .iter()
             .filter(|indicator| indicator.applied(&chart.indicators))
             .count();
+        let appearance = chart.chart.appearance();
         let mut facts = Facts {
-            price_format: chart.chart.appearance().price_format(),
+            price_format: appearance.price_format(),
             last_price,
             tick: instrument.tick_size,
             replay: self.replay.is_engaged(),
@@ -267,6 +268,11 @@ impl ChartWorkspace {
             tree_open: self.context.tree_chart == Some(chart.id),
             stats_open: self.context.stats_chart == Some(chart.id),
             scale_mode: chart.scale_mode,
+            bar_countdown: appearance.canvas.bar_countdown,
+            bar_countdown_eligible: chart::countdown::eligible(
+                appearance.style.effective_type(chart.source),
+                chart.source,
+            ),
             ..Facts::default()
         };
         match &context.target {
@@ -494,6 +500,10 @@ impl ChartWorkspace {
             }
             Command::ResetPriceScale => self.charts[index].chart.reset_price_scale(),
             Command::SetScaleMode(mode) => self.set_scale_mode(chart_id, mode),
+            Command::ToggleBarCountdown => {
+                let canvas = &mut self.charts[index].chart.appearance_mut().canvas;
+                canvas.bar_countdown = !canvas.bar_countdown;
+            }
             Command::ResetChartView => self.charts[index].chart.reset_view(),
             Command::PaneSettings(_) => {
                 self.settings_state = ChartSettingsState::default();
@@ -658,7 +668,7 @@ impl ChartWorkspace {
         // handles them.
         let cell_selected = crate::ui::take_table_cell_selected(ctx);
         if self.indicator_picker.is_open()
-            || self.studio_open()
+            || self.sheet_over_charts()
             || ctx.egui_wants_keyboard_input()
             || cell_selected
         {

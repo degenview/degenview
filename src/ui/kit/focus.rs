@@ -1,5 +1,5 @@
-//! Keyboard focus for the modal dialogs and sheets: where it starts when one opens, and the ring
-//! drawn once the keyboard has moved it.
+//! Keyboard focus for the modal dialogs and sheets: where it starts when one opens, the ring drawn
+//! once the keyboard has moved it, and which keys what lies under them may act on.
 
 use eframe::egui::{self, Id, Painter, Rect, Stroke, StrokeKind};
 
@@ -41,6 +41,14 @@ pub fn start_on(ctx: &egui::Context, id: Id, first: Option<Id>) -> bool {
     });
     ctx.data_mut(|data| data.insert_temp(key, (frame, placed, keyboard)));
     keyboard
+}
+
+/// Whether a key press is for what `ui` draws: nothing is being typed into, and no modal is over
+/// it. A shortcut read straight from the input must ask this, since egui hands every widget the same
+/// keys, the ones under a dialog included. The modal is the one of the previous frame.
+pub fn keys_reach(ui: &egui::Ui) -> bool {
+    !ui.ctx().egui_wants_keyboard_input()
+        && ui.memory(|memory| memory.allows_interaction(ui.layer_id()))
 }
 
 /// The ring around a focused button of corner `radius` in `rect`. Never blue: it is the ink

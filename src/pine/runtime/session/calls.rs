@@ -139,29 +139,39 @@ impl Session {
         // parameter) holding an array, map or matrix reaches here as a call to `levels.push`.
         if let Some((receiver, member)) = name.rsplit_once('.') {
             let expression = Expression::Identifier(receiver.to_owned(), range);
-            // `l.delete()` and `l.set_x1(…)` on a drawing variable that is still `na` do nothing, as
-            // the same calls on a missing id do in Pine; a `get_*` gives `na`.
-            if let Ok(RuntimeValue::Na) = self.eval(&expression, context)
-                && (member == "delete" || member.starts_with("set_") || member.starts_with("get_"))
-                && !self.methods.contains_key(member)
-            {
-                return Ok(if member.starts_with("get_") {
-                    RuntimeValue::Na
-                } else {
-                    RuntimeValue::Void
-                });
-            }
-            if let Ok(value) = self.eval(&expression, context)
-                && (matches!(value, RuntimeValue::Ref(..)) || self.methods.contains_key(member))
-            {
-                return self.method_call_on_value(
-                    &expression,
-                    member,
-                    arguments,
-                    site,
-                    range,
-                    context,
-                );
+            // A head that names no value leaves the call unknown. A limit or a cancellation reached
+            // while reading it is what stops the script, so that error goes up unchanged.
+            let value = match self.eval(&expression, context) {
+                Ok(value) => Some(value),
+                Err(error)
+                    if matches!(
+                        error.category,
+                        DiagnosticCategory::Resource | DiagnosticCategory::Cancellation
+                    ) =>
+                {
+                    return Err(error);
+                }
+                Err(_) => None,
+            };
+            if let Some(value) = value {
+                // `l.delete()` and `l.set_x1(…)` on a drawing variable that is still `na` do
+                // nothing, as the same calls on a missing id do in Pine; a `get_*` gives `na`.
+                if value == RuntimeValue::Na
+                    && (member == "delete"
+                        || member.starts_with("set_")
+                        || member.starts_with("get_"))
+                    && !self.methods.contains_key(member)
+                {
+                    return Ok(if member.starts_with("get_") {
+                        RuntimeValue::Na
+                    } else {
+                        RuntimeValue::Void
+                    });
+                }
+                if matches!(value, RuntimeValue::Ref(..)) || self.methods.contains_key(member) {
+                    return self
+                        .method_call_on_read(value, member, arguments, site, range, context);
+                }
             }
         }
         // Any name still unhandled is genuinely unknown.
@@ -369,6 +379,19 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         let value = self.eval(receiver, context)?;
+        self.method_call_on_read(value, member, arguments, site, range, context)
+    }
+
+    /// `method_call_on_value` for a receiver the caller has already read, so it is not read again.
+    fn method_call_on_read(
+        &mut self,
+        value: RuntimeValue,
+        member: &str,
+        arguments: &[crate::pine::syntax::ast::Argument],
+        site: usize,
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
         if self.methods.contains_key(member)
             && let Some(result) =
                 self.call_user_method(member, value.clone(), arguments, site, range, context)?

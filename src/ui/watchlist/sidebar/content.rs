@@ -4,6 +4,7 @@ use super::menus::{instrument_menu, menu_width, section_menu, submenu_width};
 use super::{
     Drag, WatchlistAction, WatchlistSidebarInput, WatchlistSidebarState, centered_message,
 };
+use crate::ui::kit::focus::keys_reach;
 
 use crate::i18n::tr;
 use crate::model::watchlist;
@@ -181,7 +182,7 @@ pub(super) fn content(
     }
     // Only a row that is drawn can be opened or removed from the keyboard, and not on the
     // frame the filter box lets go of focus (its Enter confirms the filter, not a row).
-    if !ui.ctx().egui_wants_keyboard_input()
+    if keys_reach(ui)
         && !state.filter_blurred
         && let Some(item) = state.selected_entry.and_then(|id| {
             rows.iter().find_map(|row| match row {

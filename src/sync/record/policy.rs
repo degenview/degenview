@@ -339,6 +339,8 @@ mod tests {
             "alert.rejectedCommands",
             "alerts.lastSeenAt",
             "session.next_id",
+            // About the TradingView data on this computer.
+            "tradingview.offered",
             "pineStudio.layout",
             "pineLogs.prefs",
             "scriptDebug.state",

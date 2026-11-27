@@ -4,6 +4,7 @@ pub mod multipart;
 pub(in crate::service) mod protobuf;
 pub mod proxy;
 pub(in crate::service) mod rate_limit;
+pub mod url;
 pub(in crate::service) mod ws;
 
 pub use proxy::config_builder_for;
