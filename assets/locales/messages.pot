@@ -10456,6 +10456,12 @@ msgstr ""
 msgid "Not Now"
 msgstr ""
 
+#: src/model/watchlist/text.rs
+msgid ""
+"Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't "
+"supported)"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Not a regular expression this search can read."
 msgstr ""

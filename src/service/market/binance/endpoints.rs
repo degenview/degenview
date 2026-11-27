@@ -17,8 +17,9 @@ pub(in crate::service) struct Endpoints {
     pub kline_stream_url: &'static str,
     pub stream_host: &'static str,
     pub ticker_url: &'static str,
-    /// Whether the 24-hour ticker takes a list of symbols; else it answers one or all.
-    pub batched_ticker: bool,
+    /// How many symbols the 24-hour ticker takes by name in one request; `None` for an API that
+    /// ignores a list and is asked for every market.
+    pub ticker_batch: Option<usize>,
 }
 
 static SPOT_CATALOG: Catalog<Pair> = Catalog::new("catalog_binance");
@@ -34,7 +35,7 @@ static SPOT: Endpoints = Endpoints {
     kline_stream_url: "wss://stream.binance.com/stream",
     stream_host: "stream.binance.com",
     ticker_url: "https://api.binance.com/api/v3/ticker/24hr",
-    batched_ticker: true,
+    ticker_batch: Some(100),
 };
 
 /// The futures API takes no filter on its list (1.2 MB), and its kline streams are served only
@@ -47,7 +48,7 @@ static PERPETUAL: Endpoints = Endpoints {
     kline_stream_url: "wss://fstream.binance.com/market/stream",
     stream_host: "fstream.binance.com",
     ticker_url: "https://fapi.binance.com/fapi/v1/ticker/24hr",
-    batched_ticker: false,
+    ticker_batch: None,
 };
 
 pub(in crate::service) fn endpoints(market: Market) -> &'static Endpoints {

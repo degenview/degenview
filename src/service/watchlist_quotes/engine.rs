@@ -114,6 +114,9 @@ pub struct Outcome {
     pub quotes: HashMap<String, SourceQuote>,
     pub rejected: HashSet<String>,
     pub failed: Vec<(Vec<String>, QuoteFailure)>,
+    /// The provider answered with everything it lists, so a refused symbol is refused even when
+    /// no neighbour of it was asked for.
+    pub complete: bool,
 }
 
 impl Outcome {
@@ -137,6 +140,7 @@ impl Outcome {
         }
         self.rejected.extend(part.rejected);
         self.failed.extend(part.failed);
+        self.complete |= part.complete;
     }
 
     /// The failure that decides the source's backoff: a rate limit outranks a plain failure,
@@ -583,7 +587,7 @@ impl Engine {
                 failed.entry(symbol.as_str()).or_insert(failure);
             }
         }
-        let source_answered = !outcome.quotes.is_empty();
+        let source_answered = !outcome.quotes.is_empty() || outcome.complete;
         match outcome.worst_failure() {
             Some(QuoteFailure::CredentialsMissing(source)) => {
                 state.next_allowed_ms = now + 60_000;
@@ -608,7 +612,7 @@ impl Engine {
                     (!source_answered).then(|| tr!("The provider returned no quote").to_owned());
             }
         }
-        if source_answered {
+        if !outcome.quotes.is_empty() {
             state.last_successful_quote_ms = Some(now);
         }
 
@@ -1124,6 +1128,25 @@ mod tests {
             Some(100.0),
             "price/previous-1 with previous = price/2"
         );
+    }
+
+    #[test]
+    fn a_perpetual_missing_from_the_complete_list_is_unknown_even_when_asked_alone() {
+        use crate::service::watchlist_quotes::provider::binance_outcome;
+        let (engine, book, _) = setup();
+        let gone = id(DataSource::Binance, "GONEUSDT.P");
+        lock(&engine).update(1, vec![gone.clone()], true, T0);
+        let planned = lock(&engine).plan(T0).remove(0);
+        let requests: Vec<QuoteRequest> = planned
+            .requests
+            .iter()
+            .map(|(_, request)| request.clone())
+            .collect();
+        let body = r#"[{"symbol":"BTCUSDT","lastPrice":"1"}]"#;
+        let outcome = binance_outcome(Market::Perpetual, body, &requests).expect("parsed");
+        lock(&engine).apply(&planned, &outcome, T0);
+        assert_eq!(book.get(&gone).unwrap().freshness, Freshness::Unavailable);
+        assert_eq!(lock(&engine).provider_health()[0].last_error, None);
     }
 
     #[test]

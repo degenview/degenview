@@ -13955,6 +13955,10 @@ msgstr "Betrag ausgeben"
 msgid "Spend an amount of {unit}"
 msgstr "Betrag in {unit} ausgeben"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "Kein Binance-Symbol wie BTCUSDT oder BTCUSDT.P (Terminkontrakte mit Verfall werden nicht unterstützt)"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Perpetual"
 msgstr "Perpetual"

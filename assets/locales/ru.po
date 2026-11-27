@@ -14929,6 +14929,10 @@ msgstr "Потратить сумму"
 msgid "Spend an amount of {unit}"
 msgstr "Потратить сумму в {unit}"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "Это не символ Binance вида BTCUSDT или BTCUSDT.P (срочные фьючерсы не поддерживаются)"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Perpetual"
 msgstr "Бессрочный"

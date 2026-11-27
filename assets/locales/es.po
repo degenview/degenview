@@ -13955,6 +13955,10 @@ msgstr "Gastar una cantidad"
 msgid "Spend an amount of {unit}"
 msgstr "Gastar una cantidad de {unit}"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "No es un símbolo de Binance como BTCUSDT o BTCUSDT.P (no se admiten futuros con vencimiento)"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Perpetual"
 msgstr "Perpetuo"

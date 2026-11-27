@@ -4,7 +4,7 @@
 use super::candles::plan;
 use super::search_rank::normalize;
 use crate::model::market::binance::split_market;
-use crate::model::{DataSource, Kline, Listing, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
@@ -32,8 +32,10 @@ struct Request {
 
 impl Request {
     fn of(symbol: &str) -> Self {
-        let upper = symbol.to_uppercase();
-        let (pair, market) = split_market(&upper);
+        // Any spelling the app takes (`btc`, `BTC/USDT.P`) names the market the same way here as
+        // in its live feed and its key.
+        let canonical = InstrumentId::new(DataSource::Binance, symbol).canonical_symbol();
+        let (pair, market) = split_market(&canonical);
         Self {
             endpoints: endpoints(market),
             pair: encode_component(pair),
@@ -255,6 +257,8 @@ mod tests {
                 .contains("fapi.binance.com/fapi/v1")
         );
         assert_eq!(Request::of("龙USDT.P").pair, "%E9%BE%99USDT");
+        assert_eq!(Request::of("btc.p").pair, "BTCUSDT");
+        assert_eq!(Request::of("btc/usdt").pair, "BTCUSDT");
     }
 
     #[test]

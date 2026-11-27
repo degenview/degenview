@@ -259,10 +259,10 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             let symbol = rest.to_uppercase();
             let pair = split_market(&symbol).0;
             if !(3..=20).contains(&pair.len()) || !pair.chars().all(is_upper_alphanumeric) {
-                return Err(
+                return Err(tr!(
                     "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
-                        .to_owned(),
-                );
+                )
+                .to_owned());
             }
             Ok(item(source, &symbol, &symbol, &symbol))
         }

@@ -13906,6 +13906,10 @@ msgstr "按金额下单"
 msgid "Spend an amount of {unit}"
 msgstr "按 {unit} 金额下单"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "不是 BTCUSDT 或 BTCUSDT.P 这样的 Binance 代码（不支持交割合约）"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Perpetual"
 msgstr "永续"
