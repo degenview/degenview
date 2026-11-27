@@ -13,39 +13,34 @@ use serde_json::Value;
 /// The most hits one market kind contributes.
 const HITS_PER_MARKET: usize = 20;
 
-/// The hits of both markets, ranked together. A list that cannot be had does not cost the hits of
-/// the other; only both failing is an error.
+/// The hits of both markets, ranked together. The spot list is what a pair's name means, so a
+/// search without it has failed whatever the perpetuals' list says; without the perpetuals' list
+/// the spot hits stand.
 pub(super) fn search(query: &str, needle: &str) -> Result<Vec<SearchResult>, ProviderError> {
-    merge(
-        query,
-        [Market::Spot, Market::Perpetual].map(|market| {
-            let endpoints = endpoints(market);
-            let pairs = endpoints.catalog.get(|| download_pairs(endpoints))?;
-            let hits = matching_pairs(&pairs, needle, market);
-            Ok(rank_results(hits, query)
-                .into_iter()
-                .take(HITS_PER_MARKET)
-                .collect())
-        }),
-    )
+    let [spot, perpetual] = [Market::Spot, Market::Perpetual].map(|market| {
+        let endpoints = endpoints(market);
+        let pairs = endpoints.catalog.get(|| download_pairs(endpoints))?;
+        let hits = matching_pairs(&pairs, needle, market);
+        Ok(rank_results(hits, query)
+            .into_iter()
+            .take(HITS_PER_MARKET)
+            .collect())
+    });
+    merge(query, spot, perpetual)
 }
 
 fn merge(
     query: &str,
-    answers: [Result<Vec<SearchResult>, ProviderError>; 2],
+    spot: Result<Vec<SearchResult>, ProviderError>,
+    perpetual: Result<Vec<SearchResult>, ProviderError>,
 ) -> Result<Vec<SearchResult>, ProviderError> {
-    let mut hits = Vec::new();
-    let mut errors = Vec::new();
-    for answer in answers {
-        match answer {
-            Ok(found) => hits.extend(found),
-            Err(error) => errors.push(error),
-        }
+    let mut hits = spot?;
+    match perpetual {
+        Ok(found) => hits.extend(found),
+        Err(error) if hits.is_empty() => return Err(error),
+        Err(_) => {}
     }
-    match errors.into_iter().next() {
-        Some(error) if hits.is_empty() => Err(error),
-        _ => Ok(rank_results(hits, query)),
-    }
+    Ok(rank_results(hits, query))
 }
 
 /// The listed markets whose name contains `needle` (letters and digits, upper case). A
@@ -259,14 +254,14 @@ mod tests {
     }
 
     #[test]
-    fn one_list_failing_keeps_the_other_markets_hits() {
+    fn a_failed_spot_list_fails_the_search_and_a_failed_perpetual_list_does_not() {
         let hit = SearchResult::new(DataSource::Binance, "BTCUSDT", "BTCUSDT").pair("BTC", "USDT");
         let down = || Err(ProviderError::other("down"));
-        assert_eq!(
-            merge("btc", [Ok(vec![hit.clone()]), down()]).expect("hits"),
-            [hit]
-        );
-        assert!(merge("btc", [down(), down()]).is_err());
-        assert!(merge("btc", [Ok(Vec::new()), down()]).is_err());
+        let found = || Ok(vec![hit.clone()]);
+        let alone = std::slice::from_ref(&hit);
+        assert_eq!(merge("btc", found(), down()).expect("hits"), alone);
+        assert!(merge("btc", down(), found()).is_err());
+        assert!(merge("btc", down(), down()).is_err());
+        assert!(merge("btc", Ok(Vec::new()), down()).is_err());
     }
 }

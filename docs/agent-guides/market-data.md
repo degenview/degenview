@@ -127,7 +127,8 @@ watchlists.
   `symbol` or none (`symbols` is ignored), so one watched perpetual is asked by name (HTTP 400
   for a name never listed, HTTP 200 with `{}` for a contract that no longer trades) and more as the whole list; `exchangeInfo` takes no filter. The futures list keeps
   `PERPETUAL` and `TRADIFI_PERPETUAL` contracts whose name the app reads back unchanged. Each
-  market has its own catalog; one failing keeps the other's hits. A perpetual is never offered as
+  market has its own catalog; a failed spot list fails the search, a failed futures list only
+  costs the perpetuals. A perpetual is never offered as
   a portfolio asset. Pine's `syminfo.type` is `crypto` for both (TradingView not checked).
 - **Oanda has two environments** (`model::market::oanda::OandaEnvironment`), live
   (`api-fxtrade.oanda.com`) and practice (`api-fxpractice.oanda.com`), and a token works only on its

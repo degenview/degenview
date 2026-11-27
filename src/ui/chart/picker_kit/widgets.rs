@@ -41,6 +41,7 @@ pub(crate) fn recents_card(
     ui: &mut Ui,
     recents: &mut Vec<RecentMarket>,
     selected: Option<&SearchResult>,
+    offered: fn(&SearchResult) -> bool,
 ) -> RecentsOutcome {
     let mut outcome = RecentsOutcome::default();
     let mut remove = None;
@@ -68,26 +69,33 @@ pub(crate) fn recents_card(
         });
         ui.add_space(8.0);
         let column = (ui.available_width() - RECENT_GAP * (RECENT_COLUMNS - 1.0)) / RECENT_COLUMNS;
-        for (row, group) in recents.chunks(RECENT_COLUMNS as usize).enumerate() {
+        // The list is shared between pickers: each shows the markets it can take, and keeps the
+        // others where they are.
+        let shown: Vec<(usize, SearchResult)> = recents
+            .iter()
+            .enumerate()
+            .map(|(index, market)| (index, market.result()))
+            .filter(|(_, result)| offered(result))
+            .collect();
+        for (row, group) in shown.chunks(RECENT_COLUMNS as usize).enumerate() {
             if row > 0 {
                 ui.add_space(2.0);
             }
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = RECENT_GAP;
-                for (offset, market) in group.iter().enumerate() {
-                    let result = market.result();
-                    let is_selected = selected.is_some_and(|picked| same_market(picked, &result));
-                    let response = result_row(ui, &result, is_selected, true, column);
+                for (index, result) in group {
+                    let is_selected = selected.is_some_and(|picked| same_market(picked, result));
+                    let response = result_row(ui, result, is_selected, true, column);
                     response.context_menu(|ui| {
                         if ui.button(tr!("Remove from Recent")).clicked() {
-                            remove = Some(row * RECENT_COLUMNS as usize + offset);
+                            remove = Some(*index);
                             ui.close();
                         }
                     });
                     if response.double_clicked() {
-                        outcome.commit = Some(result);
+                        outcome.commit = Some(result.clone());
                     } else if response.clicked() {
-                        outcome.pick = Some(result);
+                        outcome.pick = Some(result.clone());
                     }
                 }
             });

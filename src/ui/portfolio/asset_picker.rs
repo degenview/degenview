@@ -283,15 +283,19 @@ impl AssetPickerState {
             .map(|(source, result)| {
                 (
                     source,
-                    // A perpetual is a contract, not an asset a portfolio can hold.
                     result.map(|mut hits| {
-                        hits.retain(|hit| hit.market() == Market::Spot);
+                        hits.retain(holdable);
                         crate::service::rank_results(hits, &query)
                     }),
                 )
             })
             .collect();
     }
+}
+
+/// Whether a portfolio can hold `result`: a perpetual is a contract, not an asset.
+fn holdable(result: &SearchResult) -> bool {
+    result.market() == Market::Spot
 }
 
 // MARK: View
@@ -525,10 +529,18 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                     }
                 }
             }
-            if state.tab != PickerTab::Predictions && !state.recents.is_empty() {
+            let has_recent = state
+                .recents
+                .iter()
+                .any(|recent| holdable(&recent.result()));
+            if state.tab != PickerTab::Predictions && has_recent {
                 ui.add_space(16.0);
-                let recents =
-                    widgets::recents_card(ui, &mut state.recents, state.selected.as_ref());
+                let recents = widgets::recents_card(
+                    ui,
+                    &mut state.recents,
+                    state.selected.as_ref(),
+                    holdable,
+                );
                 if let Some(result) = recents.commit {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(result)));
                 } else if let Some(result) = recents.pick {
@@ -853,6 +865,31 @@ mod tests {
         draw_with(&mut next, &store);
         assert_eq!(next.recents.len(), 1);
         assert_eq!(next.recents[0].full_symbol, "BTCUSDT");
+    }
+
+    #[test]
+    fn a_recent_perpetual_is_not_offered_as_an_asset_and_stays_in_the_shared_list() {
+        let store = memory_store();
+        let mut recents = Vec::new();
+        for symbol in ["BTCUSDT", "BTCUSDT.P"] {
+            let picked = hit(DataSource::Binance, symbol, symbol);
+            assert!(recents::record_recent(&mut recents, &picked));
+        }
+        recents::store_recents(&store.lock().unwrap(), &recents);
+
+        let mut state = AssetPickerState::new("Add Asset", "", "Continue");
+        let mut screen = crate::ui::render_tests::Screen::new(vec2(1000.0, 800.0));
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(screen.run(Vec::new(), |ui| {
+                show(ui.ctx(), &mut state, &store);
+            }));
+        }
+        let words = crate::ui::render_tests::Screen::words(&output.expect("a frame"));
+
+        assert!(words.iter().any(|word| word == "BTCUSDT"), "{words:?}");
+        assert!(!words.iter().any(|word| word == "BTCUSDT.P"), "{words:?}");
+        assert_eq!(recents::load_recents(&store.lock().unwrap()).len(), 2);
     }
 
     #[test]
