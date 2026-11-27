@@ -125,6 +125,8 @@ most of its drawings were made on.
   matched market, and the preview says the height is estimated. Without those candles the post is
   left out (Reload or Search Again asks again). A provider with no time-range endpoint (CoinGecko)
   cannot place them.
+  A post's card shows the author and words TradingView stored with the drawing, so nothing is asked
+  of X; the author's picture, which would take a request, is not brought over.
 - **Pinned** drawings (`anchored: true`) sit at a place on the screen and are left out.
 - **Script names** are made into file names every system accepts. A watchlist none of whose symbols
   has a market is not added.
@@ -181,6 +183,10 @@ document parsers and drawing conversion found no panic.
   TrendLine, Brush, Highlighter, RiskRewardLong, AnchoredVWAP, Text, TextNote, Note, PriceLabel,
   Table, Tweet, Emoji. TradingView's Basic plan saves one layout, so no scratch layout could be
   made to draw the rest in.
+- Seen side by side with TradingView 3.5.1 (BTC, 1h): anchored VWAPs with their bands, a long
+  position, a highlighter line and post cards sit where TradingView has them. A post looks
+  different: our card's corner is near the anchor where theirs is centred on it, and our line to
+  the candle is straight, in the card's colour, where theirs is a gray elbow.
 - Left out: ellipse, signpost and Three drives (stored shape unknown), arrow marks left and right,
   bars pattern, ghost feed, images, emoji, icons, stickers, and text or notes pinned to the screen.
 - The settings of tools never seen in real data are read from TradingView's defaults, not from a

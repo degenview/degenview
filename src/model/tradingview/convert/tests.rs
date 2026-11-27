@@ -288,6 +288,35 @@ fn a_post_takes_a_price_before_it_converts() {
 }
 
 #[test]
+fn a_post_keeps_the_words_tradingview_showed_on_it() {
+    let card = |tweet: serde_json::Value| {
+        let mut source = drawing("t", "LineToolTweet", "X:Y", json!({}), &[(0, 7.0)]);
+        source["state"]["tweetData"] = tweet;
+        let converted = convert(&raw(&source).at_price(150.0), 1, None).unwrap();
+        let (Geometry::Card { card, .. }, ..) = shape(&converted.drawing) else {
+            panic!("{:?}", converted.drawing);
+        };
+        card.clone()
+    };
+    let url = "https://x.com/someone/status/1234567890123456789";
+    let shown = card(json!({
+        "tweetUrl": url, "user": "Some One", "username": "@someone", "text": "two\nlines"
+    }));
+    let meta = shown.meta.expect("stored with the drawing");
+    assert_eq!(
+        (
+            meta.title.as_str(),
+            meta.author.as_str(),
+            meta.excerpt.as_str()
+        ),
+        ("Some One", "@someone", "two lines")
+    );
+    // The picture would take a request to X, which an import never makes.
+    assert_eq!(meta.avatar, None);
+    assert_eq!(card(json!({"tweetUrl": url})).meta, None, "nothing to show");
+}
+
+#[test]
 fn a_lines_words_keep_the_side_of_the_line_they_were_on() {
     for (stored, expected) in [
         ("bottom", VerticalAlign::Top),

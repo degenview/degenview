@@ -4,7 +4,7 @@
 
 use super::drawing::RawDrawing;
 use crate::model::annotation::image_content::Content;
-use crate::model::annotation::link_card::{Link, LinkCard};
+use crate::model::annotation::link_card::{Link, LinkCard, LinkMeta};
 use crate::model::annotation::table::{
     COLUMN_WIDTH_RANGE, MAX_CELL_CHARS, MAX_COLUMNS, MAX_ROWS, ROW_HEIGHT_RANGE, TableData,
 };
@@ -385,19 +385,20 @@ fn post(
     at: Anchor,
     style: DrawingStyle,
 ) -> Result<Drawing, Unsupported> {
-    let link = raw
-        .post_url
-        .as_deref()
-        .and_then(|url| Link::parse(url).ok())
-        .ok_or(Unsupported::Points)?;
-    Drawing::build_with(
-        Tool::Post,
-        id,
-        &[at],
-        style,
-        &Content::Link(LinkCard::new(link)),
-    )
-    .ok_or(Unsupported::Points)
+    let post = raw.post.as_ref().ok_or(Unsupported::Points)?;
+    let link = Link::parse(&post.url).map_err(|_| Unsupported::Points)?;
+    let mut card = LinkCard::new(link);
+    // What TradingView showed on its card, so ours shows it too without asking X.
+    let meta = LinkMeta {
+        title: post.name.clone(),
+        author: post.handle.clone(),
+        excerpt: post.text.clone(),
+        ..Default::default()
+    }
+    .sanitized();
+    card.meta = (!meta.is_empty()).then_some(meta);
+    Drawing::build_with(Tool::Post, id, &[at], style, &Content::Link(card))
+        .ok_or(Unsupported::Points)
 }
 
 mod style;

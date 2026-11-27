@@ -16,11 +16,41 @@ pub struct RawDrawing {
     pub interval: String,
     /// Stacking order; larger is nearer the front.
     pub z: f64,
-    /// An X post's address, on a post drawing.
-    pub post_url: Option<String>,
+    /// The X post, on a post drawing.
+    pub post: Option<RawPost>,
     /// Whether the points' prices are places on the chart. A post's is not: TradingView sets it
     /// beside its bar by the zoom of the moment, and what it stores there means nothing.
     priced: bool,
+}
+
+/// An X post as TradingView keeps it beside the drawing: its address, and what its card shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RawPost {
+    pub url: String,
+    /// The author's display name; empty when not stored, as are the two below.
+    pub name: String,
+    /// `@handle`.
+    pub handle: String,
+    pub text: String,
+}
+
+impl RawPost {
+    fn read(tweet: &Value) -> Option<Self> {
+        let field = |key: &str| {
+            tweet
+                .get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let url = field("tweetUrl");
+        (!url.is_empty()).then(|| Self {
+            url,
+            name: field("user"),
+            handle: field("username"),
+            text: field("text"),
+        })
+    }
 }
 
 /// One placement point: a bar's open time in epoch seconds, plus `offset` bars of `interval` for a
@@ -77,12 +107,10 @@ impl RawDrawing {
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        let post_url = state
+        let post = state
             .get("tweetData")
             .or_else(|| source.get("tweetData"))
-            .and_then(|tweet| tweet.get("tweetUrl"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
+            .and_then(RawPost::read);
         Some(Self {
             id: id.to_owned(),
             symbol,
@@ -91,7 +119,7 @@ impl RawDrawing {
             points,
             interval,
             z: state.get("zorder").and_then(Value::as_f64).unwrap_or(0.0),
-            post_url,
+            post,
             priced: tool != "LineToolTweet",
         })
     }
