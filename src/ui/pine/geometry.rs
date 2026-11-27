@@ -9,8 +9,8 @@ use crate::model::chart::viewport::MIN_VISIBLE;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
     DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle,
-    MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical,
-    YLocation, index_is_known,
+    MarkerLocation, MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign,
+    Vertical, YLocation, index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 use std::cmp::Ordering;
@@ -805,9 +805,13 @@ impl VisibleBars {
 
 // MARK: Value range
 
-/// Prices of plots, plotcandles and the baseline of filled styles that show in the pane.
+/// Everything per bar that a script's own scale (its pane, or the hidden scale of
+/// `scale.none`) has to reach: all the renderer draws at a value there. Plots and plotcandles,
+/// the baseline of filled styles, `location.absolute` markers and the plots a `fill()` spans.
 fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let mut values = series_values_in_pane(pine, visible);
+    values.extend(absolute_marker_values(pine, visible));
+    values.extend(hidden_fill_values(pine, visible));
     values.extend(
         pine.plots
             .iter()
@@ -820,6 +824,46 @@ fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
             })
             .map(|o| o.hist_base),
     );
+    values
+}
+
+/// Where the `location.absolute` markers shown on the bars `visible` stand.
+fn absolute_marker_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
+    let mut values = Vec::new();
+    for marker in pine
+        .markers
+        .iter()
+        .filter(|m| m.display & DISPLAY_PANE != 0 && m.location == MarkerLocation::Absolute)
+    {
+        values.extend(
+            visible
+                .series_range(marker.values.len())
+                .filter(|&bar| marker.values[bar])
+                .filter_map(|bar| marker.prices.get(bar).copied().flatten()),
+        );
+    }
+    values
+}
+
+/// The values of the hidden plots a `fill()` spans: the area between them is drawn all the same.
+/// A pane script's `force_overlay` plot is not one of them, though it stays here hidden for a
+/// fill to find: its values are prices of the main chart.
+fn hidden_fill_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
+    let mut values = Vec::new();
+    for plot in pine.plots.iter().filter(|plot| {
+        plot.display & DISPLAY_PANE == 0
+            && (pine.overlay || !plot.force_overlay)
+            && pine
+                .fills
+                .iter()
+                .any(|fill| fill.plot_a == plot.id || fill.plot_b == plot.id)
+    }) {
+        values.extend(
+            plot.values[visible.series_range(plot.values.len())]
+                .iter()
+                .flatten(),
+        );
+    }
     values
 }
 
@@ -1038,8 +1082,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, MISSING_INDEX, PlotOutput,
-        PolylineOutput, PolylinePoint,
+        BoxOutput, CandleBar, CandleOutput, FillOutput, HorizontalLine, LabelOutput, MISSING_INDEX,
+        MarkerKind, MarkerOutput, PlotOutput, PolylineOutput, PolylinePoint,
     };
 
     fn plot(values: Vec<Option<f64>>, style: PlotStyle) -> PlotOutput {
@@ -2069,6 +2113,71 @@ mod tests {
         );
         assert_eq!(overlay_future_bars([]), 0);
         assert_eq!(overlay_extent([], newest(20), 0), OverlayExtent::default());
+    }
+
+    #[test]
+    fn a_scripts_own_scale_reaches_its_absolute_markers_and_fills() {
+        let marker = |location, shown: [bool; 3], display| MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: shown.to_vec(),
+            character: None,
+            color: 0xFF00_00FF,
+            location,
+            style: MarkerShape::Circle,
+            prices: vec![Some(500.0), Some(600.0), Some(700.0)],
+            colors: Vec::new(),
+            size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
+            display,
+            force_overlay: false,
+        };
+        let range = |output: &VisualOutput| pane_value_range(output, newest(2), 0.0);
+        let mut markers = visual(3);
+        markers.markers.push(marker(
+            MarkerLocation::Absolute,
+            [true, true, false],
+            DISPLAY_PANE,
+        ));
+        // Bar 0 is off screen and bar 2 shows no marker.
+        assert_eq!(range(&markers), (594.0, 606.0));
+        for unseen in [
+            marker(MarkerLocation::AboveBar, [true; 3], DISPLAY_PANE),
+            marker(MarkerLocation::Absolute, [true; 3], 0),
+        ] {
+            markers.markers = vec![unseen];
+            assert_eq!(range(&markers), (0.0, 1.0));
+        }
+
+        let hidden = |id, value, force_overlay| PlotOutput {
+            id,
+            display: 0,
+            force_overlay,
+            ..plot(vec![Some(value); 3], PlotStyle::Line)
+        };
+        let fill = FillOutput {
+            id: 0,
+            plot_a: 1,
+            plot_b: 2,
+            colors: Vec::new(),
+            title: None,
+            gradients: Vec::new(),
+        };
+        let mut pane = VisualOutput {
+            overlay: false,
+            ..visual(3)
+        };
+        pane.plots = vec![hidden(1, 30.0, false), hidden(2, 70.0, false)];
+        assert_eq!(range(&pane), (0.0, 1.0), "hidden and spanned by nothing");
+        pane.fills.push(fill);
+        assert_eq!(range(&pane), (30.0, 70.0));
+        // The forced plot's price stays out of the pane's scale.
+        pane.plots[1] = hidden(2, 60_000.0, true);
+        assert_eq!(range(&pane), (29.7, 30.3));
     }
 
     #[test]

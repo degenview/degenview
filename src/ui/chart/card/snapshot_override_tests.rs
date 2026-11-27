@@ -361,6 +361,50 @@ fn what_hangs_off_a_candle_stays_on_the_candles_when_the_script_has_its_own_scal
 }
 
 #[test]
+fn absolute_markers_of_a_scale_none_overlay_are_fitted_to_the_plot() {
+    // Alone, and far above the oscillator they come with.
+    for body in [
+        "plotshape(close, style = shape.circle, location = location.absolute, color = color.fuchsia)",
+        "plot(50 + 40 * math.sin(bar_index / 5.0))
+plotshape(500, style = shape.circle, location = location.absolute, color = color.fuchsia)",
+    ] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let source = format!(
+            "//@version=6
+indicator(\"Markers\", overlay = true, scale = scale.none)
+{body}
+"
+        );
+        let id = harness.card.add_pine_instance(None, "Markers", &source);
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let mut input = input(&harness, false);
+        input.frame.viewport = Some(showing(
+            HorizontalViewport {
+                visible: 60,
+                right_offset: 0.0,
+            },
+            None,
+        ));
+        let view = geometry(&harness, &input).view;
+        let drawn = gather(&painted(&harness, &input));
+        let fuchsia = Color32::from_rgb(0xe0, 0x40, 0xfb);
+        let markers: Vec<Pos2> = drawn
+            .circles
+            .iter()
+            .filter(|(_, fill)| *fill == fuchsia)
+            .map(|(centre, _)| *centre)
+            .collect();
+        assert!(markers.len() >= 50, "{body}: {}", markers.len());
+        assert!(
+            markers.iter().all(|at| view.plot.contains(*at)),
+            "{body}: {markers:?} in {:?}",
+            view.plot
+        );
+    }
+}
+
+#[test]
 fn a_scale_none_overlay_follows_the_bars_on_screen() {
     let mut harness = Harness::new(ChartCanvas::default());
     let id = harness.card.add_pine_instance(

@@ -143,7 +143,8 @@ own.
 An overlay declared `indicator(..., overlay = true, scale = scale.none)` leaves the price axis
 alone: `overlay_extent` takes none of its values, hlines or drawings (it still asks for its
 `future_bars`). The renderer maps it on a hidden scale of its own, `own_scale` in
-`ui/chart/card/scripts.rs`: `pane_value_range` over the same `VisibleBars` the panes use, widened by
+`ui/chart/card/scripts.rs`: `pane_value_range` over the same `VisibleBars` the panes use (so it
+reaches `location.absolute` markers and the plots a `fill()` spans, hidden ones included), widened by
 the chart's own top and bottom margins and laid across the band the price scale uses (below the
 header). It is linear whatever the price axis is (Percent, Log), ignores a manual price range, and
 nothing on screen reads it: no axis labels, no last-value tag. Each overlay's `PineLayer` gets its
@@ -156,7 +157,8 @@ view list the values as they are (`ValueKind::Plain` in the table). `scale.left`
 are still warned about (`PINE7001`: one value axis), and so is `scale.none` on a script with its
 own pane, which TradingView only allows with `overlay = true`. Not verified against TradingView:
 the margins the hidden scale leaves (we use the chart's) and whether it follows a Percent or Log
-price axis (we keep it linear).
+price axis (we keep it linear), nor whether a `fill()` between hidden plots moves TradingView's
+scales. The price axis itself does not yet reach for either on an ordinary overlay.
 
 ### Panes
 
