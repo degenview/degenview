@@ -241,17 +241,14 @@ const MEXC_QUOTES: [&str; 9] = [
 /// it is part of the asset's own name: `WBTC` is not W/BTC, `TUSD` not T/USD.
 const ONE_LETTER_BASE_QUOTES: [&str; 6] = ["FDUSD", "USDT", "USDC", "USD1", "USDE", "USDF"];
 
-/// Splits an upper-case id that writes base and quote together, taking the first of `quotes`
-/// that ends it and leaves a base.
+/// Splits an upper-case id that writes base and quote together. The first of `quotes` that ends
+/// it decides: a shorter quote inside it (`USD` in `BUSD`) is never tried.
 fn split_joined<'a>(symbol: &'a str, quotes: &[&'static str]) -> Option<(&'a str, &'static str)> {
-    quotes.iter().find_map(|quote| {
-        symbol
-            .strip_suffix(quote)
-            .filter(|base| {
-                base.len() > 1 || (base.len() == 1 && ONE_LETTER_BASE_QUOTES.contains(quote))
-            })
-            .map(|base| (base, *quote))
-    })
+    let (base, quote) = quotes
+        .iter()
+        .find_map(|quote| Some((symbol.strip_suffix(quote)?, *quote)))?;
+    let named = base.len() > 1 || (base.len() == 1 && ONE_LETTER_BASE_QUOTES.contains(&quote));
+    named.then_some((base, quote))
 }
 
 /// Splits an upper-case Binance or Bybit pair like `SOLBNB` into `("SOL", "BNB")`, or `None`

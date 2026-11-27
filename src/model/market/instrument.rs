@@ -267,6 +267,10 @@ mod tests {
                 ("WBTC", "WBTCUSDT"),
                 ("TUSD", "TUSDUSDT"),
                 ("BUSD", "BUSDUSDT"),
+                // The longer quote decides: these are not XB/USD, ST/USD or AB/USD.
+                ("XBUSD", "XBUSDUSDT"),
+                ("STUSD", "STUSDUSDT"),
+                ("ABUSD", "ABUSDUSDT"),
             ] {
                 assert_eq!(
                     InstrumentId::new(source, typed).api_symbol(),
