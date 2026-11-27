@@ -36,7 +36,9 @@
   close (30 s on streamed exchanges, minutes where bars come late, never for CoinGecko). A value
   that arrives after the close is then a tick of that bar; committed at the close, it would be
   rewritten history, and the replay raises nothing. So a bar-close alert fires when the next bar
-  arrives, or after the delay on a market that has gone quiet. Chart script runs still close by
+  arrives, or after the delay on a market that has gone quiet. Price-based chart bars are finished
+  by construction and close by the clock. `request.*` candles are also judged by the clock, so just
+  after a close a request can read a candle as confirmed while the chart bar is not. Chart script runs still close by
   the clock: they recompute and raise nothing.
 - A chart id alone names no chart (every tab starts at 1): anything keyed by a chart across tabs
   takes `model::alert::pine::ChartKey`.

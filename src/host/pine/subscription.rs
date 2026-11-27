@@ -493,9 +493,13 @@ impl PineSubscriptionHost {
                     None,
                 )
                 .map(ExecutionController::with_alert_mode)
+                // A price-based chart's bar is finished by how it is built, so it closes by
+                // the clock whatever its source may still send.
                 .map(|controller| match source_of(symbol_key) {
-                    Some(source) => controller.with_settle_delay(source.settle_delay_ms()),
-                    None => controller,
+                    Some(source) if chart.construction.is_none() => {
+                        controller.with_settle_delay(source.settle_delay_ms())
+                    }
+                    _ => controller,
                 })
                 .map(|controller| match chart.timeframe_seconds {
                     Some(seconds) => controller.with_timeframe_seconds(seconds),
@@ -1414,5 +1418,31 @@ mod tests {
         // Its last word on the bar comes with the next one, itself already past its close.
         let next = [bar(0, 100.0), bar(1, 105.0), bar(2, 106.0)];
         assert_eq!(run(&next, 3 * FIVE_MINUTES + 90_000), ["close 105", "bar"]);
+    }
+
+    /// A price-based chart's bar is finished by how it is built, not by what its source may still
+    /// send: with nothing after it, it would wait for the next brick, hours on a quiet market.
+    #[test]
+    fn a_constructed_bar_closes_by_the_clock_whatever_its_source() {
+        let source =
+            "//@version=6\nindicator(\"S\")\nalert(\"done\", alert.freq_once_per_bar_close)";
+        let mut armed = subscription(1, source);
+        armed.symbol_key = "COINGECKO:bitcoin".into();
+        let store = Store::open_in_memory().expect("open");
+        store.replace_pine_subscriptions(&[armed]).expect("write");
+        let mut host = PineSubscriptionHost::load(&store);
+        let applied = [instance(source)];
+        let chart = ChartRun {
+            construction: Some(Construction::LineBreak { lines: 3 }),
+            bar_seconds: Some(3_600.0),
+            timeframe_seconds: Some(3_600.0),
+        };
+        let feed = ChartFeed {
+            symbol_key: "COINGECKO:bitcoin".into(),
+            ..feed(&bars(), &chart, &applied)
+        };
+        let mut run = |now: i64| host.run_active_on(&feed, now).len();
+        assert_eq!(run(LIVE_NOW), 0);
+        assert_eq!(run(18_000_000), 1);
     }
 }
