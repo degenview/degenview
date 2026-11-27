@@ -574,6 +574,46 @@ mod tests {
     }
 
     #[test]
+    fn a_strategy_that_fails_when_a_live_bar_closes_does_not_start_again() {
+        let mut controller = controller(
+            "//@version=6\nstrategy(\"S\")\n\
+            if barstate.isrealtime and barstate.isconfirmed\n    runtime.error(\"on close\")",
+        );
+        let mut bars = history(4);
+        assert!(controller.update(&bars, None, 200_000).error.is_none());
+        bars.push(bar(4 * 60_000, 14.0));
+        // The close is the first realtime run: the strategy skips the ticks before it, and after
+        // it, so only the standing error says it is stopped.
+        assert!(controller.update(&bars, None, 250_000).error.is_some());
+        assert_stays_stopped(&mut controller, bars, 260_000);
+    }
+
+    #[test]
+    fn an_interrupted_replay_is_replayed_by_the_next_tick() {
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let mut controller = ExecutionController::new(
+            "//@version=6\nindicator(\"T\")\nplot(close)",
+            HashMap::new(),
+            SymbolInfo::default(),
+            None,
+            Limits::default(),
+            &NoLibraries,
+            None,
+            Some(Arc::clone(&cancel)),
+        )
+        .expect("valid controller");
+        let mut bars = history(4);
+        assert!(controller.update(&bars, None, 200_000).error.is_some());
+
+        cancel.store(false, std::sync::atomic::Ordering::Release);
+        bars[3].close += 0.1;
+        let update = controller.update(&bars, None, 210_000);
+        assert!(update.rebuilt, "a partial history takes no tick");
+        assert!(update.error.is_none(), "{:?}", update.error);
+        assert_eq!(update.output.bar_count, 4);
+    }
+
+    #[test]
     fn an_empty_snapshot_forgets_the_failure() {
         let mut controller = controller(FAILS_ON_THE_LAST_BAR);
         assert!(controller.update(&history(3), None, AFTER).error.is_some());
