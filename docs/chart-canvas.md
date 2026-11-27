@@ -115,8 +115,11 @@ last bar leaves the margin. Changing it fetches nothing and does not touch Pine'
 slots.
 
 What an overlay script reserves is the farthest slot its bar-anchored drawings reach past the last
-bar, capped at a quarter of the candles shown and at 50 slots (`ui::pine::geometry::future_bars`),
-so one line drawn hundreds of bars ahead never squeezes the candles; pan right to see the rest.
+bar, capped at a quarter of the candles the zoom shows and at 50 slots
+(`ui::pine::geometry::future_bars`), so one line drawn hundreds of bars ahead never squeezes the
+candles. The cap follows the zoom, not the bars on screen, so panning keeps the candle width. Pan
+right to see the rest: the pan goes on until two bars are left (see
+[Chart navigation](chart-navigation.md)); what lies farther than that needs a zoom out.
 
 ### Script ranges follow the bars on screen
 

@@ -2,7 +2,7 @@
 //! chart answers its own gesture, and that moving the view never edits a drawing or the data.
 
 use super::*;
-use crate::model::chart::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
+use crate::model::chart::viewport::{DEFAULT_VISIBLE, MIN_BARS_AHEAD, MIN_VISIBLE};
 use crate::model::{Anchor, Drawing, IndicatorConfig, Tool};
 use crate::ui::replay::overlay::{PickKind, ReplayChartFrame};
 use eframe::egui::Modifiers;
@@ -300,7 +300,7 @@ fn whitespace_past_the_newest_bar_is_bounded() {
     }
     assert!(close(
         rig.offset(),
-        -((DEFAULT_VISIBLE - MIN_VISIBLE) as f64)
+        -((DEFAULT_VISIBLE - MIN_BARS_AHEAD) as f64)
     ));
 }
 

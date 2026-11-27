@@ -15,6 +15,10 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_VISIBLE: usize = 120;
 /// The fewest bars the plot may show.
 pub const MIN_VISIBLE: usize = 20;
+/// The bars that stay on screen when the chart is panned all the way into the empty space past
+/// the newest one, as in TradingView's Lightweight Charts. Far enough to reach whatever a script
+/// or a drawing put ahead within the candles shown.
+pub const MIN_BARS_AHEAD: usize = 2;
 /// The most bars `set_visible` restores from a saved layout.
 pub const MAX_RESTORED_VISIBLE: usize = 2000;
 /// How far the price axis may stretch the automatic range.
@@ -188,10 +192,11 @@ impl Default for HorizontalViewport {
 
 impl HorizontalViewport {
     /// The offsets the view may take over `total` bars: back until only [`MIN_VISIBLE`] bars of
-    /// history are left, forward until only that many bars of the series remain on screen.
+    /// history are left, forward until only [`MIN_BARS_AHEAD`] bars of the series remain on
+    /// screen.
     pub fn offset_limits(&self, total: usize) -> (f64, f64) {
         let oldest = total.saturating_sub(MIN_VISIBLE) as f64;
-        let furthest = self.visible.saturating_sub(MIN_VISIBLE) as f64;
+        let furthest = self.visible.saturating_sub(MIN_BARS_AHEAD) as f64;
         (-furthest, oldest.max(-furthest))
     }
 

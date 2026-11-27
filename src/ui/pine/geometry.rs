@@ -920,7 +920,7 @@ pub fn pane_value_range(pine: &VisualOutput, visible: VisibleBars, padding: f64)
     (low - inset, high + inset)
 }
 
-/// Farthest future slots the chart reserves, as a share of the candles shown, so a far-off
+/// Farthest future slots the chart reserves, as a share of the candles the zoom shows, so a far-off
 /// drawing never squeezes the candles into a sliver.
 pub const MAXIMUM_FUTURE_SHARE: f64 = 0.25;
 
@@ -929,8 +929,12 @@ pub const MAXIMUM_FUTURE_BARS: usize = 50;
 
 /// Slots past the last candle that this script's drawings reach, capped. Drawings placed by time
 /// (`xloc.bar_time`) are mapped by the renderer and not counted.
-pub fn future_bars(pine: &VisualOutput, candle_count: usize) -> usize {
-    if candle_count == 0 {
+///
+/// `visible` is the zoom (`HorizontalViewport::visible`), not the bars on screen: panning past
+/// the newest bar puts fewer bars on screen, and the reserved slots must not shrink under the
+/// pointer.
+pub fn future_bars(pine: &VisualOutput, visible: usize) -> usize {
+    if visible == 0 {
         return 0;
     }
     let last_bar = pine.bar_count as i64 - 1;
@@ -961,7 +965,7 @@ pub fn future_bars(pine: &VisualOutput, candle_count: usize) -> usize {
         .filter(|bar| index_is_known(*bar))
         .max()
         .unwrap_or(last_bar);
-    let share = (candle_count as f64 * MAXIMUM_FUTURE_SHARE).floor() as usize;
+    let share = (visible as f64 * MAXIMUM_FUTURE_SHARE).floor() as usize;
     let cap = share.min(MAXIMUM_FUTURE_BARS) as i64;
     (reach - last_bar).clamp(0, cap) as usize
 }
@@ -974,15 +978,15 @@ pub struct OverlayExtent {
 }
 
 /// Slots past the last candle that the overlay scripts in `outputs` ask the chart to keep free,
-/// for a chart showing `candle_count` candles. Scripts in their own pane add nothing.
+/// for a chart zoomed to `visible` candles. Scripts in their own pane add nothing.
 pub fn overlay_future_bars<'a>(
     outputs: impl IntoIterator<Item = &'a VisualOutput>,
-    candle_count: usize,
+    visible: usize,
 ) -> usize {
     outputs
         .into_iter()
         .filter(|output| output.overlay)
-        .map(|output| future_bars(output, candle_count))
+        .map(|output| future_bars(output, visible))
         .max()
         .unwrap_or(0)
 }
@@ -1741,7 +1745,7 @@ mod tests {
     }
 
     #[test]
-    fn future_bars_are_capped_at_a_quarter_of_the_candles_shown() {
+    fn future_bars_are_capped_at_a_quarter_of_the_zoom() {
         let mut output = visual(100);
         output.lines.push(line(90, 1.0, 104, 2.0));
         assert_eq!(future_bars(&output, 80), 5, "inside the cap");

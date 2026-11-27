@@ -290,6 +290,56 @@ fn a_drawing_far_past_the_last_bar_leaves_the_candles_most_of_the_plot() {
     );
 }
 
+/// A line drawn from the last bar to 40 slots ahead, more than a 40-candle zoom reserves.
+const LINE_AHEAD: &str = "//@version=6
+indicator(\"Line ahead\", overlay = true)
+if barstate.islast
+    line.new(bar_index, close, bar_index + 40, close)
+";
+
+#[test]
+fn panning_past_the_newest_bar_keeps_the_candle_width_and_reaches_a_far_drawing() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Line ahead", LINE_AHEAD);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    for visible in [40, 100, 200] {
+        let at = |right_offset| {
+            let mut input = input(&harness, false);
+            let horizontal = HorizontalViewport {
+                visible,
+                right_offset,
+            };
+            input.frame.viewport = Some(showing(horizontal, None));
+            geometry(&harness, &input).view
+        };
+        let resting = at(0.0);
+        let horizontal = HorizontalViewport {
+            visible,
+            right_offset: 0.0,
+        };
+        let furthest = horizontal.offset_limits(resting.total).0;
+        for step in 1..=4 {
+            let panned = at(furthest * f64::from(step) / 4.0);
+            assert_eq!(
+                (panned.reserved, panned.slot_width),
+                (resting.reserved, resting.slot_width),
+                "{visible} candles, step {step} of the pan"
+            );
+        }
+        let panned = at(furthest);
+        let slot = (panned.total - 1 + 40 - panned.start) as f32 + panned.lead + 0.5;
+        let end = panned.plot.left() + panned.slot_width * slot;
+        assert!(
+            end <= panned.plot.right(),
+            "{visible} candles: the line ends at {end}, the plot at {}",
+            panned.plot.right()
+        );
+    }
+}
+
 #[test]
 fn a_snapshot_may_show_fewer_bars_than_a_chart_ever_does() {
     let harness = settled_harness();

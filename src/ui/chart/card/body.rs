@@ -134,16 +134,7 @@ impl ChartCard {
         };
         let horizontal = &viewport.horizontal;
         let margin = usize::from(self.appearance.canvas.margins.sanitized().right);
-        // How far the scripts reach depends on the candles shown, and the plot those candles
-        // sit in on how far they reach: size it with the margin alone, then lay the bars out
-        // again in the plot the reach makes.
-        let margin_only = chart::canvas::visible_window(
-            bars,
-            horizontal.visible,
-            horizontal.right_offset,
-            margin,
-        );
-        let future_bars = overlay_future_bars(overlays(), margin_only.count());
+        let future_bars = overlay_future_bars(overlays(), horizontal.visible);
         let window = chart::canvas::visible_window(
             bars,
             horizontal.visible,
