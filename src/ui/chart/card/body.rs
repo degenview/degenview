@@ -134,7 +134,7 @@ impl ChartCard {
         };
         let horizontal = &viewport.horizontal;
         let margin = usize::from(self.appearance.canvas.margins.sanitized().right);
-        let future_bars = overlay_future_bars(overlays(), horizontal.visible);
+        let future_bars = overlay_future_bars(overlays());
         let window = chart::canvas::visible_window(
             bars,
             horizontal.visible,

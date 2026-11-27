@@ -257,7 +257,29 @@ fn a_pane_label_in_the_right_margin_is_on_the_panes_axis() {
 }
 
 #[test]
-fn a_drawing_far_past_the_last_bar_leaves_the_candles_most_of_the_plot() {
+fn a_drawing_far_past_the_last_bar_reserves_the_same_few_slots_at_every_zoom() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Far drawing", FAR_DRAWING);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    for visible in [20, 40, 120, 300] {
+        let mut input = input(&harness, false);
+        input.frame.viewport = Some(showing(
+            HorizontalViewport {
+                visible,
+                right_offset: 0.0,
+            },
+            None,
+        ));
+        let view = geometry(&harness, &input).view;
+        assert_eq!(view.reserved, 20, "{visible} candles");
+    }
+}
+
+#[test]
+fn selecting_a_portion_of_a_chart_with_a_far_drawing_shows_all_of_it() {
     let mut harness = Harness::new(ChartCanvas::default());
     let id = harness
         .card
@@ -267,30 +289,31 @@ fn a_drawing_far_past_the_last_bar_leaves_the_candles_most_of_the_plot() {
     let mut input = input(&harness, false);
     input.frame.viewport = Some(showing(
         HorizontalViewport {
-            visible: 40,
-            right_offset: 0.0,
+            visible: 120,
+            right_offset: 100.0,
         },
         None,
     ));
-    let view = geometry(&harness, &input).view;
-    assert!(
-        view.reserved >= 10,
-        "the drawing still asks for room past the last bar"
+    let before = geometry(&harness, &input).view;
+    // Seventy slots from the middle of the plot: far fewer than are shown.
+    let left = before.plot.left() + before.slot_width * 30.0;
+    let selection = Selection::between(
+        (left, before.plot.top()),
+        (left + before.slot_width * 70.0, before.plot.bottom()),
+        (
+            before.plot.left(),
+            before.plot.top(),
+            before.plot.right(),
+            before.plot.bottom(),
+        ),
     );
-    assert!(
-        view.reserved <= 10,
-        "but at most a quarter of the 40 candles: {}",
-        view.reserved
-    );
-    assert!(
-        view.slot_width >= view.plot.width() / 50.0 - 1e-3,
-        "a candle keeps {} of the {} points a bar slot would have",
-        view.slot_width,
-        view.plot.width() / 40.0
-    );
+    input.frame.viewport = before.viewport_for(&selection);
+    let after = geometry(&harness, &input).view;
+    let slots = after.plot.width() / after.slot_width;
+    assert!((slots - 70.0).abs() <= 1.0, "{slots} slots, 70 selected");
 }
 
-/// A line drawn from the last bar to 40 slots ahead, more than a 40-candle zoom reserves.
+/// A line drawn from the last bar to 40 slots ahead, more than the chart reserves.
 const LINE_AHEAD: &str = "//@version=6
 indicator(\"Line ahead\", overlay = true)
 if barstate.islast

@@ -5,6 +5,7 @@
 //! `PineLabelGeometry`, `PineSize+Drawing` and the layout halves of `PineChartLayer`.
 
 use crate::model::chart::canvas::Window;
+use crate::model::chart::viewport::MIN_VISIBLE;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
     DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle,
@@ -920,23 +921,15 @@ pub fn pane_value_range(pine: &VisualOutput, visible: VisibleBars, padding: f64)
     (low - inset, high + inset)
 }
 
-/// Farthest future slots the chart reserves, as a share of the candles the zoom shows, so a far-off
-/// drawing never squeezes the candles into a sliver.
-pub const MAXIMUM_FUTURE_SHARE: f64 = 0.25;
-
-/// The most future slots ever reserved, however many candles are shown.
-pub const MAXIMUM_FUTURE_BARS: usize = 50;
+/// The most slots ever reserved past the last candle: as many as the fewest candles a chart shows,
+/// so a far-off drawing never leaves the candles less than half the plot. It does not depend on
+/// the zoom: zooming, selecting a rectangle and reframing a picture all count on the reserved
+/// slots staying put while the number of candles changes.
+pub const MAXIMUM_FUTURE_BARS: usize = MIN_VISIBLE;
 
 /// Slots past the last candle that this script's drawings reach, capped. Drawings placed by time
 /// (`xloc.bar_time`) are mapped by the renderer and not counted.
-///
-/// `visible` is the zoom (`HorizontalViewport::visible`), not the bars on screen: panning past
-/// the newest bar puts fewer bars on screen, and the reserved slots must not shrink under the
-/// pointer.
-pub fn future_bars(pine: &VisualOutput, visible: usize) -> usize {
-    if visible == 0 {
-        return 0;
-    }
+pub fn future_bars(pine: &VisualOutput) -> usize {
     let last_bar = pine.bar_count as i64 - 1;
     let mut bars: Vec<i64> = Vec::new();
     for item in pine
@@ -965,9 +958,7 @@ pub fn future_bars(pine: &VisualOutput, visible: usize) -> usize {
         .filter(|bar| index_is_known(*bar))
         .max()
         .unwrap_or(last_bar);
-    let share = (visible as f64 * MAXIMUM_FUTURE_SHARE).floor() as usize;
-    let cap = share.min(MAXIMUM_FUTURE_BARS) as i64;
-    (reach - last_bar).clamp(0, cap) as usize
+    (reach - last_bar).clamp(0, MAXIMUM_FUTURE_BARS as i64) as usize
 }
 
 /// What overlay scripts add to the chart's own geometry.
@@ -977,16 +968,13 @@ pub struct OverlayExtent {
     pub values: Vec<f64>,
 }
 
-/// Slots past the last candle that the overlay scripts in `outputs` ask the chart to keep free,
-/// for a chart zoomed to `visible` candles. Scripts in their own pane add nothing.
-pub fn overlay_future_bars<'a>(
-    outputs: impl IntoIterator<Item = &'a VisualOutput>,
-    visible: usize,
-) -> usize {
+/// Slots past the last candle that the overlay scripts in `outputs` ask the chart to keep free.
+/// Scripts in their own pane add nothing.
+pub fn overlay_future_bars<'a>(outputs: impl IntoIterator<Item = &'a VisualOutput>) -> usize {
     outputs
         .into_iter()
         .filter(|output| output.overlay)
-        .map(|output| future_bars(output, visible))
+        .map(future_bars)
         .max()
         .unwrap_or(0)
 }
@@ -1745,41 +1733,23 @@ mod tests {
     }
 
     #[test]
-    fn future_bars_are_capped_at_a_quarter_of_the_zoom() {
+    fn future_bars_are_capped_at_the_fewest_candles_a_chart_shows() {
         let mut output = visual(100);
         output.lines.push(line(90, 1.0, 104, 2.0));
-        assert_eq!(future_bars(&output, 80), 5, "inside the cap");
-        output.lines.push(line(90, 1.0, 400, 2.0));
-        assert_eq!(future_bars(&output, 80), 20, "a quarter of 80");
-        assert_eq!(future_bars(&output, 40), 10);
-        assert_eq!(
-            future_bars(&output, 10_000),
-            MAXIMUM_FUTURE_BARS,
-            "never more than fifty slots"
-        );
+        assert_eq!(future_bars(&output), 5, "inside the cap");
+        output.lines.push(line(90, 1.0, 100_000, 2.0));
+        assert_eq!(future_bars(&output), MIN_VISIBLE);
         let mut anchored_by_time = visual(100);
         anchored_by_time.lines.push(LineOutput {
             time_anchored: true,
             ..line(0, 1.0, 400, 2.0)
         });
         assert_eq!(
-            future_bars(&anchored_by_time, 50),
+            future_bars(&anchored_by_time),
             0,
             "time-anchored drawings are mapped later"
         );
-        assert_eq!(future_bars(&visual(100), 50), 0);
-        assert_eq!(future_bars(&output, 0), 0);
-    }
-
-    #[test]
-    fn a_far_drawing_leaves_the_candles_most_of_the_plot() {
-        let mut output = visual(1_000);
-        output.lines.push(line(990, 1.0, 100_000, 2.0));
-        for shown in [40, 120, 500] {
-            let future = future_bars(&output, shown);
-            let share = shown as f64 / (shown + future) as f64;
-            assert!(share >= 0.8, "{shown} candles keep {share} of the plot");
-        }
+        assert_eq!(future_bars(&visual(100)), 0);
     }
 
     #[test]
@@ -2083,7 +2053,7 @@ mod tests {
         };
         pane.plots.push(plot(vec![Some(1_000.0)], PlotStyle::Line));
         let outputs = [overlay, pane];
-        let future = overlay_future_bars(&outputs, 20);
+        let future = overlay_future_bars(&outputs);
         let extent = overlay_extent(&outputs, newest(20), future);
         assert_eq!(extent.future_bars, 3);
         assert!(extent.values.contains(&40.0) && extent.values.contains(&70.0));
@@ -2096,7 +2066,7 @@ mod tests {
             !extent.values.contains(&0.0),
             "the histogram baseline is not an overlay value"
         );
-        assert_eq!(overlay_future_bars([], 20), 0);
+        assert_eq!(overlay_future_bars([]), 0);
         assert_eq!(overlay_extent([], newest(20), 0), OverlayExtent::default());
     }
 

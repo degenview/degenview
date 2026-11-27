@@ -393,10 +393,12 @@ impl Framing {
 
         let (visible, slots) = self.slots(base, plot);
         let centre = base.start_bar_center + dx;
+        // Narrowed about its centre, a chart panned into empty space could lose every bar.
         let horizontal = HorizontalViewport {
             visible,
             right_offset: (base.total_bars + base.reserved) as f64 - centre - slots / 2.0,
-        };
+        }
+        .keeping_a_bar(base.total_bars);
 
         let log = base.logarithmic;
         let shown = base

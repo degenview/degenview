@@ -212,6 +212,18 @@ impl HorizontalViewport {
         self.right_offset < reserved as f64 + 0.5 && self.right_offset > 0.5 - self.visible as f64
     }
 
+    /// The offset moved no further than needed for at least one of `total` bars to be in view:
+    /// what a picture of the chart keeps, which may show fewer bars than a chart does.
+    pub fn keeping_a_bar(self, total: usize) -> Self {
+        let least = 1.0 - self.visible as f64;
+        Self {
+            right_offset: self
+                .right_offset
+                .clamp(least, (total as f64 - 1.0).max(least)),
+            ..self
+        }
+    }
+
     /// Keeps the offset a number the window can use and inside its limits.
     pub fn clamp(&mut self, total: usize) {
         let (low, high) = self.offset_limits(total);

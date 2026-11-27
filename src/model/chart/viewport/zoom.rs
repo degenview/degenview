@@ -149,10 +149,11 @@ pub fn portion(
     }
     let visible = bars_between(across, reserved).max(1);
     let offset = centred_offset(across, visible, total, reserved);
-    Some(HorizontalViewport {
+    let picture = HorizontalViewport {
         visible,
-        right_offset: offset.clamp(1.0 - visible as f64, total as f64 - 1.0),
-    })
+        right_offset: offset,
+    };
+    Some(picture.keeping_a_bar(total))
 }
 
 /// The price range between two prices read off the plot's price scale, for a manual range.

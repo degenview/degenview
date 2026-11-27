@@ -162,6 +162,32 @@ fn a_chart_may_show_fewer_than_twenty_bars() {
 }
 
 #[test]
+fn a_capture_panned_into_empty_space_keeps_a_bar_however_it_is_narrowed() {
+    // Two bars left at the left edge: the furthest a chart pans.
+    let panned = Base::from_view(
+        &HorizontalViewport {
+            visible: 120,
+            right_offset: -118.0,
+        },
+        PriceRange::new(1.0, 2.0),
+        false,
+        500,
+        10,
+        PLOT,
+    );
+    for width in [1.0, 1.1, 1.5, MAX] {
+        let view = framed(width, 1.0, 0.0, 0.0).viewport(&panned, PLOT);
+        let window = visible_window(
+            500,
+            view.horizontal.visible,
+            view.horizontal.right_offset,
+            10,
+        );
+        assert!(window.count() >= 1, "{width}: {:?}", view.horizontal);
+    }
+}
+
+#[test]
 fn at_least_two_bars_are_always_shown() {
     let tiny = Base::from_view(
         &HorizontalViewport {
