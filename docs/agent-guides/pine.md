@@ -70,17 +70,19 @@
   and each imported library): a local or parameter whose name is also a global, a builtin variable
   (`low`), a parameter or another local becomes `name#<site>` (`name#L<n>_<site>` in the nth library,
   where every local is renamed), and every read `scopes::resolve` bound to it follows (the head of a
-  dotted name too; a call of a builtin keeps its name). A name nothing else uses stays as written; a
+  dotted name too; a call that reads no variable keeps its name). A name nothing else uses stays as written; a
   global always does. `Parameter::name` is the label named arguments use, `Parameter::slot` the
   variable. Nothing saves or restores values around blocks, loops or calls to hide a global, and a
   function reads the global whatever its caller declared. A call still parks its locals' previous
   values (`invoke_with`'s `saved`, `restore_saved`) so none outlives it. A loop counter or block local
   that nothing shares stays in the table, so `i[1]` reads the previous bar's last count. `var`/`varip`
   locals are set at entry (stash value, else unset so the declaration initialises them).
-  - **A builtin keeps the name it is written with; a variable is held under its slot.** A call whose
-    written name is a builtin (`call_binding::is_builtin_call`: `route_of`, plus the by-value names in
-    `is_by_value`: `request.*`, `log.*`, `ticker.*`, `str.split`, …) is never renamed, so
-    `log.info(...)` works in a function that has a local `log`, and the post-rename passes
+  - **A call that reads no variable keeps its written name; a variable is held under its slot.**
+    `call_binding::is_declared_call` says which, mirroring the chain's order: a builtin
+    (`is_builtin_call`: `route_of`, plus the by-value names in `is_by_value`: `request.*`, `log.*`,
+    `ticker.*`, `str.split`, …), `Type.new` of a declared type, and a function or constructor of an
+    imported library (`lib.f`, `lib.Type.new`). So `log.info(...)` and `lib.f()` work in a function
+    that has a local `log` or `lib`, and the post-rename passes
     (`security_slice`, `replays_chart_bars`, `looks_ahead`) still see `request.security`. A call on a
     variable (`levels.push(x)`) is renamed with its receiver. `resolve_identifier` finds variables and
     fields by the held name and every builtin table (`market`, `flags`, `builtins::color`/`constant`,

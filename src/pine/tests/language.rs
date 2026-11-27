@@ -4115,3 +4115,47 @@ fn after_a_holiday_a_stocks_week_begins_with_the_first_day_that_trades() {
     // The open of the 8th, the open of the 9th and noon of the 9th.
     assert_eq!(value(&session, "n"), RuntimeValue::Int(3));
 }
+
+#[test]
+fn a_local_named_like_an_import_alias_leaves_the_librarys_calls_alone() {
+    struct Lib;
+    impl compiler::LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Twice/1").then(|| {
+                "//@version=6\nlibrary(\"Twice\")\nexport twice(float y) =>\n    y * 2\n\
+                 export type P\n    float v = 1.0\n"
+                    .to_owned()
+            })
+        }
+    }
+    // `lib` is a local of two functions, so both are renamed.
+    let source = "//@version=6\nindicator(\"T\")\nimport user/Twice/1 as lib\n\
+                  f() =>\n    lib = 1.0\n    lib.twice(lib) + lib.P.new().v\n\
+                  g() =>\n    lib = 2.0\n    lib\n\
+                  r = f() + g()\n";
+    let program = compiler::compile(source, Limits::default(), &Lib);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(3)).expect("runs");
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(5.0));
+}
+
+#[test]
+fn a_parameter_named_like_a_type_leaves_its_constructor_alone() {
+    let session = run(
+        "type level\n    float p = 2.0\n\
+         f(level) =>\n    x = level.new()\n    x.p + level\n\
+         g(level) =>\n    level\n\
+         r = f(1.0) + g(2.0)",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(5.0));
+}

@@ -109,6 +109,39 @@ pub fn is_builtin_call(name: &str) -> bool {
     route_of(name).is_some() || is_by_value(name)
 }
 
+/// Whether the chain answers the call written as `name` in `program` without reading a variable: a
+/// builtin, a constructor of a type the program declares (`Zone.new`), or a function or constructor
+/// of a library it imports (`lib.f`, `lib.Zone.new`). Such a call keeps its written name where a
+/// local is called like its head; any other dotted call is a method of the variable at its head.
+pub(crate) fn is_declared_call(program: &CompiledProgram, name: &str) -> bool {
+    if is_builtin_call(name) || constructs(&program.statements, name) {
+        return true;
+    }
+    let Some((alias, member)) = name.split_once('.') else {
+        return false;
+    };
+    program
+        .imports
+        .iter()
+        .filter(|import| import.alias == alias)
+        .filter_map(|import| import.library.as_deref())
+        .any(|library| {
+            constructs(&library.statements, member)
+                || library.statements.iter().any(|statement| {
+                    matches!(statement, Statement::Function { name, .. } if name == member)
+                })
+        })
+}
+
+/// Whether `name` is `Type.new` for a type `statements` declare.
+fn constructs(statements: &[Statement], name: &str) -> bool {
+    name.strip_suffix(".new").is_some_and(|written| {
+        statements.iter().any(|statement| {
+            matches!(statement, Statement::TypeDeclaration { name, .. } if name == written)
+        })
+    })
+}
+
 /// The family that evaluates a call to `name`, as `Session::call`'s chain would reach it. `None` for
 /// what the chain handles by value or one-off: `request.*`, `log.*`, `ticker.*`, `str.split`, and
 /// anything unknown.

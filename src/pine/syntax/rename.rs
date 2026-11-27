@@ -70,12 +70,13 @@ pub struct Renames {
 }
 
 /// Plans the renames of the program `statements`. `is_builtin` says which free names are builtin
-/// variables (`low`, `time`), `is_builtin_call` which written call names are builtin functions
-/// (`log.info`): a call of one keeps its name, whatever a local called like its namespace is.
+/// variables (`low`, `time`), `keeps_name` which written call names are answered without reading a
+/// variable (`log.info`, `Zone.new`, `lib.f`): a call of one keeps its name, whatever a local
+/// called like its head is.
 pub fn plan(
     statements: &[Statement],
     is_builtin: &dyn Fn(&str) -> bool,
-    is_builtin_call: &dyn Fn(&str) -> bool,
+    keeps_name: &dyn Fn(&str) -> bool,
     program: Program,
 ) -> Renames {
     let bindings = scopes::resolve(statements);
@@ -149,7 +150,7 @@ pub fn plan(
     }
     if !renames.uses.is_empty() {
         traversal::for_each_call(statements, &mut |name, range| {
-            if is_builtin_call(name) {
+            if keeps_name(name) {
                 renames.uses.remove(&span(range));
             }
         });
@@ -231,8 +232,8 @@ impl Renames {
                     replace_head(name, new);
                 }
             }
-            // A plain name is a function, never a variable. A builtin's call was left out of the
-            // plan: it keeps its name, even where a variable is called like its namespace.
+            // A plain name is a function, never a variable. A call that reads no variable was left
+            // out of the plan: it keeps its name, even where a variable is called like its head.
             Expression::Call { name, range, .. } if name.contains('.') => {
                 if let Some(new) = self.read(span(*range)) {
                     replace_head(name, new);

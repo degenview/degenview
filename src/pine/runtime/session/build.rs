@@ -244,7 +244,7 @@ fn rename_locals(program: &mut CompiledProgram, kind: rename::Program, libraries
     rename::plan(
         &program.statements,
         &crate::pine::compiler::symbol_catalog::is_variable,
-        &crate::pine::runtime::call_binding::is_builtin_call,
+        &|name| crate::pine::runtime::call_binding::is_declared_call(program, name),
         kind,
     )
     .apply(&mut program.statements);
