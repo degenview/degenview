@@ -419,21 +419,15 @@ impl Session {
             RuntimeValue::Ref(RefKind::Array, id) => {
                 let items = self.working.arrays.get(&id).cloned().unwrap_or_default();
                 let mut indexed = items.into_iter().enumerate();
-                self.iterate(
-                    index_name,
-                    value_name,
-                    body,
-                    context,
-                    |_, stopped| {
-                        Ok(if stopped {
-                            None
-                        } else {
-                            indexed
-                                .next()
-                                .map(|(index, item)| (RuntimeValue::Int(index as i64), item))
-                        })
-                    },
-                )
+                self.iterate(index_name, value_name, body, context, |_, stopped| {
+                    Ok(if stopped {
+                        None
+                    } else {
+                        indexed
+                            .next()
+                            .map(|(index, item)| (RuntimeValue::Int(index as i64), item))
+                    })
+                })
             }
             RuntimeValue::Ref(RefKind::Map, id) => {
                 let Some(index_name) = index_name else {
