@@ -179,14 +179,6 @@ fn a_refresh_that_reaches_further_back_than_what_is_held_is_the_series() {
     assert!(!merged.restarted);
 }
 
-/// One of a provider's servers can be behind the others: its answer is an older view.
-#[test]
-fn an_answer_that_ends_before_the_newest_candle_held_changes_nothing() {
-    let merged = refresh(&bars(0..10), bars(0..8));
-    assert_eq!(times(&merged.candles), (0..10).collect::<Vec<_>>());
-    assert!(!merged.restarted);
-}
-
 #[test]
 fn a_refresh_with_nothing_changes_nothing() {
     let merged = refresh(&bars(0..10), Vec::new());

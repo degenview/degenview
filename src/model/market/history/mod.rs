@@ -134,8 +134,7 @@ pub struct Refreshed {
 /// one for each that opens would be another history on every new bar, and scripts would start over
 /// on it. They stay only if the series has the candle the fetch begins with. Without it what lies
 /// between is unknown (the computer slept, or a feed added a candle after an outage), so the series
-/// starts again with the fetch. A fetch of nothing says nothing, and neither does one that ends
-/// before the newest candle held: it is an older view, from a server behind the others. A line chart is the window it was
+/// starts again with the fetch. A fetch of nothing says nothing. A line chart is the window it was
 /// asked for, with points that fall where the request put them: each answer replaces it.
 pub fn refreshed(source: DataSource, held: &[Kline], mut fresh: Vec<Kline>) -> Refreshed {
     let kept = |candles| Refreshed {
@@ -148,13 +147,6 @@ pub fn refreshed(source: DataSource, held: &[Kline], mut fresh: Vec<Kline>) -> R
     let Some(first) = fresh.first().map(|candle| candle.open_time) else {
         return kept(held.to_vec());
     };
-    if held
-        .last()
-        .zip(fresh.last())
-        .is_some_and(|(newest, answered)| answered.open_time < newest.open_time)
-    {
-        return kept(held.to_vec());
-    }
     let older = held.partition_point(|candle| candle.open_time < first);
     if older == 0 {
         return kept(fresh);

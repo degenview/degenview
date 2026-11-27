@@ -222,12 +222,16 @@ impl ExecutionController {
         let old_last = self.bars.last().cloned().expect("non-empty snapshot");
         let new_last = bars.last().cloned().expect("non-empty snapshot");
         if old_last.open_time == new_last.open_time {
-            let phase = if self.has_settled(&new_last, now_ms) {
-                BarPhase::RealtimeClose { is_new: false }
-            } else {
-                BarPhase::RealtimeTick { is_new: false }
-            };
-            ran |= self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
+            // A correction to a finished bar alone is nothing happening to the newest one: the
+            // script has no tick to run.
+            if new_last != old_last || live_bar_has_closed {
+                let phase = if self.has_settled(&new_last, now_ms) {
+                    BarPhase::RealtimeClose { is_new: false }
+                } else {
+                    BarPhase::RealtimeTick { is_new: false }
+                };
+                ran |= self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
+            }
         } else {
             if self.live_open_time == Some(old_last.open_time) {
                 let closed = bars
@@ -312,9 +316,11 @@ impl ExecutionController {
         self.result(alerts, error, true)
     }
 
-    /// Whether a closed bar is still within the time its feed takes to be done with it.
+    /// Whether a closed bar is still within the time its feed takes to be done with it. A bar that
+    /// has not closed is not one: a price-based chart's bars built from the forming candle close at
+    /// no set time, and can be taken back.
     fn may_still_change(&self, bar: &Kline, now_ms: i64) -> bool {
-        self.settle_delay_ms.is_some() && !self.has_settled(bar, now_ms)
+        bar.close_time <= now_ms && self.settle_delay_ms.is_some() && !self.has_settled(bar, now_ms)
     }
 
     /// Whether the newest bar, with nothing newer to go by, is finished.
@@ -503,8 +509,9 @@ mod tests {
     /// different bar is a different history.
     #[test]
     fn a_late_correction_to_a_bar_not_yet_settled_is_not_new_history() {
-        let mut controller = controller("//@version=6\nindicator(\"T\")\nalert(\"bar\")")
-            .with_settle_delay(Some(120_000));
+        let mut controller =
+            controller("//@version=6\nindicator(\"T\")\nalert(\"bar\", alert.freq_all)")
+                .with_settle_delay(Some(120_000));
         let mut bars = history(3);
         controller.update(&bars, None, 150_000);
         // The next bar arrives, and with it other values for the two before the last.
@@ -513,13 +520,30 @@ mod tests {
         bars[2].low -= 0.5;
         let update = controller.update(&bars, None, 185_000);
         assert!(!update.rebuilt);
-        assert_eq!(update.alerts.len(), 1);
-        // A correction between two bars is no replay either.
+        // One for the bar that closed, one for the one that opened.
+        assert_eq!(update.alerts.len(), 2);
+        // A correction between two bars is no replay either, and no tick of the forming one.
         bars[2].low -= 0.5;
-        assert!(!controller.update(&bars, None, 190_000).rebuilt);
+        let update = controller.update(&bars, None, 190_000);
+        assert!(!update.rebuilt);
+        assert!(update.alerts.is_empty());
         // The first bar closed over two minutes ago: that one is history.
         bars[0].low -= 0.5;
         assert!(controller.update(&bars, None, 200_000).rebuilt);
+    }
+
+    /// A price-based chart's bars built from the forming candle close at no set time, and one can
+    /// be taken back: that is another series, not a late correction.
+    #[test]
+    fn a_retracted_constructed_bar_is_replayed() {
+        let mut controller = controller("//@version=6\nindicator(\"T\")\nplot(close)");
+        let mut bars = history(4);
+        for forming in &mut bars[2..] {
+            forming.close_time = crate::model::chart::synthetic::UNCONFIRMED_CLOSE_TIME;
+        }
+        controller.update(&bars, None, 200_000);
+        bars[2].close = 5.0;
+        assert!(controller.update(&bars, None, 210_000).rebuilt);
     }
 
     const AFTER: i64 = 1_000_000_000;
