@@ -246,7 +246,7 @@ fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, 
 }
 
 /// What a failed request says. A futures market asked for by name and refused is one the exchange
-/// does not list; a refused spot batch is left to be halved.
+/// never listed; a refused spot batch is left to be halved.
 pub fn binance_refusal(
     market: Market,
     requests: &[QuoteRequest],
@@ -749,9 +749,11 @@ const DOLLAR_QUOTES: [&str; 8] = [
 ];
 
 /// The tickers of a `/ticker/24hr` answer: a list, or the one object of a market asked for alone.
+/// A futures market asked for alone that no longer trades is answered with an empty object.
 fn binance_tickers(answer: &Value) -> Option<&[Value]> {
     match answer {
         Value::Array(tickers) => Some(tickers),
+        Value::Object(ticker) if ticker.is_empty() => Some(&[]),
         Value::Object(ticker) if ticker.contains_key("symbol") => {
             Some(std::slice::from_ref(answer))
         }

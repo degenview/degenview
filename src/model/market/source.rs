@@ -235,11 +235,12 @@ pub fn kraken_asset(asset: &str) -> String {
 /// quote stands before a shorter one inside it (`BTCFDUSD` is BTC/FDUSD, not BTCFD/USD). One that
 /// is missing here makes the app ask for another market (`BTCMXN` as `BTCMXNUSDT`), so the quotes
 /// of halted markets stay: their history is still served.
-const BINANCE_QUOTES: [&str; 50] = [
-    "USDSOLD", "BKRW", "IDRT", "BVND", "BIDR", "PAX", "UST", "VAI", "AUD", "RUB", "NGN", "UAH",
-    "RON", "CZK", "TRX", "DOGE", "DOT", "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS",
-    "BUSD", "TUSD", "USDP", "EURI", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP",
-    "ZAR", "IDR", "THB", "KZT", "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
+/// `BIDR` is left out: `ARBIDR` and `BNBIDR` trade as ARB/IDR and BNB/IDR.
+const BINANCE_QUOTES: [&str; 49] = [
+    "USDSOLD", "BKRW", "IDRT", "BVND", "PAX", "UST", "VAI", "AUD", "RUB", "NGN", "UAH", "RON",
+    "CZK", "TRX", "DOGE", "DOT", "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS", "BUSD",
+    "TUSD", "USDP", "EURI", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP", "ZAR",
+    "IDR", "THB", "KZT", "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
 ];
 
 /// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
@@ -258,8 +259,8 @@ const ONE_LETTER_BASE_QUOTES: [&str; 27] = [
 
 /// Assets whose names end like a quote, so that only a list tells them from a pair: `PENGU` is
 /// not PENG/U, `SUSD` not S/USD. Those Binance and Bybit have listed, and the other dollar tokens
-/// of one letter before `USD`.
-const ASSETS_READING_AS_PAIRS: [&str; 43] = [
+/// of one letter before `USD`. A name that is also a market (`RENBTC`, REN/BTC) stays a pair.
+const ASSETS_READING_AS_PAIRS: [&str; 42] = [
     "1MBABYDOGE",
     "ACU",
     "AEUR",
@@ -291,7 +292,6 @@ const ASSETS_READING_AS_PAIRS: [&str; 43] = [
     "PUMPBTC",
     "PYUSD",
     "RAYSOL",
-    "RENBTC",
     "RWUSD",
     "SKUU",
     "STETH",

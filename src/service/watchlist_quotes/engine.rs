@@ -1131,6 +1131,25 @@ mod tests {
     }
 
     #[test]
+    fn a_delisted_perpetual_asked_by_name_is_unknown_and_does_not_back_its_market_off() {
+        use crate::service::watchlist_quotes::provider::binance_outcome;
+        let (engine, book, _) = setup();
+        let gone = id(DataSource::Binance, "OMGUSDT.P");
+        lock(&engine).update(1, vec![gone.clone()], true, T0);
+        let planned = lock(&engine).plan(T0).remove(0);
+        let requests: Vec<QuoteRequest> = planned
+            .requests
+            .iter()
+            .map(|(_, request)| request.clone())
+            .collect();
+        // What the futures API answers, with HTTP 200, for a contract that has settled.
+        let outcome = binance_outcome(Market::Perpetual, "{}", &requests).expect("answered");
+        lock(&engine).apply(&planned, &outcome, T0);
+        assert_eq!(book.get(&gone).unwrap().freshness, Freshness::Unavailable);
+        assert_eq!(lock(&engine).provider_health()[0].last_error, None);
+    }
+
+    #[test]
     fn a_perpetual_refused_by_name_is_unknown_and_does_not_back_its_market_off() {
         use crate::service::watchlist_quotes::provider::binance_refusal;
         let (engine, book, _) = setup();

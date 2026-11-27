@@ -125,7 +125,7 @@ watchlists.
   facts (checked 2026-11-27): klines have no `1s`; kline sockets answer only under
   `fstream.binance.com/market/` (other paths connect and stay silent); the 24h ticker takes one
   `symbol` or none (`symbols` is ignored), so one watched perpetual is asked by name (HTTP 400
-  when unknown) and more as the whole list; `exchangeInfo` takes no filter. The futures list keeps
+  for a name never listed, HTTP 200 with `{}` for a contract that no longer trades) and more as the whole list; `exchangeInfo` takes no filter. The futures list keeps
   `PERPETUAL` and `TRADIFI_PERPETUAL` contracts whose name the app reads back unchanged. Each
   market has its own catalog; one failing keeps the other's hits. A perpetual is never offered as
   a portfolio asset. Pine's `syminfo.type` is `crypto` for both (TradingView not checked).
