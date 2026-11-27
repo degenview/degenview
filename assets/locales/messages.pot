@@ -1348,6 +1348,10 @@ msgstr ""
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr ""
 
+#: src/ui/settings/api_keys.rs
+msgid "An access token works only in the environment it was generated in."
+msgstr ""
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid ""
 "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from "
@@ -5948,6 +5952,10 @@ msgstr ""
 
 #: src/ui/mcp/activity.rs
 msgid "Entry id: {id}"
+msgstr ""
+
+#: src/ui/settings/api_keys.rs
+msgid "Environment"
 msgstr ""
 
 #: src/ui/settings/window.rs
@@ -21264,6 +21272,16 @@ msgstr ""
 #: src/model/mcp/activity.rs
 msgctxt "MCP call"
 msgid "Done"
+msgstr ""
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Live"
+msgstr ""
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Practice"
 msgstr ""
 
 #: src/model/chart/object_tree.rs

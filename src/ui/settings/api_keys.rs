@@ -6,6 +6,7 @@
 
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::oanda::OandaEnvironment;
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, CredentialPair,
@@ -137,16 +138,17 @@ impl<C: CredentialFormCopy> CredentialForm<C> {
     fn start_test(
         &mut self,
         repaint: Option<&egui::Context>,
-        test: impl FnOnce(String, String) -> Result<(), ProviderError> + Send + 'static,
-    ) {
+        test: impl FnOnce(C) -> Result<(), ProviderError> + Send + 'static,
+    ) where
+        C: Send + 'static,
+    {
         if self.is_testing() {
             return;
         }
         self.status = None;
-        let (first, second) = self.credentials.fields();
-        let (first, second) = (first.to_owned(), second.to_owned());
+        let credentials = self.credentials.clone();
         self.test = Some(work_queue::start_for(C::SOURCE, repaint, move || {
-            test(first, second)
+            test(credentials)
         }));
     }
 
@@ -347,8 +349,8 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 } else if kit::sheet_button(ui, tr!("Test Connection"), false, form.can_save())
                     .clicked()
                 {
-                    form.start_test(Some(ui.ctx()), |key_id, secret| {
-                        crate::service::alpaca_test_connection(&key_id, &secret)
+                    form.start_test(Some(ui.ctx()), |keys| {
+                        crate::service::alpaca_test_connection(&keys.key_id, &keys.secret_key)
                     });
                 }
                 if form.is_saved && destructive_button(ui, tr!("Remove Keys")).clicked() {
@@ -399,12 +401,31 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
     section(ui, tr!("API credentials"), None, |ui| {
         card(ui, |ui| {
             ui.vertical(|ui| {
+                kit::field_title(ui, tr!("Environment"));
+                let chosen = form.credentials.environment;
+                kit::segmented(
+                    ui,
+                    egui::Id::new("oanda-environment"),
+                    &OandaEnvironment::ALL.map(|environment| (environment, environment.label())),
+                    &mut form.credentials.environment,
+                );
+                if form.credentials.environment != chosen {
+                    form.autosave.touch();
+                }
+                kit::field_hint(
+                    ui,
+                    tr!("An access token works only in the environment it was generated in."),
+                );
+                ui.add_space(12.0);
                 let account_id = field(
                     ui,
                     "oanda-account-id",
                     tr!("Account ID"),
                     None,
-                    "001-…",
+                    match form.credentials.environment {
+                        OandaEnvironment::Live => "001-…",
+                        OandaEnvironment::Practice => "101-…",
+                    },
                     &mut form.credentials.account_id,
                     false,
                 );
@@ -428,8 +449,8 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
                 } else if kit::sheet_button(ui, tr!("Test Connection"), false, form.can_save())
                     .clicked()
                 {
-                    form.start_test(Some(ui.ctx()), |account_id, token| {
-                        crate::service::oanda_test_connection(&account_id, &token)
+                    form.start_test(Some(ui.ctx()), |login| {
+                        crate::service::oanda_test_connection(&login)
                     });
                 }
                 if form.is_saved && destructive_button(ui, tr!("Remove Credentials")).clicked() {
@@ -619,6 +640,7 @@ mod tests {
         form.credentials.account_id = " 001-001 ".into();
         assert!(!form.can_save(), "the token is missing too");
         form.credentials.access_token = "tok".into();
+        form.credentials.environment = OandaEnvironment::Practice;
         assert!(form.can_save());
         form.save(&store);
         assert_eq!(form.status, Some(StatusMessage::saved_securely()));
@@ -628,6 +650,7 @@ mod tests {
         let mut reloaded = OandaForm::default();
         reloaded.load(&store);
         assert!(reloaded.is_saved);
+        assert_eq!(reloaded.credentials.environment, OandaEnvironment::Practice);
         assert_eq!(
             (
                 reloaded.credentials.account_id.as_str(),

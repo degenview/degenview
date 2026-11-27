@@ -8,6 +8,7 @@
 //! the Keychain: keys live in memory for the session.
 
 use crate::lock::lock;
+use crate::model::market::oanda::OandaEnvironment;
 use crate::service::keychain::webhook_secrets::{Scope, is_disabled, platform};
 use crate::service::webhook::delivery::SecretStoreError;
 use serde::{Deserialize, Serialize};
@@ -144,13 +145,16 @@ impl AlpacaCredentialsStore {
 
 // MARK: Oanda
 
-/// The Oanda account id and personal access token, as one item.
+/// The Oanda account id, personal access token and the environment they belong to, as one item.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OandaCredentials {
     #[serde(rename = "accountId")]
     pub account_id: String,
     #[serde(rename = "accessToken")]
     pub access_token: String,
+    /// Items saved before the choice existed were all sent to the live API.
+    #[serde(default)]
+    pub environment: OandaEnvironment,
 }
 
 impl CredentialPair for OandaCredentials {
@@ -162,6 +166,7 @@ impl CredentialPair for OandaCredentials {
         Self {
             account_id: self.account_id.trim().to_owned(),
             access_token: self.access_token.trim().to_owned(),
+            environment: self.environment,
         }
     }
 }
@@ -379,6 +384,8 @@ pub const ALPACA_KEY_ID_ENV: &str = "DEGENVIEW_ALPACA_KEY_ID";
 pub const ALPACA_SECRET_KEY_ENV: &str = "DEGENVIEW_ALPACA_SECRET_KEY";
 pub const OANDA_ACCOUNT_ID_ENV: &str = "DEGENVIEW_OANDA_ACCOUNT_ID";
 pub const OANDA_ACCESS_TOKEN_ENV: &str = "DEGENVIEW_OANDA_ACCESS_TOKEN";
+/// `live` (the default) or `practice`.
+pub const OANDA_ENVIRONMENT_ENV: &str = "DEGENVIEW_OANDA_ENVIRONMENT";
 pub const CMC_API_KEY_ENV: &str = "DEGENVIEW_CMC_API_KEY";
 
 fn non_empty(value: Option<String>) -> Option<String> {
@@ -424,25 +431,28 @@ pub fn oanda_configured() -> bool {
     OandaCredentialsStore::shared().is_configured()
 }
 
-/// The Oanda account id and access token to send: what the user saved in Settings, else the
-/// environment.
+/// The Oanda login to send: what the user saved in Settings, else the environment.
 pub fn oanda_credentials_with(
     store: &OandaCredentialsStore,
     env: &dyn Fn(&str) -> Option<String>,
-) -> Option<(String, String)> {
+) -> Option<OandaCredentials> {
     if store.is_configured() {
         let saved = store.credentials();
         if saved.is_configured() {
-            return Some((saved.account_id, saved.access_token));
+            return Some(saved);
         }
     }
-    Some((
-        non_empty(env(OANDA_ACCOUNT_ID_ENV))?,
-        non_empty(env(OANDA_ACCESS_TOKEN_ENV))?,
-    ))
+    Some(OandaCredentials {
+        account_id: non_empty(env(OANDA_ACCOUNT_ID_ENV))?,
+        access_token: non_empty(env(OANDA_ACCESS_TOKEN_ENV))?,
+        environment: match non_empty(env(OANDA_ENVIRONMENT_ENV)) {
+            Some(name) => OandaEnvironment::parse(&name)?,
+            None => OandaEnvironment::default(),
+        },
+    })
 }
 
-pub fn oanda_credentials() -> Option<(String, String)> {
+pub fn oanda_credentials() -> Option<OandaCredentials> {
     oanda_credentials_with(OandaCredentialsStore::shared(), &|name| {
         std::env::var(name).ok()
     })
@@ -623,6 +633,7 @@ mod tests {
         OandaCredentials {
             account_id: id.into(),
             access_token: token.into(),
+            environment: OandaEnvironment::Live,
         }
     }
 
@@ -644,7 +655,7 @@ mod tests {
         assert!(store.is_configured());
         assert_eq!(
             memory.read(OANDA_SHARED, OANDA_ACCOUNT).as_deref(),
-            Some(r#"{"accountId":"001-001","accessToken":"tok"}"#)
+            Some(r#"{"accountId":"001-001","accessToken":"tok","environment":"live"}"#)
         );
         store.save(&oanda_credentials("001-001", "")).unwrap();
         assert!(
@@ -664,19 +675,58 @@ mod tests {
         };
         assert_eq!(
             oanda_credentials_with(&store, &env),
-            Some(("env-account".to_owned(), "env-token".to_owned())),
-            "nothing saved: the environment"
+            Some(oanda_credentials("env-account", "env-token")),
+            "nothing saved: the environment, live unless it says otherwise"
         );
         store
             .save(&oanda_credentials("saved-account", "saved-token"))
             .unwrap();
         assert_eq!(
             oanda_credentials_with(&store, &env),
-            Some(("saved-account".to_owned(), "saved-token".to_owned()))
+            Some(oanda_credentials("saved-account", "saved-token"))
         );
         assert_eq!(oanda_credentials_with(&oanda().0, &|_| None), None);
         let half = |name: &str| (name == OANDA_ACCOUNT_ID_ENV).then(|| "only-id".to_owned());
         assert_eq!(oanda_credentials_with(&oanda().0, &half), None);
+        let named = |value: &'static str| {
+            move |name: &str| match name {
+                OANDA_ENVIRONMENT_ENV => Some(value.to_owned()),
+                _ => env(name),
+            }
+        };
+        assert_eq!(
+            oanda_credentials_with(&oanda().0, &named("practice")).map(|login| login.environment),
+            Some(OandaEnvironment::Practice)
+        );
+        assert_eq!(
+            oanda_credentials_with(&oanda().0, &named("demo")),
+            None,
+            "a misspelt environment is not sent to the live host"
+        );
+    }
+
+    #[test]
+    fn oanda_keeps_its_environment_and_reads_older_items_as_live() {
+        let (store, memory) = oanda();
+        memory
+            .write(
+                OANDA_SHARED,
+                OANDA_ACCOUNT,
+                r#"{"accountId":"001-001","accessToken":"tok"}"#,
+            )
+            .unwrap();
+        assert_eq!(store.credentials(), oanda_credentials("001-001", "tok"));
+
+        let practice = OandaCredentials {
+            environment: OandaEnvironment::Practice,
+            ..oanda_credentials("101-001", "tok")
+        };
+        store.save(&practice).unwrap();
+        let stored = memory.read(OANDA_SHARED, OANDA_ACCOUNT).unwrap();
+        assert_eq!(
+            serde_json::from_str::<OandaCredentials>(&stored).unwrap(),
+            practice
+        );
     }
 
     #[test]

@@ -401,7 +401,7 @@ fn oanda(
     day_ago: &Arc<Mutex<HashMap<String, DayAgoReference>>>,
     refreshing: &Arc<AtomicBool>,
 ) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
+    let Some(login) = crate::service::keychain::api_keys::oanda_credentials() else {
         return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
     };
     let symbols = requests
@@ -409,12 +409,18 @@ fn oanda(
         .map(|request| request.symbol.to_uppercase())
         .collect::<Vec<_>>()
         .join(",");
-    let url = format!(
-        "{}/accounts/{account_id}/pricing?instruments={symbols}",
-        crate::service::market::oanda::BASE_URL
+    let request = crate::service::market::oanda::api_request(
+        &login,
+        &format!(
+            "/accounts/{}/pricing?instruments={symbols}",
+            login.account_id
+        ),
     );
-    let auth = format!("Bearer {token}");
-    let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())])?;
+    let body = get(
+        DataSource::Oanda,
+        &request.url,
+        &[("Authorization", request.authorization.as_str())],
+    )?;
     let mut quotes = parse_oanda_pricing(&body, requests)?;
     let now = crate::clock::now_ms();
     let stale = {

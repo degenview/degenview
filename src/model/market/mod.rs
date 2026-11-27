@@ -9,6 +9,7 @@ pub(in crate::model) mod kline;
 pub mod line;
 pub mod live;
 pub mod natives;
+pub mod oanda;
 pub(in crate::model) mod pm_series;
 pub mod samples;
 pub mod session;

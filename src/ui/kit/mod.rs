@@ -50,7 +50,10 @@ pub use button::{
 };
 pub use card::{CARD_RADIUS, card_frame, divider, paint_card_badge, paint_well, panel_divider};
 pub use confirm::{Alert, Confirm, ConfirmOutcome, Notice, alert, confirm, notice, notice_with};
-pub use field::{FIELD_HEIGHT, field, field_frame, input_frame, plain_field, search_field};
+pub use field::{
+    FIELD_HEIGHT, field, field_frame, field_hint, field_title, input_frame, plain_field,
+    search_field,
+};
 pub use form::{
     Segment, StepDirection, color_well, paint_switch, segmented, segmented_filling, segments,
     segments_width, stepper, stepper_arrows, switch,

@@ -1,6 +1,7 @@
 //! Oanda's v3 API: OHLCV candles of any instrument of the account, and the account's instrument
 //! list for search. Both need a login — a personal access token and the account id (Settings ▸
-//! Oanda) — sent as a bearer token; the candles endpoint itself takes only the token.
+//! Oanda) — sent as a bearer token; the candles endpoint itself takes only the token. The login
+//! also names its environment, live or practice, which decides the host (`api_request`).
 //!
 //! Oanda aligns its hourly, daily and weekly bars to 5pm New York by default, which puts an H12
 //! bar across two UTC days. Every request here instead asks for UTC alignment
@@ -13,14 +14,14 @@ use super::candles::plan;
 use super::catalog::Catalog;
 use super::paging::Paging;
 use super::search_rank::normalize;
+use crate::model::market::oanda::OandaEnvironment;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
+use crate::service::keychain::api_keys::{CredentialPair, OandaCredentials};
+use crate::service::net::http::{self, Retry};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
-
-/// Oanda's live trading API, the one the standalone `oandaohlc` downloader uses.
-pub(in crate::service) const BASE_URL: &str = "https://api-fxtrade.oanda.com/v3";
 
 pub struct Oanda;
 
@@ -37,14 +38,42 @@ const PAGING: Paging = Paging {
     pause: Duration::ZERO,
 };
 
-fn credentials() -> Result<(String, String), ProviderError> {
+fn credentials() -> Result<OandaCredentials, ProviderError> {
     crate::service::keychain::api_keys::oanda_credentials()
         .ok_or(ProviderError::MissingKey(DataSource::Oanda))
 }
 
-/// The `Authorization` header value for a token.
-fn bearer(token: &str) -> String {
-    format!("Bearer {}", token.trim())
+/// The v3 API of an environment.
+fn base_url(environment: OandaEnvironment) -> &'static str {
+    match environment {
+        OandaEnvironment::Live => "https://api-fxtrade.oanda.com/v3",
+        OandaEnvironment::Practice => "https://api-fxpractice.oanda.com/v3",
+    }
+}
+
+/// A v3 request of a login: the URL on its environment's host and the `Authorization` header
+/// that signs it in. The two are only ever built together, since a token is refused anywhere
+/// but on its own environment's host.
+pub(in crate::service) struct ApiRequest {
+    pub url: String,
+    pub authorization: String,
+}
+
+pub(in crate::service) fn api_request(login: &OandaCredentials, path: &str) -> ApiRequest {
+    ApiRequest {
+        url: format!("{}{path}", base_url(login.environment)),
+        authorization: format!("Bearer {}", login.access_token),
+    }
+}
+
+fn get(login: &OandaCredentials, path: &str, retry: Retry) -> Result<String, ProviderError> {
+    let request = api_request(login, path);
+    http::get_text(
+        &request.url,
+        &[("Authorization", request.authorization.as_str())],
+        retry,
+    )
+    .map_err(ProviderError::Oanda)
 }
 
 /// The `granularity` value Oanda takes for a native length: `S5`, `M1`, `H4`, `D`, `W`, `M`.
@@ -60,19 +89,16 @@ fn granularity(bar: Timeframe) -> String {
     }
 }
 
+/// The account's instrument list, which is what search needs.
+fn instruments_path(account_id: &str) -> String {
+    format!("/accounts/{account_id}/instruments")
+}
+
 /// Settings ▸ Oanda ▸ Test Connection: the account's instrument list, asked for with the given
-/// credentials (the ones typed in the fields, saved or not), which is what Oanda charts need them
-/// for.
-pub fn test_connection(account_id: &str, access_token: &str) -> Result<(), ProviderError> {
-    let url = format!("{BASE_URL}/accounts/{}/instruments", account_id.trim());
-    let auth = bearer(access_token);
-    crate::service::net::http::get_text(
-        &url,
-        &[("Authorization", auth.as_str())],
-        crate::service::net::http::Retry::Never,
-    )
-    .map(|_| ())
-    .map_err(ProviderError::Oanda)
+/// login (the one typed on the page, saved or not), which is what Oanda charts need it for.
+pub fn test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
+    let login = login.trimmed();
+    get(&login, &instruments_path(&login.account_id), Retry::Never).map(|_| ())
 }
 
 impl MarketSource for Oanda {
@@ -118,10 +144,8 @@ impl MarketSource for Oanda {
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
-        let (account_id, token) = credentials()?;
-        let instruments = CATALOG.get_for(account_id.trim(), || {
-            download_instruments(&account_id, &token)
-        })?;
+        let login = credentials()?;
+        let instruments = CATALOG.get_for(&login.account_id, || download_instruments(&login))?;
         // `EUR/USD` and `eur_usd` find `EUR_USD`: Oanda writes an underscore.
         let needle = normalize(query);
         if needle.is_empty() {
@@ -134,16 +158,16 @@ impl MarketSource for Oanda {
 
 /// Mid prices aligned to the UTC grid. An end cursor asks for a count of
 /// candles leading up to that time, including when the market was closed.
-fn candles_url(instrument: &str, bar: Timeframe, to_ms: Option<i64>, count: usize) -> String {
-    let mut url = format!(
-        "{BASE_URL}/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count={}",
+fn candles_path(instrument: &str, bar: Timeframe, to_ms: Option<i64>, count: usize) -> String {
+    let mut path = format!(
+        "/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count={}",
         granularity(bar),
         count.clamp(1, MAX_PER_REQUEST),
     );
     if let Some(to) = to_ms {
-        url.push_str(&format!("&to={}", crate::format::iso8601(to)));
+        path.push_str(&format!("&to={}", crate::format::iso8601(to)));
     }
-    url
+    path
 }
 
 /// Convert the provider's end cursor into the pager's exclusive cursor. Asking
@@ -161,21 +185,18 @@ fn candle_page(
     Ok(candles)
 }
 
-/// One candles request, with the saved credentials.
+/// One candles request, with the saved login.
 fn candles_request(
     instrument: &str,
     bar: Timeframe,
     to_ms: Option<i64>,
     count: usize,
 ) -> Result<String, ProviderError> {
-    let (_, token) = credentials()?;
-    let auth = bearer(&token);
-    crate::service::net::http::get_text(
-        &candles_url(instrument, bar, to_ms, count),
-        &[("Authorization", auth.as_str())],
-        crate::service::net::http::Retry::Transient,
+    get(
+        &credentials()?,
+        &candles_path(instrument, bar, to_ms, count),
+        Retry::Transient,
     )
-    .map_err(ProviderError::Oanda)
 }
 
 /// `{"candles": [{"time": ISO, "volume": n, "complete": bool, "mid": {"o","h","l","c"}}]}`, oldest
@@ -231,15 +252,12 @@ pub(in crate::service) fn clear_catalog() {
     CATALOG.clear_memory();
 }
 
-fn download_instruments(account_id: &str, token: &str) -> Result<Vec<Instrument>, ProviderError> {
-    let url = format!("{BASE_URL}/accounts/{account_id}/instruments");
-    let auth = bearer(token);
-    let body = crate::service::net::http::get_text(
-        &url,
-        &[("Authorization", auth.as_str())],
-        crate::service::net::http::Retry::Transient,
-    )
-    .map_err(ProviderError::Oanda)?;
+fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, ProviderError> {
+    let body = get(
+        login,
+        &instruments_path(&login.account_id),
+        Retry::Transient,
+    )?;
     parse_instruments(&body)
 }
 
@@ -330,21 +348,44 @@ mod tests {
     }
 
     #[test]
+    fn a_login_is_only_sent_to_the_host_of_its_own_environment() {
+        for (environment, host) in [
+            (
+                OandaEnvironment::Live,
+                "https://api-fxtrade.oanda.com/v3/accounts/101-001/instruments",
+            ),
+            (
+                OandaEnvironment::Practice,
+                "https://api-fxpractice.oanda.com/v3/accounts/101-001/instruments",
+            ),
+        ] {
+            let login = OandaCredentials {
+                account_id: "101-001".into(),
+                access_token: "tok".into(),
+                environment,
+            };
+            let request = api_request(&login, &instruments_path(&login.account_id));
+            assert_eq!(request.url, host);
+            assert_eq!(request.authorization, "Bearer tok");
+        }
+    }
+
+    #[test]
     fn a_candles_request_asks_for_mid_prices_of_the_granularity_on_the_utc_grid() {
         let to = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
         assert_eq!(
-            candles_url("EUR_USD", Timeframe::HOUR_4, None, 500),
-            "https://api-fxtrade.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=H4&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=500"
+            candles_path("EUR_USD", Timeframe::HOUR_4, None, 500),
+            "/instruments/EUR_USD/candles?price=M&granularity=H4&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=500"
         );
         assert_eq!(
-            candles_url("XAU_USD", Timeframe::DAY_1, Some(to), 5_000),
+            candles_path("XAU_USD", Timeframe::DAY_1, Some(to), 5_000),
             format!(
-                "https://api-fxtrade.oanda.com/v3/instruments/XAU_USD/candles?price=M&granularity=D&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=5000&to={}",
+                "/instruments/XAU_USD/candles?price=M&granularity=D&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=5000&to={}",
                 crate::format::iso8601(to)
             )
         );
         // The count is capped at what one request holds.
-        assert!(candles_url("EUR_USD", Timeframe::MINUTE_1, None, 9_999).ends_with("count=5000"));
+        assert!(candles_path("EUR_USD", Timeframe::MINUTE_1, None, 9_999).ends_with("count=5000"));
     }
 
     #[test]

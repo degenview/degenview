@@ -1275,6 +1275,10 @@ msgstr "EMA 加上距离为若干倍 ATR 的通道带。"
 msgid "An HTTP proxy that allows CONNECT, as most do."
 msgstr "支持 CONNECT 的 HTTP 代理，大多数都支持。"
 
+#: src/ui/settings/api_keys.rs
+msgid "An access token works only in the environment it was generated in."
+msgstr "访问令牌只能在生成它的环境中使用。"
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from anywhere else is refused as if the token were wrong."
 msgstr "一个地址或一个地址段，例如 192.168.1.20 或 10.0.0.0/8。来自其他地址的请求会被拒绝，就像令牌错误一样。"
@@ -5571,6 +5575,10 @@ msgstr "入场价"
 #: src/ui/mcp/activity.rs
 msgid "Entry id: {id}"
 msgstr "条目 ID：{id}"
+
+#: src/ui/settings/api_keys.rs
+msgid "Environment"
+msgstr "环境"
 
 #: src/ui/settings/window.rs
 msgid "Ephemeral"
@@ -19859,6 +19867,16 @@ msgstr "已取消"
 msgctxt "MCP call"
 msgid "Done"
 msgstr "完成"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Live"
+msgstr "实盘"
+
+#: src/model/market/oanda.rs
+msgctxt "Oanda environment"
+msgid "Practice"
+msgstr "模拟"
 
 #: src/model/chart/object_tree.rs
 msgctxt "a numbered drawing, such as Trend Line 3"
