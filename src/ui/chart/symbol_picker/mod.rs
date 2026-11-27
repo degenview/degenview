@@ -992,7 +992,7 @@ impl SymbolPicker {
         };
         let add = || {
             action(
-                tr!("Add as new chart"),
+                tr!("Add to this tab"),
                 Icon::Plus,
                 list::ADD_KEY,
                 PickKind::Add,

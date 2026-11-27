@@ -1,5 +1,6 @@
 //! The row of scope tabs and the pull-down at its right.
 
+use super::search::venue_group;
 use super::*;
 use crate::ui::kit::outline;
 
@@ -243,23 +244,35 @@ impl SymbolPicker {
 
         // The chosen row keeps a check at its edge, which the width `fitted_menu_rows` gives a row
         // does not include: an empty hint adds the little room that keeps its label whole.
+        let headings = menu.headings();
         let rows: Vec<(&str, Option<&str>)> = menu
             .entries
             .iter()
             .map(|(_, label)| (label.as_str(), Some("")))
+            .chain(headings.iter().flatten().map(|heading| (*heading, None)))
             .collect();
+        // The categories make the list tall: it scrolls where the window has no room for it.
+        let room = (ui.ctx().content_rect().bottom() - rect.bottom() - 24.0).max(120.0);
         let mut chosen = None;
         kit::fitted_menu_rows(ui, &response, egui::RectAlign::BOTTOM_END, &rows, |ui| {
             kit::menu_scope(ui, 0.0);
-            for (filter, label) in &menu.entries {
-                let mut row = kit::MenuRow::new(label);
-                row.reserve_icon = false;
-                row.current = *filter == menu.current;
-                if kit::menu_row(ui, row).clicked() {
-                    chosen = Some(*filter);
-                    ui.close();
-                }
-            }
+            egui::ScrollArea::vertical()
+                .max_height(room)
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    for ((filter, label), heading) in menu.entries.iter().zip(&headings) {
+                        if let Some(heading) = heading {
+                            kit::menu_heading(ui, heading);
+                        }
+                        let mut row = kit::MenuRow::new(label);
+                        row.reserve_icon = false;
+                        row.current = *filter == menu.current;
+                        if kit::menu_row(ui, row).clicked() {
+                            chosen = Some(*filter);
+                            ui.close();
+                        }
+                    }
+                });
         });
         chosen
     }
@@ -282,6 +295,35 @@ pub(super) struct FilterMenu {
     pub(super) tip: &'static str,
     pub(super) entries: Vec<(Filter, String)>,
     pub(super) current: Filter,
+}
+
+impl FilterMenu {
+    /// For each entry, the category heading above it: where the venues' category changes, and
+    /// only when there is more than one to tell apart.
+    pub(super) fn headings(&self) -> Vec<Option<&'static str>> {
+        let groups: Vec<Option<&'static str>> = self
+            .entries
+            .iter()
+            .map(|(filter, _)| match filter {
+                Filter::Venue(venue) => venue.map(venue_group),
+                Filter::Portfolio(_) => None,
+            })
+            .collect();
+        let mut named = groups.iter().flatten();
+        let first = named.next();
+        if named.all(|group| Some(group) == first) {
+            return vec![None; groups.len()];
+        }
+        let mut previous = None;
+        groups
+            .into_iter()
+            .map(|group| {
+                let heading = group.filter(|group| previous != Some(*group));
+                previous = group.or(previous);
+                heading
+            })
+            .collect()
+    }
 }
 
 /// The room the pull-down takes when it is reduced to its icon and chevron.

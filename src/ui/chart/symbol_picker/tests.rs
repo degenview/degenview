@@ -798,7 +798,7 @@ fn right_clicking_a_row_offers_replace_and_add_as_new_chart() {
 fn a_chart_that_takes_overlays_adds_compare_to_the_row_menu() {
     let mut rig = Rig::new(1100.0, "btc");
     rig.can_overlay = true;
-    // Replace, Compare with ETHUSDT, Add as new chart.
+    // Replace, Compare with ETHUSDT, Add to this tab.
     let output = pick_from_the_row_menu(&mut rig, 18.0 + 24.0);
     assert!(
         matches!(&output, Some(Output::Overlay(result)) if result.symbol == "BTCUSDC"),
@@ -1671,7 +1671,7 @@ fn gallery_of_the_symbol_picker() {
 
     // The other tabs and modes, in both appearances.
     type Setup = fn(&mut Rig);
-    let scenes: [(&str, f32, Setup); 16] = [
+    let scenes: [(&str, f32, Setup); 17] = [
         ("symbol-picker-predictions", 1100.0, |rig| {
             rig.picker.set_scope(Scope::Predictions);
             rig.type_text("fed");
@@ -1728,6 +1728,13 @@ fn gallery_of_the_symbol_picker() {
             rig.settle();
             // The pull-down at the right of the tabs.
             let button = rig.at_text("Polymarket");
+            rig.frame(vec![egui::Event::PointerMoved(button)]);
+            rig.frame(click_at(button));
+            rig.settle();
+        }),
+        ("symbol-picker-venue-groups", 1100.0, |rig| {
+            rig.type_text("btc");
+            let button = rig.at_text("All venues");
             rig.frame(vec![egui::Event::PointerMoved(button)]);
             rig.frame(click_at(button));
             rig.settle();
@@ -1848,4 +1855,24 @@ fn the_button_adds_nothing_a_watchlist_already_holds() {
     rig.frame(vec![egui::Event::PointerMoved(button)]);
     assert!(rig.frame(click_at(button)).is_none());
     assert!(rig.picker.is_open());
+}
+
+#[test]
+fn the_venue_menu_names_its_categories_only_when_there_are_several() {
+    let mut rig = Rig::new(1100.0, "btc");
+    let headings = |picker: &SymbolPicker| {
+        let menu = picker.filter_menu().expect("a venue menu");
+        menu.headings().into_iter().flatten().collect::<Vec<_>>()
+    };
+    assert_eq!(
+        headings(&rig.picker),
+        ["Crypto exchanges", "DEX & aggregators", "Stocks & forex"]
+    );
+    rig.picker.set_scope(Scope::Predictions);
+    assert!(headings(&rig.picker).is_empty());
+    rig.picker.set_scope(Scope::Crypto);
+    assert_eq!(
+        headings(&rig.picker),
+        ["Crypto exchanges", "DEX & aggregators"]
+    );
 }

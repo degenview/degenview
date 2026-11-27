@@ -96,13 +96,11 @@ impl SettingsPage {
                 } else {
                     tr!("Stocks need an Alpaca key")
                 },
-                tr!("Add your free Alpaca API keys in Settings to search and chart US stocks."),
+                tr!("Add your free Alpaca API keys to search and chart US stocks."),
             ),
             Self::Oanda => (
                 tr!("Set up Oanda to search forex"),
-                tr!(
-                    "Add your Oanda credentials in Settings to search and chart forex, metals and index CFDs."
-                ),
+                tr!("Add your Oanda credentials to search forex, metals and index CFDs."),
             ),
         };
         Notice::missing_key(title, detail.to_owned(), self)

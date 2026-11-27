@@ -733,12 +733,6 @@ msgstr ""
 msgid "Add as New Chart"
 msgstr ""
 
-#: src/ui/chart/symbol_picker/footer.rs
-#: src/ui/chart/symbol_picker/list.rs
-#: src/ui/chart/symbol_picker/mod.rs
-msgid "Add as new chart"
-msgstr ""
-
 #: src/ui/trade/venue_pill.rs
 msgid "Add broker…"
 msgstr ""
@@ -872,6 +866,12 @@ msgstr ""
 msgid "Add to the URL as ?token="
 msgstr ""
 
+#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/list.rs
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Add to this tab"
+msgstr ""
+
 #: src/ui/chart/card/header.rs
 #: src/ui/chart/symbol_picker/list.rs
 #: src/ui/chart/symbol_picker/mod.rs
@@ -906,18 +906,16 @@ msgstr ""
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr ""
 
-#: src/ui/chart/symbol_picker/notice.rs
-msgid ""
-"Add your Oanda credentials in Settings to search and chart forex, metals and "
-"index CFDs."
-msgstr ""
-
 #: src/service/watchlist_quotes/provider.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/notice.rs
-msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
+msgid "Add your Oanda credentials to search forex, metals and index CFDs."
+msgstr ""
+
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your free Alpaca API keys to search and chart US stocks."
 msgstr ""
 
 #: src/pine_studio/ai/host.rs
@@ -4524,6 +4522,10 @@ msgstr ""
 msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr ""
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Crypto exchanges"
+msgstr ""
+
 #: src/ui/alert/editor.rs
 #: src/ui/paper/account_sheet.rs
 msgid "Currency"
@@ -4630,6 +4632,10 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/search.rs
 msgid "DEX"
+msgstr ""
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "DEX & aggregators"
 msgstr ""
 
 #: src/ui/chart/object_tree/mod.rs
@@ -15001,6 +15007,10 @@ msgstr ""
 #: src/ui/chart/symbol_picker/search.rs
 #: src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
+msgstr ""
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Stocks & forex"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/notice.rs

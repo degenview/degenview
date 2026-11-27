@@ -16,7 +16,7 @@ impl SymbolPicker {
             && env.replacing.is_some()
             && !matches!(self.highlighted, Some(Item::Event(_)))
         {
-            hints.push(Hint::new(&["⇧", "↵"], tr!("Add as new chart")));
+            hints.push(Hint::new(&["⇧", "↵"], tr!("Add to this tab")));
         }
         if self.mode == PickMode::Chart && env.can_overlay && market.is_some_and(Self::comparable) {
             hints.push(Hint::new(&["⌥", "↵"], tr!("Compare")));
@@ -88,7 +88,7 @@ impl SymbolPicker {
             WIDE_HINT_GAP,
             &[
                 tr!("Compare"),
-                tr!("Add as new chart"),
+                tr!("Add to this tab"),
                 tr!("Switch tab"),
                 tr!("Navigate"),
             ],

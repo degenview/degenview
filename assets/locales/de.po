@@ -688,10 +688,6 @@ msgstr "Weitere Kopie hinzufügen"
 msgid "Add as New Chart"
 msgstr "Als neuen Chart hinzufügen"
 
-#: src/ui/chart/symbol_picker/list.rs src/ui/chart/symbol_picker/mod.rs
-msgid "Add as new chart"
-msgstr "Als neuen Chart hinzufügen"
-
 #: src/ui/trade/venue_pill.rs
 msgid "Add broker…"
 msgstr "Broker hinzufügen …"
@@ -818,6 +814,12 @@ msgstr "Zu Favoriten hinzufügen"
 msgid "Add to the URL as ?token="
 msgstr "Als ?token= an die URL anhängen"
 
+#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/list.rs
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Add to this tab"
+msgstr "Zu diesem Tab hinzufügen"
+
 #: src/ui/chart/card/header.rs src/ui/chart/symbol_picker/list.rs
 msgid "Add to watchlist"
 msgstr "Zur Watchlist hinzufügen"
@@ -850,19 +852,17 @@ msgstr "Hinterlege deine Alpaca-API-Schlüssel in den Einstellungen."
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Hinterlege zum Teilen deinen ImgBB-API-Schlüssel unter Einstellungen ▸ Snapshots."
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid ""
-"Add your Oanda credentials in Settings to search and chart forex, metals and "
-"index CFDs."
-msgstr "Trage deine Oanda-Zugangsdaten in den Einstellungen ein, um Devisen, Metalle und Index-CFDs zu suchen und im Chart anzuzeigen."
-
 #: src/service/watchlist_quotes/provider.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr "Trage deine Oanda-Zugangsdaten in den Einstellungen ein, um Oanda-Kurse zu sehen"
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid "Add your free Alpaca API keys in Settings to search and chart US stocks."
-msgstr "Trage deine kostenlosen Alpaca-API-Schlüssel in den Einstellungen ein, um US-Aktien zu suchen und als Chart anzuzeigen."
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your Oanda credentials to search forex, metals and index CFDs."
+msgstr "Trage deine Oanda-Zugangsdaten ein, um Devisen, Metalle und Index-CFDs zu suchen."
+
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your free Alpaca API keys to search and chart US stocks."
+msgstr "Trage deine kostenlosen Alpaca-API-Schlüssel ein, um US-Aktien zu suchen und als Chart anzuzeigen."
 
 #: src/pine_studio/ai/host.rs
 msgid "Add your {provider} API key to start"
@@ -4262,6 +4262,10 @@ msgstr "Krypto"
 msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr "Krypto und Aktien, die du zu einer Watchlist hinzufügst, erscheinen hier."
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Crypto exchanges"
+msgstr "Kryptobörsen"
+
 #: src/ui/alert/editor.rs src/ui/paper/account_sheet.rs
 msgid "Currency"
 msgstr "Währung"
@@ -4364,6 +4368,10 @@ msgstr "D"
 #: src/ui/chart/symbol_picker/search.rs
 msgid "DEX"
 msgstr "DEX"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "DEX & aggregators"
+msgstr "DEX & Aggregatoren"
 
 #: src/ui/chart/object_tree/mod.rs
 msgid "DRAWINGS"
@@ -14098,6 +14106,10 @@ msgstr "Aktienkerzen kommen von Alpaca. Hinterlege deine Schlüssel in den Einst
 #: src/ui/chart/symbol_picker/search.rs src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
 msgstr "Aktien"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Stocks & forex"
+msgstr "Aktien & Devisen"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Stocks could not be searched"

@@ -48,7 +48,7 @@ impl RowState {
         if self.watchlist {
             tr!("Add to watchlist")
         } else {
-            tr!("Add as new chart")
+            tr!("Add to this tab")
         }
     }
 
@@ -96,7 +96,7 @@ pub fn name(result: &SearchResult) -> &str {
 }
 
 /// What the row's right-click menu offers: `Replace <chart's market>` while a chart is focused, and
-/// always `Add as new chart`. The shortcuts are the keys that do the same.
+/// always `Add to this tab`. The shortcuts are the keys that do the same.
 pub const REPLACE_KEY: &str = "↵";
 pub const ADD_KEY: &str = "⇧↵";
 pub const COMPARE_KEY: &str = "⌥↵";

@@ -172,6 +172,23 @@ pub fn market_kind(source: DataSource) -> &'static str {
     }
 }
 
+/// The category a venue is listed under in the venue pull-down.
+pub fn venue_group(source: DataSource) -> &'static str {
+    match source {
+        DataSource::Binance
+        | DataSource::Coinbase
+        | DataSource::Okx
+        | DataSource::Kraken
+        | DataSource::Bybit
+        | DataSource::Gate
+        | DataSource::Mexc => tr!("Crypto exchanges"),
+        DataSource::DexScreener | DataSource::CoinGecko => tr!("DEX & aggregators"),
+        DataSource::Alpaca | DataSource::Oanda => tr!("Stocks & forex"),
+        DataSource::Polymarket | DataSource::Kalshi => tr!("Predictions"),
+        DataSource::CoinMarketCap => tr!("Index"),
+    }
+}
+
 /// How a market trades, for the "also trades as" column.
 pub fn trading_kind(source: DataSource) -> &'static str {
     match source {

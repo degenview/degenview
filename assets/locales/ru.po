@@ -769,10 +769,6 @@ msgstr "Добавить ещё одну копию"
 msgid "Add as New Chart"
 msgstr "Добавить как новый график"
 
-#: src/ui/chart/symbol_picker/list.rs src/ui/chart/symbol_picker/mod.rs
-msgid "Add as new chart"
-msgstr "Добавить как новый график"
-
 #: src/ui/trade/venue_pill.rs
 msgid "Add broker…"
 msgstr "Добавить брокера…"
@@ -903,6 +899,12 @@ msgstr "Добавить в избранное"
 msgid "Add to the URL as ?token="
 msgstr "Добавить в URL как ?token="
 
+#: src/ui/chart/symbol_picker/footer.rs
+#: src/ui/chart/symbol_picker/list.rs
+#: src/ui/chart/symbol_picker/mod.rs
+msgid "Add to this tab"
+msgstr "Добавить в эту вкладку"
+
 #: src/ui/chart/card/header.rs src/ui/chart/symbol_picker/list.rs
 msgid "Add to watchlist"
 msgstr "Добавить в избранное"
@@ -935,22 +937,17 @@ msgstr "Укажите ваши API-ключи Alpaca в Настройках."
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Укажите ваш API-ключ ImgBB в Настройки ▸ Снимки, чтобы делиться ими."
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid ""
-"Add your Oanda credentials in Settings to search and chart forex, metals and "
-"index CFDs."
-msgstr "Укажите учётные данные Oanda в Настройках, чтобы искать и открывать графики форекса, металлов и индексных CFD."
-
 #: src/service/watchlist_quotes/provider.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr "Укажите учётные данные Oanda в Настройках, чтобы видеть котировки Oanda"
 
-#: src/ui/chart/symbol_picker/mod.rs
-msgid ""
-"Add your free Alpaca API keys in Settings to search and chart US stocks."
-msgstr ""
-"Укажите бесплатные API-ключи Alpaca в Настройках, чтобы искать и открывать "
-"графики акций США."
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your Oanda credentials to search forex, metals and index CFDs."
+msgstr "Укажите учётные данные Oanda, чтобы искать форекс, металлы и индексные CFD."
+
+#: src/ui/chart/symbol_picker/notice.rs
+msgid "Add your free Alpaca API keys to search and chart US stocks."
+msgstr "Укажите бесплатные API-ключи Alpaca, чтобы искать и открывать графики акций США."
 
 #: src/pine_studio/ai/host.rs
 msgid "Add your {provider} API key to start"
@@ -4573,6 +4570,10 @@ msgid "Crypto and stocks you add to a watchlist show up here."
 msgstr ""
 "Криптовалюты и акции, добавленные в список наблюдения, отображаются здесь."
 
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Crypto exchanges"
+msgstr "Криптобиржи"
+
 #: src/ui/alert/editor.rs src/ui/paper/account_sheet.rs
 msgid "Currency"
 msgstr "Валюта"
@@ -4676,6 +4677,10 @@ msgstr "D"
 #: src/ui/chart/symbol_picker/search.rs
 msgid "DEX"
 msgstr "DEX"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "DEX & aggregators"
+msgstr "DEX и агрегаторы"
 
 #: src/ui/chart/object_tree/mod.rs
 msgid "DRAWINGS"
@@ -15093,6 +15098,10 @@ msgstr ""
 #: src/ui/chart/symbol_picker/search.rs src/ui/portfolio/asset_picker.rs
 msgid "Stocks"
 msgstr "Акции"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Stocks & forex"
+msgstr "Акции и форекс"
 
 #: src/ui/chart/symbol_picker/mod.rs
 msgid "Stocks could not be searched"

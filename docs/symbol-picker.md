@@ -29,7 +29,7 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   watchlist click on the focused chart replaces the same way; Tab Linking's follow does not, as it is
   not this tab's own edit. **⇧Return or the row's plus adds** a chart instead. **Right-clicking a row** opens
   a menu with `Replace <the chart's market>` (only in Chart mode with a chart focused) and
-  `Add as new chart`, with the keys that do the same (`list.rs`, `context_menu`); the row becomes the
+  `Add to this tab`, with the keys that do the same (`list.rs`, `context_menu`); the row becomes the
   highlighted one. With no market chart focused, or in Add mode, Return adds one. The footer names
   what Return will do ("Replace ETHUSDT", "Add chart", "Add card", "Add to Favorites").
 - **Compare** ([chart overlays](chart-overlays.md)): **⌥Return**, the compare button left of a highlighted
@@ -58,7 +58,8 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
     then the row's name; an event's title for a prediction market).
 - **Tabs** All, Stocks, Crypto, Predictions, Dashboards, Watchlists (Tab cycles the tabs of the mode)
   and a filter pull-down at their right: the exchange ("All venues"), the prediction provider, or on
-  Dashboards the portfolio ("All Portfolios"). All is crypto and stocks together; prediction markets
+  Dashboards the portfolio ("All Portfolios"). With venues of several categories the venue list is headed
+  "Crypto exchanges", "DEX & aggregators" and "Stocks & forex" (`search::venue_group`). All is crypto and stocks together; prediction markets
   and indices never appear in All or Watchlists. Futures, forex, commodities and ETF tabs are not
   offered because no provider here lists them.
   - **Watchlists** lists the markets of the user's watchlists, one captioned group per list in the
