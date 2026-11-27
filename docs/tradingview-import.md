@@ -137,6 +137,9 @@ most of its drawings were made on.
   deletes what an older one added.
 - **Choices** survive Reload and Choose Folder. Choose Folder shows only where the app has file
   panels (`platform::has_file_dialogs`: not Windows).
+- **No chart with a market** (a dated future, say) while drawings have one: the first chart opens on
+  the market most of the drawings are on, keeping its place, interval and indicators, and the preview
+  says so.
 - **Indicators**: Volume, one EMA at a length the app offers, and Bollinger are native; others map to bundled Pine ones or to the
   user's own script, with default settings.
 - **Nothing is replaced.** A taken name gets a number.

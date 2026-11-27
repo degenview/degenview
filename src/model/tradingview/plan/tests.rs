@@ -221,6 +221,42 @@ fn drawings_on_a_market_no_chart_opens_on_are_said_to_be_there() {
 }
 
 #[test]
+fn a_layout_whose_charts_have_no_market_keeps_the_drawings_that_do() {
+    let mut library = parse::library(fixtures::documents());
+    for chart in &mut library.layouts[0].charts {
+        chart.symbol = symbol("COINBASE:BTCUSD27X2026");
+    }
+    let selection = Selection::all(&library);
+    let plan_with = |mappings: &Mappings| {
+        plan(
+            &library,
+            &selection,
+            mappings,
+            &Default::default(),
+            &Taken::default(),
+            &Default::default(),
+        )
+        .layouts
+        .remove(0)
+    };
+
+    let layout = plan_with(&mapped());
+    assert_eq!(layout.charts.len(), 1, "one chart stands in, not each");
+    assert_eq!(layout.charts[0].symbol, "BTCUSDT");
+    assert!(layout.drawings > 0);
+    assert!(layout.left_out.contains(&LeftOut::StandIn {
+        symbol: symbol("COINBASE:BTCUSD27X2026"),
+        source: DataSource::Binance,
+        market: "BTCUSDT".into(),
+    }));
+
+    // With no market for any drawing either, there is nothing to open.
+    let layout = plan_with(&Mappings::default());
+    assert!(layout.charts.is_empty());
+    assert!(layout.left_out.contains(&LeftOut::NoChart));
+}
+
+#[test]
 fn a_watchlist_with_no_market_is_not_imported() {
     let plan = built(&Mappings::default());
     let list = &plan.watchlists[0];

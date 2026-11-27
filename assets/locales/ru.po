@@ -16848,6 +16848,10 @@ msgstr "Весь график, находящийся в фокусе"
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr "Алерт {symbol} удалён. История его срабатываний сохранена."
 
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), where most of the drawings are"
+msgstr "График {symbol}: для символа нет рынка, поэтому он открывается на {market} ({exchange}), где находится большинство рисунков"
+
 #: src/pine_studio/menu_bar/mod.rs src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr "Тема"

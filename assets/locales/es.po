@@ -15679,6 +15679,10 @@ msgstr "Todo el gráfico que tiene el foco"
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr "La alerta de {symbol} se ha eliminado. Se conserva su historial de disparos."
 
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), where most of the drawings are"
+msgstr "El gráfico de {symbol}: su símbolo no tiene mercado, así que se abre en {market} ({exchange}), donde están la mayoría de los dibujos"
+
 #: src/pine_studio/menu_bar/mod.rs src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr "Tema"

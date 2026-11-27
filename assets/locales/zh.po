@@ -15631,6 +15631,10 @@ msgstr "当前聚焦的整个图表"
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr "{symbol} 提醒已移除，触发历史仍会保留。"
 
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), where most of the drawings are"
+msgstr "{symbol} 图表：其代码没有对应市场，因此改为打开 {market}（{exchange}），大部分绘图在此市场"
+
 #: src/pine_studio/menu_bar/mod.rs src/ui/settings/appearance.rs
 msgid "Theme"
 msgstr "主题"

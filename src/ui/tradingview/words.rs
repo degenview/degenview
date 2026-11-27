@@ -91,6 +91,17 @@ pub fn left_out(entry: &LeftOut) -> String {
             "The {symbol} chart: its symbol has no market",
             symbol = symbol.as_str()
         ),
+        LeftOut::StandIn {
+            symbol,
+            source,
+            market,
+        } => tr!(
+            "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), \
+             where most of the drawings are",
+            symbol = symbol.as_str(),
+            market = market.as_str(),
+            exchange = source.display_name()
+        ),
         LeftOut::Comparison(symbol) => tr!(
             "The comparison with {symbol}: it has no market",
             symbol = symbol.as_str()

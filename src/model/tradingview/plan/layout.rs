@@ -3,7 +3,7 @@
 //! DegenView by chart and market: a market's drawings go to the first chart that shows it, and
 //! those of a market no chart shows to the first chart, where switching to that market finds them.
 
-use super::{LeftOut, Mappings, Placements, PlannedLayout};
+use super::{LeftOut, Mappings, Market, Placements, PlannedLayout};
 use crate::model::chart::kind::ChartType;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
@@ -99,10 +99,25 @@ pub(super) fn plan(
     if hidden > 0 {
         left_out.push(LeftOut::HiddenCharts(hidden));
     }
+    let mut stand_in = stand_in(found, mappings);
     for (place, source) in found.charts.iter().enumerate().filter(|(_, c)| c.shown) {
-        let Some(market) = mappings.market(&source.symbol) else {
-            left_out.push(LeftOut::Chart(source.symbol.clone()));
-            continue;
+        // The symbol the chart is built on: its own, or the one standing in for it.
+        let (symbol, market) = match mappings.market(&source.symbol) {
+            Some(market) => (&source.symbol, market),
+            None => match stand_in.take() {
+                Some((symbol, market)) => {
+                    left_out.push(LeftOut::StandIn {
+                        symbol: source.symbol.clone(),
+                        source: market.source,
+                        market: market.symbol.clone(),
+                    });
+                    (symbol, market)
+                }
+                None => {
+                    left_out.push(LeftOut::Chart(source.symbol.clone()));
+                    continue;
+                }
+            },
         };
         match interval::timeframe(&source.interval) {
             Some(timeframe) if !timeframes.contains(&timeframe) => timeframes.push(timeframe),
@@ -151,7 +166,7 @@ pub(super) fn plan(
         places.insert(place, id);
         building.push(Building {
             chart,
-            symbol: source.symbol.clone(),
+            symbol: symbol.clone(),
             drawings: BTreeMap::new(),
             next_drawing: 1,
         });
@@ -215,6 +230,27 @@ pub(super) fn plan(
         drawings,
         left_out,
     }
+}
+
+/// For a layout none of whose charts has a market: the symbol most of its drawings are on, among
+/// those that have one, so that the first chart can open there instead of the drawings being lost
+/// with the layout. `None` while any shown chart has a market.
+fn stand_in<'a>(found: &'a Layout, mappings: &'a Mappings) -> Option<(&'a TvSymbol, &'a Market)> {
+    if found
+        .shown_charts()
+        .any(|chart| mappings.market(&chart.symbol).is_some())
+    {
+        return None;
+    }
+    let mut drawn: BTreeMap<&TvSymbol, usize> = BTreeMap::new();
+    for drawing in &found.drawings {
+        *drawn.entry(&drawing.symbol).or_default() += 1;
+    }
+    drawn
+        .into_iter()
+        .filter_map(|(symbol, count)| Some((count, symbol, mappings.market(symbol)?)))
+        .max_by_key(|(count, ..)| *count)
+        .map(|(_, symbol, market)| (symbol, market))
 }
 
 fn indicators(

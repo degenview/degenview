@@ -190,6 +190,13 @@ pub enum LeftOut {
     NoChart,
     /// A chart whose market has no match.
     Chart(TvSymbol),
+    /// The same, in a layout where no chart has one: the chart opens on the market most of the
+    /// layout's drawings are on.
+    StandIn {
+        symbol: TvSymbol,
+        source: DataSource,
+        market: String,
+    },
     /// A compared market with no match.
     Comparison(TvSymbol),
     /// Drawings on a market with no match.
@@ -252,7 +259,8 @@ impl LeftOut {
     /// Whether the thing still comes over, only not as it was, rather than not at all.
     pub fn is_change(&self) -> bool {
         match self {
-            Self::CutText(_)
+            Self::StandIn { .. }
+            | Self::CutText(_)
             | Self::IndicatorSettings(_)
             | Self::ChartStyle(_)
             | Self::Interval(_)

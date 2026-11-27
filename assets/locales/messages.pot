@@ -16877,6 +16877,12 @@ msgstr ""
 msgid "The {symbol} chart: its symbol has no market"
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid ""
+"The {symbol} chart: its symbol has no market, so it opens on {market} "
+"({exchange}), where most of the drawings are"
+msgstr ""
+
 #: src/pine_studio/menu_bar/mod.rs
 #: src/ui/settings/appearance.rs
 msgid "Theme"
