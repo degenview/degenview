@@ -22,6 +22,8 @@ use std::time::{Duration, Instant};
 pub const TTL: Duration = Duration::from_secs(24 * 3_600);
 /// How long to leave a provider alone after a failed (or empty) download.
 const FAILURE_BACKOFF: Duration = Duration::from_secs(300);
+/// How old a list must be before it is downloaded again for lacking a market asked for.
+const RECHECK_AFTER: Duration = Duration::from_secs(300);
 /// The owner of a list that is the same for everybody.
 const EVERYONE: &str = "all";
 
@@ -30,6 +32,8 @@ struct Loaded<T> {
     items: Arc<Vec<T>>,
     /// The list is used as it is until then.
     fresh_until: Instant,
+    /// A market it lacks is not looked for in a new one before then.
+    recheck_after: Instant,
 }
 
 pub struct Catalog<T> {
@@ -54,6 +58,38 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
         self.get_for(EVERYONE, download)
+    }
+
+    /// The public list for a market `listed` accepts. A list without one may be older than the
+    /// market, so it is downloaded again, though not within `RECHECK_AFTER` of the last time:
+    /// a market that does not exist must not cost a download at every retry.
+    pub fn get_listing(
+        &self,
+        listed: impl Fn(&T) -> bool,
+        download: impl Fn() -> Result<Vec<T>, ProviderError>,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
+        self.get_listing_from(lookup::shared(), listed, download)
+    }
+
+    fn get_listing_from(
+        &self,
+        cache: &LookupCache,
+        listed: impl Fn(&T) -> bool,
+        download: impl Fn() -> Result<Vec<T>, ProviderError>,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
+        let items = self.get_from(cache, EVERYONE, &download)?;
+        if items.iter().any(&listed) {
+            return Ok(items);
+        }
+        let _refreshing = self
+            .refresh
+            .lock()
+            .map_err(|_| ProviderError::other("catalog unavailable"))?;
+        match self.held(EVERYONE) {
+            // Too new to ask again, or another caller has just done so.
+            Some((held, _, recheck_after)) if Instant::now() < recheck_after => Ok(held),
+            _ => self.refresh_from(cache, EVERYONE, Some(items), download),
+        }
     }
 
     /// `owner`'s list, from memory, the lookup cache or — only when neither is fresh —
@@ -84,22 +120,39 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             return Ok(items);
         }
         let stale = match self.held(owner) {
-            Some((items, _)) => Some(items),
+            Some((items, ..)) => Some(items),
             None => match cache.get::<Vec<T>>(self.namespace, owner, TTL) {
                 Some(hit) if hit.fresh => {
                     let items = Arc::new(hit.value);
-                    self.keep(owner, &items, TTL.saturating_sub(hit.age));
+                    self.keep(
+                        owner,
+                        &items,
+                        TTL.saturating_sub(hit.age),
+                        RECHECK_AFTER.saturating_sub(hit.age),
+                    );
                     return Ok(items);
                 }
                 Some(hit) => Some(Arc::new(hit.value)),
                 None => None,
             },
         };
+        self.refresh_from(cache, owner, stale, download)
+    }
+
+    /// Downloads `owner`'s list and keeps it, or `stale` when that fails. The caller holds
+    /// `refresh`.
+    fn refresh_from(
+        &self,
+        cache: &LookupCache,
+        owner: &str,
+        stale: Option<Arc<Vec<T>>>,
+        download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
+    ) -> Result<Arc<Vec<T>>, ProviderError> {
         match download() {
             Ok(items) if !items.is_empty() => {
                 cache.put(self.namespace, owner, &items);
                 let items = Arc::new(items);
-                self.keep(owner, &items, TTL);
+                self.keep(owner, &items, TTL, RECHECK_AFTER);
                 Ok(items)
             }
             // An empty list is a provider hiccup, not an answer worth a day.
@@ -119,29 +172,35 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         error: ProviderError,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
         let items = stale.ok_or(error)?;
-        self.keep(owner, &items, FAILURE_BACKOFF);
+        self.keep(owner, &items, FAILURE_BACKOFF, FAILURE_BACKOFF);
         Ok(items)
     }
 
-    /// `owner`'s list if memory holds it, and until when it is used as it is.
-    fn held(&self, owner: &str) -> Option<(Arc<Vec<T>>, Instant)> {
+    /// `owner`'s list if memory holds it, until when it is used as it is, and from when it may
+    /// be rechecked.
+    fn held(&self, owner: &str) -> Option<(Arc<Vec<T>>, Instant, Instant)> {
         let memory = self.memory.lock().ok()?;
         let loaded = memory.as_ref().filter(|loaded| loaded.owner == owner)?;
-        Some((Arc::clone(&loaded.items), loaded.fresh_until))
+        Some((
+            Arc::clone(&loaded.items),
+            loaded.fresh_until,
+            loaded.recheck_after,
+        ))
     }
 
     fn fresh(&self, owner: &str) -> Option<Arc<Vec<T>>> {
         self.held(owner)
-            .filter(|(_, fresh_until)| Instant::now() < *fresh_until)
-            .map(|(items, _)| items)
+            .filter(|(_, fresh_until, _)| Instant::now() < *fresh_until)
+            .map(|(items, ..)| items)
     }
 
-    fn keep(&self, owner: &str, items: &Arc<Vec<T>>, fresh_for: Duration) {
+    fn keep(&self, owner: &str, items: &Arc<Vec<T>>, fresh_for: Duration, recheck_in: Duration) {
         if let Ok(mut memory) = self.memory.lock() {
             *memory = Some(Loaded {
                 owner: owner.to_owned(),
                 items: Arc::clone(items),
                 fresh_until: Instant::now() + fresh_for,
+                recheck_after: Instant::now() + recheck_in,
             });
         }
     }
@@ -343,6 +402,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(fixture.downloads(), 1);
+    }
+
+    #[test]
+    fn a_market_the_list_lacks_is_looked_for_again_but_not_at_every_ask() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        let new = |pair: &Pair| pair.0 == "NEW";
+        let look = |names: &[&str]| {
+            catalog
+                .get_listing_from(&cache, new, || {
+                    fixture.downloads.fetch_add(1, Ordering::SeqCst);
+                    Ok(pairs(names))
+                })
+                .expect("a list")
+        };
+        // Just downloaded: what it lacks does not exist yet.
+        for _ in 0..3 {
+            assert_eq!(*look(&["OLD"]), pairs(&["OLD"]));
+        }
+        assert_eq!(fixture.downloads(), 1);
+
+        // Old enough to have missed a listing.
+        catalog
+            .memory
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .recheck_after = Instant::now();
+        assert_eq!(*look(&["OLD", "NEW"]), pairs(&["OLD", "NEW"]));
+        assert_eq!(fixture.downloads(), 2);
+        // Found: held as any list is.
+        look(&["NOT ASKED"]);
+        assert_eq!(fixture.downloads(), 2);
     }
 
     /// The lists `owner` is answered with, asking the provider for `names` if it has to.
