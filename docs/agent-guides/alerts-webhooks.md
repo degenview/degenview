@@ -11,6 +11,9 @@
   fields out of `sync::record::project`'s alert projection.
 - Unseen count comes from `alerts.lastSeenAt`, never an event flag (snapshot replacement rewrites
   events). `ui::alert::banner` shows over every workspace.
+- Whether a script alert's script compiles is runtime knowledge, never stored:
+  `PineSubscriptionHost` keeps the diagnostic with the run (`compile_error`), and the Scripts tab
+  shows "Script doesn't compile" with it. A build that accepts the script again needs no re-arm.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
   save/webhook actions back as `WorkspaceAction`s; only Alerts-window edits host the sheet there.
 - An open sheet holds `alert_editor::quote_owner` demand and gets the current quote each frame,

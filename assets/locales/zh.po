@@ -8032,6 +8032,10 @@ msgstr "第 {line} 行：总价值与价格 × 数量不符。"
 msgid "Line {line}: unknown portfolio."
 msgstr "第 {line} 行：未知的投资组合。"
 
+#: src/ui/alert/script_list.rs
+msgid "Line {line}: {message}"
+msgstr "第 {line} 行：{message}"
+
 #: src/pine_studio/debug/mod.rs
 msgid "Line {line}: {reason}"
 msgstr "第 {line} 行：{reason}"
@@ -12913,6 +12917,10 @@ msgstr "脚本已更改，需重新激活"
 #: src/ui/alert/script_list.rs
 msgid "Script deleted"
 msgstr "脚本已删除"
+
+#: src/ui/alert/script_list.rs
+msgid "Script doesn't compile"
+msgstr "脚本无法编译"
 
 #: src/pine_studio/sheets.rs
 msgid "Script name"

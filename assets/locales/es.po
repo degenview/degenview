@@ -8068,6 +8068,10 @@ msgstr "Línea {line}: el valor total difiere de precio × cantidad."
 msgid "Line {line}: unknown portfolio."
 msgstr "Línea {line}: cartera desconocida."
 
+#: src/ui/alert/script_list.rs
+msgid "Line {line}: {message}"
+msgstr "Línea {line}: {message}"
+
 #: src/pine_studio/debug/mod.rs
 msgid "Line {line}: {reason}"
 msgstr "Línea {line}: {reason}"
@@ -12960,6 +12964,10 @@ msgstr "Script modificado — rearmar"
 #: src/ui/alert/script_list.rs
 msgid "Script deleted"
 msgstr "Script eliminado"
+
+#: src/ui/alert/script_list.rs
+msgid "Script doesn't compile"
+msgstr "El script no compila"
 
 #: src/pine_studio/sheets.rs
 msgid "Script name"
