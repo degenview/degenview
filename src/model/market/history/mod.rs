@@ -10,8 +10,11 @@ use std::time::{Duration, Instant};
 
 /// Candles asked for at once.
 pub const PAGE: usize = 1_000;
-/// The most candles a chart keeps; paging stops there rather than growing without bound.
+/// The most candles a chart keeps.
 pub const MAX_CANDLES: usize = 100_000;
+/// What a full series is cut back to, and where paging stops: a page asked for past it would be cut
+/// again by the next refresh.
+pub const FULL_CANDLES: usize = MAX_CANDLES - PAGE;
 /// How many candles a chart with a script on it pages back to by itself, without the user scrolling
 /// there: the 5,000 bars TradingView's Basic plan runs a script over (a Basic account's 5m chart
 /// of OKX BTC-USDC held 6,063, 21 days). A script keeps state across
@@ -46,7 +49,7 @@ impl OlderHistory {
             && near_oldest
             && !self.exhausted
             && !self.in_flight
-            && held < MAX_CANDLES
+            && held < FULL_CANDLES
             && self.retry_at.is_none_or(|at| now >= at)
     }
 
@@ -163,7 +166,7 @@ pub fn refreshed(source: DataSource, held: &[Kline], mut fresh: Vec<Kline>) -> R
     // Cutting the front makes it another history, so a full series makes room for a page of new
     // candles at once rather than for each.
     if candles.len() > MAX_CANDLES {
-        candles.drain(..candles.len() - (MAX_CANDLES - PAGE));
+        candles.drain(..candles.len() - FULL_CANDLES);
     }
     kept(candles)
 }

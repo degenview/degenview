@@ -96,7 +96,12 @@ fn a_dropped_request_can_be_made_again_at_once() {
 #[test]
 fn paging_stops_at_the_most_a_chart_keeps() {
     let history = OlderHistory::default();
-    assert!(!history.should_request(true, true, MAX_CANDLES, Instant::now()));
+    let now = Instant::now();
+    assert!(history.should_request(true, true, FULL_CANDLES - 1, now));
+    assert!(
+        !history.should_request(true, true, FULL_CANDLES, now),
+        "what a trim leaves is not paged back again"
+    );
 }
 
 #[test]
@@ -185,7 +190,7 @@ fn a_refresh_with_nothing_changes_nothing() {
 fn a_full_series_makes_room_for_a_page_of_candles_at_once() {
     let full = MAX_CANDLES as i64;
     let kept = refresh(&bars(0..full), bars(full - 10..full + 1)).candles;
-    assert_eq!(kept.len(), MAX_CANDLES - PAGE);
+    assert_eq!(kept.len(), FULL_CANDLES);
     assert_eq!(
         kept.last().map(|bar| bar.open_time),
         Some(full * 3_600_000),
