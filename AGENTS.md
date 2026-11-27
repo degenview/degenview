@@ -169,6 +169,9 @@ while you only need the compiler's answer, and trim the caches when done
 Each worktree builds into its own `target/` (5 GB fresh, growing every rebuild; cargo never deletes
 old output). Finished worktrees are where the disk goes.
 
+- On macOS, create worktrees with `git cow add`, not `git worktree add`: instead of
+  `git worktree add -b branch-name ../worktree-name`, run
+  `git cow add -b branch-name ../worktree-name`.
 - One worktree per branch, beside the main checkout, building into `target/` or a `target-*`
   directory (both ignored). Never share one `CARGO_TARGET_DIR` between worktrees: concurrent builds
   block on its lock and overwrite each other's `target/debug/degenview`.
