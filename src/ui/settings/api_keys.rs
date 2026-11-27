@@ -12,12 +12,13 @@ use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, CredentialPair,
     CredentialsStore, OandaCredentials, OandaCredentialsStore,
 };
-use crate::service::work_queue::{self, Pending};
+use crate::service::work_queue;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{Autosave, Tone, destructive_button, field, open_button};
 use crate::ui::settings::brokers::step_row;
 use crate::ui::settings::card::StatusMessage;
+use crate::ui::settings::connection_test::ConnectionTest;
 use crate::ui::settings::window::{card, section, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
@@ -30,8 +31,10 @@ pub struct CredentialForm<C> {
     credentials: C,
     loaded: bool,
     is_saved: bool,
+    /// What saving or removing last said.
     status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), ProviderError>>>,
+    /// A test of the credentials in the fields.
+    test: ConnectionTest<C, Result<(), ProviderError>>,
     autosave: Autosave,
 }
 
@@ -40,8 +43,10 @@ pub struct CmcForm {
     pub api_key: String,
     loaded: bool,
     pub configured: bool,
+    /// What saving or removing last said.
     pub status: Option<StatusMessage>,
-    test: Option<Pending<Result<(), ProviderError>>>,
+    /// A test of the saved key.
+    test: ConnectionTest<(), Result<(), ProviderError>>,
     autosave: Autosave,
 }
 
@@ -52,7 +57,7 @@ pub struct ApiKeysState {
     pub cmc: CmcForm,
 }
 
-pub trait CredentialFormCopy: CredentialPair {
+pub trait CredentialFormCopy: CredentialPair + PartialEq + Send + 'static {
     const SOURCE: DataSource;
     fn saved_label() -> &'static str;
     fn removed_message() -> &'static str;
@@ -132,28 +137,32 @@ impl<C: CredentialFormCopy> CredentialForm<C> {
     }
 
     fn is_testing(&self) -> bool {
-        self.test.is_some()
+        self.test.is_running()
     }
 
     fn start_test(
         &mut self,
         repaint: Option<&egui::Context>,
         test: impl FnOnce(C) -> Result<(), ProviderError> + Send + 'static,
-    ) where
-        C: Send + 'static,
-    {
-        if self.is_testing() {
-            return;
-        }
+    ) {
         self.status = None;
         let credentials = self.credentials.clone();
-        self.test = Some(work_queue::start_for(C::SOURCE, repaint, move || {
-            test(credentials)
-        }));
+        let tested = credentials.clone();
+        self.test.start(tested, || {
+            work_queue::start_for(C::SOURCE, repaint, move || test(credentials))
+        });
     }
 
     fn poll_test(&mut self) {
-        take_test_answer(&mut self.test, &mut self.status);
+        self.test.follow(&self.credentials, connection_status);
+    }
+
+    /// The lines under the buttons: what the test of these credentials said, and what saving
+    /// did.
+    fn statuses(&self) -> impl Iterator<Item = &StatusMessage> {
+        [self.test.answer(&self.credentials), self.status.as_ref()]
+            .into_iter()
+            .flatten()
     }
 
     fn remove(&mut self, store: &CredentialsStore<C>) {
@@ -184,7 +193,7 @@ impl CmcForm {
     }
 
     pub fn is_testing(&self) -> bool {
-        self.test.is_some()
+        self.test.is_running()
     }
 
     pub fn badge(&self) -> (&'static str, Tone) {
@@ -212,6 +221,7 @@ impl CmcForm {
     }
 
     pub fn save(&mut self, store: &CoinMarketCapKeyStore) {
+        self.test.forget();
         self.status = Some(match store.save(&self.api_key) {
             Ok(()) => {
                 self.configured = true;
@@ -223,6 +233,7 @@ impl CmcForm {
     }
 
     pub fn remove(&mut self, store: &CoinMarketCapKeyStore) {
+        self.test.forget();
         self.status = Some(match store.remove() {
             Ok(()) => {
                 self.api_key.clear();
@@ -242,39 +253,31 @@ impl CmcForm {
         repaint: Option<&egui::Context>,
         test: impl FnOnce() -> Result<(), ProviderError> + Send + 'static,
     ) {
-        if self.test.is_some() {
-            return;
-        }
         self.status = None;
-        self.test = Some(work_queue::SNAPSHOTS.start(repaint, test));
+        self.test
+            .start((), || work_queue::SNAPSHOTS.start(repaint, test));
     }
 
     /// Takes the connection test's answer when it has arrived.
     pub fn poll_test(&mut self) {
-        take_test_answer(&mut self.test, &mut self.status);
+        self.test.follow(&(), connection_status);
+    }
+
+    /// The lines under the buttons: what the test said, and what saving did.
+    pub fn statuses(&self) -> impl Iterator<Item = &StatusMessage> {
+        [self.test.answer(&()), self.status.as_ref()]
+            .into_iter()
+            .flatten()
     }
 }
 
-/// Turns a finished connection test into the status under its button.
-fn take_test_answer(
-    test: &mut Option<Pending<Result<(), ProviderError>>>,
-    status: &mut Option<StatusMessage>,
-) {
-    let Some(pending) = test else {
-        return;
-    };
-    let Some(outcome) = pending.poll_or(|| {
-        Err(ProviderError::other(tr!(
-            "The connection test stopped unexpectedly."
-        )))
-    }) else {
-        return;
-    };
-    *test = None;
-    *status = Some(match outcome {
-        Ok(()) => StatusMessage::ok(tr!("Connection successful.")),
-        Err(error) => StatusMessage::error(error.to_string()),
-    });
+/// What a finished connection test says under its button (`None`: its job ended without answering).
+fn connection_status(outcome: Option<Result<(), ProviderError>>) -> StatusMessage {
+    match outcome {
+        Some(Ok(())) => StatusMessage::ok(tr!("Connection successful.")),
+        Some(Err(error)) => StatusMessage::error(error.to_string()),
+        None => StatusMessage::error(tr!("The connection test stopped unexpectedly.")),
+    }
 }
 
 // MARK: Views
@@ -358,7 +361,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 }
             });
         });
-        if let Some(status) = &form.status {
+        for status in form.statuses() {
             ui.add_space(8.0);
             status_message(ui, &status.text(), status.is_error);
         }
@@ -458,7 +461,7 @@ pub fn oanda_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &OandaCred
                 }
             });
         });
-        if let Some(status) = &form.status {
+        for status in form.statuses() {
             ui.add_space(8.0);
             status_message(ui, &status.text(), status.is_error);
         }
@@ -535,7 +538,7 @@ pub fn coinmarketcap_body(
                 }
             });
         });
-        if let Some(status) = &form.status {
+        for status in form.statuses() {
             ui.add_space(8.0);
             status_message(ui, &status.text(), status.is_error);
         }
@@ -718,20 +721,60 @@ mod tests {
         };
         form.start_test(None, || Ok(()));
         assert!(form.is_testing());
-        assert_eq!(form.status, None, "a new test clears the old message");
+        assert_eq!(
+            form.statuses().next(),
+            None,
+            "a new test clears the old message"
+        );
         form.start_test(None, || {
             Err(ProviderError::other("ignored: one test at a time"))
         });
         wait_for_test(&mut form);
         assert!(!form.is_testing());
-        assert_eq!(
-            form.status,
-            Some(StatusMessage::ok("Connection successful."))
+        assert!(
+            form.statuses()
+                .eq([&StatusMessage::ok("Connection successful.")])
         );
 
         form.start_test(None, || Err(ProviderError::other("Invalid API key")));
         wait_for_test(&mut form);
-        assert_eq!(form.status, Some(StatusMessage::error("Invalid API key")));
+        assert!(
+            form.statuses()
+                .eq([&StatusMessage::error("Invalid API key")])
+        );
+
+        form.save(&cmc_store());
+        assert!(
+            form.statuses().all(|status| !status.is_error),
+            "an answer about the old key goes with it"
+        );
+    }
+
+    #[test]
+    fn a_test_of_other_credentials_than_the_fields_hold_says_nothing() {
+        let store = oanda_store();
+        let mut form = OandaForm::default();
+        form.credentials.account_id = "001-001".into();
+        form.credentials.access_token = "tok".into();
+        form.start_test(None, |_| Ok(()));
+        form.credentials.environment = OandaEnvironment::Practice;
+        form.save(&store);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while form.is_testing() && Instant::now() < deadline {
+            form.poll_test();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(form.statuses().eq([&StatusMessage::saved_securely()]));
+
+        // An answer that already arrived goes as soon as the fields change.
+        form.start_test(None, |_| Ok(()));
+        while form.is_testing() && Instant::now() < deadline {
+            form.poll_test();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(form.statuses().count(), 1);
+        form.credentials.access_token.push('x');
+        assert_eq!(form.statuses().count(), 0);
     }
 
     /// A setup step is longer in another language and wraps under its number; it does not run past

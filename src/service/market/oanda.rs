@@ -1,7 +1,9 @@
 //! Oanda's v3 API: OHLCV candles of any instrument of the account, and the account's instrument
 //! list for search. Both need a login — a personal access token and the account id (Settings ▸
 //! Oanda) — sent as a bearer token; the candles endpoint itself takes only the token. The login
-//! also names its environment, live or practice, which decides the host (`api_request`).
+//! also names its environment, live or practice, which decides the host (`api_request`). The login
+//! is looked up once per answer and passed down, so the pages of one history all come from one
+//! environment even if Settings changes while they are being fetched.
 //!
 //! Oanda aligns its hourly, daily and weekly bars to 5pm New York by default, which puts an H12
 //! bar across two UTC days. Every request here instead asks for UTC alignment
@@ -66,14 +68,17 @@ pub(in crate::service) fn api_request(login: &OandaCredentials, path: &str) -> A
     }
 }
 
-fn get(login: &OandaCredentials, path: &str, retry: Retry) -> Result<String, ProviderError> {
-    let request = api_request(login, path);
+fn send(request: &ApiRequest, retry: Retry) -> Result<String, ProviderError> {
     http::get_text(
         &request.url,
         &[("Authorization", request.authorization.as_str())],
         retry,
     )
     .map_err(ProviderError::Oanda)
+}
+
+fn get(login: &OandaCredentials, path: &str, retry: Retry) -> Result<String, ProviderError> {
+    send(&api_request(login, path), retry)
 }
 
 /// The `granularity` value Oanda takes for a native length: `S5`, `M1`, `H4`, `D`, `W`, `M`.
@@ -101,6 +106,43 @@ pub fn test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
     get(&login, &instruments_path(&login.account_id), Retry::Never).map(|_| ())
 }
 
+/// The candles of one login that open in `[start_ms, end_ms)`, at most `max` of them, paged back
+/// from the end.
+pub(in crate::service) fn klines_range(
+    login: &OandaCredentials,
+    symbol: &str,
+    timeframe: Timeframe,
+    start_ms: i64,
+    end_ms: i64,
+    max: usize,
+) -> Result<Vec<Kline>, ProviderError> {
+    klines_range_through(login, symbol, timeframe, start_ms, end_ms, max, |request| {
+        send(request, Retry::Transient)
+    })
+}
+
+/// [`klines_range`] over any transport.
+fn klines_range_through(
+    login: &OandaCredentials,
+    symbol: &str,
+    timeframe: Timeframe,
+    start_ms: i64,
+    end_ms: i64,
+    max: usize,
+    transport: impl Fn(&ApiRequest) -> Result<String, ProviderError>,
+) -> Result<Vec<Kline>, ProviderError> {
+    let plan = plan(DataSource::Oanda, timeframe)?;
+    let requested = PAGING.requested(plan, max);
+    let candles = PAGING.back(start_ms, end_ms, requested, |before, wanted| {
+        candle_page(before, wanted, |count| {
+            let path = candles_path(symbol, plan.base(), Some(before), count);
+            let body = transport(&api_request(login, &path))?;
+            parse_candles(&body, plan.base())
+        })
+    })?;
+    Ok(plan.shape_since(candles, requested, start_ms, max))
+}
+
 impl MarketSource for Oanda {
     fn fetch_klines(
         &self,
@@ -109,13 +151,15 @@ impl MarketSource for Oanda {
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Oanda, timeframe)?;
+        let login = credentials()?;
         let requested = plan.base_count(limit as usize);
         if requested > MAX_PER_REQUEST {
             // More finer candles than one request holds: page back from now.
             let end_ms = crate::clock::now_ms() + 1;
-            return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
+            return klines_range(&login, symbol, timeframe, 0, end_ms, limit as usize);
         }
-        let body = candles_request(symbol, plan.base(), None, requested)?;
+        let path = candles_path(symbol, plan.base(), None, requested);
+        let body = get(&login, &path, Retry::Transient)?;
         Ok(plan.shape(
             parse_candles(&body, plan.base())?,
             requested,
@@ -131,15 +175,7 @@ impl MarketSource for Oanda {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Oanda, timeframe)?;
-        let requested = PAGING.requested(plan, max);
-        let candles = PAGING.back(start_ms, end_ms, requested, |before, wanted| {
-            candle_page(before, wanted, |count| {
-                let body = candles_request(symbol, plan.base(), Some(before), count)?;
-                parse_candles(&body, plan.base())
-            })
-        })?;
-        Ok(plan.shape_since(candles, requested, start_ms, max))
+        klines_range(&credentials()?, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -183,20 +219,6 @@ fn candle_page(
     let extra = candles.len().saturating_sub(wanted);
     candles.drain(..extra);
     Ok(candles)
-}
-
-/// One candles request, with the saved login.
-fn candles_request(
-    instrument: &str,
-    bar: Timeframe,
-    to_ms: Option<i64>,
-    count: usize,
-) -> Result<String, ProviderError> {
-    get(
-        &credentials()?,
-        &candles_path(instrument, bar, to_ms, count),
-        Retry::Transient,
-    )
 }
 
 /// `{"candles": [{"time": ISO, "volume": n, "complete": bool, "mid": {"o","h","l","c"}}]}`, oldest
@@ -367,6 +389,57 @@ mod tests {
             let request = api_request(&login, &instruments_path(&login.account_id));
             assert_eq!(request.url, host);
             assert_eq!(request.authorization, "Bearer tok");
+        }
+    }
+
+    #[test]
+    fn every_page_of_a_history_is_asked_with_the_login_it_was_given() {
+        let login = OandaCredentials {
+            account_id: "101-001".into(),
+            access_token: "tok".into(),
+            environment: OandaEnvironment::Practice,
+        };
+        let end_ms = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
+        let asked = std::cell::RefCell::new(Vec::new());
+        // Every page is full, so the pager goes back for a second one.
+        let candles = klines_range_through(
+            &login,
+            "EUR_USD",
+            Timeframe::MINUTE_1,
+            0,
+            end_ms,
+            MAX_PER_REQUEST + 100,
+            |request| {
+                asked
+                    .borrow_mut()
+                    .push((request.url.clone(), request.authorization.clone()));
+                let to = request.url.rsplit_once("&to=").expect("an end cursor").1;
+                let to = crate::format::parse_iso8601(to).expect("a time");
+                let count = request.url.split_once("&count=").expect("a count").1;
+                let count: i64 = count.split('&').next().unwrap().parse().unwrap();
+                let rows: Vec<String> = (1..=count)
+                    .rev()
+                    .map(|back| {
+                        format!(
+                            r#"{{"time":"{}","volume":1,"mid":{{"o":"1","h":"1","l":"1","c":"1"}}}}"#,
+                            crate::format::iso8601(to - back * 60_000)
+                        )
+                    })
+                    .collect();
+                Ok(format!(r#"{{"candles":[{}]}}"#, rows.join(",")))
+            },
+        )
+        .expect("history");
+
+        assert_eq!(candles.len(), MAX_PER_REQUEST + 100);
+        let asked = asked.into_inner();
+        assert_eq!(asked.len(), 2);
+        for (url, authorization) in asked {
+            assert!(
+                url.starts_with(base_url(OandaEnvironment::Practice)),
+                "{url}"
+            );
+            assert_eq!(authorization, "Bearer tok");
         }
     }
 

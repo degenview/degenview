@@ -113,7 +113,9 @@ watchlists.
   own: the other answers 401. The choice is saved with the account id and token (items without it are
   live), `DEGENVIEW_OANDA_ENVIRONMENT=practice` goes with the other environment variables, and every
   request is built by `service::market::oanda::api_request`, which takes the host from the login that
-  signs it. Do not build an Oanda URL anywhere else.
+  signs it. Do not build an Oanda URL anywhere else. One answer uses one login: it is looked up once
+  and passed down (`klines_range`), never per page, and what is kept between answers (the watchlist's
+  day-ago references) is kept per environment.
 - **Oanda history** uses UTC-aligned midpoint candles. Range reads feed `to` and `count` into
   the shared backward pager so a market closure consumes no page slots. The adapter requests an
   extra row and drops any candle at the exclusive end cursor. A history request is capped at

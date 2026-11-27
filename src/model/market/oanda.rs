@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Which of Oanda's two systems an account and its access token belong to. Each has its own API
 /// host, and a token works only in the environment it was generated in.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OandaEnvironment {
     /// fxTrade: funded accounts.
