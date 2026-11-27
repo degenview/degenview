@@ -235,13 +235,15 @@ pub fn kraken_asset(asset: &str) -> String {
 /// quote stands before a shorter one inside it (`BTCFDUSD` is BTC/FDUSD, not BTCFD/USD). One that
 /// is missing here makes the app ask for another market (`BTCMXN` as `BTCMXNUSDT`), so the quotes
 /// of halted markets stay: their history is still served.
-/// `BIDR` is left out: `ARBIDR` and `BNBIDR` trade as ARB/IDR and BNB/IDR.
-const BINANCE_QUOTES: [&str; 49] = [
-    "USDSOLD", "BKRW", "IDRT", "BVND", "PAX", "UST", "VAI", "AUD", "RUB", "NGN", "UAH", "RON",
-    "CZK", "TRX", "DOGE", "DOT", "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS", "BUSD",
-    "TUSD", "USDP", "EURI", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP", "ZAR",
-    "IDR", "THB", "KZT", "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
+const BINANCE_QUOTES: [&str; 50] = [
+    "USDSOLD", "BKRW", "IDRT", "BVND", "BIDR", "PAX", "UST", "VAI", "AUD", "RUB", "NGN", "UAH",
+    "RON", "CZK", "TRX", "DOGE", "DOT", "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS",
+    "BUSD", "TUSD", "USDP", "EURI", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP",
+    "ZAR", "IDR", "THB", "KZT", "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
 ];
+
+/// `IDR` pairs whose end also reads as the longer `BIDR`.
+const IDR_PAIRS_ENDING_IN_BIDR: [&str; 2] = ["ARBIDR", "BNBIDR"];
 
 /// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
 const MEXC_QUOTES: [&str; 9] = [
@@ -321,6 +323,9 @@ fn split_joined<'a>(symbol: &'a str, quotes: &[&'static str]) -> Option<(&'a str
 /// Splits an upper-case Binance or Bybit pair like `SOLBNB` into `("SOL", "BNB")`, or `None`
 /// when it names no pair (a bare asset such as `SOL` or `WBTC`).
 pub fn split_binance_pair(symbol: &str) -> Option<(&str, &'static str)> {
+    if IDR_PAIRS_ENDING_IN_BIDR.contains(&symbol) {
+        return symbol.strip_suffix("IDR").map(|base| (base, "IDR"));
+    }
     split_joined(symbol, &BINANCE_QUOTES)
 }
 

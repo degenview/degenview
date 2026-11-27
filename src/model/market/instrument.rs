@@ -119,12 +119,10 @@ impl InstrumentId {
 
     /// The key of the market a stored `key()` string names, spelled the way `key()` spells
     /// it now; `None` for a string that is not a key. Flags saved before aliases shared a
-    /// key (`BINANCE:BTC`) are moved to the key of the market they were set on, as are those of
-    /// pairs the app once took for bare assets (`BINANCE:BTCMXNUSDT`).
+    /// key (`BINANCE:BTC`) are moved to the key of the market they were set on.
     pub fn rekey(key: &str) -> Option<String> {
         let (slug, symbol) = key.split_once(':')?;
         let source = DataSource::from_watchlist_slug(slug)?;
-        let symbol = pair_once_quoted_in_usdt(source, symbol).unwrap_or(symbol);
         Some(Self::new(source, symbol).key())
     }
 
@@ -172,17 +170,6 @@ fn released_as_pair(symbol: &str) -> bool {
         .iter()
         .find_map(|quote| symbol.strip_suffix(quote).filter(|base| !base.is_empty()))
         .is_some_and(|base| base.len() > 1)
-}
-
-/// The pair a Binance or Bybit `symbol` was made from by quoting a pair in USDT again, which
-/// names no market: earlier versions did that to a pair whose quote they did not know.
-fn pair_once_quoted_in_usdt(source: DataSource, symbol: &str) -> Option<&str> {
-    if !matches!(source, DataSource::Binance | DataSource::Bybit) {
-        return None;
-    }
-    symbol
-        .strip_suffix("USDT")
-        .filter(|pair| crate::model::market::source::split_binance_pair(pair).is_some())
 }
 
 /// `pair` as Binance and Bybit write it: a bare asset is quoted in USDT.
@@ -456,47 +443,24 @@ mod tests {
     #[test]
     fn a_pair_that_ends_like_two_quotes_is_read_as_the_one_it_trades_as() {
         for (symbol, base, quote) in [
+            // `BIDR` and `IDR` markets end alike.
             ("ARBIDR", "ARB", "IDR"),
             ("BNBIDR", "BNB", "IDR"),
+            ("BTCIDR", "BTC", "IDR"),
+            ("BNBBIDR", "BNB", "BIDR"),
+            ("BTCBIDR", "BTC", "BIDR"),
+            ("USDTBIDR", "USDT", "BIDR"),
+            // The REN/BTC market, spelled like the renBTC token.
             ("RENBTC", "REN", "BTC"),
         ] {
-            assert_eq!(DataSource::Binance.base_asset(symbol), base);
+            assert_eq!(DataSource::Binance.base_asset(symbol), base, "{symbol}");
             assert_eq!(
                 DataSource::Binance.quote_asset(symbol).as_deref(),
-                Some(quote)
+                Some(quote),
+                "{symbol}"
             );
             let id = InstrumentId::new(DataSource::Binance, symbol);
             assert_eq!(id.canonical_symbol(), symbol);
-        }
-    }
-
-    #[test]
-    fn a_key_made_by_quoting_a_pair_again_moves_to_the_pairs_own() {
-        for source in ["BINANCE", "BYBIT"] {
-            let rekeyed = |symbol: &str| InstrumentId::rekey(&format!("{source}:{symbol}"));
-            for (old, new) in [
-                ("BTCMXNUSDT", "BTCMXN"),
-                ("STRYUSDT", "STRY"),
-                ("SUSDTUSDT", "SUSDT"),
-                ("BNBPAXUSDT", "BNBPAX"),
-            ] {
-                assert_eq!(rekeyed(old), Some(format!("{source}:{new}")), "{old}");
-            }
-            // Real USDT markets, among them assets that read almost like a pair.
-            for kept in [
-                "BTCUSDT",
-                "SOLUSDT",
-                "WBTCUSDT",
-                "TUSDUSDT",
-                "FDUSDUSDT",
-                "PENGUUSDT",
-                "BNSOLUSDT",
-                "SUSDUSDT",
-                "ABUSDUSDT",
-                "SUSDT",
-            ] {
-                assert_eq!(rekeyed(kept), Some(format!("{source}:{kept}")), "{kept}");
-            }
         }
     }
 
