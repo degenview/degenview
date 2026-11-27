@@ -306,24 +306,50 @@ impl WatchlistStore {
         name: &str,
         with: Option<WatchlistInstrument>,
     ) -> Result<EntryId, WatchlistError> {
+        let mut list = Watchlist::new(name);
+        if let Some(item) = with {
+            // A market already refused (a card, say) still gets its list.
+            let _ = list.add(item, None);
+        }
+        self.insert(list)
+    }
+
+    /// Keeps lists built elsewhere (an import) under their own names, saved together. One whose
+    /// name no list may have, or that there is no room for, fails alone; a save that fails, fails
+    /// all of them.
+    pub fn add_lists(&mut self, lists: Vec<Watchlist>) -> Vec<Result<EntryId, WatchlistError>> {
+        let mut answers: Vec<_> = lists.into_iter().map(|list| self.append(list)).collect();
+        if answers.iter().any(Result::is_ok) && !self.persist() {
+            for answer in answers.iter_mut().filter(|answer| answer.is_ok()) {
+                *answer = Err(WatchlistError::SaveFailed);
+            }
+        }
+        answers
+    }
+
+    /// Adds one new list and saves it.
+    fn insert(&mut self, list: Watchlist) -> Result<EntryId, WatchlistError> {
+        let id = self.append(list)?;
+        if self.persist() {
+            Ok(id)
+        } else {
+            Err(WatchlistError::SaveFailed)
+        }
+    }
+
+    /// The one way a list gets in: there is room for it and its name may be a list's. Not yet
+    /// saved.
+    fn append(&mut self, mut list: Watchlist) -> Result<EntryId, WatchlistError> {
         if self.load_failed {
             return Err(WatchlistError::PersistenceUnavailable);
         }
         if self.lists.len() >= MAX_LISTS {
             return Err(WatchlistError::TooManyLists);
         }
-        let mut list = Watchlist::new(Watchlist::validated(name)?);
-        if let Some(item) = with {
-            // A market already refused (a card, say) still gets its list.
-            let _ = list.add(item, None);
-        }
+        list.name = Watchlist::validated(&list.name)?;
         let id = list.id;
         self.lists.push(list);
-        if self.persist() {
-            Ok(id)
-        } else {
-            Err(WatchlistError::SaveFailed)
-        }
+        Ok(id)
     }
 
     pub fn rename_list(&mut self, id: EntryId, name: &str) -> Result<bool, WatchlistError> {
@@ -335,26 +361,13 @@ impl WatchlistStore {
     }
 
     pub fn duplicate_list(&mut self, id: EntryId, name: &str) -> Result<EntryId, WatchlistError> {
-        if self.load_failed {
-            return Err(WatchlistError::PersistenceUnavailable);
-        }
-        if self.lists.len() >= MAX_LISTS {
-            return Err(WatchlistError::TooManyLists);
-        }
-        let name = Watchlist::validated(name)?;
         let copy = self
             .lists
             .iter()
             .find(|list| list.id == id)
-            .map(|list| list.duplicated(&name))
+            .map(|list| list.duplicated(name))
             .ok_or(WatchlistError::NotFound)?;
-        let new_id = copy.id;
-        self.lists.push(copy);
-        if self.persist() {
-            Ok(new_id)
-        } else {
-            Err(WatchlistError::SaveFailed)
-        }
+        self.insert(copy)
     }
 
     /// Deletes a list; Favorites never deletes (`Ok(false)`).

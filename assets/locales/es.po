@@ -1633,6 +1633,10 @@ msgstr "Ask {price}"
 msgid "Ask {size} ({worth})"
 msgstr "Ask {size} ({worth})"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr "Solo se pregunta una vez. Más adelante, elige «Importar desde TradingView» en el menú de diseños."
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr "Pidiendo al bróker que cancele…"
@@ -2162,6 +2166,10 @@ msgstr "Traer al frente"
 #: src/ui/drawing/layer/menu.rs
 msgid "Bring to front"
 msgstr "Traer al frente"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
+msgstr "Trae tu configuración de TradingView"
 
 #: src/model/alert/mod.rs src/model/portfolio/mod.rs
 msgid "British Pound"
@@ -2876,6 +2884,10 @@ msgstr "Camb."
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
 msgstr "Camb. %"
+
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "Elegir qué importar"
 
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
@@ -4501,6 +4513,10 @@ msgstr "DegenView no encontró ninguna carpeta para la caché, así que no se gu
 #: src/app/window.rs
 msgid "DegenView couldn’t save which tabs are open, so they may not reopen after a restart. It keeps trying in the background."
 msgstr "DegenView no ha podido guardar qué pestañas están abiertas, así que puede que no se reabran tras reiniciar. Sigue intentándolo en segundo plano."
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
+msgstr "DegenView la ha encontrado en este ordenador. Tú eliges qué se importa."
 
 #: src/service/update/install/mod.rs
 msgid "DegenView is missing from {target} and the previous version is in {old}. Move it back, then try the update again."
@@ -7222,9 +7238,17 @@ msgid_plural "Imported “{name}”. {count} values in the file were not usable 
 msgstr[0] "“{name}” importado. {count} valor del archivo no se ha podido usar y se omitió, por ejemplo: {value}"
 msgstr[1] "“{name}” importado. {count} valores del archivo no se pudieron usar y se omitieron, por ejemplo: {value}"
 
+#: src/ui/tradingview/result.rs
+msgid "Importing…"
+msgstr "Importando…"
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "Importar…"
+
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "En Pine Studio"
 
 #: src/ui/settings/api_keys.rs
 msgid ""
@@ -7242,6 +7266,14 @@ msgstr "Con beneficio"
 #: src/ui/chart/settings/compare.rs
 msgid "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "En la búsqueda de símbolos (⌘K), ⌥↵ añade el mercado resaltado a este gráfico."
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "En el menú de diseños de la barra de herramientas"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "En la barra lateral de listas de seguimiento"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -9274,6 +9306,10 @@ msgstr "Sin sección"
 msgid "No Symbols"
 msgstr "Sin símbolos"
 
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "No, gracias"
+
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
 msgid "No Transactions"
@@ -9858,6 +9894,10 @@ msgstr "Nada en este gráfico coincide con el filtro."
 #: src/pine_studio/profiler/ui.rs
 msgid "Nothing profiled yet"
 msgstr "Nada perfilado todavía"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr "No se sustituye nada"
 
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
@@ -11162,6 +11202,10 @@ msgstr "Proveedor de mercados de predicción"
 msgid "Predictions"
 msgstr "Predicciones"
 
+#: src/ui/tradingview/result.rs
+msgid "Preparing the preview…"
+msgstr "Preparando la vista previa…"
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Preset"
 msgstr "Preajuste"
@@ -11178,6 +11222,10 @@ msgstr "Vista previa"
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
 msgstr "Gráfico de vista previa"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
+msgstr "Primero, vista previa"
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Preview it, then add it to any chart."
@@ -11654,6 +11702,10 @@ msgstr "P&G bruto realizado {amount} antes de comisiones"
 #: src/pine_studio/debug/panel/mod.rs
 msgid "Realtime"
 msgstr "Tiempo real"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "Reconstruido a partir de sus dibujos"
 
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
@@ -12913,22 +12965,6 @@ msgstr "Script eliminado"
 msgid "Script name"
 msgstr "Nombre del script"
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "Los nombres de script no pueden contener caracteres de control."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "Los nombres de script no pueden contener “{character}”."
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "Los nombres de script no pueden empezar por un punto."
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "Los nombres de script deben tener {limit} bytes o menos."
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr "Script sin cargar"
@@ -13160,6 +13196,10 @@ msgstr "Seleccionar todo"
 msgid "Select Bar on Chart"
 msgstr "Seleccionar barra en el gráfico"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "Seleccionar todo"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "Selecciona un indicador"
@@ -13171,6 +13211,10 @@ msgstr "Seleccionar barra"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "Seleccionar barra en el gráfico"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "No seleccionar nada"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -15111,6 +15155,10 @@ msgstr "Las tenencias que más han ganado en un intervalo"
 msgid "The image is too large to upload."
 msgstr "La imagen es demasiado grande para subirla."
 
+#: src/host/tradingview/mod.rs
+msgid "The import stopped unexpectedly. Some of it may already have been added."
+msgstr "La importación se ha detenido de forma inesperada. Puede que ya se haya añadido una parte."
+
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."
 msgstr "El script del indicador aún no se ha cargado. Inténtalo de nuevo en un momento."
@@ -15646,6 +15694,10 @@ msgstr "Todo el gráfico que tiene el foco"
 #: src/ui/alert/center.rs
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr "La alerta de {symbol} se ha eliminado. Se conserva su historial de disparos."
+
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), where most of the drawings are"
+msgstr "El gráfico de {symbol}: su símbolo no tiene mercado, así que se abre en {market} ({exchange}), donde están la mayoría de los dibujos"
 
 #: src/pine_studio/menu_bar/mod.rs src/ui/settings/appearance.rs
 msgid "Theme"
@@ -16267,6 +16319,10 @@ msgstr "Comisión de trading ({percent}%)"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Trading settings"
 msgstr "Ajustes de trading"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
+msgstr "TradingView no cambia"
 
 #: src/model/chart/kind.rs
 msgid "Traditional"
@@ -18747,6 +18803,10 @@ msgid_plural "{count} named orders on “{account}”"
 msgstr[0] "una orden con nombre en “{account}”"
 msgstr[1] "{count} órdenes con nombre en “{account}”"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "{count} de {total} seleccionados"
+
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
 msgid_plural "{count} open · Unrealized {pnl}"
@@ -20228,6 +20288,21 @@ msgctxt "icon"
 msgid "Scales"
 msgstr "Balanza"
 
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "Elegir"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "Listo"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "Vista previa"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -20668,7 +20743,264 @@ msgctxt "what the image shows"
 msgid "Area"
 msgstr "Área"
 
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "Un tipo de gráfico que DegenView no dibuja: se usa el habitual"
+
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "Un símbolo de un exchange que DegenView no tiene se empareja con el mismo par en otro. Cambia u omite cualquiera."
+
+msgid "Added to DegenView"
+msgstr "Añadido a DegenView"
+
+msgid "Charts"
+msgstr "Gráficos"
+
+msgid "Choose Folder…"
+msgstr "Elegir carpeta…"
+
+msgid "Choose TradingView’s data folder"
+msgstr "Elige la carpeta de datos de TradingView"
+
+msgid "Couldn’t reach the exchanges"
+msgstr "No se pudo conectar con los exchanges"
+
+msgid "From the TradingView app."
+msgstr "Desde la app de TradingView."
+
+msgid "Import Complete"
+msgstr "Importación completada"
+
+msgid "Import from TradingView"
+msgstr "Importar desde TradingView"
+
+msgid "Import from TradingView…"
+msgstr "Importar desde TradingView…"
+
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "Instala la app de escritorio de TradingView, inicia sesión y abre los diseños y las listas de seguimiento que quieras traer."
+
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "Sus gráficos tenían intervalos distintos. Un diseño de DegenView tiene uno:"
+
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "Diseños, dibujos, listas de seguimiento y scripts que la app de TradingView ha cargado."
+
+msgid "Left out of the import"
+msgstr "Fuera de la importación"
+
+msgid "Match symbols to markets"
+msgstr "Empareja símbolos con mercados"
+
+msgid "No exchange here lists it"
+msgstr "Ningún exchange disponible lo cotiza"
+
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "No se encontraron diseños, listas de seguimiento ni scripts. Ábrelos primero en TradingView y vuelve a intentarlo."
+
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "Ninguno de sus gráficos tiene mercado, así que no se importa"
+
+msgid "Not found on any exchange"
+msgstr "No se encontró en ningún exchange"
+
+msgid "Nothing Was Added"
+msgstr "No se añadió nada"
+
+msgid "Nothing to Import Yet"
+msgstr "Todavía no hay nada que importar"
+
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "Aquí solo está lo que la app de TradingView ha abierto recientemente en este equipo. ¿Falta algo? Ábrelo allí y recarga."
+
+msgid "Open Layout"
+msgstr "Abrir diseño"
+
+msgid "Other exchange"
+msgstr "Otro exchange"
+
+msgid "Perpetuals and futures aren’t available"
+msgstr "Los perpetuos y los futuros no están disponibles"
+
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "Elige el mercado que sustituirá a este símbolo de TradingView."
+
+msgid "Pine scripts"
+msgstr "Scripts de Pine"
+
+msgid "Reading TradingView’s data…"
+msgstr "Leyendo los datos de TradingView…"
+
+msgid "Reload"
+msgstr "Recargar"
+
+msgid "Saved layouts"
+msgstr "Diseños guardados"
+
+msgid "Search Again"
+msgstr "Buscar de nuevo"
+
+msgid "Some things couldn’t be added"
+msgstr "Algunas cosas no se pudieron añadir"
+
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "Las acciones necesitan una clave de Alpaca (Ajustes)"
+
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "Se acorta el texto de {count} dibujo"
+msgstr[1] "Se acorta el texto de {count} dibujos"
+
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "No se encontraron los datos de la app de TradingView en este equipo."
+
+msgid "The comparison with {symbol}: it has no market"
+msgstr "La comparación con {symbol}: no tiene mercado"
+
+msgid "The script library couldn’t be opened."
+msgstr "No se pudo abrir la biblioteca de scripts."
+
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "El intervalo {interval} no es una temporalidad aquí"
+
+msgid "The {name} indicator"
+msgstr "El indicador {name}"
+
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "El gráfico {symbol}: su símbolo no tiene mercado"
+
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "Esta carpeta no contiene los datos de TradingView."
+
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "No se pudieron leer los datos de TradingView: {error}"
+
+msgid "Use Market"
+msgstr "Usar mercado"
+
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "Lo que se añadirá. No se sustituye nada tuyo."
+
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "símbolo emparejado"
+msgstr[1] "símbolos emparejados"
+
+msgid "the read stopped unexpectedly"
+msgstr "la lectura se detuvo inesperadamente"
+
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} gráfico"
+msgstr[1] "{count} gráficos"
+
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} gráfico que TradingView guarda pero no muestra"
+msgstr[1] "{count} gráficos que TradingView guarda pero no muestra"
+
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{count} dibujo en {symbol}, que no tiene mercado"
+msgstr[1] "{count} dibujos en {symbol}, que no tiene mercado"
+
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} dibujo que no se pudo leer"
+msgstr[1] "{count} dibujos que no se pudieron leer"
+
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} imagen: TradingView la guarda en línea"
+msgstr[1] "{count} imágenes: TradingView las guarda en línea"
+
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} posición con paso de precio desconocido"
+msgstr[1] "{count} posiciones con paso de precio desconocido"
+
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} símbolo sin mercado"
+msgstr[1] "{count} símbolos sin mercado"
+
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
+msgstr[0] "{count} dibujo {tool} no se puede importar"
+msgstr[1] "{count} dibujos {tool} no se pueden importar"
+
+msgid "{name} is added with its default settings"
+msgstr "{name} se añade con sus ajustes predeterminados"
+
+msgid "{name}: {error}"
+msgstr "{name}: {error}"
+
+msgid "A formula, not a single market"
+msgstr "Una fórmula, no un único mercado"
+
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} símbolo que es el mismo mercado que otro"
+msgstr[1] "{count} símbolos que son el mismo mercado que otros"
+
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} símbolo que no cabe en una lista de seguimiento"
+msgstr[1] "{count} símbolos que no caben en una lista de seguimiento"
+
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} dibujo de Fibonacci o Gann usa los niveles de DegenView"
+msgstr[1] "{count} dibujos de Fibonacci o Gann usan los niveles de DegenView"
+
 #: src/ui/window/chrome.rs
 msgctxt "window button"
 msgid "Minimize"
 msgstr "Minimizar"
+
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} dibujo fijado a la pantalla no se puede traer"
+msgstr[1] "{count} dibujos fijados a la pantalla no se pueden traer"
+
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} publicación se coloca a una altura estimada"
+msgstr[1] "{count} publicaciones se colocan a una altura estimada"
+
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} publicación cuyo lugar en el gráfico no se pudo calcular"
+msgstr[1] "{count} publicaciones cuyo lugar en el gráfico no se pudo calcular"
+
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} VWAP anclado pierde sus bandas porcentuales"
+msgstr[1] "{count} VWAP anclados pierden sus bandas porcentuales"
+
+msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it"
+msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
+msgstr[0] "{count} dibujo está en {symbol} ({exchange}): cambia el gráfico a ese mercado para verlo"
+msgstr[1] "{count} dibujos están en {symbol} ({exchange}): cambia el gráfico a ese mercado para verlos"
+
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr "Ninguno de sus símbolos tiene mercado, así que no se importa"
+
+msgid "Will be saved as “{name}”."
+msgstr "Se guardará como «{name}»."
+
+msgid "The script’s file would land outside the library."
+msgstr "El archivo del script quedaría fuera de la biblioteca."
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} publicación todavía se está colocando"
+msgstr[1] "{count} publicaciones todavía se están colocando"
+
+msgid "Looking up markets and prices…"
+msgstr "Buscando mercados y precios…"
+
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "Este Flatpak no puede buscar por sí solo los datos de TradingView."
+
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "Elige la carpeta de datos de TradingView: normalmente snap/tradingview/current/.config/TradingView o .config/TradingView en tu carpeta personal. Pulsa Ctrl+H para ver las carpetas ocultas."

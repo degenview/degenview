@@ -318,7 +318,7 @@ impl ChartWorkspace {
         let mut drawing_style_copied: Option<(Tool, DrawingStyle)> = None;
         let style_clipboard = self.tools.style_clipboard();
         let dialog_open =
-            self.tools.has_dialog() || self.content.sheet_open() || self.studio_open();
+            self.tools.has_dialog() || self.content.sheet_open() || self.sheet_over_charts();
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
         let mut drawing_alert: Option<(u64, f64)> = None;
@@ -1001,7 +1001,7 @@ impl ChartWorkspace {
             && !drawing_escape
             && !self.replay.is_choosing_date()
             && !self.context_menu_open()
-            && !self.studio_open()
+            && !self.sheet_over_charts()
         {
             if self.replay.is_selecting_start() {
                 self.replay.cancel_selection();

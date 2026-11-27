@@ -419,6 +419,29 @@ fn the_list_count_is_bounded() {
 }
 
 #[test]
+fn lists_added_together_keep_what_may_be_a_list_and_fits() {
+    let (mut store, _, shared) = seeded();
+    while store.lists().len() < MAX_LISTS - 2 {
+        store.create_list("L", None).unwrap();
+    }
+    let answers = store.add_lists(
+        ["  One\n here ", "  ", "Two", "No room"]
+            .map(Watchlist::new)
+            .into(),
+    );
+    assert!(answers[0].is_ok() && answers[2].is_ok(), "{answers:?}");
+    assert_eq!(answers[1], Err(WatchlistError::EmptyName));
+    assert_eq!(answers[3], Err(WatchlistError::TooManyLists));
+    let names: Vec<_> = WatchlistStore::new(shared)
+        .lists()
+        .iter()
+        .map(|list| list.name.clone())
+        .filter(|name| name != "L" && name != "Favorites")
+        .collect();
+    assert_eq!(names, ["One here", "Two"]);
+}
+
+#[test]
 fn a_second_favorites_list_and_a_repeated_row_id_are_repaired_on_load() {
     let shared = SharedStore::new(std::sync::Mutex::new(
         Store::open_in_memory().expect("store"),

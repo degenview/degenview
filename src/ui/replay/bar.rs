@@ -7,6 +7,7 @@ use crate::model::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
 use crate::service::system::timezone::local_utc_offset_secs;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::focus::keys_reach;
 use crate::ui::kit::time_text::{compact_text, date_text, time_text};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
@@ -226,7 +227,7 @@ pub fn show(ui: &mut egui::Ui, input: &ReplayBarInput) -> Vec<ReplayBarAction> {
 }
 
 fn shortcuts(ui: &egui::Ui, input: &ReplayBarInput, actions: &mut Vec<ReplayBarAction>) {
-    if !can_toggle(input.engine, input.is_preparing) || ui.ctx().egui_wants_keyboard_input() {
+    if !can_toggle(input.engine, input.is_preparing) || !keys_reach(ui) {
         return;
     }
     ui.input_mut(|state| {

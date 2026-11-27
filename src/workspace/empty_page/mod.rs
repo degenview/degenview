@@ -1,6 +1,7 @@
 //! The empty page a tab shows before it has a chart, and the slow reads behind it.
 
 use super::ChartWorkspace;
+use crate::host::tradingview::Start;
 use crate::model::DataSource;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
@@ -118,6 +119,9 @@ impl ChartWorkspace {
                     self.add_from_search(&page.recents[index].result(), &ctx);
                 }
                 EmptyStateAction::OpenLayout(id) => self.request_open_saved_view(id, &ctx),
+                EmptyStateAction::ImportTradingView => {
+                    self.open_tradingview_import(Start::Welcome, &ctx)
+                }
                 EmptyStateAction::OpenSuggestion(source, symbol, display) => {
                     self.add_from_search(
                         &SearchResult {

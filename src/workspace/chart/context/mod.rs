@@ -668,7 +668,7 @@ impl ChartWorkspace {
         // handles them.
         let cell_selected = crate::ui::take_table_cell_selected(ctx);
         if self.indicator_picker.is_open()
-            || self.studio_open()
+            || self.sheet_over_charts()
             || ctx.egui_wants_keyboard_input()
             || cell_selected
         {

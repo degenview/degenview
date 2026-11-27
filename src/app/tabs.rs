@@ -4,6 +4,7 @@ use super::window::WindowEnv;
 use crate::host::tab::link::TabLinkHost;
 use crate::host::tab::title::TabTitleHost;
 use crate::host::tab::window::{Placement, TabWindowHost};
+use crate::host::tradingview::Start;
 use crate::model::InstrumentId;
 use crate::model::Timeframe;
 use crate::model::tab::link::LinkHub;
@@ -110,6 +111,7 @@ pub(super) fn show_tab(
                 pending.extend(actions.into_iter().map(|action| match action {
                     WorkspaceAction::OpenPortfolio => AppAction::OpenPortfolio,
                     WorkspaceAction::OpenPineScripts => AppAction::OpenPine,
+                    WorkspaceAction::ScriptsImported => AppAction::ScriptsImported,
                     WorkspaceAction::OpenPineSource(target) => AppAction::OpenPineSource(target),
                     WorkspaceAction::OpenAlerts => AppAction::OpenAlerts,
                     WorkspaceAction::SavePriceAlert { alert, baseline } => {
@@ -601,7 +603,8 @@ impl TabState {
 
 impl DegenViewApp {
     /// A tab with no chart: it opens on the empty page, as a new Swift tab does.
-    pub(super) fn add_tab(&mut self, window: Option<WindowId>) {
+    /// Adds an empty chart tab and returns its id.
+    pub(super) fn add_tab(&mut self, window: Option<WindowId>) -> u64 {
         let id = self.tabs.allocate_id();
         let slot = TabSlot::new(TabContent::Chart(Box::new(ChartWorkspace::empty(
             id,
@@ -612,6 +615,29 @@ impl DegenViewApp {
             self.store.clone(),
         ))));
         self.tabs.register(slot, window);
+        id
+    }
+
+    /// File ▸ Import from TradingView, and the offer made at launch: over the focused chart tab,
+    /// else over a new one.
+    pub(super) fn import_tradingview(&mut self, start: Start, ctx: &egui::Context) {
+        self.import_offer.withdraw();
+        let focused = self.tabs.focused_tab();
+        let is_chart = self
+            .tabs
+            .find(|content| matches!(content, TabContent::Chart(tab) if tab.id() == focused))
+            .is_some();
+        let target = if is_chart {
+            focused
+        } else {
+            let window = self.tabs.windows().focused_window();
+            self.add_tab(window)
+        };
+        self.tabs.each_chart(|workspace| {
+            if workspace.id() == target {
+                workspace.open_tradingview_import(start, ctx);
+            }
+        });
     }
 
     pub(super) fn add_watchlist_tab(&mut self, item: WatchlistInstrument, ctx: &egui::Context) {

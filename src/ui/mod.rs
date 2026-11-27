@@ -19,6 +19,7 @@ pub mod shortcut;
 pub mod snapshot_studio;
 pub mod theme;
 pub mod trade;
+pub mod tradingview;
 pub mod watchlist;
 pub mod webhook;
 pub mod window;

@@ -1,6 +1,7 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::search_rank::normalize;
+use crate::clock::now_ms;
 use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
@@ -203,7 +204,7 @@ impl Coinbase {
         let span = granularity * PAGE_BUCKETS * 1_000;
         let mut candles: Vec<Kline> = Vec::new();
         let mut window_start = None;
-        let mut upper = end_ms;
+        let mut upper = first_upper(end_ms, now_ms(), granularity);
         for page in 0..MAX_PAGES {
             if candles.len() >= needed || upper <= start_ms {
                 break;
@@ -249,6 +250,12 @@ impl Coinbase {
         )?;
         parse_page(&body, granularity)
     }
+}
+
+/// Where paging back towards `end_ms` begins. No candle opens later than one bucket from now, and
+/// a page that lies wholly in the future comes back empty, which reads as the end of the history.
+fn first_upper(end_ms: i64, now_ms: i64, granularity: i64) -> i64 {
+    end_ms.min(now_ms.saturating_add(granularity * 1_000))
 }
 
 /// `[time s, low, high, open, close, volume]`, newest first.

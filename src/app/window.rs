@@ -15,6 +15,7 @@ use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::host::settings::{SettingsHost, SettingsHostAction};
 use crate::host::snapshot::SnapshotHost;
 use crate::host::tab::window::TabWindowHost;
+use crate::host::tradingview::offer::ImportOffer;
 use crate::host::update::{Phase, UpdateHost, UpdateView};
 use crate::i18n::tr;
 use crate::lock::lock;
@@ -72,6 +73,7 @@ pub(super) struct WindowEnv {
     pub(super) app_actions: Arc<Mutex<Vec<AppAction>>>,
     pub(super) session_save_error: SessionSaveError,
     pub(super) updates: UpdateHost,
+    pub(super) import_offer: ImportOffer,
     pub(super) snapshots: SnapshotHost,
     pub(super) liquidations: crate::host::liquidation::LiquidationHost,
     pub(super) taker_flow: crate::host::taker_flow::TakerFlowHost,
@@ -209,6 +211,12 @@ fn show_window(
         show_restart_prompt(&ctx, env, &update);
         show_session_save_error(&ctx, &env.session_save_error);
         env.mcp_questions.show(&ctx);
+        if env.import_offer.show(&ctx)
+            && let Ok(mut pending) = env.app_actions.lock()
+        {
+            pending.push(AppAction::AcceptImportOffer);
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
         let cycle = ui.input_mut(|input| {
             // macOS reaches these two through File ▸ New Tab / Close Tab.
             if !shortcut::is_mac() && shortcut::NEW_TAB.consume(input) {
@@ -353,6 +361,7 @@ impl DegenViewApp {
             app_actions: Arc::clone(&self.actions),
             session_save_error: self.session.error().clone(),
             updates: self.updates.clone(),
+            import_offer: self.import_offer.clone(),
             snapshots: self.snapshots.clone(),
             liquidations: self.liquidations.clone(),
             taker_flow: self.taker_flow.clone(),

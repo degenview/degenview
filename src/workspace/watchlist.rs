@@ -416,3 +416,113 @@ impl ChartWorkspace {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::host::paper::PaperHost;
+    use crate::host::tradingview::{Providers, Start, Targets, TradingViewImport};
+    use crate::model::watchlist::WatchlistInstrument;
+    use crate::model::{DataSource, InstrumentId};
+    use crate::service::tradingview::cache::testing::Scratch;
+    use crate::store::{SharedStore, Store};
+    use crate::workspace::ChartWorkspace;
+    use crate::workspace::test_support::empty_workspace;
+    use eframe::egui;
+    use std::sync::{Arc, Mutex};
+
+    fn frame(
+        ctx: &egui::Context,
+        workspace: &mut ChartWorkspace,
+        paper: &Arc<Mutex<PaperHost>>,
+        events: Vec<egui::Event>,
+    ) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 800.0),
+            )),
+            events,
+            focused: true,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            workspace.ui(ui, paper);
+        });
+        output.textures_delta.clear();
+    }
+
+    fn delete() -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key: egui::Key::Delete,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    /// The watchlist is drawn before the import's sheet, and must still not act under it.
+    #[test]
+    fn delete_does_not_reach_the_watchlist_under_the_import() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(1);
+        let paper_store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let paper = Arc::new(Mutex::new(PaperHost::load(paper_store)));
+        let item = WatchlistInstrument::new(
+            InstrumentId::new(DataSource::Binance, "BTCUSDT"),
+            "BTCUSDT",
+            "BTCUSDT",
+        );
+        let (entry, list) = (
+            item.id,
+            crate::lock::lock(&workspace.watchlist).lists()[0].id,
+        );
+        let add = |workspace: &ChartWorkspace| {
+            crate::lock::lock(&workspace.watchlist)
+                .add_to_list(list, item.clone())
+                .unwrap();
+        };
+        let entries = |workspace: &ChartWorkspace| {
+            crate::lock::lock(&workspace.watchlist).lists()[0]
+                .instruments()
+                .count()
+        };
+        workspace.watchlist_pane.set_visible(true);
+        add(&workspace);
+        let select = |ctx: &egui::Context, workspace: &mut ChartWorkspace| {
+            frame(ctx, workspace, &paper, Vec::new());
+            workspace.watchlist_pane.sidebar.selected_entry = Some(entry);
+            frame(ctx, workspace, &paper, Vec::new());
+        };
+
+        // With nothing over it, the key removes the row: the harness does reach the list.
+        select(&ctx, &mut workspace);
+        frame(&ctx, &mut workspace, &paper, delete());
+        assert_eq!(entries(&workspace), 0);
+
+        add(&workspace);
+        select(&ctx, &mut workspace);
+        let folder = Scratch::new();
+        let targets = Targets {
+            store: workspace.store.clone(),
+            watchlist: Arc::clone(&workspace.watchlist),
+            scripts: Arc::new(|| None),
+        };
+        let providers = Providers {
+            search: Arc::new(|_, _| Ok(Vec::new())),
+            candles: Arc::new(|_| None),
+        };
+        workspace.tradingview = Some(TradingViewImport::with_providers(
+            targets,
+            providers,
+            Some(folder.path().to_owned()),
+            Start::Choose,
+            &ctx,
+        ));
+        for _ in 0..2 {
+            frame(&ctx, &mut workspace, &paper, Vec::new());
+        }
+        frame(&ctx, &mut workspace, &paper, delete());
+        assert_eq!(entries(&workspace), 1);
+    }
+}

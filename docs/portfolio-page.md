@@ -179,7 +179,8 @@ clashes with another portfolio's name shows the reason under the field in red an
 instead of being sent; Escape puts the old name back; Escape with nothing focused closes the
 sheet. With no portfolios the card holds the empty picture. The footer has New Portfolio\u2026 and
 Done. The card, pill, status dot and problem list the import sheets use live in
-`portfolio_sheet_parts`.
+`ui::kit::sheet_parts`. The ticker rows and the band above them are `ui::kit::matching`, shared with
+the [TradingView import](tradingview-import.md).
 
 ## Empty states
 

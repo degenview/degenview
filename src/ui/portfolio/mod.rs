@@ -13,7 +13,6 @@ pub mod grid;
 pub mod holdings;
 pub mod import_preview;
 pub mod overview;
-pub mod sheet_parts;
 pub mod sheets;
 pub mod statistics;
 pub mod tab;

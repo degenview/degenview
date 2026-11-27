@@ -5,6 +5,7 @@ use super::{
     ConflictRecord, EntityKind, EntityLink, InboxRecord, OutboxOp, Outcome, RecordName,
     RemoteRecord, Side, Stamp, Work, canonical_json, conflict_copy_name, merge, sha256_hex,
 };
+use crate::model::pine::script_name;
 use crate::sync::engine::SyncError;
 use crate::sync::record::project::{ScriptSnapshot, project_script};
 use serde_json::Value;
@@ -204,7 +205,11 @@ impl Work<'_> {
                 .device_name(&record.record.origin_device)?
                 .unwrap_or_default()
         };
-        let copy_name = conflict_copy_name(&loser.name, &device, &self.ctx.date);
+        // The note of where the copy came from is added to the name, which gives way to it.
+        let copy_name = script_name::with_suffix(
+            loser.name.trim(),
+            &conflict_copy_name("", &device, &self.ctx.date),
+        );
         let copy_id = sha256_hex(
             format!(
                 "{original}\0{copy_name}\0{}\0{}",

@@ -11,6 +11,8 @@ pub enum NativeCommand {
     OpenPineStudio,
     /// View ▸ Portfolio.
     OpenPortfolio,
+    /// File ▸ Import from TradingView….
+    ImportTradingView,
     /// Help ▸ DegenView Documentation.
     OpenDocs,
     /// Help ▸ DegenView on GitHub.
@@ -138,6 +140,7 @@ mod menu_titles {
             // File.
             "newWindowForTab:" => tr!("New Tab").to_string(),
             "newScript:" => tr!("New Script").to_string(),
+            "importTradingView:" => tr!("Import from TradingView…").to_string(),
             "closeTab:" => tr!("Close Tab").to_string(),
             "saveCurrentLayout:" => tr!("Save").to_string(),
             // Edit.
@@ -252,6 +255,10 @@ mod platform {
 
     extern "C-unwind" fn open_portfolio(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
         push(NativeCommand::OpenPortfolio);
+    }
+
+    extern "C-unwind" fn import_tradingview(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::ImportTradingView);
     }
 
     extern "C-unwind" fn open_docs(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
@@ -511,6 +518,7 @@ mod platform {
         install_action(delegate_class, sel!(openPineStudio:), open_pine_studio);
         install_action(delegate_class, sel!(openPortfolio:), open_portfolio);
         install_action(delegate_class, sel!(openDocs:), open_docs);
+        install_action(delegate_class, sel!(importTradingView:), import_tradingview);
         install_action(delegate_class, sel!(openGitHub:), open_github);
         install_action(delegate_class, sel!(openCoffee:), open_coffee);
         install_action(
@@ -619,6 +627,7 @@ mod platform {
         for (selector, key) in [
             (sel!(newWindowForTab:), ns_string!("t")),
             (sel!(newScript:), ns_string!("n")),
+            (sel!(importTradingView:), ns_string!("")),
             (sel!(closeTab:), ns_string!("w")),
             (sel!(saveCurrentLayout:), ns_string!("s")),
         ] {
@@ -1211,7 +1220,7 @@ mod menu_title_tests {
     use crate::i18n::{Locale, with_locale};
 
     /// Every action the menus send, as `install_menus` builds them.
-    const ACTIONS: [&str; 24] = [
+    const ACTIONS: [&str; 25] = [
         "openSettings:",
         "hide:",
         "hideOtherApplications:",
@@ -1228,6 +1237,7 @@ mod menu_title_tests {
         "renameSymbol:",
         "openPineStudio:",
         "openPortfolio:",
+        "importTradingView:",
         "performMiniaturize:",
         "moveTabToNewWindow:",
         "mergeAllWindows:",

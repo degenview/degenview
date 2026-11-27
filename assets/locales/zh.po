@@ -1619,6 +1619,10 @@ msgstr "卖价 {price}"
 msgid "Ask {size} ({worth})"
 msgstr "卖价挂单 {size}（{worth}）"
 
+#: src/ui/tradingview/offer/mod.rs
+msgid "Asked only once. Later, choose Import from TradingView in the layout menu."
+msgstr "此提示只出现一次。以后可在布局菜单中选择“从 TradingView 导入”。"
+
 #: src/ui/broker/panel.rs
 msgid "Asking the broker to cancel…"
 msgstr "正在请求券商取消…"
@@ -2144,6 +2148,10 @@ msgstr "置于顶层"
 #: src/ui/drawing/layer/menu.rs
 msgid "Bring to front"
 msgstr "置于顶层"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Bring your TradingView setup with you"
+msgstr "把您的 TradingView 内容带过来"
 
 #: src/model/alert/mod.rs src/model/portfolio/mod.rs
 msgid "British Pound"
@@ -2851,6 +2859,10 @@ msgstr "涨跌"
 #: src/model/watchlist/mod.rs
 msgid "Chg%"
 msgstr "涨跌幅"
+
+#: src/ui/tradingview/offer.rs
+msgid "Choose What to Import"
+msgstr "选择导入内容"
 
 #: src/host/portfolio/import_flow.rs
 msgid "Choose a CoinMarketCap transactions export"
@@ -4469,6 +4481,10 @@ msgstr "DegenView 找不到可用于缓存的文件夹，因此两次启动之�
 #: src/app/window.rs
 msgid "DegenView couldn’t save which tabs are open, so they may not reopen after a restart. It keeps trying in the background."
 msgstr "DegenView 无法保存当前打开的标签页，重新启动后它们可能不会重新打开。DegenView 会在后台继续尝试。"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "DegenView found it on this computer. You choose what comes over."
+msgstr "DegenView 在此电脑上找到了它。导入内容由您选择。"
 
 #: src/service/update/install/mod.rs
 msgid "DegenView is missing from {target} and the previous version is in {old}. Move it back, then try the update again."
@@ -7186,9 +7202,17 @@ msgid "Imported “{name}”. {count} value in the file was not usable and was s
 msgid_plural "Imported “{name}”. {count} values in the file were not usable and were skipped, such as: {value}"
 msgstr[0] "已导入“{name}”。文件中有 {count} 个值无法使用，已跳过，例如：{value}"
 
+#: src/ui/tradingview/result.rs
+msgid "Importing…"
+msgstr "正在导入…"
+
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Import…"
 msgstr "导入…"
+
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "在 Pine Studio 中"
 
 #: src/ui/settings/api_keys.rs
 msgid ""
@@ -7206,6 +7230,14 @@ msgstr "盈利"
 #: src/ui/chart/settings/compare.rs
 msgid "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "在标的搜索（⌘K）中，按 ⌥↵ 可将高亮的市场添加到此图表。"
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "在工具栏的布局菜单中"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "在自选列表侧边栏中"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -9238,6 +9270,10 @@ msgstr "无分组"
 msgid "No Symbols"
 msgstr "没有标的"
 
+#: src/ui/tradingview/offer.rs
+msgid "No Thanks"
+msgstr "不用了"
+
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
 msgid "No Transactions"
@@ -9822,6 +9858,10 @@ msgstr "图表上没有符合筛选条件的内容。"
 #: src/pine_studio/profiler/ui.rs
 msgid "Nothing profiled yet"
 msgstr "尚无分析结果"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Nothing replaced"
+msgstr "不替换任何内容"
 
 #: src/pine_studio/ai/review_view.rs
 msgid "Nothing selected"
@@ -11124,6 +11164,10 @@ msgstr "预测市场数据源"
 msgid "Predictions"
 msgstr "预测"
 
+#: src/ui/tradingview/result.rs
+msgid "Preparing the preview…"
+msgstr "正在准备预览…"
+
 #: src/ui/settings/mcp/permissions_sheet.rs
 msgid "Preset"
 msgstr "预设"
@@ -11140,6 +11184,10 @@ msgstr "预览"
 #: src/pine_studio/menu_bar/view.rs
 msgid "Preview Chart"
 msgstr "预览图表"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "Preview first"
+msgstr "先预览"
 
 #: src/pine_studio/library/empty_library.rs
 msgid "Preview it, then add it to any chart."
@@ -11613,6 +11661,10 @@ msgstr "已实现毛盈亏 {amount}（未扣手续费）"
 #: src/pine_studio/debug/panel/mod.rs
 msgid "Realtime"
 msgstr "实时"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Rebuilt from its drawings"
+msgstr "根据绘图重建"
 
 #: src/pine_studio/preview/market_picker.rs src/ui/chart/picker_kit/widgets.rs
 #: src/ui/chart/symbol_picker/mod.rs src/ui/kit/color_picker/mod.rs
@@ -12866,22 +12918,6 @@ msgstr "脚本已删除"
 msgid "Script name"
 msgstr "脚本名称"
 
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain control characters."
-msgstr "脚本名称不能包含控制字符。"
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot contain “{character}”."
-msgstr "脚本名称不能包含“{character}”。"
-
-#: src/model/pine/script_name.rs
-msgid "Script names cannot start with a period."
-msgstr "脚本名称不能以句点开头。"
-
-#: src/model/pine/script_name.rs
-msgid "Script names must be {limit} bytes or fewer."
-msgstr "脚本名称不能超过 {limit} 字节。"
-
 #: src/model/alert/pine.rs
 msgid "Script not loaded"
 msgstr "脚本未加载"
@@ -13113,6 +13149,10 @@ msgstr "全选"
 msgid "Select Bar on Chart"
 msgstr "在图表上选择K线"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select all"
+msgstr "全选"
+
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Select an indicator"
 msgstr "选择一个指标"
@@ -13124,6 +13164,10 @@ msgstr "选择K线"
 #: src/ui/replay/bar.rs
 msgid "Select bar on chart"
 msgstr "在图表上选择K线"
+
+#: src/ui/tradingview/choose/cards.rs
+msgid "Select none"
+msgstr "全不选"
 
 #: src/ui/workspace/snapshot_menu.rs
 msgid "Select portion"
@@ -15060,6 +15104,10 @@ msgstr "区间内涨幅最大的持仓"
 msgid "The image is too large to upload."
 msgstr "图片太大，无法上传。"
 
+#: src/host/tradingview/mod.rs
+msgid "The import stopped unexpectedly. Some of it may already have been added."
+msgstr "导入意外中止。其中部分内容可能已经添加。"
+
 #: src/model/alert/pine.rs
 msgid "The indicator's script hasn't loaded yet. Try again in a moment."
 msgstr "该指标的脚本尚未加载，稍后再试。"
@@ -15598,6 +15646,10 @@ msgstr "当前聚焦的整个图表"
 #: src/ui/alert/center.rs
 msgid "The {symbol} alert is removed. Its trigger history is kept."
 msgstr "{symbol} 提醒已移除，触发历史仍会保留。"
+
+#: src/ui/tradingview/words.rs
+msgid "The {symbol} chart: its symbol has no market, so it opens on {market} ({exchange}), where most of the drawings are"
+msgstr "{symbol} 图表：其代码没有对应市场，因此改为打开 {market}（{exchange}），大部分绘图在此市场"
 
 #: src/pine_studio/menu_bar/mod.rs src/ui/settings/appearance.rs
 msgid "Theme"
@@ -16217,6 +16269,10 @@ msgstr "手续费（{percent}%）"
 #: src/ui/trade/order_sheet/mod.rs
 msgid "Trading settings"
 msgstr "交易设置"
+
+#: src/ui/tradingview/offer/mod.rs
+msgid "TradingView unchanged"
+msgstr "TradingView 保持原样"
 
 #: src/model/chart/kind.rs
 msgid "Traditional"
@@ -18619,6 +18675,10 @@ msgid "{count} named order on “{account}”"
 msgid_plural "{count} named orders on “{account}”"
 msgstr[0] "“{account}”上的 {count} 个指定订单"
 
+#: src/ui/tradingview/choose/cards.rs
+msgid "{count} of {total} selected"
+msgstr "已选 {count}/{total}"
+
 #: src/ui/paper/tables.rs
 msgid "{count} open · Unrealized {pnl}"
 msgid_plural "{count} open · Unrealized {pnl}"
@@ -20053,6 +20113,21 @@ msgctxt "icon"
 msgid "Scales"
 msgstr "天平"
 
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Choose"
+msgstr "选择"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Done"
+msgstr "完成"
+
+#: src/ui/tradingview/mod.rs
+msgctxt "import step"
+msgid "Preview"
+msgstr "预览"
+
 #: src/model/indicators/mod.rs
 msgctxt "indicator chip"
 msgid "Vol"
@@ -20493,7 +20568,245 @@ msgctxt "what the image shows"
 msgid "Area"
 msgstr "范围"
 
+msgid "A chart type DegenView doesn’t draw: your usual one is used"
+msgstr "DegenView 不支持的图表类型：改用您的默认类型"
+
+msgid "A symbol from an exchange DegenView doesn’t have is matched to the same pair elsewhere. Change or skip any of them."
+msgstr "DegenView 未接入的交易所的代码，会匹配到其他交易所的同一交易对。任何一项都可以更改或跳过。"
+
+msgid "Added to DegenView"
+msgstr "已添加到 DegenView"
+
+msgid "Charts"
+msgstr "图表"
+
+msgid "Choose Folder…"
+msgstr "选择文件夹…"
+
+msgid "Choose TradingView’s data folder"
+msgstr "选择 TradingView 的数据文件夹"
+
+msgid "Couldn’t reach the exchanges"
+msgstr "无法连接交易所"
+
+msgid "From the TradingView app."
+msgstr "来自 TradingView 应用。"
+
+msgid "Import Complete"
+msgstr "导入完成"
+
+msgid "Import from TradingView"
+msgstr "从 TradingView 导入"
+
+msgid "Import from TradingView…"
+msgstr "从 TradingView 导入…"
+
+msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
+msgstr "请安装 TradingView 桌面应用并登录，然后打开想要导入的布局和自选列表。"
+
+msgid "Its charts had different intervals. A DegenView layout has one:"
+msgstr "其中各图表的周期不同。DegenView 的一个布局只有一个周期："
+
+msgid "Layouts, drawings, watchlists and scripts the TradingView app has loaded."
+msgstr "TradingView 应用已加载的布局、绘图、自选列表和脚本。"
+
+msgid "Left out of the import"
+msgstr "不参与导入"
+
+msgid "Match symbols to markets"
+msgstr "将代码匹配到市场"
+
+msgid "No exchange here lists it"
+msgstr "可用的交易所均未上市"
+
+msgid "No layouts, watchlists or scripts were found. Open them in TradingView first, then try again."
+msgstr "未找到布局、自选列表或脚本。请先在 TradingView 中打开它们，然后重试。"
+
+msgid "None of its charts has a market, so it isn’t imported"
+msgstr "其中没有任何图表匹配到市场，因此不导入"
+
+msgid "Not found on any exchange"
+msgstr "所有交易所均未找到"
+
+msgid "Nothing Was Added"
+msgstr "未添加任何内容"
+
+msgid "Nothing to Import Yet"
+msgstr "暂无可导入的内容"
+
+msgid "Only what the TradingView app has opened recently on this computer is here. Missing something? Open it there, then reload."
+msgstr "这里只有 TradingView 应用最近在本机打开过的内容。缺少什么？请在那里打开，然后重新加载。"
+
+msgid "Open Layout"
+msgstr "打开布局"
+
+msgid "Other exchange"
+msgstr "其他交易所"
+
+msgid "Perpetuals and futures aren’t available"
+msgstr "不支持永续合约和期货"
+
+msgid "Pick the market that stands in for this TradingView symbol."
+msgstr "选择用于代替此 TradingView 代码的市场。"
+
+msgid "Pine scripts"
+msgstr "Pine 脚本"
+
+msgid "Reading TradingView’s data…"
+msgstr "正在读取 TradingView 数据…"
+
+msgid "Reload"
+msgstr "重新加载"
+
+msgid "Saved layouts"
+msgstr "已保存的布局"
+
+msgid "Search Again"
+msgstr "重新搜索"
+
+msgid "Some things couldn’t be added"
+msgstr "部分内容无法添加"
+
+msgid "Stocks need an Alpaca key (Settings)"
+msgstr "股票需要 Alpaca 密钥（设置）"
+
+msgid "Text of {count} drawing is shortened"
+msgid_plural "Text of {count} drawings is shortened"
+msgstr[0] "{count} 个绘图的文字被截短"
+
+msgid "The TradingView app’s data wasn’t found on this computer."
+msgstr "在本机未找到 TradingView 应用的数据。"
+
+msgid "The comparison with {symbol}: it has no market"
+msgstr "与 {symbol} 的对比：没有对应市场"
+
+msgid "The script library couldn’t be opened."
+msgstr "无法打开脚本库。"
+
+msgid "The {interval} interval isn’t a timeframe here"
+msgstr "{interval} 周期在这里不是可用的时间周期"
+
+msgid "The {name} indicator"
+msgstr "{name} 指标"
+
+msgid "The {symbol} chart: its symbol has no market"
+msgstr "{symbol} 图表：该代码没有对应市场"
+
+msgid "This folder doesn’t hold TradingView’s data."
+msgstr "此文件夹中没有 TradingView 的数据。"
+
+msgid "TradingView’s data couldn’t be read: {error}"
+msgstr "无法读取 TradingView 的数据：{error}"
+
+msgid "Use Market"
+msgstr "使用此市场"
+
+msgid "What will be added. Nothing of yours is replaced."
+msgstr "将要添加的内容。不会替换您的任何数据。"
+
+msgid "symbol matched"
+msgid_plural "symbols matched"
+msgstr[0] "个代码已匹配"
+
+msgid "the read stopped unexpectedly"
+msgstr "读取意外中断"
+
+msgid "{count} chart"
+msgid_plural "{count} charts"
+msgstr[0] "{count} 个图表"
+
+msgid "{count} chart TradingView keeps but doesn’t show"
+msgid_plural "{count} charts TradingView keeps but doesn’t show"
+msgstr[0] "{count} 个 TradingView 保留但未显示的图表"
+
+msgid "{count} drawing on {symbol}, which has no market"
+msgid_plural "{count} drawings on {symbol}, which has no market"
+msgstr[0] "{symbol} 上的 {count} 个绘图，该代码没有对应市场"
+
+msgid "{count} drawing that couldn’t be read"
+msgid_plural "{count} drawings that couldn’t be read"
+msgstr[0] "{count} 个无法读取的绘图"
+
+msgid "{count} picture: TradingView keeps it online"
+msgid_plural "{count} pictures: TradingView keeps them online"
+msgstr[0] "{count} 张图片：TradingView 将其保存在线上"
+
+msgid "{count} position whose price step is unknown"
+msgid_plural "{count} positions whose price step is unknown"
+msgstr[0] "{count} 个最小价格单位未知的持仓绘图"
+
+msgid "{count} symbol without a market"
+msgid_plural "{count} symbols without a market"
+msgstr[0] "{count} 个没有对应市场的代码"
+
+msgid "{count} {tool} drawing can’t be brought over"
+msgid_plural "{count} {tool} drawings can’t be brought over"
+msgstr[0] "{count} 个 {tool} 绘图无法导入"
+
+msgid "{name} is added with its default settings"
+msgstr "{name} 以默认设置添加"
+
+msgid "{name}: {error}"
+msgstr "{name}：{error}"
+
+msgid "A formula, not a single market"
+msgstr "公式，而非单一市场"
+
+msgid "{count} symbol that is the same market as another"
+msgid_plural "{count} symbols that are the same market as others"
+msgstr[0] "{count} 个与其他代码属于同一市场的代码"
+
+msgid "{count} symbol that doesn’t fit in one watchlist"
+msgid_plural "{count} symbols that don’t fit in one watchlist"
+msgstr[0] "{count} 个超出单个自选列表容量的代码"
+
+msgid "{count} Fibonacci or Gann drawing uses DegenView’s levels"
+msgid_plural "{count} Fibonacci or Gann drawings use DegenView’s levels"
+msgstr[0] "{count} 个斐波那契或江恩绘图使用 DegenView 的水平"
+
 #: src/ui/window/chrome.rs
 msgctxt "window button"
 msgid "Minimize"
 msgstr "最小化"
+
+msgid "{count} drawing pinned to the screen can’t be brought over"
+msgid_plural "{count} drawings pinned to the screen can’t be brought over"
+msgstr[0] "{count} 个固定在屏幕上的绘图无法导入"
+
+msgid "{count} post is placed at an estimated height"
+msgid_plural "{count} posts are placed at an estimated height"
+msgstr[0] "{count} 条帖子按估算的高度放置"
+
+msgid "{count} post whose place on the chart couldn’t be worked out"
+msgid_plural "{count} posts whose place on the chart couldn’t be worked out"
+msgstr[0] "{count} 条帖子无法确定在图表上的位置"
+
+msgid "{count} anchored VWAP loses its percentage bands"
+msgid_plural "{count} anchored VWAPs lose their percentage bands"
+msgstr[0] "{count} 个锚定 VWAP 失去百分比通道"
+
+msgid "{count} drawing is on {symbol} ({exchange}): switch the chart to that market to see it"
+msgid_plural "{count} drawings are on {symbol} ({exchange}): switch the chart to that market to see them"
+msgstr[0] "{count} 个绘图位于 {symbol}（{exchange}）：将图表切换到该市场即可看到"
+
+msgid "None of its symbols has a market, so it isn’t imported"
+msgstr "其中没有任何代码匹配到市场，因此不导入"
+
+msgid "Will be saved as “{name}”."
+msgstr "将保存为“{name}”。"
+
+msgid "The script’s file would land outside the library."
+msgstr "脚本文件将位于脚本库之外。"
+
+msgid "{count} post is still being placed"
+msgid_plural "{count} posts are still being placed"
+msgstr[0] "{count} 条帖子仍在定位中"
+
+msgid "Looking up markets and prices…"
+msgstr "正在查找市场和价格…"
+
+msgid "This Flatpak can’t look for TradingView’s data by itself."
+msgstr "此 Flatpak 无法自行查找 TradingView 的数据。"
+
+msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
+msgstr "请选择 TradingView 的数据文件夹：通常是主文件夹中的 snap/tradingview/current/.config/TradingView 或 .config/TradingView。按 Ctrl+H 可显示隐藏文件夹。"

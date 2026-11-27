@@ -11,7 +11,8 @@ use serde_json::Value;
 
 /// Same bound the Pine lexer enforces on a source (`Limits::source_characters`).
 pub const MAX_SCRIPT_SOURCE_CHARS: usize = 500_000;
-pub const MAX_SCRIPT_NAME_CHARS: usize = 200;
+/// Older versions named scripts up to 250 bytes; the store shortens what is longer than its own.
+pub const MAX_SCRIPT_NAME_CHARS: usize = 250;
 /// Drawings keep their own anchor and text bounds (`model::drawings`).
 pub const MAX_DRAWING_ARRAY: usize = crate::model::drawings::MAX_POINTS;
 pub const MAX_DRAWING_STRING: usize = 10_000;

@@ -1,0 +1,159 @@
+//! A drawing as TradingView stores it.
+
+use super::{TvSymbol, interval};
+use serde_json::{Map, Value};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RawDrawing {
+    pub id: String,
+    pub symbol: TvSymbol,
+    /// TradingView's tool class: `LineToolTrendLine`.
+    pub tool: String,
+    /// The tool's own settings.
+    pub props: Map<String, Value>,
+    pub points: Vec<RawPoint>,
+    /// The resolution it was drawn on.
+    pub interval: String,
+    /// Stacking order; larger is nearer the front.
+    pub z: f64,
+    /// The X post, on a post drawing.
+    pub post: Option<RawPost>,
+    /// Whether the points' prices are places on the chart. A post's is not: TradingView sets it
+    /// beside its bar by the zoom of the moment, and what it stores there means nothing.
+    priced: bool,
+}
+
+/// An X post as TradingView keeps it beside the drawing: its address, and what its card shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RawPost {
+    pub url: String,
+    /// The author's display name; empty when not stored, as are the two below.
+    pub name: String,
+    /// `@handle`.
+    pub handle: String,
+    pub text: String,
+}
+
+impl RawPost {
+    fn read(tweet: &Value) -> Option<Self> {
+        let field = |key: &str| {
+            tweet
+                .get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let url = field("tweetUrl");
+        (!url.is_empty()).then(|| Self {
+            url,
+            name: field("user"),
+            handle: field("username"),
+            text: field("text"),
+        })
+    }
+}
+
+/// One placement point: a bar's open time in epoch seconds, plus `offset` bars of `interval` for a
+/// point past the newest bar.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RawPoint {
+    pub time_s: i64,
+    pub offset: i64,
+    pub bar_ms: i64,
+    pub price: f64,
+}
+
+impl RawPoint {
+    pub fn time_ms(&self) -> i64 {
+        self.time_s
+            .saturating_mul(1_000)
+            .saturating_add(self.offset.saturating_mul(self.bar_ms))
+    }
+}
+
+impl RawDrawing {
+    /// Reads one entry of a sources response; `None` when it is not a drawing on a market.
+    pub fn read(id: &str, source: &Value) -> Option<Self> {
+        let state = source.get("state")?;
+        let tool = state.get("type")?.as_str()?;
+        if !tool.starts_with("LineTool") {
+            return None;
+        }
+        let props = state.get("state")?.as_object()?.clone();
+        let symbol = source
+            .get("symbol")
+            .or_else(|| props.get("symbol"))
+            .and_then(Value::as_str)
+            .and_then(TvSymbol::read)?;
+        let interval = props
+            .get("interval")
+            .and_then(Value::as_str)
+            .unwrap_or("D")
+            .to_owned();
+        let points = state
+            .get("points")
+            .and_then(Value::as_array)?
+            .iter()
+            .map(|point| {
+                let of = point
+                    .get("interval")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&interval);
+                Some(RawPoint {
+                    time_s: point.get("time_t").and_then(Value::as_i64)?,
+                    offset: point.get("offset").and_then(Value::as_i64).unwrap_or(0),
+                    bar_ms: interval::bar_ms(of).unwrap_or(0),
+                    price: point.get("price").and_then(Value::as_f64)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let post = state
+            .get("tweetData")
+            .or_else(|| source.get("tweetData"))
+            .and_then(RawPost::read);
+        Some(Self {
+            id: id.to_owned(),
+            symbol,
+            tool: tool.to_owned(),
+            props,
+            points,
+            interval,
+            z: state.get("zorder").and_then(Value::as_f64).unwrap_or(0.0),
+            post,
+            priced: tool != "LineToolTweet",
+        })
+    }
+
+    pub fn is_priced(&self) -> bool {
+        self.priced
+    }
+
+    /// For a drawing without a price: how far from its bar it sits, as a percentage of the room
+    /// between the bar and the edge of the chart, above the high when positive and below the low
+    /// when negative.
+    pub fn beside_bar(&self) -> Option<f64> {
+        (!self.priced).then(|| self.number("position").unwrap_or(0.0).clamp(-100.0, 100.0))
+    }
+
+    /// The drawing with its points at `price`.
+    pub fn at_price(&self, price: f64) -> Self {
+        let mut placed = self.clone();
+        for point in &mut placed.points {
+            point.price = price;
+        }
+        placed.priced = true;
+        placed
+    }
+
+    pub fn str(&self, key: &str) -> Option<&str> {
+        self.props.get(key).and_then(Value::as_str)
+    }
+
+    pub fn number(&self, key: &str) -> Option<f64> {
+        self.props.get(key).and_then(Value::as_f64)
+    }
+
+    pub fn flag(&self, key: &str) -> Option<bool> {
+        self.props.get(key).and_then(Value::as_bool)
+    }
+}

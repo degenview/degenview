@@ -10,11 +10,12 @@
 pub mod registry;
 
 use crate::clock::now_ms;
+use crate::i18n::tr;
 use crate::model::pine::script::{
     CompileStatus, LocalScript, ScriptCompileRecord, ScriptDraft, ScriptId, ScriptType,
     ScriptVersion,
 };
-use crate::model::pine::script_name::{self, FILE_EXTENSION, ScriptNameError};
+use crate::model::pine::script_name::{self, EmptyName, FILE_EXTENSION};
 use crate::pine::compiler;
 use crate::pine::syntax::token::Limits;
 use registry::LibraryRegistry;
@@ -42,7 +43,9 @@ pub enum ScriptStoreError {
     #[error("The file changed outside the app.")]
     ChangedOnDisk,
     #[error(transparent)]
-    Name(#[from] ScriptNameError),
+    Name(#[from] EmptyName),
+    #[error("{}", tr!("The script’s file would land outside the library."))]
+    OutsideLibrary,
     #[error("{0}")]
     Io(String),
 }
@@ -165,15 +168,11 @@ impl ScriptStore {
         disambiguating: bool,
     ) -> Result<LocalScript> {
         self.load_if_needed()?;
-        let base = script_name::validate(requested)?;
+        let base = script_name::portable(requested)?;
         if !disambiguating && self.is_name_taken(&base, None) {
             return Err(ScriptStoreError::NameConflict);
         }
-        let name = if disambiguating {
-            disambiguated(&base, &self.taken_names(None))
-        } else {
-            base
-        };
+        let name = self.claim(&base, self.taken_names(None), disambiguating)?;
         let now = now_ms();
         let id = new_id();
         let script = LocalScript {
@@ -189,7 +188,7 @@ impl ScriptStore {
             is_favorite: false,
             compile_record: None,
         };
-        self.write_file(&id, &script.name, &script.source)?;
+        self.write_claimed(&id, &script.name, &script.source)?;
         self.write_record(&Record::of(&script))?;
         self.metadata.insert(id, script.clone());
         self.save_index()?;
@@ -211,8 +210,8 @@ impl ScriptStore {
         if self.metadata.contains_key(id) {
             return Err(ScriptStoreError::NameConflict);
         }
-        let base = script_name::validate(requested)?;
-        let name = disambiguated(&base, &self.taken_names(None));
+        let base = script_name::portable(requested)?;
+        let name = self.claim(&base, self.taken_names(None), true)?;
         let now = now_ms();
         let script = LocalScript {
             id: id.to_owned(),
@@ -225,7 +224,7 @@ impl ScriptStore {
             is_favorite: favorite,
             compile_record: None,
         };
-        self.write_file(id, &script.name, &script.source)?;
+        self.write_claimed(id, &script.name, &script.source)?;
         self.write_record(&Record::of(&script))?;
         self.metadata.insert(id.to_owned(), script);
         self.save_index()?;
@@ -247,11 +246,16 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = script_name::validate(requested)?;
-        let target = if self.is_name_taken(&clean, Some(id)) {
-            disambiguated(&clean, &self.taken_names(Some(id)))
+        // A name the script already has is left alone, whatever it holds.
+        let target = if requested == current.name {
+            current.name.clone()
         } else {
-            clean
+            let clean = script_name::portable(requested)?;
+            if self.is_name_taken(&clean, Some(id)) {
+                script_name::numbered(&clean, &self.taken_names(Some(id)))
+            } else {
+                clean
+            }
         };
         if target != current.name {
             self.rename(id, &target)?;
@@ -276,7 +280,7 @@ impl ScriptStore {
     pub fn duplicate(&mut self, id: &str) -> Result<LocalScript> {
         let original = self.script(id)?.ok_or(ScriptStoreError::MissingScript)?;
         self.create(
-            &format!("{} copy", original.name),
+            &script_name::with_suffix(&original.name, " copy"),
             original.script_type,
             Some(&original.source),
             true,
@@ -411,7 +415,10 @@ impl ScriptStore {
             .get(id)
             .cloned()
             .ok_or(ScriptStoreError::MissingScript)?;
-        let clean = script_name::validate(new_name)?;
+        if new_name == script.name {
+            return Ok(script);
+        }
+        let clean = script_name::portable(new_name)?;
         if clean == script.name {
             return Ok(script);
         }
@@ -647,12 +654,12 @@ impl ScriptStore {
         self.scripts_dir.join(format!("{name}.{FILE_EXTENSION}"))
     }
 
-    /// Defense in depth behind the name validator: a file must land directly in the library.
+    /// Defense in depth behind [`script_name::portable`]: a file must land directly in the library.
     fn assert_inside_library(&self, path: &Path) -> Result<()> {
         if path.parent() == Some(self.scripts_dir.as_path()) {
             Ok(())
         } else {
-            Err(ScriptNameError::ForbiddenCharacter('/').into())
+            Err(ScriptStoreError::OutsideLibrary)
         }
     }
 
@@ -668,6 +675,45 @@ impl ScriptStore {
         Ok(())
     }
 
+    /// Makes the empty file a new script will be written to, and returns the name it took. The
+    /// filesystem has the last word on which names are one file (APFS takes a precomposed and a
+    /// decomposed accent for the same), so the file is created only if there is none, and with
+    /// `disambiguating` a refused name is numbered further. `taken` are the names known to be in use.
+    fn claim(
+        &self,
+        base: &str,
+        mut taken: HashSet<String>,
+        disambiguating: bool,
+    ) -> Result<String> {
+        loop {
+            let name = if disambiguating {
+                script_name::numbered(base, &taken)
+            } else {
+                base.to_owned()
+            };
+            let path = self.file_for_name(&name);
+            self.assert_inside_library(&path)?;
+            match fs::File::create_new(&path) {
+                Ok(_) => return Ok(name),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // A name already in `taken` coming back would never end.
+                    if !disambiguating || !taken.insert(script_name::key(&name)) {
+                        return Err(ScriptStoreError::NameConflict);
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
+    /// Writes a new script into the file [`Self::claim`] made for it, which goes again if that
+    /// fails.
+    fn write_claimed(&mut self, id: &str, name: &str, source: &str) -> Result<()> {
+        self.write_file(id, name, source).inspect_err(|_| {
+            let _ = fs::remove_file(self.file_for_name(name));
+        })
+    }
+
     fn rename_file(&mut self, id: &str, name: &str) -> Result<()> {
         let Some(old_name) = self.file_names.get(id).cloned() else {
             return Ok(());
@@ -679,8 +725,9 @@ impl ScriptStore {
             return Ok(());
         }
         let new_file_name = file_name_of(&destination).unwrap_or_default();
-        if old_name.to_lowercase() == new_file_name.to_lowercase() {
-            // A case-only rename on a case-insensitive volume: the destination "exists".
+        if script_name::key(&old_name) == script_name::key(&new_file_name) {
+            // Only case or the spelling of an accent changes: where the volume takes the two
+            // for one file, the destination "exists".
             let temporary = self.scripts_dir.join(format!(".renaming-{id}"));
             fs::rename(&source, &temporary)?;
             fs::rename(&temporary, &destination)?;
@@ -720,14 +767,20 @@ impl ScriptStore {
 
     // MARK: Names
 
-    /// Lowercased names in use: catalog scripts plus every file on disk (files not yet in the
+    /// The names no new script can have, as [`script_name::key`]s: those of the files in the
+    /// library, from the folder's listing alone, without reading any of them.
+    pub fn names_in_use(&self) -> HashSet<String> {
+        self.taken_names(None)
+    }
+
+    /// The keys of the names in use: catalog scripts plus every file on disk (files not yet in the
     /// catalog still occupy their names).
     fn taken_names(&self, excluding: Option<&str>) -> HashSet<String> {
         let mut taken: HashSet<String> = self
             .metadata
             .values()
             .filter(|s| Some(s.id.as_str()) != excluding)
-            .map(|s| s.name.to_lowercase())
+            .map(|s| script_name::key(&s.name))
             .collect();
         let own = excluding.and_then(|id| self.file_names.get(id));
         for entry in fs::read_dir(&self.scripts_dir)
@@ -737,14 +790,15 @@ impl ScriptStore {
         {
             let file = entry.file_name().to_string_lossy().into_owned();
             if Some(&file) != own {
-                taken.insert(stem(&file).to_lowercase());
+                taken.insert(script_name::key(&stem(&file)));
             }
         }
         taken
     }
 
     fn is_name_taken(&self, name: &str, excluding: Option<&str>) -> bool {
-        self.taken_names(excluding).contains(&name.to_lowercase())
+        self.taken_names(excluding)
+            .contains(&script_name::key(name))
     }
 }
 
@@ -776,17 +830,6 @@ pub fn declared_type(source: &str) -> ScriptType {
         .declaration
         .script_type
         .into()
-}
-
-fn disambiguated(base: &str, taken: &HashSet<String>) -> String {
-    if !taken.contains(&base.to_lowercase()) {
-        return base.to_owned();
-    }
-    let mut n = 2;
-    while taken.contains(&format!("{base} {n}").to_lowercase()) {
-        n += 1;
-    }
-    format!("{base} {n}")
 }
 
 /// A stable SHA-256 hash of a script's source, shared by compile-cache and alert identity.
@@ -826,12 +869,22 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
 
+/// Writes beside `path` and moves over it. Each write has a temporary file of its own: libraries
+/// are opened more than once (a frame's, an import's on a worker), over the same folder.
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static WRITES: AtomicU64 = AtomicU64::new(0);
     let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
+    temporary.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        WRITES.fetch_add(1, Ordering::Relaxed)
+    ));
     let temporary = PathBuf::from(temporary);
-    fs::write(&temporary, bytes)?;
-    fs::rename(&temporary, path)
+    fs::write(&temporary, bytes)
+        .and_then(|()| fs::rename(&temporary, path))
+        .inspect_err(|_| {
+            let _ = fs::remove_file(&temporary);
+        })
 }
 
 fn atomic_write_json<T: Serialize>(value: &T, path: &Path) -> Result<()> {
