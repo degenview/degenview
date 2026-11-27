@@ -6,7 +6,7 @@
 //! chart settings act on the focused chart.
 
 use crate::i18n::tr;
-use crate::model::{ChartType, DataSource, Timeframe};
+use crate::model::{ChartType, DataSource, Listing, Timeframe};
 use crate::ui::chart::type_menu;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::bar::{self, Glyph};
@@ -23,7 +23,7 @@ pub struct ToolbarInput<'a> {
     pub pinned: &'a [Timeframe],
     /// The market sources of the tab's charts: the picker warns of one that cannot draw a
     /// timeframe.
-    pub sources: &'a [DataSource],
+    pub sources: &'a [Listing],
     pub layout_name: &'a str,
     pub unsaved: bool,
     pub autosave: AutosaveState,
@@ -611,7 +611,10 @@ fn layout_row(ui: &mut Ui, id: u64, name: &str, current: bool) -> Option<LayoutR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::exchange::Market;
     use crate::ui::kit::bar::{EDGE, HEIGHT};
+
+    const BINANCE_SPOT: [Listing; 1] = [Listing::new(DataSource::Binance, Market::Spot)];
 
     fn run(ctx: &egui::Context, raw: egui::RawInput, body: impl FnMut(&mut Ui)) {
         let mut output = ctx.run_ui(raw, body);
@@ -622,7 +625,7 @@ mod tests {
         ToolbarInput {
             timeframe: Timeframe::DAY_1,
             pinned: &[],
-            sources: &[DataSource::Binance],
+            sources: &BINANCE_SPOT,
             layout_name: "Morning",
             unsaved: false,
             autosave: AutosaveState::default(),
@@ -1253,19 +1256,15 @@ mod tests {
         let pinned = [Timeframe::new(22, TimeUnit::Minute).unwrap()];
         let width = 700.0;
         // (name, pinned, sources, text typed into the field; `None` leaves the popover closed)
-        type Case<'a> = (&'a str, &'a [Timeframe], &'a [DataSource], Option<&'a str>);
+        let warned: [Listing; 2] = [DataSource::Binance, DataSource::CoinGecko].map(Listing::from);
+        type Case<'a> = (&'a str, &'a [Timeframe], &'a [Listing], Option<&'a str>);
         let cases: [Case; 6] = [
-            ("closed", &[], &[DataSource::Binance], None),
-            ("open", &[], &[DataSource::Binance], Some("")),
-            ("typed", &[], &[DataSource::Binance], Some("22m")),
-            ("error", &[], &[DataSource::Binance], Some("30s")),
-            ("pinned", &pinned, &[DataSource::Binance], Some("")),
-            (
-                "warning",
-                &pinned,
-                &[DataSource::Binance, DataSource::CoinGecko],
-                Some("1m"),
-            ),
+            ("closed", &[], &BINANCE_SPOT[..], None),
+            ("open", &[], &BINANCE_SPOT[..], Some("")),
+            ("typed", &[], &BINANCE_SPOT[..], Some("22m")),
+            ("error", &[], &BINANCE_SPOT[..], Some("30s")),
+            ("pinned", &pinned, &BINANCE_SPOT[..], Some("")),
+            ("warning", &pinned, &warned[..], Some("1m")),
         ];
         for (theme_name, app_theme) in [
             ("dark", theme::AppTheme::Dark),

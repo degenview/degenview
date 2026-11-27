@@ -194,9 +194,10 @@ is read as `BTC`, so `xbtusd` finds its `BTC/USD`). Tiers:
 A prediction market has no pair to rank: the Predictions tab keeps each provider's own order,
 Polymarket first. Inside a tier: provider order (Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, DEXScreener, CoinGecko, Alpaca), then quote (the
 exchange's main dollar quote first: USDT on Binance, OKX, Bybit, Gate.io and MEXC, USD on Coinbase and Kraken; then USD, USDT, USDC...), then
+a pair before its perpetual (Binance lists `BTCUSDT`, then `BTCUSDT.P`, labelled "Perpetual"), then
 the provider's own order. A coin or a share has no quote and counts as dollars. Each provider still
-keeps its first 20 (30 for Alpaca) after ranking, so the dollar markets are never cut off by the
-odd quotes.
+keeps its first 20 (30 for Alpaca, 20 of each of Binance's two markets) after ranking, so the dollar
+markets are never cut off by the odd quotes.
 
 ## Search
 

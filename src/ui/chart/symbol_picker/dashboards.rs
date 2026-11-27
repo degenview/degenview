@@ -5,6 +5,7 @@ use super::columns::{Columns, ICON, PAD};
 use super::list::{
     ROW_HEIGHT, RowOutput, RowState, marks, paint_background, two_lines, venue_block, venue_lines,
 };
+use super::search::hit_kind;
 use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::model::market::cmc::CHART_TYPES;
@@ -130,7 +131,7 @@ pub fn row(ui: &mut Ui, tile: &Tile, state: RowState, columns: &Columns) -> (Res
     );
     icons::paint(ui.painter(), icon, tile.icon, theme::text_secondary());
     match &tile.pick {
-        TilePick::Gauge(result) => venue_block(ui, rect, columns, result.source),
+        TilePick::Gauge(result) => venue_block(ui, rect, columns, result.source, hit_kind(result)),
         // A card's venue column names the portfolio it covers.
         TilePick::Card(_) => {
             venue_lines(

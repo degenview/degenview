@@ -27,6 +27,7 @@ fn book_of(bids: &[(&str, f64)], asks: &[(&str, f64)]) -> BookEvent {
 
 fn change(first: u64, bids: &[(&str, f64)], asks: &[(&str, f64)]) -> Event {
     Event::Book(BookEvent::Delta(Delta {
+        previous: None,
         first,
         last: first,
         levels: Levels {
@@ -446,6 +447,7 @@ fn a_gap_in_a_binance_stream_empties_the_ladder_until_a_snapshot() {
     record.apply(Event::Book(book_of(&[("99", 1.0)], &[("101", 1.0)])), NOW);
     assert_eq!(record.snapshot(following(), NOW).link, Link::Live);
     let skipped = Event::Book(BookEvent::Delta(Delta {
+        previous: None,
         first: 50,
         last: 51,
         levels: Levels::default(),
@@ -471,6 +473,7 @@ fn a_binance_book_waits_for_its_snapshot_then_places_the_diffs_that_follow_it() 
     assert!(!record.needs_snapshot());
     // The snapshot is at id 1: a diff that ended there is old, and one that begins at 2 follows.
     let old = Event::Book(BookEvent::Delta(Delta {
+        previous: None,
         first: 0,
         last: 1,
         levels: Levels {

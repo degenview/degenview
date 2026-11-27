@@ -64,15 +64,9 @@ fn market(item: &WatchlistInstrument) -> Option<SearchResult> {
         }
         _ => {
             // Binance and Coinbase: the name is the id; the pair is read from it.
-            let symbol = source.display_symbol(id);
-            let base = source.base_asset(id);
-            let quote = symbol
-                .strip_prefix(&base)
-                .map(|rest| rest.trim_start_matches(['-', '/']))
-                .filter(|quote| !quote.is_empty());
-            let result = SearchResult::new(source, symbol.clone(), id);
-            match quote {
-                Some(quote) => result.pair(base.clone(), quote),
+            let result = SearchResult::new(source, source.display_symbol(id), id);
+            match source.quote_asset(id) {
+                Some(quote) => result.pair(source.base_asset(id), quote),
                 None => result,
             }
         }
@@ -113,6 +107,12 @@ mod tests {
         assert_eq!(
             (eth.base.as_deref(), eth.quote.as_deref()),
             (Some("ETH"), Some("USD"))
+        );
+        let perp = market(&item(DataSource::Binance, "BTCUSDT.P", "BTC")).unwrap();
+        assert_eq!(perp.symbol, "BTCUSDT.P");
+        assert_eq!(
+            (perp.base.as_deref(), perp.quote.as_deref()),
+            (Some("BTC"), Some("USDT"))
         );
         let apple = market(&item(DataSource::Alpaca, "AAPL", "Apple Inc.")).unwrap();
         assert_eq!(apple.symbol, "AAPL — Apple Inc.");

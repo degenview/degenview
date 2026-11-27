@@ -7,7 +7,7 @@
 
 use super::inputs::{InputValues, InputsStore};
 use crate::model::pine::script::ScriptType;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::pine::compiler::program::{InputSchema, InputValue};
 use crate::service::ProviderError;
 use crate::service::work_queue::Pending;
@@ -184,7 +184,7 @@ pub(super) struct Summary {
     pub title: String,
     pub price: Option<String>,
     pub timeframe: Timeframe,
-    pub source: DataSource,
+    pub listing: Listing,
 }
 
 impl PreviewState {
@@ -200,7 +200,7 @@ impl PreviewState {
                 .price_line()
                 .map(|(price, change)| format!("{price}  {}", signed_percent(change))),
             timeframe: self.timeframe,
-            source: self.market.source,
+            listing: InstrumentId::new(self.market.source, self.market.ticker.as_str()).listing(),
         }
     }
 }

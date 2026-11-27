@@ -1,3 +1,4 @@
+use crate::model::market::binance::split_market;
 use serde::{Deserialize, Serialize};
 
 /// A market data provider. The symbol alone never identifies a market: `BTCUSDT`
@@ -173,11 +174,13 @@ impl DataSource {
     pub fn base_asset(self, symbol: &str) -> String {
         let upper = symbol.trim().to_uppercase();
         let head = upper.split(['/', '-', ' ', '_']).next().unwrap_or(&upper);
+        let head = match self {
+            Self::Binance => split_market(head).0,
+            _ => head,
+        };
         match self {
-            // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
             Self::Binance | Self::Bybit => split_binance_pair(head)
                 .map(|(base, _)| base)
-                .filter(|base| base.len() > 1)
                 .unwrap_or(head),
             Self::Mexc => split_mexc_pair(head).map(|(base, _)| base).unwrap_or(head),
             _ => head,
@@ -193,9 +196,10 @@ impl DataSource {
     pub fn quote_asset(self, symbol: &str) -> Option<String> {
         let upper = symbol.trim().to_uppercase();
         match self {
-            Self::Binance | Self::Bybit => {
-                split_binance_pair(&upper).map(|(_, quote)| quote.to_owned())
+            Self::Binance => {
+                split_binance_pair(split_market(&upper).0).map(|(_, quote)| quote.to_owned())
             }
+            Self::Bybit => split_binance_pair(&upper).map(|(_, quote)| quote.to_owned()),
             Self::Mexc => split_mexc_pair(&upper).map(|(_, quote)| quote.to_owned()),
             Self::Kraken => {
                 let (base, quote) = upper.split_once('/')?;
@@ -227,42 +231,108 @@ pub fn kraken_asset(asset: &str) -> String {
     }
 }
 
-/// Quote assets Binance pairs end in, longest first so BTCFDUSD is BTC/FDUSD instead of
-/// BTCFD/USD. Matches Swift's MarketSymbol quote list.
-const BINANCE_QUOTES: [&str; 16] = [
-    "FDUSD", "USDT", "USDC", "BUSD", "TUSD", "USDP", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY",
-    "USD", "BTC", "ETH", "BNB",
+/// Quote assets Binance and Bybit pairs end in. The first that ends an id decides, so a longer
+/// quote stands before a shorter one inside it (`BTCFDUSD` is BTC/FDUSD, not BTCFD/USD). One that
+/// is missing here makes the app ask for another market (`BTCMXN` as `BTCMXNUSDT`), so the quotes
+/// of halted markets stay: their history is still served.
+const BINANCE_QUOTES: [&str; 50] = [
+    "USDSOLD", "BKRW", "IDRT", "BVND", "BIDR", "PAX", "UST", "VAI", "AUD", "RUB", "NGN", "UAH",
+    "RON", "CZK", "TRX", "DOGE", "DOT", "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS",
+    "BUSD", "TUSD", "USDP", "EURI", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP",
+    "ZAR", "IDR", "THB", "KZT", "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
 ];
 
-/// Splits an upper-case Binance pair like `SOLBNB` into `("SOL", "BNB")`, or `None` when no
-/// known quote ends it (a bare asset such as `SOL`).
-pub fn split_binance_pair(symbol: &str) -> Option<(&str, &'static str)> {
-    BINANCE_QUOTES.iter().find_map(|quote| {
-        symbol
-            .strip_suffix(quote)
-            .filter(|base| !base.is_empty())
-            .map(|base| (base, *quote))
-    })
-}
+/// `IDR` pairs whose end also reads as the longer `BIDR`.
+const IDR_PAIRS_ENDING_IN_BIDR: [&str; 2] = ["ARBIDR", "BNBIDR"];
 
 /// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
 const MEXC_QUOTES: [&str; 9] = [
     "USDT", "USDC", "USD1", "USDE", "USDF", "EUR", "BRL", "ETH", "BTC",
 ];
 
-/// How many of [`MEXC_QUOTES`] are dollar stablecoins: a one-letter base is a real asset there
-/// (`SUSDT`), where before another quote it is a wrapped one (`WBTC` is not W/BTC).
-const MEXC_STABLE_QUOTES: usize = 5;
+/// Quotes before which a one-letter base is a real asset (`SUSDT` is S/USDT, `STRY` S/TRY):
+/// dollar stablecoins and fiat currencies. Before any other it is part of the asset's own name:
+/// `WBTC` is not W/BTC, `TUSD` not T/USD.
+const ONE_LETTER_BASE_QUOTES: [&str; 27] = [
+    "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDF", "USD", "EUR", "GBP", "TRY", "BRL", "JPY",
+    "ARS", "MXN", "COP", "ZAR", "IDR", "THB", "KZT", "AED", "PLN", "AUD", "RUB", "NGN", "UAH",
+    "RON", "CZK",
+];
 
-/// Splits an upper-case MEXC id like `BTCUSD1` into `("BTC", "USD1")`, or `None` when no quote of
-/// its catalog ends it (a bare asset such as `SOL` or `WBTC`).
+/// Assets whose names end like a quote, so that only a list tells them from a pair: `PENGU` is
+/// not PENG/U, `SUSD` not S/USD. Those Binance and Bybit have listed, and the other dollar tokens
+/// of one letter before `USD`. A name that is also a market (`RENBTC`, REN/BTC) stays a pair.
+const ASSETS_READING_AS_PAIRS: [&str; 42] = [
+    "1MBABYDOGE",
+    "ACU",
+    "AEUR",
+    "AGPU",
+    "AUSD",
+    "BABYDOGE",
+    "BBSOL",
+    "BFUSD",
+    "BGBP",
+    "BIDR",
+    "BNSOL",
+    "CUSD",
+    "DUSD",
+    "EDU",
+    "FUSD",
+    "GUSD",
+    "HUSD",
+    "HYUNDAI",
+    "KORU",
+    "KORUB",
+    "KUAISHOU",
+    "LUSD",
+    "MSTU",
+    "MUSD",
+    "MUU",
+    "NEIROETH",
+    "OUSD",
+    "PENGU",
+    "PUMPBTC",
+    "PYUSD",
+    "RAYSOL",
+    "RWUSD",
+    "SKUU",
+    "STETH",
+    "SUSD",
+    "TRU",
+    "TRUST",
+    "USDBRL",
+    "WBETH",
+    "XAU",
+    "XUSD",
+    "ZHIPU",
+];
+
+/// Splits an upper-case id that writes base and quote together. The first of `quotes` that ends
+/// it decides: a shorter quote inside it (`USD` in `BUSD`) is never tried.
+fn split_joined<'a>(symbol: &'a str, quotes: &[&'static str]) -> Option<(&'a str, &'static str)> {
+    if ASSETS_READING_AS_PAIRS.contains(&symbol) {
+        return None;
+    }
+    let (base, quote) = quotes
+        .iter()
+        .find_map(|quote| Some((symbol.strip_suffix(quote)?, *quote)))?;
+    let named = base.len() > 1 || (base.len() == 1 && ONE_LETTER_BASE_QUOTES.contains(&quote));
+    named.then_some((base, quote))
+}
+
+/// Splits an upper-case Binance or Bybit pair like `SOLBNB` into `("SOL", "BNB")`, or `None`
+/// when it names no pair (a bare asset such as `SOL` or `WBTC`).
+pub fn split_binance_pair(symbol: &str) -> Option<(&str, &'static str)> {
+    if IDR_PAIRS_ENDING_IN_BIDR.contains(&symbol) {
+        return symbol.strip_suffix("IDR").map(|base| (base, "IDR"));
+    }
+    split_joined(symbol, &BINANCE_QUOTES)
+}
+
+/// Splits an upper-case MEXC id like `BTCUSD1` into `("BTC", "USD1")`, or `None` when it names
+/// no pair of its catalog (a bare asset such as `SOL` or `WBTC`).
 pub fn split_mexc_pair(symbol: &str) -> Option<(&str, &'static str)> {
-    MEXC_QUOTES.iter().enumerate().find_map(|(index, quote)| {
-        symbol
-            .strip_suffix(quote)
-            .filter(|base| base.len() > usize::from(index >= MEXC_STABLE_QUOTES))
-            .map(|base| (base, *quote))
-    })
+    split_joined(symbol, &MEXC_QUOTES)
 }
 
 #[cfg(test)]

@@ -5,13 +5,17 @@
 use super::engine::Outcome;
 use crate::i18n::tr;
 use crate::lock::lock;
+use crate::model::exchange::Market;
+use crate::model::market::binance::split_market;
 use crate::model::market::oanda::OandaEnvironment;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::OandaCredentials;
+use crate::service::market::binance;
+use crate::service::net::url::encode_component;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -59,20 +63,20 @@ impl QuoteFailure {
 /// An adapter that makes several requests reports the ones that failed in the `Outcome`
 /// and keeps the rest; `Err` is for a call that failed as a whole.
 pub trait QuoteProvider: Send + Sync {
-    fn quotes(
-        &self,
-        source: DataSource,
-        requests: &[QuoteRequest],
-    ) -> Result<Outcome, QuoteFailure>;
+    /// `requests` are all of `listing`'s markets.
+    fn quotes(&self, listing: Listing, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure>;
 
     /// The network of a DEX pair saved without one, from its address.
     fn resolve_chain(&self, address: &str) -> Option<String>;
 }
 
-/// The most symbols one request carries, per source.
-pub fn chunk_size(source: DataSource) -> usize {
-    match source {
-        DataSource::Binance => 100,
+/// The most symbols one request carries, per listing.
+pub fn chunk_size(listing: Listing) -> usize {
+    match listing.source {
+        // Without a batch size one call answers every market of the listing.
+        DataSource::Binance => binance::endpoints(listing.market)
+            .ticker_batch
+            .unwrap_or(usize::MAX),
         DataSource::Alpaca => 200,
         DataSource::CoinGecko => 250,
         DataSource::Coinbase => 20,
@@ -115,16 +119,13 @@ const MEXC_URL: &str = crate::service::market::mexc::BASE_URL;
 const DEX_URL: &str = "https://api.dexscreener.com/latest/dex";
 
 impl QuoteProvider for LiveProvider {
-    fn quotes(
-        &self,
-        source: DataSource,
-        requests: &[QuoteRequest],
-    ) -> Result<Outcome, QuoteFailure> {
+    fn quotes(&self, listing: Listing, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
         if requests.is_empty() {
             return Ok(Outcome::default());
         }
+        let source = listing.source;
         match source {
-            DataSource::Binance => binance(requests).map(Outcome::from_quotes),
+            DataSource::Binance => binance_quotes(listing.market, requests),
             DataSource::Coinbase => Ok(coinbase(requests)),
             DataSource::Okx => okx(requests).map(Outcome::from_quotes),
             DataSource::Kraken => kraken(requests).map(Outcome::from_quotes),
@@ -205,21 +206,87 @@ pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
     }
 }
 
-/// The batch ticker URL. `symbols` is a JSON array, so its brackets and quotes are
-/// percent-encoded: sent raw they are not valid in a URL, the HTTP client refuses the request,
-/// and every Binance quote in every watchlist stays empty.
-pub fn binance_url(requests: &[QuoteRequest]) -> String {
+/// The 24-hour ticker URL of `market` for `requests`. Spot takes a list: `symbols` is a JSON
+/// array, so its brackets and quotes are percent-encoded: sent raw they are not valid in a URL,
+/// the HTTP client refuses the request, and every Binance quote in every watchlist stays empty.
+/// The futures API ignores a list: one market is asked for by name, more as the whole exchange.
+pub fn binance_url(market: Market, requests: &[QuoteRequest]) -> String {
+    let endpoints = binance::endpoints(market);
+    if endpoints.ticker_batch.is_none() {
+        return match requests {
+            [one] => format!(
+                "{}?symbol={}",
+                endpoints.ticker_url,
+                encode_component(&binance_pair(&one.symbol))
+            ),
+            _ => endpoints.ticker_url.to_owned(),
+        };
+    }
     let list = requests
         .iter()
-        .map(|request| format!("%22{}%22", request.symbol.to_uppercase()))
+        .map(|request| {
+            let pair = binance_pair(&request.symbol);
+            format!("%22{}%22", encode_component(&pair))
+        })
         .collect::<Vec<_>>()
         .join("%2C");
-    format!("https://api.binance.com/api/v3/ticker/24hr?symbols=%5B{list}%5D&type=MINI")
+    format!("{}?symbols=%5B{list}%5D&type=MINI", endpoints.ticker_url)
 }
 
-fn binance(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(DataSource::Binance, &binance_url(requests), &[])?;
-    parse_binance(&body, requests)
+/// The pair a symbol of the app names, as Binance's answers write it.
+fn binance_pair(symbol: &str) -> String {
+    split_market(&symbol.to_uppercase()).0.to_owned()
+}
+
+fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+    match get(DataSource::Binance, &binance_url(market, requests), &[]) {
+        Ok(body) => binance_outcome(market, &body, requests),
+        Err(failure) => binance_refusal(market, requests, failure),
+    }
+}
+
+/// What a failed request says. A futures market asked for by name and refused is one the exchange
+/// never listed; a refused spot batch is left to be halved.
+pub fn binance_refusal(
+    market: Market,
+    requests: &[QuoteRequest],
+    failure: QuoteFailure,
+) -> Result<Outcome, QuoteFailure> {
+    match (failure, requests) {
+        (QuoteFailure::Rejected(_), [one]) if binance::endpoints(market).ticker_batch.is_none() => {
+            Ok(Outcome {
+                rejected: HashSet::from([one.symbol.clone()]),
+                complete: true,
+                ..Outcome::default()
+            })
+        }
+        (failure, _) => Err(failure),
+    }
+}
+
+/// The quotes of an answer. A futures answer also says which of the asked markets do not exist,
+/// those it lacks: a spot request for an unknown one is refused instead, and found by halving.
+pub fn binance_outcome(
+    market: Market,
+    body: &str,
+    requests: &[QuoteRequest],
+) -> Result<Outcome, QuoteFailure> {
+    let mut outcome = Outcome::from_quotes(parse_binance(body, requests)?);
+    if binance::endpoints(market).ticker_batch.is_none() {
+        let answer = json(body)?;
+        let listed: HashSet<String> = binance_tickers(&answer)
+            .into_iter()
+            .flatten()
+            .filter_map(|ticker| Some(ticker.get("symbol")?.as_str()?.to_uppercase()))
+            .collect();
+        outcome.rejected = requests
+            .iter()
+            .filter(|request| !listed.contains(&binance_pair(&request.symbol)))
+            .map(|request| request.symbol.clone())
+            .collect();
+        outcome.complete = true;
+    }
+    Ok(outcome)
 }
 
 /// How many answers in a row may fail before an adapter stops asking: the endpoint is
@@ -353,7 +420,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
     let mut outcome = Outcome::default();
     let mut limited = false;
     for (chain, pairs) in by_chain {
-        for page in pairs.chunks(chunk_size(DataSource::DexScreener)) {
+        for page in pairs.chunks(chunk_size(DataSource::DexScreener.into())) {
             let names: Vec<String> = page.iter().map(|request| request.symbol.clone()).collect();
             if limited {
                 outcome.failed.push((names, QuoteFailure::RateLimited));
@@ -681,6 +748,20 @@ const DOLLAR_QUOTES: [&str; 8] = [
     "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "USD",
 ];
 
+/// The tickers of a `/ticker/24hr` answer: a list, or the one object of a market asked for alone.
+/// A futures market asked for alone that no longer trades is answered with an empty object. An
+/// empty list says nothing about any market, so it is no answer.
+fn binance_tickers(answer: &Value) -> Option<&[Value]> {
+    match answer {
+        Value::Array(tickers) if !tickers.is_empty() => Some(tickers),
+        Value::Object(ticker) if ticker.is_empty() => Some(&[]),
+        Value::Object(ticker) if ticker.contains_key("symbol") => {
+            Some(std::slice::from_ref(answer))
+        }
+        _ => None,
+    }
+}
+
 /// `/ticker/24hr?type=MINI`: `openPrice` is the rolling 24h open, a truer day-change
 /// reference than a candle picked from the last 25 hours.
 pub fn parse_binance(
@@ -688,15 +769,14 @@ pub fn parse_binance(
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
     let value = json(body)?;
-    let tickers: HashMap<String, &Value> = value
-        .as_array()
+    let tickers: HashMap<String, &Value> = binance_tickers(&value)
         .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Binance response").to_owned()))?
         .iter()
         .filter_map(|ticker| Some((ticker.get("symbol")?.as_str()?.to_uppercase(), ticker)))
         .collect();
     let mut quotes = HashMap::new();
     for request in requests {
-        let symbol = request.symbol.to_uppercase();
+        let symbol = binance_pair(&request.symbol);
         let Some(ticker) = tickers.get(&symbol) else {
             continue;
         };
@@ -1149,6 +1229,30 @@ pub fn parse_alpaca_snapshots(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn one_futures_market_is_asked_by_name_and_more_as_the_whole_list() {
+        let ask = |symbol: &str| QuoteRequest {
+            symbol: symbol.to_owned(),
+            chain: None,
+        };
+        assert_eq!(
+            binance_url(Market::Perpetual, &[ask("BTCUSDT.P")]),
+            "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT"
+        );
+        assert_eq!(
+            binance_url(Market::Perpetual, &[ask("BTCUSDT.P"), ask("ETHUSDT.P")]),
+            "https://fapi.binance.com/fapi/v1/ticker/24hr"
+        );
+        let one = r#"{"symbol":"BTCUSDT","lastPrice":"2","openPrice":"1","quoteVolume":"5"}"#;
+        let outcome = binance_outcome(Market::Perpetual, one, &[ask("BTCUSDT.P")]).expect("parsed");
+        assert_eq!(outcome.quotes["BTCUSDT.P"].price, 2.0);
+        assert!(outcome.rejected.is_empty());
+        let body = r#"[{"symbol":"BTCUSDT","lastPrice":"2","openPrice":"1","quoteVolume":"5"}]"#;
+        let quotes = parse_binance(body, &[ask("BTCUSDT.P")]).expect("parsed");
+        assert_eq!(quotes["BTCUSDT.P"].price, 2.0);
+        assert_eq!(quotes["BTCUSDT.P"].volume_24h, Some(5.0), "dollar quoted");
+    }
+
+    #[test]
     fn a_prediction_quote_compares_with_the_price_a_day_earlier() {
         use Kline;
         let point = |hours: i64, price: f64| Kline {
@@ -1543,7 +1647,7 @@ mod tests {
 
     #[test]
     fn the_binance_url_encodes_its_symbol_list() {
-        let url = binance_url(&[request("btcusdt"), request("ETHUSDT")]);
+        let url = binance_url(Market::Spot, &[request("btcusdt"), request("ETHUSDT")]);
         assert_eq!(
             url,
             "https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22%2C%22ETHUSDT%22%5D&type=MINI"
@@ -1837,9 +1941,9 @@ mod tests {
 
     #[test]
     fn chunk_sizes_respect_each_providers_limit() {
-        assert_eq!(chunk_size(DataSource::Coinbase), 20);
-        assert_eq!(chunk_size(DataSource::DexScreener), 30);
-        assert_eq!(chunk_size(DataSource::CoinGecko), 250);
+        assert_eq!(chunk_size(DataSource::Coinbase.into()), 20);
+        assert_eq!(chunk_size(DataSource::DexScreener.into()), 30);
+        assert_eq!(chunk_size(DataSource::CoinGecko.into()), 250);
     }
 
     #[test]

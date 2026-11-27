@@ -10456,6 +10456,12 @@ msgstr ""
 msgid "Not Now"
 msgstr ""
 
+#: src/model/watchlist/text.rs
+msgid ""
+"Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't "
+"supported)"
+msgstr ""
+
 #: src/ui/pine/logs_view/mod.rs
 msgid "Not a regular expression this search can read."
 msgstr ""
@@ -11722,8 +11728,9 @@ msgstr ""
 msgid "Percents"
 msgstr ""
 
-#: src/ui/tradingview/words.rs
-msgid "Perpetuals and futures aren’t available"
+#: src/ui/chart/symbol_picker/columns.rs
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
 msgstr ""
 
 #: src/ui/replay/bar.rs
@@ -17268,6 +17275,10 @@ msgid ""
 "This permanently removes what DegenView synced to your private iCloud storage."
 msgstr ""
 
+#: src/ui/tradingview/words.rs
+msgid "This perpetual or future isn’t available"
+msgstr ""
+
 #: src/pine_studio/profiler/ui.rs
 msgid ""
 "This profile is of earlier inputs or data. Its lines still match the editor."
@@ -20747,6 +20758,7 @@ msgid "{exchange} does not list {symbol}."
 msgstr ""
 
 #: src/model/exchange/mod.rs
+#: src/model/market/listing.rs
 msgid "{exchange} perp"
 msgstr ""
 
@@ -21460,14 +21472,14 @@ msgstr ""
 
 #: src/ui/market_flow/book/mod.rs
 msgid ""
-"{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is"
-" size added or taken away over the last 10 seconds."
+"{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size "
+"added or taken away over the last 10 seconds."
 msgstr ""
 
 #: src/ui/market_flow/book/mod.rs
 msgid ""
-"{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. "
-"Stack is size added or taken away over the last 10 seconds."
+"{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is "
+"size added or taken away over the last 10 seconds."
 msgstr ""
 
 #: src/ui/shortcut.rs

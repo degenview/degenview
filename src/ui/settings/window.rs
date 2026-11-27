@@ -5,6 +5,7 @@
 //! A pure view: it reads settings values and returns `SettingsAction`s for the host.
 
 use crate::i18n::{tr, tr_n};
+use crate::model::Listing;
 use crate::model::alert::{
     AlertNotificationPermission, AlertNotificationSettings, AlertRuntimeHealth, AlertServiceState,
 };
@@ -912,7 +913,8 @@ fn notifications_page(ui: &mut egui::Ui, input: &SettingsInput, actions: &mut Ve
                 }
                 for provider in &health.providers {
                     kit::divider(ui);
-                    row(ui, provider.source.display_name(), |ui| {
+                    let listing = Listing::new(provider.source, provider.market);
+                    row(ui, &listing.label(), |ui| {
                         kit::status_badge(
                             ui,
                             &provider_label(

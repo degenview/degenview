@@ -4,7 +4,7 @@
 
 use super::DepthError;
 use super::levels;
-use super::venue::DepthVenue;
+use super::venue::{DepthVenue, Sessions};
 use crate::model::depth::{
     BookEvent, BookSync, Delta, Event, Levels, Price, Snapshot, SnapshotAndDeltas, Trade,
 };
@@ -22,19 +22,22 @@ const BOOK_LEVELS: u32 = 200;
 pub(super) struct Bybit;
 
 impl DepthVenue for Bybit {
-    fn session(&self, symbol: &str) -> Session {
+    fn sessions(&self, symbol: &str) -> Sessions {
         let topics = [
             format!("orderbook.{BOOK_LEVELS}.{symbol}"),
             format!("publicTrade.{symbol}"),
         ];
-        Session {
-            url: format!("wss://{HOST}/v5/public/spot"),
-            host: HOST.to_owned(),
-            port: 443,
-            subscribe: vec![json!({"op": "subscribe", "args": topics}).to_string()],
-            // A thin market can be quiet for a long while: the pong says the socket is alive.
-            max_data_silence: Duration::from_secs(600),
-            keepalive: KEEPALIVE,
+        Sessions {
+            trades: None,
+            book: Session {
+                url: format!("wss://{HOST}/v5/public/spot"),
+                host: HOST.to_owned(),
+                port: 443,
+                subscribe: vec![json!({"op": "subscribe", "args": topics}).to_string()],
+                // A thin market can be quiet for a long while: the pong says the socket is alive.
+                max_data_silence: Duration::from_secs(600),
+                keepalive: KEEPALIVE,
+            },
         }
     }
 
@@ -120,6 +123,7 @@ fn parse_book(data: &Value, snapshot: bool) -> Option<Event> {
         BookEvent::Snapshot(Snapshot { id, levels })
     } else {
         BookEvent::Delta(Delta {
+            previous: None,
             first: id,
             last: id,
             levels,
@@ -161,7 +165,7 @@ mod tests {
 
     #[test]
     fn one_subscribe_names_the_book_and_the_trades_of_the_market() {
-        let session = Bybit.session("BTCUSDT");
+        let session = Bybit.sessions("BTCUSDT").book;
         assert_eq!(session.url, "wss://stream.bybit.com/v5/public/spot");
         let sent: Value = serde_json::from_str(&session.subscribe[0]).unwrap();
         assert_eq!(

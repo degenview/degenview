@@ -1,12 +1,19 @@
+//! Binance's REST market data, spot and USDⓈ-M perpetuals alike: a symbol says which
+//! (`model::market::binance`) and [`endpoints`] where that market is served.
+
 use super::candles::plan;
-use super::catalog::Catalog;
 use super::search_rank::normalize;
-use crate::model::{DataSource, Kline, Timeframe};
-use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
-use serde::{Deserialize, Serialize};
+use crate::model::market::binance::split_market;
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::net::url::encode_component;
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
 
-const BASE_URL: &str = "https://api.binance.com/api/v3/klines";
+mod catalog;
+mod endpoints;
+
+pub(in crate::service) use catalog::{clear_catalog, tick_size};
+pub(in crate::service) use endpoints::{Endpoints, endpoints};
 
 pub struct Binance;
 
@@ -15,6 +22,28 @@ pub const BINANCE: Binance = Binance;
 /// The most klines one Binance request returns.
 const MAX_PER_REQUEST: usize = 1_000;
 
+/// What one `symbol` of the app asks Binance for: where, the pair as a query value, and the
+/// market's own listing.
+struct Request {
+    endpoints: &'static Endpoints,
+    pair: String,
+    listing: Listing,
+}
+
+impl Request {
+    fn of(symbol: &str) -> Self {
+        // Any spelling the app takes (`btc`, `BTC/USDT.P`) names the market the same way here as
+        // in its live feed and its key.
+        let canonical = InstrumentId::new(DataSource::Binance, symbol).canonical_symbol();
+        let (pair, market) = split_market(&canonical);
+        Self {
+            endpoints: endpoints(market),
+            pair: encode_component(pair),
+            listing: Listing::new(DataSource::Binance, market),
+        }
+    }
+}
+
 impl MarketSource for Binance {
     fn fetch_klines(
         &self,
@@ -22,7 +51,8 @@ impl MarketSource for Binance {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Binance, timeframe)?;
+        let request = Request::of(symbol);
+        let plan = plan(request.listing, timeframe)?;
         let requested = plan.base_count(limit as usize);
         if requested > MAX_PER_REQUEST {
             // More finer candles than one request holds: page back from now.
@@ -30,8 +60,9 @@ impl MarketSource for Binance {
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
         }
         let url = format!(
-            "{BASE_URL}?symbol={}&interval={}&limit={requested}",
-            symbol.to_uppercase(),
+            "{}?symbol={}&interval={}&limit={requested}",
+            request.endpoints.klines_url,
+            request.pair,
             plan.base().interval()
         );
         let body = crate::service::net::http::get_text(
@@ -53,7 +84,8 @@ impl MarketSource for Binance {
         const PAGE: usize = MAX_PER_REQUEST;
         // Pages are fetched side by side: their start times follow from the interval alone.
         const PARALLEL: usize = 8;
-        let plan = plan(DataSource::Binance, timeframe)?;
+        let request = Request::of(symbol);
+        let plan = plan(request.listing, timeframe)?;
         let interval = plan.base().interval();
         let requested = plan.base_count(max);
         let step = plan.base().nominal_ms();
@@ -69,12 +101,13 @@ impl MarketSource for Binance {
                 let handles: Vec<_> = batch
                     .iter()
                     .map(|&from| {
-                        let interval = &interval;
+                        let (interval, request) = (&interval, &request);
                         scope.spawn(move || {
                             let to = (from + page_ms).min(end_ms) - 1;
                             let url = format!(
-                                "{BASE_URL}?symbol={}&interval={interval}&startTime={from}&endTime={to}&limit={PAGE}",
-                                symbol.to_uppercase()
+                                "{}?symbol={}&interval={interval}&startTime={from}&endTime={to}&limit={PAGE}",
+                                request.endpoints.klines_url,
+                                request.pair
                             );
                             let body =
                                 crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)?;
@@ -109,90 +142,8 @@ impl MarketSource for Binance {
         if needle.is_empty() {
             return Ok(Vec::new());
         }
-        let pairs = CATALOG.get(download_pairs)?;
-        let results = matching_pairs(&pairs, &needle);
-        Ok(rank_results(results, query).into_iter().take(20).collect())
+        catalog::search(query, &needle)
     }
-}
-
-/// The listed markets whose name contains `needle` (letters and digits, upper case).
-fn matching_pairs(pairs: &[Pair], needle: &str) -> Vec<SearchResult> {
-    pairs
-        .iter()
-        .filter(|pair| pair.symbol.contains(needle))
-        .map(|pair| {
-            SearchResult::new(
-                crate::model::DataSource::Binance,
-                pair.symbol.clone(),
-                pair.symbol.clone(),
-            )
-            .pair(pair.base.clone(), pair.quote.clone())
-        })
-        .collect()
-}
-
-/// One tradable market from `exchangeInfo`: all the search needs of it.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
-    symbol: String,
-    base: String,
-    quote: String,
-}
-
-/// Every market that is trading, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_binance");
-
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
-
-/// The market list, asking only for what the search reads. Plain `exchangeInfo` is 18 MB (every
-/// market ever listed, 3,700 of them, each with its filters and its permission sets); the
-/// `TRADING` ones without permission sets are 2.6 MB, the same pairs `parse_pairs` keeps.
-const EXCHANGE_INFO_URL: &str =
-    "https://api.binance.com/api/v3/exchangeInfo?symbolStatus=TRADING&showPermissionSets=false";
-
-/// What this one download may read: six times the 2.6 MB it is today, so listings can grow
-/// without breaking search, and far under the plain list. The shared 8 MiB limit stays for
-/// every other call.
-const EXCHANGE_INFO_MAX_BYTES: u64 = 16 * 1024 * 1024;
-
-fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    download_pairs_with(|url, max_bytes| {
-        crate::service::net::http::get_text_with_limit(
-            url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-            max_bytes,
-        )
-    })
-}
-
-/// `download_pairs` with the transport passed in, so a test sees the request without a network.
-fn download_pairs_with(
-    get: impl FnOnce(&str, u64) -> Result<String, crate::service::net::http::Error>,
-) -> Result<Vec<Pair>, ProviderError> {
-    parse_pairs(&get(EXCHANGE_INFO_URL, EXCHANGE_INFO_MAX_BYTES)?)
-}
-
-fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    Ok(value
-        .get("symbols")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .filter(|symbol| symbol.get("status").and_then(Value::as_str) == Some("TRADING"))
-        .filter_map(|symbol| {
-            Some(Pair {
-                symbol: symbol.get("symbol")?.as_str()?.to_owned(),
-                base: symbol.get("baseAsset")?.as_str()?.to_owned(),
-                quote: symbol.get("quoteAsset")?.as_str()?.to_owned(),
-            })
-        })
-        .collect())
 }
 
 fn parse_klines(body: &str) -> Result<Vec<Kline>, ProviderError> {
@@ -230,28 +181,6 @@ fn parse_row(row: &Value) -> Result<Kline, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_pair_is_found_however_it_is_separated() {
-        let pairs = vec![
-            Pair {
-                symbol: "BTCUSDT".into(),
-                base: "BTC".into(),
-                quote: "USDT".into(),
-            },
-            Pair {
-                symbol: "ETHBTC".into(),
-                base: "ETH".into(),
-                quote: "BTC".into(),
-            },
-        ];
-        for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
-            let found = matching_pairs(&pairs, &normalize(query));
-            assert_eq!(found.len(), 1, "{query}");
-            assert_eq!(found[0].symbol, "BTCUSDT");
-        }
-        assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
-    }
 
     #[test]
     fn parses_binance_rows() {
@@ -315,60 +244,27 @@ mod tests {
     }
 
     #[test]
+    fn a_symbol_is_asked_of_its_own_markets_api() {
+        let spot = Request::of("btcusdt");
+        assert_eq!(spot.pair, "BTCUSDT");
+        assert!(spot.endpoints.klines_url.contains("api.binance.com/api/v3"));
+        let perp = Request::of("btcusdt.p");
+        assert_eq!(perp.pair, "BTCUSDT");
+        assert_eq!(perp.listing, Listing::BINANCE_PERPETUAL);
+        assert!(
+            perp.endpoints
+                .klines_url
+                .contains("fapi.binance.com/fapi/v1")
+        );
+        assert_eq!(Request::of("龙USDT.P").pair, "%E9%BE%99USDT");
+        assert_eq!(Request::of("btc.p").pair, "BTCUSDT");
+        assert_eq!(Request::of("btc/usdt").pair, "BTCUSDT");
+    }
+
+    #[test]
     fn rejects_error_objects() {
         let error = parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#)
             .expect_err("object must fail");
         assert_eq!(error, ProviderError::data("expected a candle array"));
-    }
-
-    #[test]
-    fn the_market_list_asks_for_trading_pairs_only_under_its_own_limit() {
-        use crate::service::net::http::Error;
-        let body = r#"{"symbols":[
-            {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"}
-        ]}"#;
-        let mut asked = None;
-        let pairs = download_pairs_with(|url, max_bytes| {
-            asked = Some((url.to_owned(), max_bytes));
-            Ok(body.to_owned())
-        })
-        .expect("pairs");
-        assert_eq!(pairs.len(), 1);
-
-        let (url, max_bytes) = asked.expect("one request");
-        assert!(url.starts_with("https://api.binance.com/api/v3/exchangeInfo?"));
-        assert!(url.contains("symbolStatus=TRADING"));
-        assert!(url.contains("showPermissionSets=false"));
-        // Room for the list to grow past today's 2.6 MB, but not the shared limit's job.
-        assert!(max_bytes > 8 * 1024 * 1024);
-        assert!(max_bytes <= 32 * 1024 * 1024);
-
-        // A too-large answer is still an error and not a partial list.
-        let too_big = download_pairs_with(|_, max_bytes| Err(Error::BodyTooLarge(max_bytes)));
-        assert_eq!(
-            too_big.expect_err("fails"),
-            ProviderError::from(Error::BodyTooLarge(EXCHANGE_INFO_MAX_BYTES))
-        );
-    }
-
-    #[test]
-    fn the_catalog_keeps_only_trading_markets_with_all_their_fields() {
-        let body = r#"{"symbols":[
-            {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"},
-            {"symbol":"LUNAUSDT","status":"BREAK","baseAsset":"LUNA","quoteAsset":"USDT"},
-            {"symbol":"NOQUOTE","status":"TRADING","baseAsset":"X"}
-        ]}"#;
-        let pairs = parse_pairs(body).expect("pairs");
-        assert_eq!(pairs.len(), 1);
-        assert_eq!(
-            (
-                pairs[0].symbol.as_str(),
-                pairs[0].base.as_str(),
-                pairs[0].quote.as_str()
-            ),
-            ("BTCUSDT", "BTC", "USDT")
-        );
-        assert!(parse_pairs("not json").is_err());
-        assert!(parse_pairs("{}").expect("no symbols").is_empty());
     }
 }

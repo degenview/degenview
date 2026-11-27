@@ -193,7 +193,7 @@ impl Harness {
         harness
     }
 
-    fn input<'a>(pinned: &'a [Timeframe], sources: &'a [DataSource]) -> TimeframePickerInput<'a> {
+    fn input<'a>(pinned: &'a [Timeframe], sources: &'a [Listing]) -> TimeframePickerInput<'a> {
         TimeframePickerInput {
             current: Timeframe::HOUR_1,
             pinned,

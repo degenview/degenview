@@ -206,7 +206,7 @@ impl TrendLoader {
     }
 
     fn read(&self, instrument: &InstrumentId) -> Result<Vec<f32>, ProviderError> {
-        let symbol = instrument.api_symbol();
+        let symbol = instrument.canonical_symbol();
         let fetch = |timeframe, limit| (self.fetch)(instrument.source, &symbol, timeframe, limit);
         match self.span {
             // One more candle than the span has days, so a market that trades every day fills it.

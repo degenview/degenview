@@ -64,11 +64,11 @@ impl Resolution {
             resolution.found = Some(Match::Unmatched(Unmatched::Expression));
             return resolution;
         }
-        if tv.is_derivative() {
+        let own = symbol::native_name(tv);
+        if tv.is_derivative() && own.is_none() {
             resolution.found = Some(Match::Unmatched(Unmatched::Derivative));
             return resolution;
         }
-        let own = symbol::native_name(tv);
         let own_source = own.as_ref().map(|(source, _)| *source);
         resolution
             .requests
@@ -77,10 +77,11 @@ impl Resolution {
                 name,
                 own: true,
             }));
-        // A stock's ticker is not a pair, whatever it ends in.
+        // A stock's ticker is not a pair, whatever it ends in, and no other exchange's spot pair
+        // stands in for a derivative.
         let pair = tv
             .pair()
-            .filter(|_| tv.source() != Some(DataSource::Alpaca));
+            .filter(|_| tv.source() != Some(DataSource::Alpaca) && !tv.is_derivative());
         if let Some((base, quote)) = pair {
             for source in symbol::substitutes(quote) {
                 if own_source == Some(source) {
@@ -180,7 +181,7 @@ mod tests {
     /// A catalog of what each provider lists.
     fn catalog(source: DataSource, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let listed: &[&str] = match source {
-            DataSource::Binance => &["BTCUSDT", "BTCUSDTX"],
+            DataSource::Binance => &["BTCUSDT", "BTCUSDTX", "ETHUSDT.P"],
             DataSource::Coinbase => &["ETH-USD"],
             _ => &[],
         };
@@ -193,6 +194,19 @@ mod tests {
 
     fn resolve_text(text: &str) -> Match {
         resolve(&TvSymbol::read(text).unwrap(), &catalog)
+    }
+
+    #[test]
+    fn a_binance_perpetual_matches_itself_and_nothing_stands_in_for_one() {
+        let Match::Exact(market) = resolve_text("BINANCE:ETHUSDT.P") else {
+            panic!("not matched");
+        };
+        assert_eq!(market.symbol, "ETHUSDT.P");
+        // One Binance does not list is not found, not replaced by a spot pair.
+        assert_eq!(
+            resolve_text("BINANCE:BTCUSDT.P"),
+            Match::Unmatched(Unmatched::NotFound)
+        );
     }
 
     #[test]
@@ -225,7 +239,7 @@ mod tests {
             Match::Unmatched(Unmatched::NotFound)
         );
         assert_eq!(
-            resolve_text("BINANCE:BTCUSDT.P"),
+            resolve_text("BYBIT:BTCUSDT.P"),
             Match::Unmatched(Unmatched::Derivative)
         );
     }

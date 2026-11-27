@@ -22,6 +22,7 @@ fn snapshot(id: u64) -> BookEvent {
 
 fn delta(first: u64, last: u64, bids: &[(&str, f64)], asks: &[(&str, f64)]) -> BookEvent {
     BookEvent::Delta(Delta {
+        previous: None,
         first,
         last,
         levels: levels(bids, asks),
@@ -181,4 +182,45 @@ fn a_dropped_connection_lets_the_book_go_for_both() {
             "a delta cannot be placed on the book that was let go"
         );
     }
+}
+
+#[test]
+fn a_chained_stream_follows_the_previous_id_and_not_the_range() {
+    use super::ChainedDiffStream;
+    let diff = |first, last, previous| {
+        BookEvent::Delta(Delta {
+            previous: Some(previous),
+            first,
+            last,
+            levels: Levels::default(),
+        })
+    };
+    let snapshot = BookEvent::Snapshot(Snapshot {
+        id: 100,
+        levels: Levels::default(),
+    });
+    let mut sync = ChainedDiffStream::default();
+    assert_eq!(
+        sync.judge(&diff(90, 95, 89)),
+        Verdict::Gap,
+        "no snapshot yet"
+    );
+    assert_eq!(sync.judge(&snapshot), Verdict::Replace);
+    assert_eq!(sync.judge(&diff(90, 99, 89)), Verdict::Stale);
+    assert_eq!(
+        sync.judge(&diff(97, 105, 96)),
+        Verdict::Apply,
+        "straddles 100"
+    );
+    // The ids jump, which a range rule would call a gap.
+    assert_eq!(sync.judge(&diff(130, 140, 105)), Verdict::Apply);
+    assert_eq!(sync.judge(&diff(130, 140, 105)), Verdict::Stale, "repeated");
+    assert_eq!(sync.judge(&diff(141, 150, 139)), Verdict::Gap, "one missed");
+    assert!(sync.needs_snapshot());
+    assert_eq!(sync.judge(&snapshot), Verdict::Replace);
+    assert_eq!(
+        sync.judge(&diff(101, 110, 99)),
+        Verdict::Gap,
+        "starts after the snapshot"
+    );
 }

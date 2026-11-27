@@ -3,6 +3,8 @@
 //! derivative, are reported as such and left for the user to map.
 
 use crate::model::DataSource;
+use crate::model::exchange::Market;
+use crate::model::market::binance::split_market;
 use crate::model::market::source::{split_binance_pair, split_mexc_pair};
 use crate::model::market::venue;
 use std::fmt;
@@ -52,7 +54,8 @@ impl TvSymbol {
         venue::source_for_prefix(self.exchange())
     }
 
-    /// A perpetual or a dated future: no provider here lists derivatives.
+    /// A perpetual or a dated future. The only ones a provider here lists are Binance's USDⓈ-M
+    /// perpetuals, which [`native_name`] names.
     pub fn is_derivative(&self) -> bool {
         let ticker = self.ticker();
         if ticker.ends_with(".P") || ticker.ends_with("PERP") || ticker.ends_with('!') {
@@ -139,10 +142,14 @@ fn kraken_base(base: &str) -> &str {
 
 /// The name `symbol`'s own provider would give the market, when it can be told from the ticker.
 pub fn native_name(symbol: &TvSymbol) -> Option<(DataSource, String)> {
+    let source = symbol.source()?;
+    // Binance writes its perpetual as TradingView does, `BTCUSDT.P`.
+    if source == DataSource::Binance && split_market(symbol.ticker()).1 == Market::Perpetual {
+        return Some((source, symbol.ticker().to_uppercase()));
+    }
     if symbol.is_derivative() {
         return None;
     }
-    let source = symbol.source()?;
     match source {
         DataSource::Alpaca => Some((source, symbol.ticker().to_owned())),
         _ => {
@@ -181,8 +188,18 @@ mod tests {
     }
 
     #[test]
+    fn a_binance_perpetual_keeps_its_name_and_is_still_a_derivative() {
+        let perp = symbol("BINANCE:BTCUSDT.P");
+        assert!(perp.is_derivative());
+        assert_eq!(
+            native_name(&perp),
+            Some((DataSource::Binance, "BTCUSDT.P".to_owned()))
+        );
+    }
+
+    #[test]
     fn derivatives_and_unserved_venues_are_not_translated() {
-        for text in ["BINANCE:BTCUSDT.P", "CME_MINI:ES1!", "BYBIT:BTCUSDZ2026"] {
+        for text in ["BYBIT:BTCUSDT.P", "CME_MINI:ES1!", "BYBIT:BTCUSDZ2026"] {
             assert!(symbol(text).is_derivative(), "{text}");
             assert_eq!(native_name(&symbol(text)), None, "{text}");
         }

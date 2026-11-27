@@ -113,7 +113,7 @@ impl ChartWorkspace {
                     .as_ref()
                     .zip(depth.as_deref())
                     .map(|(market, snapshot)| BookFeed {
-                        exchange: market.venue.exchange.name(),
+                        venue: market.venue,
                         symbol: &market.symbol,
                         snapshot,
                     });

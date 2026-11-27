@@ -12,6 +12,7 @@ use crate::model::taker_flow::{Flow, Trade};
 use crate::service::net::ws::Session;
 pub use crate::service::stream::{Lease, Repaint};
 use crate::service::stream::{Stream, Worker};
+pub(in crate::service) use binance::trade_socket;
 use std::sync::{Arc, Mutex};
 
 /// Turns one message of a venue's socket into trades.

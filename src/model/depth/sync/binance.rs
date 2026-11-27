@@ -58,3 +58,66 @@ impl BookSync for DiffStream {
         self.state = State::Waiting;
     }
 }
+
+#[derive(Debug, Default)]
+enum FuturesState {
+    #[default]
+    Waiting,
+    /// A snapshot with no diff applied to it yet: the first one must straddle its id.
+    Snapshot(u64),
+    /// The last diff applied ended at this id, which the next must name as its predecessor.
+    Synced(u64),
+}
+
+/// Binance's USDⓈ-M futures depth stream. Its update ids jump between diffs, so a diff follows
+/// the book when it names the previous one's last id (`pu`); only the first after a snapshot is
+/// placed by its range `U..=u`.
+#[derive(Debug, Default)]
+pub struct ChainedDiffStream {
+    state: FuturesState,
+}
+
+impl BookSync for ChainedDiffStream {
+    fn judge(&mut self, event: &BookEvent) -> Verdict {
+        let delta = match event {
+            BookEvent::Snapshot(snapshot) => {
+                self.state = FuturesState::Snapshot(snapshot.id);
+                return Verdict::Replace;
+            }
+            BookEvent::Delta(delta) => delta,
+        };
+        let follows = match self.state {
+            FuturesState::Waiting => return Verdict::Gap,
+            FuturesState::Snapshot(id) => {
+                if delta.last < id {
+                    return Verdict::Stale;
+                }
+                delta.first <= id
+            }
+            FuturesState::Synced(id) => {
+                if delta.last <= id {
+                    return Verdict::Stale;
+                }
+                delta.previous == Some(id)
+            }
+        };
+        if !follows {
+            self.state = FuturesState::Waiting;
+            return Verdict::Gap;
+        }
+        self.state = FuturesState::Synced(delta.last);
+        Verdict::Apply
+    }
+
+    fn needs_snapshot(&self) -> bool {
+        matches!(self.state, FuturesState::Waiting)
+    }
+
+    fn is_synced(&self) -> bool {
+        !self.needs_snapshot()
+    }
+
+    fn reset(&mut self) {
+        self.state = FuturesState::Waiting;
+    }
+}

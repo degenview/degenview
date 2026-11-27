@@ -375,7 +375,7 @@ impl PriceAlertDraft {
     /// own market.
     pub fn example_context(&self, now_ms: i64) -> AlertMessageContext {
         AlertMessageContext {
-            ticker: Some(self.asset.instrument.api_symbol()),
+            ticker: Some(self.asset.instrument.canonical_symbol()),
             exchange: Some(self.asset.source().display_name().to_owned()),
             interval: Some("1".to_owned()),
             // A converted quote carries float noise (`83356.00999999998`); show what a person

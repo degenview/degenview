@@ -31,6 +31,7 @@ No account. No subscription.
 ### Markets
 
 - **Crypto** from Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko and on-chain DEX pairs, searchable side by side.
+- **Binance perpetual futures** (USDⓈ-M) next to spot, written `BTCUSDT.P`, with their own history, live candles and order book.
 - **US stocks and ETFs** through Alpaca. A free key is all you need.
 - **Forex, metals and index CFDs** through Oanda, in charts, symbol search and watchlists. Needs your Oanda account ID and access token, of a live or a practice account.
 - **Prediction markets** from Polymarket and Kalshi, charted as probabilities.

@@ -3,13 +3,21 @@
 
 use super::{DepthError, binance, bybit};
 use crate::model::depth::{BookSync, Event, Price, Snapshot};
-use crate::model::exchange::Exchange;
+use crate::model::exchange::{Exchange, Market, Venue};
 use crate::service::net::ws::Session;
 
+/// The sockets of one market, with whatever must be sent once connected.
+pub struct Sessions {
+    /// The order book, and the trades where one socket carries both. The book is only as good as
+    /// this one: it going down lets the book go.
+    pub book: Session,
+    /// The trades, from an exchange that serves them apart. It going down costs only trades.
+    pub trades: Option<Session>,
+}
+
 pub trait DepthVenue: Send + Sync {
-    /// The socket for the market `symbol` (the exchange's own name for it): the order book and
-    /// the trades, with whatever must be sent once connected.
-    fn session(&self, symbol: &str) -> Session;
+    /// The sockets for the market `symbol` (the exchange's own name for it).
+    fn sessions(&self, symbol: &str) -> Sessions;
 
     /// The smallest step the market's price moves in.
     fn tick_size(&self, symbol: &str) -> Result<Price, DepthError>;
@@ -28,10 +36,12 @@ pub trait DepthVenue: Send + Sync {
     fn parse(&self, text: &str) -> Vec<Event>;
 }
 
-/// The venue of `exchange`.
-pub fn for_exchange(exchange: Exchange) -> Box<dyn DepthVenue> {
-    match exchange {
-        Exchange::Binance => Box::new(binance::Binance),
-        Exchange::Bybit => Box::new(bybit::Bybit),
+/// The venue of one exchange's market.
+pub fn for_venue(venue: Venue) -> Box<dyn DepthVenue> {
+    match (venue.exchange, venue.market) {
+        (Exchange::Binance, Market::Spot) => Box::new(binance::Binance),
+        (Exchange::Binance, Market::Perpetual) => Box::new(binance::BinanceFutures),
+        // No chart is a Bybit perpetual.
+        (Exchange::Bybit, _) => Box::new(bybit::Bybit),
     }
 }

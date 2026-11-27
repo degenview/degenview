@@ -10,7 +10,7 @@ pub mod control;
 pub mod disk;
 pub mod lookup;
 
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -36,13 +36,16 @@ pub struct Policy {
 /// can take a dozen requests, so it is held and refreshed by its tail like the other folds. OKX
 /// answers 300 candles a request, so even a chart of its own length takes two. The
 /// line charts are small.
-pub fn policy(source: DataSource, timeframe: Timeframe) -> Option<Policy> {
-    let fresh = match source {
+pub fn policy(listing: impl Into<Listing>, timeframe: Timeframe) -> Option<Policy> {
+    let listing = listing.into();
+    let fresh = match listing.source {
         DataSource::CoinGecko => 120,
         DataSource::DexScreener => 30,
         DataSource::Coinbase | DataSource::Okx | DataSource::Alpaca => 0,
         DataSource::Binance | DataSource::Bybit | DataSource::Gate | DataSource::Mexc
-            if source.plan(timeframe).is_some_and(|plan| !plan.is_native()) =>
+            if listing
+                .plan(timeframe)
+                .is_some_and(|plan| !plan.is_native()) =>
         {
             0
         }

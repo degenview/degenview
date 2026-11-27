@@ -2,7 +2,7 @@
 //! source on the workspace, folding its candles into the charts.
 
 use crate::model::market::live::LiveMark;
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::live::LiveFeed;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
@@ -28,20 +28,23 @@ impl ChartWorkspace {
     }
 
     fn update_live_feeds(&mut self, ctx: &egui::Context) {
-        for source in DataSource::CANDLE_STREAMS {
-            self.update_live_feed(source, ctx);
+        for listing in Listing::candle_streams() {
+            self.update_live_feed(listing, ctx);
         }
     }
 
-    fn update_live_feed(&mut self, source: DataSource, ctx: &egui::Context) {
+    fn update_live_feed(&mut self, listing: Listing, ctx: &egui::Context) {
+        let source = listing.source;
         let mut symbols: Vec<String> = self
             .charts
             .iter()
             .filter(|chart| chart.is_market() && chart.source == source)
-            .map(|chart| InstrumentId::new(source, chart.symbol.as_str()).api_symbol())
+            .map(|chart| InstrumentId::new(source, chart.symbol.as_str()))
+            .filter(|instrument| instrument.listing() == listing)
+            .map(|instrument| instrument.canonical_symbol())
             .collect();
         // The markets compared on a chart stream too, once however many overlays name them.
-        for symbol in self.overlay_hub.streamed_symbols(source) {
+        for symbol in self.overlay_hub.streamed_symbols(listing) {
             if !symbols.contains(&symbol) {
                 symbols.push(symbol);
             }
@@ -49,32 +52,32 @@ impl ChartWorkspace {
         // The stream is of the candle length the source serves the timeframe from (one-minute
         // klines for a 22-minute chart, monthly ones for a quarter); a timeframe it cannot reach
         // has none.
-        let base = source
+        let base = listing
             .plan(self.timeframe)
             .map(|plan| plan.base())
             .filter(|_| !symbols.is_empty());
         let wanted = base.map(|base| (symbols, base));
-        let changed = match (self.live_feeds.get(&source), &wanted) {
+        let changed = match (self.live_feeds.get(&listing), &wanted) {
             (Some(feed), Some(wanted)) => feed.signature() != wanted,
             (None, None) => false,
             _ => true,
         };
         if changed {
             let feed = wanted
-                .and_then(|(symbols, base)| LiveFeed::connect(source, symbols, base, ctx.clone()));
+                .and_then(|(symbols, base)| LiveFeed::connect(listing, symbols, base, ctx.clone()));
             match feed {
                 Some(feed) => {
-                    self.live_feeds.insert(source, feed);
+                    self.live_feeds.insert(listing, feed);
                 }
                 None => {
-                    self.live_feeds.remove(&source);
+                    self.live_feeds.remove(&listing);
                 }
             }
         }
 
         let updates = self
             .live_feeds
-            .get(&source)
+            .get(&listing)
             .map(|feed| feed.inbox.drain())
             .unwrap_or_default();
         let Some(base) = base else {
@@ -90,7 +93,7 @@ impl ChartWorkspace {
 
     /// Every chart of `symbol` on `source` takes the kline of `base` candles, whatever else it
     /// shows. A chart's symbol may be spelled any way the source takes (`BTC`, `btc/usdt`): the
-    /// feed names the market as the source does, so they are compared by `api_symbol`.
+    /// feed names the market as the source does, so they are compared by `canonical_symbol`.
     fn apply_live_kline(
         &mut self,
         source: DataSource,
@@ -103,7 +106,7 @@ impl ChartWorkspace {
         for chart in self.charts.iter_mut().filter(|chart| {
             chart.source == source
                 && InstrumentId::new(source, chart.symbol.as_str())
-                    .api_symbol()
+                    .canonical_symbol()
                     .eq_ignore_ascii_case(symbol)
         }) {
             if let Some(open_time) =

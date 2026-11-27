@@ -13906,6 +13906,14 @@ msgstr "按金额下单"
 msgid "Spend an amount of {unit}"
 msgstr "按 {unit} 金额下单"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "不是 BTCUSDT 或 BTCUSDT.P 这样的 Binance 代码（不支持交割合约）"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
+msgstr "永续"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Spot"
 msgstr "现货"
@@ -19661,12 +19669,12 @@ msgid "{symbol} rises by {price}"
 msgstr "{symbol} 上涨 {price}"
 
 #: src/ui/market_flow/book/mod.rs
-msgid "{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
-msgstr "{symbol} 现货，{exchange}。数量以基础币种计。暂无成交。增减为近 10 秒新增或撤走的挂单量。"
+msgid "{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}，{venue}。数量以基础币种计。暂无成交。增减为近 10 秒新增或撤走的挂单量。"
 
 #: src/ui/market_flow/book/mod.rs
-msgid "{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
-msgstr "{symbol} 现货，{exchange}。数量以基础币种计。自 {time} 起的成交。增减为近 10 秒新增或撤走的挂单量。"
+msgid "{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}，{venue}。数量以基础币种计。自 {time} 起的成交。增减为近 10 秒新增或撤走的挂单量。"
 
 #: src/ui/shortcut.rs
 msgid "{text} ({shortcut})"
@@ -20664,8 +20672,8 @@ msgstr "打开布局"
 msgid "Other exchange"
 msgstr "其他交易所"
 
-msgid "Perpetuals and futures aren’t available"
-msgstr "不支持永续合约和期货"
+msgid "This perpetual or future isn’t available"
+msgstr "不支持该永续合约或期货"
 
 msgid "Pick the market that stands in for this TradingView symbol."
 msgstr "选择用于代替此 TradingView 代码的市场。"

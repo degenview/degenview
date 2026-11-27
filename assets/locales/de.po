@@ -13955,6 +13955,14 @@ msgstr "Betrag ausgeben"
 msgid "Spend an amount of {unit}"
 msgstr "Betrag in {unit} ausgeben"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "Kein Binance-Symbol wie BTCUSDT oder BTCUSDT.P (Terminkontrakte mit Verfall werden nicht unterstützt)"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
+msgstr "Perpetual"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Spot"
 msgstr "Spot"
@@ -19827,12 +19835,12 @@ msgid "{symbol} rises by {price}"
 msgstr "{symbol} steigt um {price}"
 
 #: src/ui/market_flow/book/mod.rs
-msgid "{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
-msgstr "{symbol} Spot, {exchange}. Mengen in der Basiswährung. Noch keine Trades. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
+msgid "{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}, {venue}. Mengen in der Basiswährung. Noch keine Trades. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
 
 #: src/ui/market_flow/book/mod.rs
-msgid "{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
-msgstr "{symbol} Spot, {exchange}. Mengen in der Basiswährung. Gehandelt seit {time}. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
+msgid "{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}, {venue}. Mengen in der Basiswährung. Gehandelt seit {time}. Stack ist die in den letzten 10 Sekunden hinzugefügte oder entfernte Menge."
 
 #: src/ui/shortcut.rs
 msgid "{text} ({shortcut})"
@@ -20871,8 +20879,8 @@ msgid "Other exchange"
 msgstr "Andere Börse"
 
 #: src/ui/tradingview/words.rs
-msgid "Perpetuals and futures aren’t available"
-msgstr "Perpetuals und Futures sind nicht verfügbar"
+msgid "This perpetual or future isn’t available"
+msgstr "Dieser Perpetual oder Future ist nicht verfügbar"
 
 #: src/host/tradingview/mod.rs
 msgid "Pick the market that stands in for this TradingView symbol."

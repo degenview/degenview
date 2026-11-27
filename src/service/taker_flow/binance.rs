@@ -13,7 +13,12 @@ const FUTURES_HOST: &str = "fstream.binance.com";
 
 /// The `{ASSET}USDT` market of `market`; `asset` is upper case letters and digits.
 pub(super) fn session(market: Market, asset: &str) -> Session {
-    let stream = format!("{}usdt@aggTrade", asset.to_lowercase());
+    trade_socket(market, &format!("{}usdt", asset.to_lowercase()))
+}
+
+/// The trades of `pair`, written as a stream names it: lower case.
+pub(in crate::service) fn trade_socket(market: Market, pair: &str) -> Session {
+    let stream = format!("{pair}@aggTrade");
     let (host, path) = match market {
         Market::Spot => (SPOT_HOST, format!("/ws/{stream}")),
         Market::Perpetual => (FUTURES_HOST, format!("/market/ws/{stream}")),

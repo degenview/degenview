@@ -49,7 +49,7 @@ pub(crate) fn bar(timeframe: Timeframe) -> Option<String> {
 
 /// OKX's id of a market: `BTC-USDT`. `BTC/USDT` and a bare `BTC` (USDT) are accepted.
 pub(crate) fn instrument_id(symbol: &str) -> String {
-    InstrumentId::new(DataSource::Okx, symbol).api_symbol()
+    InstrumentId::new(DataSource::Okx, symbol).canonical_symbol()
 }
 
 impl MarketSource for Okx {

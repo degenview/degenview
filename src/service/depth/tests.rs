@@ -1,3 +1,4 @@
+use super::venue::Sessions;
 use super::*;
 use crate::model::depth::{
     BookSync, Delta, DiffStream, Levels, Link, Price, Snapshot, SnapshotAndDeltas, View,
@@ -43,14 +44,17 @@ impl Scripted {
 }
 
 impl DepthVenue for Scripted {
-    fn session(&self, _symbol: &str) -> Session {
-        Session {
-            url: String::new(),
-            host: String::new(),
-            port: 0,
-            subscribe: Vec::new(),
-            max_data_silence: Duration::from_secs(1),
-            keepalive: Keepalive::Frame,
+    fn sessions(&self, _symbol: &str) -> Sessions {
+        Sessions {
+            book: Session {
+                url: String::new(),
+                host: String::new(),
+                port: 0,
+                subscribe: Vec::new(),
+                max_data_silence: Duration::from_secs(1),
+                keepalive: Keepalive::Frame,
+            },
+            trades: None,
         }
     }
 
@@ -88,6 +92,7 @@ impl DepthVenue for Scripted {
             return Vec::new();
         };
         vec![Event::Book(BookEvent::Delta(Delta {
+            previous: None,
             first,
             last,
             levels: levels("99", "101"),
@@ -238,11 +243,15 @@ fn each_exchange_judges_its_book_by_its_own_rules() {
 #[test]
 #[ignore = "needs the network"]
 fn live_books_fill() {
-    for exchange in [Exchange::Binance, Exchange::Bybit] {
+    for (exchange, kind) in [
+        (Exchange::Binance, Market::Spot),
+        (Exchange::Binance, Market::Perpetual),
+        (Exchange::Bybit, Market::Spot),
+    ] {
         let market = DepthMarket {
             venue: Venue {
                 exchange,
-                market: Market::Spot,
+                market: kind,
             },
             symbol: "BTCUSDT".to_owned(),
         };

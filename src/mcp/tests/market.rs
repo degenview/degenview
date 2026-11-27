@@ -3,9 +3,9 @@
 
 use super::{Harness, call, error_code, rpc, tool_names};
 use crate::mcp::state::QuoteAccess;
-use crate::model::DataSource;
 use crate::model::mcp::Permission;
 use crate::model::watchlist::quote::SourceQuote;
+use crate::model::{DataSource, Listing};
 use crate::service::watchlist_quotes::{
     Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest, WatchlistQuoteBook,
     WatchlistQuoteCoordinator,
@@ -24,7 +24,7 @@ struct OneMarket;
 impl QuoteProvider for OneMarket {
     fn quotes(
         &self,
-        _source: DataSource,
+        _listing: Listing,
         requests: &[QuoteRequest],
     ) -> Result<Outcome, QuoteFailure> {
         let quotes: HashMap<String, SourceQuote> = requests
@@ -59,7 +59,7 @@ struct SlowProvider;
 impl QuoteProvider for SlowProvider {
     fn quotes(
         &self,
-        _source: DataSource,
+        _listing: Listing,
         _requests: &[QuoteRequest],
     ) -> Result<Outcome, QuoteFailure> {
         std::thread::sleep(std::time::Duration::from_millis(1500));

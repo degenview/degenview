@@ -23,5 +23,5 @@ pub use market::{DepthMarket, market_of};
 pub use price::Price;
 pub use record::{DepthRecord, SyncOutcome};
 pub use snapshot::{DepthSnapshot, Link};
-pub use sync::{BookSync, DiffStream, SnapshotAndDeltas};
+pub use sync::{BookSync, ChainedDiffStream, DiffStream, SnapshotAndDeltas};
 pub use tape::{Tape, TapeView, Trade};

@@ -13,7 +13,8 @@ use crate::ui::{kit::source_logo, theme};
 use eframe::egui::{self, Align, Layout, Rect, Sense, Stroke, Ui, UiBuilder, Vec2, pos2, vec2};
 
 const ICON: f32 = 20.0;
-const KIND: f32 = 46.0;
+/// The room between the market-kind column and the venue.
+const KIND_GAP: f32 = 8.0;
 const VENUE: f32 = 90.0;
 const LOGO: f32 = 14.0;
 
@@ -54,6 +55,23 @@ pub fn show(
     list.set_clip_rect(rows.intersect(ui.clip_rect()));
     kit::scroll::keep_bars_visible(&mut list);
     let width = room.width() + 12.0;
+    // As wide as the longest kind shown, in whatever language: never a guess that cuts one off.
+    let kind = related
+        .iter()
+        .map(|hit| {
+            kit::galley(
+                &list,
+                trading_kind(hit),
+                13.0,
+                REGULAR,
+                theme::text_secondary(),
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        })
+        .fold(0.0, f32::max)
+        + KIND_GAP;
     let mut clicked = None;
     let scrolled = egui::ScrollArea::vertical()
         .id_salt("symbol_picker_related")
@@ -61,7 +79,7 @@ pub fn show(
         .show(&mut list, |list| {
             list.spacing_mut().item_spacing = Vec2::ZERO;
             for (index, hit) in related.iter().enumerate() {
-                if row(list, hit, width, index + 1 < related.len()) {
+                if row(list, hit, width, kind, index + 1 < related.len()) {
                     clicked = Some(hit.clone());
                 }
             }
@@ -77,7 +95,7 @@ pub fn show(
 }
 
 /// One other market. Returns whether it was clicked.
-fn row(ui: &mut Ui, result: &SearchResult, width: f32, separated: bool) -> bool {
+fn row(ui: &mut Ui, result: &SearchResult, width: f32, kind: f32, separated: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(width, RELATED_ROW), Sense::click());
     let response = crate::ui::accessibility::label(
         response.on_hover_cursor(egui::CursorIcon::PointingHand),
@@ -96,7 +114,7 @@ fn row(ui: &mut Ui, result: &SearchResult, width: f32, separated: bool) -> bool 
     result_icon(ui, icon, result);
 
     let venue_left = rect.right() - 6.0 - VENUE;
-    let kind_left = venue_left - KIND;
+    let kind_left = venue_left - kind;
     let name_left = icon.right() + 10.0;
     let text = |ui: &Ui, left: f32, width: f32, text: &str, weight: f32, color| {
         let galley = kit::galley(ui, text, 13.0, weight, color, width.max(24.0));
@@ -117,8 +135,8 @@ fn row(ui: &mut Ui, result: &SearchResult, width: f32, separated: bool) -> bool 
     text(
         ui,
         kind_left,
-        KIND - 8.0,
-        trading_kind(result.source),
+        kind,
+        trading_kind(result),
         REGULAR,
         theme::text_secondary(),
     );

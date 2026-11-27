@@ -148,7 +148,7 @@ pub fn webhook_template(message: Option<&str>) -> &str {
 pub fn context_for_event(event: &AlertTriggerEvent, now_ms: i64) -> AlertMessageContext {
     let candle = event.candle.as_ref();
     AlertMessageContext {
-        ticker: Some(event.asset.instrument.api_symbol()),
+        ticker: Some(event.asset.instrument.canonical_symbol()),
         exchange: Some(event.asset.instrument.source.display_name().to_owned()),
         interval: candle.map(|candle| trading_view_interval(&candle.interval)),
         open: candle.map(|candle| candle.open),

@@ -1,5 +1,5 @@
 use crate::lock::lock;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::net::ws::{Frame, Session};
 use eframe::egui;
 use std::collections::BTreeMap;
@@ -67,18 +67,22 @@ pub struct LiveFeed {
 }
 
 impl LiveFeed {
-    /// Opens the stream of `base` candles for `symbols`; `None` when `source` streams none.
+    /// Opens the stream of `base` candles for `symbols`; `None` when `listing` streams none.
     pub fn connect(
-        source: DataSource,
+        listing: impl Into<Listing>,
         symbols: Vec<String>,
         base: Timeframe,
         ctx: egui::Context,
     ) -> Option<Self> {
-        let (sessions, parse): (Vec<Session>, Parser) = match source {
-            DataSource::Binance => (
-                vec![binance::session(&symbols, base)],
-                text_parser(binance::parse_kline),
-            ),
+        let listing = listing.into();
+        let (sessions, parse): (Vec<Session>, Parser) = match listing.source {
+            DataSource::Binance => {
+                let market = listing.market;
+                (
+                    vec![binance::session(market, &symbols, base)],
+                    text_parser(move |text| binance::parse_kline(market, text)),
+                )
+            }
             DataSource::Okx => (
                 vec![okx::session(&symbols, base)?],
                 text_parser(move |text| okx::parse_kline(text, base)),
@@ -200,6 +204,29 @@ mod tests {
             drained.last().unwrap().1.open_time,
             (INBOX_CAPACITY as i64 + 499) * 3_600_000
         );
+    }
+
+    /// Run with `cargo test --lib live::tests::live_binance_perpetual -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_binance_perpetual_streams_the_forming_candle() {
+        let feed = LiveFeed::connect(
+            Listing::BINANCE_PERPETUAL,
+            vec!["BTCUSDT.P".to_owned()],
+            Timeframe::MINUTE_1,
+            egui::Context::default(),
+        )
+        .expect("Binance streams one-minute candles");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Some((symbol, kline)) = feed.inbox.drain().pop() {
+                assert_eq!(symbol, "BTCUSDT.P");
+                assert!(kline.close > 0.0 && kline.close_time > kline.open_time);
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "no candle in 30 s");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
     }
 
     /// Run with `cargo test --lib live::tests::live_okx -- --ignored --nocapture`.

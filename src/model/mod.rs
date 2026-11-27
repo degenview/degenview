@@ -58,6 +58,7 @@ pub use indicators::{
 pub use indicators::{bollinger, ema, rsi, supertrend_flips};
 pub use market::instrument::InstrumentId;
 pub use market::kline::Kline;
+pub use market::listing::Listing;
 pub use market::pm_series::PmSeries;
 pub use market::source::DataSource;
 pub use market::timeframe::{Section, TimeUnit, Timeframe, TimeframeParseError};

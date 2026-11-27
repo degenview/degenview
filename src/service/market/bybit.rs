@@ -58,7 +58,7 @@ pub(crate) fn interval(timeframe: Timeframe) -> Option<String> {
 /// Bybit's name of a market, `BTCUSDT`, which its REST API and its websocket take. `BTC/USDT`,
 /// `btc-usdt` and a bare `BTC` (USDT) are accepted.
 pub(crate) fn symbol_id(symbol: &str) -> String {
-    InstrumentId::new(DataSource::Bybit, symbol).api_symbol()
+    InstrumentId::new(DataSource::Bybit, symbol).canonical_symbol()
 }
 
 impl MarketSource for Bybit {

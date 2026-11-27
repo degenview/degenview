@@ -17,6 +17,7 @@ pub use state::BookViewState;
 use super::{MARGIN, footnote, footnote_height, usd};
 use crate::i18n::tr;
 use crate::model::depth::{DepthSnapshot, Link};
+use crate::model::exchange::Venue;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::kit::time_text::clock_time_seconds;
@@ -30,7 +31,7 @@ const MIN_PART: f32 = 120.0;
 /// The market the panel follows, and what its exchange has said of it.
 #[derive(Clone, Copy)]
 pub struct BookFeed<'a> {
-    pub exchange: &'a str,
+    pub venue: Venue,
     pub symbol: &'a str,
     pub snapshot: &'a DepthSnapshot,
 }
@@ -56,18 +57,24 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, body: &BookBody<'_>) 
     let waiting = match feed.snapshot.link {
         Link::Live => None,
         Link::Connecting => Some((
-            tr!("Connecting to {exchange}", exchange = feed.exchange),
+            tr!(
+                "Connecting to {exchange}",
+                exchange = feed.venue.exchange.name()
+            ),
             tr!("Waiting for the {symbol} book.", symbol = feed.symbol),
         )),
         Link::Reconnecting => Some((
-            tr!("Reconnecting to {exchange}", exchange = feed.exchange),
+            tr!(
+                "Reconnecting to {exchange}",
+                exchange = feed.venue.exchange.name()
+            ),
             tr!("The book is shown again as soon as it is back.").to_owned(),
         )),
         Link::Unlisted => Some((
             tr!("No order book").to_owned(),
             tr!(
                 "{exchange} does not list {symbol}.",
-                exchange = feed.exchange,
+                exchange = feed.venue.label(),
                 symbol = feed.symbol
             ),
         )),
@@ -93,17 +100,17 @@ fn live(ui: &mut Ui, state: &mut BookViewState, feed: BookFeed<'_>) {
 }
 
 fn footnote_text(feed: BookFeed<'_>) -> String {
-    let (symbol, exchange) = (feed.symbol, feed.exchange);
+    let (symbol, venue) = (feed.symbol, feed.venue.label());
     match feed.snapshot.tape.since_ms {
         None => tr!(
-            "{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds.",
+            "{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds.",
             symbol = symbol,
-            exchange = exchange
+            venue = venue
         ),
         Some(since) => tr!(
-            "{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds.",
+            "{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds.",
             symbol = symbol,
-            exchange = exchange,
+            venue = venue,
             time = clock_time_seconds(Some(since))
         ),
     }

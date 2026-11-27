@@ -51,13 +51,8 @@ fn fitted(
 pub fn icon_base_symbol(item: &WatchlistInstrument) -> String {
     let symbol = &item.instrument.symbol;
     match item.instrument.source {
-        DataSource::Binance | DataSource::Bybit | DataSource::Mexc => {
-            let upper = symbol.to_uppercase();
-            ["USDT", "USDC", "BUSD", "FDUSD", "USD"]
-                .iter()
-                .find_map(|quote| upper.strip_suffix(quote).filter(|base| !base.is_empty()))
-                .unwrap_or(&upper)
-                .to_owned()
+        source @ (DataSource::Binance | DataSource::Bybit | DataSource::Mexc) => {
+            source.base_asset(symbol)
         }
         DataSource::Coinbase | DataSource::Okx => {
             symbol.split('-').next().unwrap_or(symbol).to_uppercase()
@@ -674,6 +669,8 @@ mod tests {
                 "BTC",
             ),
             (item(DataSource::Binance, "ethusdc", "ETH", "ETH"), "ETH"),
+            (item(DataSource::Binance, "BTCUSDT.P", "BTC", "BTC"), "BTC"),
+            (item(DataSource::Binance, "ETHBTC", "ETH", "ETH"), "ETH"),
             (item(DataSource::Binance, "USDT", "USDT", "USDT"), "USDT"),
             (
                 item(DataSource::Coinbase, "eth-usd", "ETH/USD", "ETH-USD"),

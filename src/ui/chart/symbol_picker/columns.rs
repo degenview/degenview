@@ -3,6 +3,7 @@
 //! and nothing moves when a row is highlighted.
 
 use super::search::{PREDICTION_PROVIDERS, PROVIDERS, market_kind};
+use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::ui::kit::{self, MEDIUM, REGULAR};
 use crate::ui::theme;
@@ -97,6 +98,8 @@ pub fn venue_text_width(ui: &Ui) -> f32 {
                 (market_kind(source), VENUE_KIND_SIZE, REGULAR),
             ]
         })
+        // A Binance perpetual says so where its exchange's other markets say "Crypto".
+        .chain([(tr!("Perpetual"), VENUE_KIND_SIZE, REGULAR)])
         .map(|(text, size, weight)| {
             kit::galley(ui, text, size, weight, theme::text_primary(), f32::INFINITY)
                 .size()

@@ -173,12 +173,9 @@ impl ChartWorkspace {
     }
 
     pub fn alert_asset_for(symbol: &str, source: DataSource) -> AlertAsset {
-        let ticker = source.base_asset(symbol);
-        AlertAsset::new(
-            crate::model::InstrumentId::new(source, symbol),
-            ticker.clone(),
-            ticker,
-        )
+        let instrument = crate::model::InstrumentId::new(source, symbol);
+        let ticker = instrument.short_name(&source.base_asset(symbol));
+        AlertAsset::new(instrument, ticker.clone(), ticker)
     }
 }
 
@@ -193,6 +190,12 @@ mod tests {
         assert_eq!(btc.symbol, "BTC");
         assert_eq!(btc.instrument.symbol, "BTCUSDT");
         assert_eq!(btc.key(), "BINANCE:BTCUSDT");
+        // A perpetual's alerts are told apart from its spot pair's wherever they are listed.
+        let perp = ChartWorkspace::alert_asset_for("BTCUSDT.P", DataSource::Binance);
+        assert_eq!(
+            (perp.symbol.as_str(), perp.name.as_str()),
+            ("BTC.P", "BTC.P")
+        );
         let coinbase = ChartWorkspace::alert_asset_for("ETH-USD", DataSource::Coinbase);
         assert_eq!(coinbase.symbol, "ETH");
         assert!(ui::supports_alerts(DataSource::Binance));

@@ -97,9 +97,9 @@ markets on four venues are followed: Binance spot and USDⓈ-M perpetual, Bybit 
 ## Order book
 
 The DOM: the focused chart's market on **its own exchange**, as the exchange's book and trades.
-Read-only: nothing here places an order. Charts are spot, so these are spot books of **Binance** and
-**Bybit**; any other chart shows "No order book". `market_of(source, symbol)` decides, through
-`InstrumentId::api_symbol()`.
+Read-only: nothing here places an order. These are the spot books of **Binance** and **Bybit** and
+the book of a **Binance USDⓈ-M perpetual** (`BTCUSDT.P`); any other chart shows "No order book".
+`market_of(source, symbol)` decides, from the `InstrumentId`.
 
 ### Layers
 
@@ -144,6 +144,7 @@ frame asks for a default.
 | Exchange | Socket | Book | Trades |
 | --- | --- | --- | --- |
 | Binance spot | `wss://stream.binance.com/stream?streams=<s>@depth@100ms/<s>@aggTrade` (combined: each message is `{"stream","data"}`; nothing sent) | REST `/api/v3/depth?symbol=&limit=5000` (`lastUpdateId`, 5,000 levels a side, 8-decimal strings) for the start; `depthUpdate` diffs with `U`, `u`, `b`, `a` | `aggTrade`: `p`, `q`, `T`, `m` (buyer is the maker: the taker sold) |
+| Binance perp | two sockets: `wss://fstream.binance.com/public/stream?streams=<s>@depth@100ms` (depth answers only under `/public`) and `…/market/ws/<s>@aggTrade` (trades only under `/market`; the taker-flow socket). A wrong path connects and stays silent. A drop of the trade socket leaves the book | REST `/fapi/v1/depth?limit=1000`; diffs also carry `pu`, the previous diff's last id, and `ChainedDiffStream` follows that chain (the ids jump, so the spot range rule would see gaps). Tick size from the futures market list the search holds (`exchangeInfo` takes no symbol), downloaded again, at most every five minutes, for a perpetual it lacks (`Catalog::get_listing`) | `aggTrade`, as spot, not wrapped |
 | Bybit spot | `wss://stream.bybit.com/v5/public/spot`, one subscribe for `orderbook.200.<SYMBOL>` and `publicTrade.<SYMBOL>` | `snapshot` then `delta`, `data.u` the update id, `data.b` and `data.a` | `publicTrade` rows: `T`, `S` (the taker's side), `v`, `p` |
 
 Tick size: Binance `/api/v3/exchangeInfo?symbol=` (`PRICE_FILTER.tickSize`; HTTP 400 for an unknown
@@ -205,7 +206,7 @@ The footnote says what a size is: the base coin, price × size taken as dollars 
 - Liquidations on the chart, a per-asset filter, Bybit inverse, and an MCP tool.
 - Taker flow for the quote currencies other than USDT, for OKX, and for the whole market (the
   exchanges have no all-markets trade stream, so it is one asset at a time).
-- The order book for perpetual markets (charts are spot only), for the other exchanges (OKX, Kraken,
+- The order book for Bybit perpetuals (no chart is one), for the other exchanges (OKX, Kraken,
   Coinbase, Gate.io, MEXC), and any click-to-trade.
   Binance's book depth beyond 2,000 levels is dropped, and the pull/stack figures are not checked
   against a second source.

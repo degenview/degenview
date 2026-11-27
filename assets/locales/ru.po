@@ -14929,6 +14929,14 @@ msgstr "Потратить сумму"
 msgid "Spend an amount of {unit}"
 msgstr "Потратить сумму в {unit}"
 
+#: src/model/watchlist/text.rs
+msgid "Not a Binance symbol like BTCUSDT or BTCUSDT.P (dated futures aren't supported)"
+msgstr "Это не символ Binance вида BTCUSDT или BTCUSDT.P (срочные фьючерсы не поддерживаются)"
+
+#: src/ui/chart/symbol_picker/search.rs
+msgid "Perpetual"
+msgstr "Бессрочный"
+
 #: src/ui/chart/symbol_picker/search.rs
 msgid "Spot"
 msgstr "Спот"
@@ -21468,20 +21476,12 @@ msgid "{symbol} rises by {price}"
 msgstr "{symbol} растёт на {price}"
 
 #: src/ui/market_flow/book/mod.rs
-msgid ""
-"{symbol} spot, {exchange}. Sizes are in the base coin. No trades yet. Stack "
-"is size added or taken away over the last 10 seconds."
-msgstr ""
-"{symbol} спот, {exchange}. Размеры указаны в базовой монете. Сделок пока "
-"нет. Стек — объём, добавленный или снятый за последние 10 секунд."
+msgid "{symbol}, {venue}. Sizes are in the base coin. No trades yet. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}, {venue}. Размеры указаны в базовой монете. Сделок пока нет. Стек — объём, добавленный или снятый за последние 10 секунд."
 
 #: src/ui/market_flow/book/mod.rs
-msgid ""
-"{symbol} spot, {exchange}. Sizes are in the base coin. Traded since {time}. "
-"Stack is size added or taken away over the last 10 seconds."
-msgstr ""
-"{symbol} спот, {exchange}. Размеры указаны в базовой монете. Торги с {time}. "
-"Стек — объём, добавленный или снятый за последние 10 секунд."
+msgid "{symbol}, {venue}. Sizes are in the base coin. Traded since {time}. Stack is size added or taken away over the last 10 seconds."
+msgstr "{symbol}, {venue}. Размеры указаны в базовой монете. Торги с {time}. Стек — объём, добавленный или снятый за последние 10 секунд."
 
 #: src/ui/shortcut.rs
 msgid "{text} ({shortcut})"
@@ -22547,8 +22547,8 @@ msgid "Other exchange"
 msgstr "Другая биржа"
 
 #: src/ui/tradingview/words.rs
-msgid "Perpetuals and futures aren’t available"
-msgstr "Бессрочные контракты и фьючерсы недоступны"
+msgid "This perpetual or future isn’t available"
+msgstr "Этот бессрочный контракт или фьючерс недоступен"
 
 #: src/host/tradingview/mod.rs
 msgid "Pick the market that stands in for this TradingView symbol."

@@ -1,36 +1,45 @@
-//! Binance spot: one combined socket with the 100 ms depth diffs and the aggregated trades, a REST
-//! snapshot of 5,000 levels a side to start the book from, and the tick size from the exchange
-//! info.
+//! Binance's books. Spot: one combined socket with the 100 ms depth diffs and the aggregated
+//! trades, a REST snapshot of 5,000 levels a side to start the book from, and the tick size from
+//! the exchange info. USDⓈ-M futures: depth and trades are served under different socket paths,
+//! the diffs chain by `pu`, the snapshot has 1,000 levels and the tick size comes from the list
+//! of markets the search already holds.
 
 use super::DepthError;
 use super::levels;
-use super::venue::DepthVenue;
+use super::venue::{DepthVenue, Sessions};
 use crate::model::depth::{
-    BookEvent, BookSync, Delta, DiffStream, Event, Levels, Price, Snapshot, Trade,
+    BookEvent, BookSync, ChainedDiffStream, Delta, DiffStream, Event, Levels, Price, Snapshot,
+    Trade,
 };
+use crate::model::exchange::Market;
 use crate::model::taker_flow::Taker;
+use crate::service::market::binance as markets;
 use crate::service::net::http::{self, Retry};
+use crate::service::net::url::encode_component;
 use crate::service::net::ws::{Keepalive, Session};
+use crate::service::taker_flow::trade_socket;
 use serde_json::Value;
 use std::time::Duration;
 
 const HOST: &str = "stream.binance.com";
 const REST: &str = "https://api.binance.com/api/v3";
 const SNAPSHOT_LEVELS: u32 = 5_000;
+const FUTURES_HOST: &str = "fstream.binance.com";
+const FUTURES_REST: &str = "https://fapi.binance.com/fapi/v1";
+/// The most the futures API gives.
+const FUTURES_SNAPSHOT_LEVELS: u32 = 1_000;
 
 pub(super) struct Binance;
 
 impl DepthVenue for Binance {
-    fn session(&self, symbol: &str) -> Session {
+    fn sessions(&self, symbol: &str) -> Sessions {
         let symbol = symbol.to_lowercase();
-        Session {
-            url: format!("wss://{HOST}/stream?streams={symbol}@depth@100ms/{symbol}@aggTrade"),
-            host: HOST.to_owned(),
-            port: 443,
-            subscribe: Vec::new(),
-            // A thin market can be quiet for a long while: the ping says the socket is alive.
-            max_data_silence: Duration::from_secs(600),
-            keepalive: Keepalive::Frame,
+        Sessions {
+            book: socket(
+                HOST,
+                format!("/stream?streams={symbol}@depth@100ms/{symbol}@aggTrade"),
+            ),
+            trades: None,
         }
     }
 
@@ -92,16 +101,18 @@ fn parse_snapshot(body: &str) -> Result<Snapshot, DepthError> {
     })
 }
 
-/// A combined-stream message, `{"stream":"btcusdt@depth@100ms","data":{…}}`:
+/// A combined-stream message, `{"stream":"btcusdt@depth@100ms","data":{…}}`, or the event alone
+/// as a single-stream socket sends it:
 /// * `"e":"depthUpdate"`, `"U"` and `"u"` the first and last update ids, `"b"` and `"a"` the
 ///   changed bids and asks, a size of zero removing the level;
 /// * `"e":"aggTrade"`, `"p"` and `"q"`, `"T"` the trade time and `"m"` whether the buyer was the
 ///   maker, in which case the taker sold.
 fn parse_message(text: &str) -> Option<Event> {
     let value: Value = serde_json::from_str(text).ok()?;
-    let data = value.get("data")?;
+    let data = value.get("data").unwrap_or(&value);
     match data.get("e")?.as_str()? {
         "depthUpdate" => Some(Event::Book(BookEvent::Delta(Delta {
+            previous: data.get("pu").and_then(Value::as_u64),
             first: data.get("U")?.as_u64()?,
             last: data.get("u")?.as_u64()?,
             levels: Levels {
@@ -127,6 +138,58 @@ fn parse_message(text: &str) -> Option<Event> {
     }
 }
 
+pub(super) struct BinanceFutures;
+
+impl DepthVenue for BinanceFutures {
+    fn sessions(&self, symbol: &str) -> Sessions {
+        let stream = encode_component(&symbol.to_lowercase());
+        Sessions {
+            book: socket(
+                FUTURES_HOST,
+                format!("/public/stream?streams={stream}@depth@100ms"),
+            ),
+            trades: Some(trade_socket(Market::Perpetual, &stream)),
+        }
+    }
+
+    fn tick_size(&self, symbol: &str) -> Result<Price, DepthError> {
+        let tick = markets::tick_size(Market::Perpetual, symbol)
+            .map_err(|_| DepthError::Parse("exchange info"))?
+            .ok_or_else(|| DepthError::UnknownSymbol(symbol.to_owned()))?;
+        Price::parse(&tick)
+            .filter(|tick| *tick > Price::ZERO)
+            .ok_or(DepthError::Parse("tick size"))
+    }
+
+    fn book_sync(&self) -> Box<dyn BookSync> {
+        Box::new(ChainedDiffStream::default())
+    }
+
+    fn snapshot(&self, symbol: &str) -> Result<Snapshot, DepthError> {
+        let url = format!(
+            "{FUTURES_REST}/depth?symbol={}&limit={FUTURES_SNAPSHOT_LEVELS}",
+            encode_component(symbol)
+        );
+        get(&url, symbol).and_then(|body| parse_snapshot(&body))
+    }
+
+    fn parse(&self, text: &str) -> Vec<Event> {
+        parse_message(text).into_iter().collect()
+    }
+}
+
+fn socket(host: &str, path: String) -> Session {
+    Session {
+        url: format!("wss://{host}{path}"),
+        host: host.to_owned(),
+        port: 443,
+        subscribe: Vec::new(),
+        // A thin market can be quiet for a long while: the ping says the socket is alive.
+        max_data_silence: Duration::from_secs(600),
+        keepalive: Keepalive::Frame,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,7 +208,7 @@ mod tests {
 
     #[test]
     fn one_combined_socket_carries_the_diffs_and_the_trades_and_nothing_is_sent() {
-        let session = Binance.session("BTCUSDT");
+        let session = Binance.sessions("BTCUSDT").book;
         assert_eq!(
             session.url,
             "wss://stream.binance.com/stream?streams=btcusdt@depth@100ms/btcusdt@aggTrade"
@@ -153,6 +216,28 @@ mod tests {
         assert!(session.subscribe.is_empty());
         assert_eq!(session.host, "stream.binance.com");
         assert!(matches!(session.keepalive, Keepalive::Frame));
+    }
+
+    #[test]
+    fn a_futures_book_and_its_trades_come_from_their_own_paths() {
+        let sessions = BinanceFutures.sessions("BTCUSDT");
+        assert_eq!(
+            sessions.book.url,
+            "wss://fstream.binance.com/public/stream?streams=btcusdt@depth@100ms"
+        );
+        let trades = sessions.trades.expect("a socket of their own");
+        assert_eq!(
+            trades.url,
+            "wss://fstream.binance.com/market/ws/btcusdt@aggTrade"
+        );
+        let diff = DIFF.replace(r#""U":157,"#, r#""U":157,"pu":150,"#);
+        let Event::Book(BookEvent::Delta(delta)) = only(BinanceFutures.parse(&diff)) else {
+            panic!("not a delta");
+        };
+        assert_eq!(delta.previous, Some(150));
+        // The trade socket sends the event unwrapped.
+        let bare = r#"{"e":"aggTrade","s":"BTCUSDT","p":"1","q":"2","T":3,"m":false}"#;
+        assert!(matches!(only(BinanceFutures.parse(bare)), Event::Trade(_)));
     }
 
     #[test]

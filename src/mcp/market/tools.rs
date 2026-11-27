@@ -73,7 +73,8 @@ const ALL_SOURCES: [McpSource; 11] = [
 pub struct MarketRef {
     /// The market data provider.
     pub source: McpSource,
-    /// The provider's own symbol, as `degenview_search_symbols` returns it: `BTCUSDT` (binance),
+    /// The provider's own symbol, as `degenview_search_symbols` returns it: `BTCUSDT` (binance;
+    /// `BTCUSDT.P` is its USDⓈ-M perpetual, which has no 1s candles),
     /// `BTC-USD` (coinbase), `BTC-USDT` (okx), `BTC/USD` (kraken), `BTCUSDT` (bybit), `BTC_USDT` (gateio), `BTCUSDT` (mexc), `bitcoin` (coingecko), `chain/address` (dexscreener), `AAPL`
     /// (alpaca).
     #[schemars(length(min = 1, max = 128))]
@@ -486,7 +487,7 @@ fn search_all(
 impl DegenViewMcp {
     #[tool(
         name = "degenview_search_symbols",
-        description = "Search the market data providers for symbols by ticker or name. Returns, per hit, the `source` and `symbol` to pass to degenview_add_chart, degenview_get_quotes, degenview_create_price_alert and the watchlist tools, plus how the app labels it. Searches Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko, DEXScreener and (with API keys) Alpaca stocks and Oanda forex side by side; a provider that fails is reported in `source_errors` while the others still answer. Hits only prove the provider lists the market; ask degenview_get_quotes for a price.",
+        description = "Search the market data providers for symbols by ticker or name. Returns, per hit, the `source` and `symbol` to pass to degenview_add_chart, degenview_get_quotes, degenview_create_price_alert and the watchlist tools, plus how the app labels it. Searches Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, CoinGecko, DEXScreener and (with API keys) Alpaca stocks and Oanda forex side by side. Binance hits ending in `.P` (`BTCUSDT.P`) are USDⓈ-M perpetual futures, priced apart from the spot pair; a provider that fails is reported in `source_errors` while the others still answer. Hits only prove the provider lists the market; ask degenview_get_quotes for a price.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

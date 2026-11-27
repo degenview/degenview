@@ -102,7 +102,7 @@ fn recent(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
                 Id::new(("empty-recent", index)),
                 Market {
                     icon_symbol: &market.symbol,
-                    api_symbol: &market.full_symbol,
+                    canonical_symbol: &market.full_symbol,
                     source: market.source,
                     title: &market.symbol,
                     subtitle: Some(market.source.display_name()),
@@ -156,7 +156,7 @@ fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
                 Id::new(("empty-favorite", item.id)),
                 Market {
                     icon_symbol: &item.label,
-                    api_symbol: &item.instrument.api_symbol(),
+                    canonical_symbol: &item.instrument.canonical_symbol(),
                     source: item.instrument.source,
                     title: &item.label,
                     subtitle: Some(&item.name),
@@ -212,7 +212,7 @@ fn starters(
                 Id::new((id, ticker)),
                 Market {
                     icon_symbol: ticker,
-                    api_symbol: &symbol,
+                    canonical_symbol: &symbol,
                     source,
                     title: ticker,
                     subtitle: Some(name),
