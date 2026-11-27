@@ -117,16 +117,10 @@ pub struct ChartLayout;
 
 impl ChartLayout {
     pub const GRID_MIN_COLUMN_WIDTH: f32 = 280.0;
-    pub const GRID_OUTER_PADDING: f32 = 4.0;
 
-    /// Equal card height for `row_count` stacked rows separated by `gap`, filling `available`
-    /// exactly so the space above the first card and below the last are the panel's own margins.
-    pub fn grid_card_height(available: f32, row_count: usize, gap: f32) -> f32 {
-        if row_count == 0 {
-            return available.max(0.0);
-        }
-        let gaps = row_count.saturating_sub(1) as f32 * gap;
-        ((available - gaps) / row_count as f32).max(0.0)
+    /// Equal card height for `row_count` stacked rows that together fill `available`.
+    pub fn grid_card_height(available: f32, row_count: usize) -> f32 {
+        (available / row_count.max(1) as f32).max(0.0)
     }
 
     /// A trailing column may be created only while every column remains usable.
@@ -135,8 +129,7 @@ impl ChartLayout {
         if candidate == 0 {
             return false;
         }
-        let usable = (available_width - Self::GRID_OUTER_PADDING * 2.0).max(0.0);
-        usable / candidate as f32 >= Self::GRID_MIN_COLUMN_WIDTH
+        available_width / candidate as f32 >= Self::GRID_MIN_COLUMN_WIDTH
     }
 }
 
@@ -175,10 +168,10 @@ mod tests {
     }
 
     #[test]
-    fn card_heights_and_gaps_fill_the_available_height() {
-        let height = ChartLayout::grid_card_height(500.0, 3, 6.0);
-        assert!((height * 3.0 + 2.0 * 6.0 - 500.0).abs() < 0.0001);
-        assert_eq!(ChartLayout::grid_card_height(500.0, 1, 6.0), 500.0);
+    fn card_heights_fill_the_available_height() {
+        let height = ChartLayout::grid_card_height(500.0, 3);
+        assert!((height * 3.0 - 500.0).abs() < 0.0001);
+        assert_eq!(ChartLayout::grid_card_height(500.0, 1), 500.0);
     }
 
     #[test]
