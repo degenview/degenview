@@ -169,14 +169,8 @@ impl Session {
                     });
                 }
                 if matches!(value, RuntimeValue::Ref(..)) || self.methods.contains_key(member) {
-                    return self.method_call_on_value(
-                        &expression,
-                        member,
-                        arguments,
-                        site,
-                        range,
-                        context,
-                    );
+                    return self
+                        .method_call_on_read(value, member, arguments, site, range, context);
                 }
             }
         }
@@ -385,6 +379,19 @@ impl Session {
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
         let value = self.eval(receiver, context)?;
+        self.method_call_on_read(value, member, arguments, site, range, context)
+    }
+
+    /// `method_call_on_value` for a receiver the caller has already read, so it is not read again.
+    fn method_call_on_read(
+        &mut self,
+        value: RuntimeValue,
+        member: &str,
+        arguments: &[crate::pine::syntax::ast::Argument],
+        site: usize,
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
         if self.methods.contains_key(member)
             && let Some(result) =
                 self.call_user_method(member, value.clone(), arguments, site, range, context)?
