@@ -34,6 +34,8 @@ struct Loaded<T> {
     fresh_until: Instant,
     /// A market it lacks is not looked for in a new one before then.
     recheck_after: Instant,
+    /// Why the last download failed, when the list is held in spite of it.
+    failed: Option<ProviderError>,
 }
 
 pub struct Catalog<T> {
@@ -62,7 +64,8 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
 
     /// The public list for a market `listed` accepts. A list without one may be older than the
     /// market, so it is downloaded again, though not within `RECHECK_AFTER` of the last time:
-    /// a market that does not exist must not cost a download at every retry.
+    /// a market that does not exist must not cost a download at every retry. A list that could
+    /// not be brought up to date says nothing of what it lacks: that is the download's error.
     pub fn get_listing(
         &self,
         listed: impl Fn(&T) -> bool,
@@ -85,10 +88,14 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             .refresh
             .lock()
             .map_err(|_| ProviderError::other("catalog unavailable"))?;
-        match self.held(EVERYONE) {
+        let current = match self.held(EVERYONE) {
             // Too new to ask again, or another caller has just done so.
-            Some((held, _, recheck_after)) if Instant::now() < recheck_after => Ok(held),
-            _ => self.refresh_from(cache, EVERYONE, Some(items), download),
+            Some((held, _, recheck_after)) if Instant::now() < recheck_after => held,
+            _ => self.refresh_from(cache, EVERYONE, Some(items), download)?,
+        };
+        match self.failure(EVERYONE) {
+            Some(error) if !current.iter().any(&listed) => Err(error),
+            _ => Ok(current),
         }
     }
 
@@ -129,6 +136,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
                         &items,
                         TTL.saturating_sub(hit.age),
                         RECHECK_AFTER.saturating_sub(hit.age),
+                        None,
                     );
                     return Ok(items);
                 }
@@ -152,7 +160,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             Ok(items) if !items.is_empty() => {
                 cache.put(self.namespace, owner, &items);
                 let items = Arc::new(items);
-                self.keep(owner, &items, TTL, RECHECK_AFTER);
+                self.keep(owner, &items, TTL, RECHECK_AFTER, None);
                 Ok(items)
             }
             // An empty list is a provider hiccup, not an answer worth a day.
@@ -171,8 +179,20 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         stale: Option<Arc<Vec<T>>>,
         error: ProviderError,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
-        let items = stale.ok_or(error)?;
-        self.keep(owner, &items, FAILURE_BACKOFF, FAILURE_BACKOFF);
+        let Some(items) = stale else {
+            return Err(error);
+        };
+        // A list still within its day stays so: one failed look does not age it.
+        let still_fresh = self.held(owner).map_or(Duration::ZERO, |(_, until, _)| {
+            until.saturating_duration_since(Instant::now())
+        });
+        self.keep(
+            owner,
+            &items,
+            still_fresh.max(FAILURE_BACKOFF),
+            FAILURE_BACKOFF,
+            Some(error),
+        );
         Ok(items)
     }
 
@@ -188,19 +208,37 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         ))
     }
 
+    /// Why `owner`'s list in memory could not be brought up to date, if the last try failed.
+    fn failure(&self, owner: &str) -> Option<ProviderError> {
+        let memory = self.memory.lock().ok()?;
+        memory
+            .as_ref()
+            .filter(|loaded| loaded.owner == owner)?
+            .failed
+            .clone()
+    }
+
     fn fresh(&self, owner: &str) -> Option<Arc<Vec<T>>> {
         self.held(owner)
             .filter(|(_, fresh_until, _)| Instant::now() < *fresh_until)
             .map(|(items, ..)| items)
     }
 
-    fn keep(&self, owner: &str, items: &Arc<Vec<T>>, fresh_for: Duration, recheck_in: Duration) {
+    fn keep(
+        &self,
+        owner: &str,
+        items: &Arc<Vec<T>>,
+        fresh_for: Duration,
+        recheck_in: Duration,
+        failed: Option<ProviderError>,
+    ) {
         if let Ok(mut memory) = self.memory.lock() {
             *memory = Some(Loaded {
                 owner: owner.to_owned(),
                 items: Arc::clone(items),
                 fresh_until: Instant::now() + fresh_for,
                 recheck_after: Instant::now() + recheck_in,
+                failed,
             });
         }
     }
@@ -436,6 +474,57 @@ mod tests {
         // Found: held as any list is.
         look(&["NOT ASKED"]);
         assert_eq!(fixture.downloads(), 2);
+    }
+
+    #[test]
+    fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        catalog
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+            .unwrap();
+        let offline = || {
+            fixture.downloads.fetch_add(1, Ordering::SeqCst);
+            Err(ProviderError::other("offline"))
+        };
+        let ask = |wanted: &str| {
+            catalog.get_listing_from(&cache, |pair: &Pair| pair.0 == wanted, offline)
+        };
+        catalog
+            .memory
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .recheck_after = Instant::now();
+        // The same answer until it may be asked again, from one download.
+        for _ in 0..3 {
+            assert_eq!(ask("NEW").unwrap_err(), ProviderError::other("offline"));
+        }
+        assert_eq!(fixture.downloads(), 2);
+        // What the list does hold is still answered, and it is as fresh as before.
+        assert_eq!(*ask("OLD").unwrap(), pairs(&["OLD"]));
+        let (_, fresh_until, _) = catalog.held(EVERYONE).unwrap();
+        assert!(fresh_until > Instant::now() + TTL - FAILURE_BACKOFF);
+    }
+
+    #[test]
+    fn a_stale_list_that_cannot_be_refreshed_does_not_say_a_market_is_unlisted() {
+        let fixture = Fixture::new();
+        let (cache, catalog) = fixture.launch();
+        catalog
+            .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+            .unwrap();
+        cache.flush("catalog_test");
+        fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
+
+        let (cache, catalog) = fixture.launch();
+        let answer = catalog.get_listing_from(
+            &cache,
+            |pair: &Pair| pair.0 == "NEW",
+            || Err(ProviderError::other("offline")),
+        );
+        assert_eq!(answer.unwrap_err(), ProviderError::other("offline"));
     }
 
     /// The lists `owner` is answered with, asking the provider for `names` if it has to.

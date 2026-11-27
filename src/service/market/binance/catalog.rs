@@ -112,7 +112,8 @@ fn price_step(entry: &Value) -> Option<String> {
 }
 
 /// The price step of `pair` on `market`, from its list of markets; `None` for a pair the list
-/// does not hold, though it was looked at anew where it could have missed a listing.
+/// does not hold, though it was looked at anew where it could have missed a listing. A list that
+/// could not be brought up to date is an error for such a pair.
 pub(in crate::service) fn tick_size(
     market: Market,
     pair: &str,
