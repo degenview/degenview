@@ -354,3 +354,15 @@ fn no_text_is_wider_than_the_one_the_axis_is_measured_with() {
         }
     }
 }
+
+#[test]
+fn a_years_short_last_period_counts_down_to_the_next_years_first() {
+    // The three-week period that opens on 29 December 2025 lasts one week (TradingView).
+    let three_weeks = Timeframe::new(3, TimeUnit::Week).unwrap();
+    let newest = candle(three_weeks, utc(2025, 12, 31, 0, 0, 0));
+    assert_eq!(newest.open_time, utc(2025, 12, 29, 0, 0, 0));
+    let countdown =
+        Countdown::resolve(&input(three_weeks, Some(&newest), utc(2026, 1, 4, 0, 0, 0)))
+            .expect("counts");
+    assert_eq!(countdown.text(), format(DAY_MS));
+}

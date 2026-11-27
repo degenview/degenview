@@ -195,25 +195,64 @@ fn multi_day_buckets_count_days_from_the_epoch() {
 }
 
 #[test]
-fn multi_week_buckets_start_on_monday() {
-    let two = tf(2, TimeUnit::Week);
-    // Monday 1969-12-29 opens week 0, so it opens a two-week bucket.
-    let first_monday = day(1969, 12, 29);
-    assert_eq!(bucket_start_ms(two, first_monday), first_monday);
+fn month_counts_restart_in_january() {
+    // TradingView, BTCUSDT (probe R11): five-month periods open in January, June and November.
+    let five = tf(5, TimeUnit::Month);
+    assert_eq!(bucket_start_ms(five, day(2024, 3, 15)), day(2024, 1, 1));
+    assert_eq!(bucket_start_ms(five, day(2025, 7, 10)), day(2025, 6, 1));
+    assert_eq!(bucket_start_ms(five, day(2025, 12, 31)), day(2025, 11, 1));
+    assert_eq!(bucket_start_ms(five, day(2026, 1, 6)), day(2026, 1, 1));
     assert_eq!(
-        bucket_start_ms(two, first_monday + 13 * DAY_MS),
-        first_monday
+        next_bucket_start_ms(five, day(2025, 11, 1)),
+        day(2026, 1, 1)
     );
-    assert_eq!(
-        next_bucket_start_ms(two, first_monday),
-        first_monday + 14 * DAY_MS
-    );
-    for time in [day(2024, 1, 3), day(2024, 7, 28), day(2025, 12, 31)] {
-        let start = bucket_start_ms(two, time);
-        // A Monday, an even number of weeks after the first one.
-        assert_eq!((start - first_monday) % (14 * DAY_MS), 0, "{time}");
-        assert!(start <= time && time < start + 14 * DAY_MS);
+}
+
+#[test]
+fn multi_week_buckets_count_from_the_first_monday_of_the_year() {
+    // TradingView, BTCUSDT (probe R10, 2026-11-26): where the period holding each date opens.
+    let weeks = |count| tf(count, TimeUnit::Week);
+    let cases = [
+        // date, 2W, 3W, 4W
+        ((2023, 1, 2), (2023, 1, 2), (2023, 1, 2), (2023, 1, 2)),
+        ((2024, 1, 1), (2024, 1, 1), (2024, 1, 1), (2024, 1, 1)),
+        ((2025, 1, 6), (2025, 1, 6), (2025, 1, 6), (2025, 1, 6)),
+        // Before 2026's first Monday: still counted from 2025's.
+        (
+            (2025, 12, 29),
+            (2025, 12, 22),
+            (2025, 12, 29),
+            (2025, 12, 8),
+        ),
+        ((2026, 1, 12), (2026, 1, 5), (2026, 1, 5), (2026, 1, 5)),
+        ((2026, 6, 1), (2026, 5, 25), (2026, 6, 1), (2026, 5, 25)),
+        (
+            (2026, 11, 23),
+            (2026, 11, 23),
+            (2026, 11, 16),
+            (2026, 11, 9),
+        ),
+    ];
+    for ((y, m, d), two, three, four) in cases {
+        for (count, expected) in [(2, two), (3, three), (4, four)] {
+            let (year, month, date) = expected;
+            assert_eq!(
+                bucket_start_ms(weeks(count), day(y, m, d)),
+                day(year, month, date),
+                "{count}W at {y}-{m}-{d}"
+            );
+        }
     }
+    // The count restarts with the year, so its last period can be short: 2025's three-week period
+    // that opens on 29 December ends when 2026's first one opens.
+    assert_eq!(
+        next_bucket_start_ms(weeks(3), day(2025, 12, 29)),
+        day(2026, 1, 5)
+    );
+    assert_eq!(
+        next_bucket_start_ms(weeks(2), day(2026, 1, 12)),
+        day(2026, 1, 19)
+    );
     // One week stays on the Mondays Binance uses.
     assert_eq!(
         bucket_start_ms(Timeframe::WEEK_1, day(2024, 1, 4)),

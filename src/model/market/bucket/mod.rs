@@ -7,10 +7,11 @@
 //! - **Seconds, minutes and hours** restart at midnight: a `22m` day has 65 full buckets and a
 //!   shorter last one that ends at 00:00 (a `7s` day ends the same way).
 //! - **Days** count from 1970-01-01: the day number floored to a multiple of the count.
-//! - **Weeks** start on Monday: the week number (from Monday 1969-12-29) floored to a multiple of
-//!   the count.
-//! - **Months** count from 1970-01: the month number floored to a multiple of the count, so `3M`
-//!   is the calendar quarter and `12M` the calendar year.
+//! - **Weeks** start on Monday and are counted from the first Monday of the year: the count starts
+//!   again there, so a year's last period can be shorter, and the days before that Monday belong
+//!   to the previous year's last period (TradingView, 2026-11-26).
+//! - **Months** are counted from January and start again each year, so `3M` is the calendar quarter
+//!   and `12M` the calendar year.
 //!
 //! A bucket closes 1 ms before the next opens.
 //!
@@ -45,10 +46,17 @@ pub fn bucket_start_ms(tf: Timeframe, t_ms: i64) -> i64 {
         }
         TimeUnit::Day => days.div_euclid(count) * count * DAY_MS,
         TimeUnit::Week => {
-            let weeks = (days + DAYS_BEFORE_FIRST_MONDAY).div_euclid(7);
-            (weeks.div_euclid(count) * count * 7 - DAYS_BEFORE_FIRST_MONDAY) * DAY_MS
+            let monday = days - (days + DAYS_BEFORE_FIRST_MONDAY).rem_euclid(7);
+            // A Monday is never before the first Monday of its own year.
+            let first = first_monday(civil_from_days(monday).0);
+            let length = count * 7;
+            (first + (monday - first).div_euclid(length) * length) * DAY_MS
         }
-        TimeUnit::Month => month_start_ms(month_index(days).div_euclid(count) * count),
+        TimeUnit::Month => {
+            let index = month_index(days);
+            let january = index - index.rem_euclid(12);
+            month_start_ms(january + (index - january).div_euclid(count) * count)
+        }
     }
 }
 
@@ -63,9 +71,23 @@ pub fn next_bucket_start_ms(tf: Timeframe, t_ms: i64) -> i64 {
             (start + tf.nominal_ms()).min(midnight + DAY_MS)
         }
         TimeUnit::Day => start + count * DAY_MS,
-        TimeUnit::Week => start + count * 7 * DAY_MS,
-        TimeUnit::Month => month_start_ms(month_index(start.div_euclid(DAY_MS)) + count),
+        // The next year's count cuts the last period of this one short.
+        TimeUnit::Week => {
+            let year = civil_from_days(start.div_euclid(DAY_MS)).0;
+            (start + count * 7 * DAY_MS).min(first_monday(year + 1) * DAY_MS)
+        }
+        TimeUnit::Month => {
+            let index = month_index(start.div_euclid(DAY_MS));
+            let next_january = index - index.rem_euclid(12) + 12;
+            month_start_ms((index + count).min(next_january))
+        }
     }
+}
+
+/// The first Monday of `year`, in days since the epoch.
+fn first_monday(year: i64) -> i64 {
+    let january = days_from_civil(year, 1, 1);
+    january + (-(january + DAYS_BEFORE_FIRST_MONDAY)).rem_euclid(7)
 }
 
 /// Months since 1970-01 of the month holding `days` (since the epoch).

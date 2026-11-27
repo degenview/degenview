@@ -413,3 +413,29 @@ fn bars_of_a_bucket_older_than_the_forming_one_are_ignored() {
     assert_eq!(merged[0], held_bucket());
     assert_eq!(merged[1], candles[0]);
 }
+
+#[test]
+fn live_daily_bars_cross_a_years_short_last_period() {
+    // The three-week period that opens on 29 December 2025 lasts one week.
+    const DAY_MS: i64 = 86_400_000;
+    let three_weeks = Timeframe::new(3, crate::model::TimeUnit::Week).unwrap();
+    let day = |year, month, date| days_from_civil(year, month, date) * DAY_MS;
+    let first = day(2025, 12, 29);
+    let mut fold = LiveFold::default();
+    let mut candles = Vec::new();
+    for index in 0..9 {
+        fold.apply(
+            three_weeks,
+            Timeframe::DAY_1,
+            &mut candles,
+            candle(first + index * DAY_MS, index as f64 + 1.0),
+        );
+    }
+    let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+    assert_eq!(opens, [first, day(2026, 1, 5)]);
+    // The short period closes where the next one opens, with its seven days.
+    assert_eq!(candles[0].close_time, day(2026, 1, 5) - 1);
+    assert_eq!(candles[0].close, 7.0);
+    assert_eq!(candles[1].close_time, day(2026, 1, 26) - 1);
+    assert_eq!(candles[1].close, 9.0);
+}
