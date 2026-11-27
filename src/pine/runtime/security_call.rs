@@ -1467,7 +1467,7 @@ impl<'a> ReferenceExport<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::runtime::containers::{Map, MapKey, Matrix, Object};
+    use crate::pine::runtime::containers::{Map, Matrix, Object};
     use crate::pine::runtime::support::SecurityDataProvider;
 
     fn bar(open_time: i64, close: f64) -> Kline {
@@ -1629,8 +1629,9 @@ mod tests {
             ),
         );
         let mut map = Map::default();
-        map.put(sample_ref.clone(), MapKey::Int(2));
-        map.put(sample_ref, MapKey::Int(1));
+        map.insert(&RuntimeValue::Int(2), sample_ref.clone())
+            .unwrap();
+        map.insert(&RuntimeValue::Int(1), sample_ref).unwrap();
         source.maps.insert(3, map);
         source.next_reference = 3;
 
