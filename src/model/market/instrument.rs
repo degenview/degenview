@@ -37,7 +37,7 @@ impl InstrumentId {
         match self.source {
             DataSource::Mexc => {
                 let upper = self.symbol.to_uppercase().replace(['/', '-', '_', ' '], "");
-                // Its own quotes (`USD1`, `USDE`), and a one-letter base is a real asset (`S`).
+                // Its own quotes (`USDE`, `USDF`).
                 if crate::model::market::source::split_mexc_pair(&upper).is_some() {
                     upper
                 } else {
@@ -46,10 +46,7 @@ impl InstrumentId {
             }
             DataSource::Binance | DataSource::Bybit => {
                 let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
-                // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
-                if crate::model::market::source::split_binance_pair(&upper)
-                    .is_some_and(|(base, _)| base.len() > 1)
-                {
+                if crate::model::market::source::split_binance_pair(&upper).is_some() {
                     upper
                 } else {
                     format!("{upper}USDT")
@@ -257,6 +254,30 @@ mod tests {
             InstrumentId::new(DataSource::Binance, "WBTC").api_symbol(),
             "WBTCUSDT"
         );
+    }
+
+    #[test]
+    fn a_one_letter_base_is_an_asset_before_a_dollar_stablecoin_only() {
+        for source in [DataSource::Binance, DataSource::Bybit] {
+            for (typed, api) in [
+                ("SUSDT", "SUSDT"),
+                ("w/usdc", "WUSDC"),
+                ("AUSD1", "AUSD1"),
+                ("S", "SUSDT"),
+                ("WBTC", "WBTCUSDT"),
+                ("TUSD", "TUSDUSDT"),
+                ("BUSD", "BUSDUSDT"),
+            ] {
+                assert_eq!(
+                    InstrumentId::new(source, typed).api_symbol(),
+                    api,
+                    "{typed}"
+                );
+            }
+            assert_eq!(source.base_asset("SUSDT"), "S");
+            assert_eq!(source.quote_asset("SUSDT").as_deref(), Some("USDT"));
+            assert_eq!(source.quote_asset("WBTC"), None);
+        }
     }
 
     #[test]

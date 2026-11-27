@@ -43,17 +43,7 @@ pub fn asset_of(source: DataSource, symbol: &str) -> Option<String> {
     ) {
         return None;
     }
-    let mut base = source.base_asset(symbol);
-    // Binance and Bybit do not split a one-letter base off its quote (`SUSDT` stays whole, as
-    // `WBTC` is not W/BTC), but a dollar quote after a letter is no wrapped asset: it is `S`.
-    if matches!(source, Binance | Bybit)
-        && let Some(stem) = ["USDT", "USDC"]
-            .iter()
-            .find_map(|quote| base.strip_suffix(quote))
-            .filter(|stem| !stem.is_empty())
-    {
-        base = stem.to_owned();
-    }
+    let base = source.base_asset(symbol);
     // Kraken's names for Bitcoin and Dogecoin.
     let asset = match base.as_str() {
         "XBT" => "BTC".to_owned(),
