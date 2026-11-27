@@ -7198,6 +7198,10 @@ msgstr[0] "已导入“{name}”。文件中有 {count} 个值无法使用，已
 msgid "Import…"
 msgstr "导入…"
 
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "在 Pine Studio 中"
+
 #: src/ui/settings/api_keys.rs
 msgid ""
 "In Account Management, open Personal Access Tokens and generate a token."
@@ -7214,6 +7218,14 @@ msgstr "盈利"
 #: src/ui/chart/settings/compare.rs
 msgid "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "在标的搜索（⌘K）中，按 ⌥↵ 可将高亮的市场添加到此图表。"
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "在工具栏的布局菜单中"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "在自选列表侧边栏中"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -20568,9 +20580,6 @@ msgstr "从 TradingView 导入"
 
 msgid "Import from TradingView…"
 msgstr "从 TradingView 导入…"
-
-msgid "Imported layouts are in the toolbar’s layout menu."
-msgstr "导入的布局在工具栏的布局菜单中。"
 
 msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
 msgstr "请安装 TradingView 桌面应用并登录，然后打开想要导入的布局和自选列表。"

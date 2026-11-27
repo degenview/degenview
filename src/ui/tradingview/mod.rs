@@ -3,6 +3,8 @@
 //! answers with [`Action`]s.
 
 mod choose;
+mod done;
+mod pictures;
 mod preview;
 mod result;
 pub mod welcome;
@@ -16,6 +18,7 @@ use crate::model::Timeframe;
 use crate::model::tradingview::library::Contents;
 use crate::model::tradingview::plan::{Mappings, Plan, Selection, Summary};
 use crate::model::tradingview::{Library, TvSymbol};
+use crate::ui::icons::{self, Icon};
 use crate::ui::kit::scroll::{Beyond, fade_edges};
 use crate::ui::kit::{self, sheet};
 use crate::ui::theme;
@@ -140,7 +143,7 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
     ui.add_space(HEADER_PADDING - 4.0);
     header(ui, view);
     let footer = match view {
-        View::Content(_) => STEP_FOOTER_HEIGHT,
+        View::Content(_) | View::Done(_) => STEP_FOOTER_HEIGHT,
         _ => FOOTER_HEIGHT,
     };
     // `set_height` made the sheet's own rect SIZE.y tall, so measure from the cursor.
@@ -154,7 +157,7 @@ pub fn body(ui: &mut Ui, view: &View<'_>, actions: &mut Vec<Action>) {
             (Step::Preview, Some(plan)) => preview::show(ui, height, content, plan, actions),
             _ => choose::show(ui, height, content, actions),
         },
-        View::Done(summary) => result::done(ui, height, summary, actions),
+        View::Done(summary) => done::show(ui, height, summary, actions),
     }
 }
 
@@ -248,6 +251,33 @@ fn headline(view: &View<'_>) -> (&'static str, &'static str) {
             tr!("Layouts, drawings, watchlists and scripts the TradingView app has loaded."),
         ),
     }
+}
+
+/// A heading of a step: a bare glyph and a title, with what follows it on the same line left to
+/// `add`, which is given the row and where the title ends.
+fn section_title(ui: &mut Ui, icon: Icon, title: &str, add: impl FnOnce(&Ui, Rect, f32)) {
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(row.left() + 8.0, row.center().y), Vec2::splat(16.0)),
+        icon,
+        theme::text_secondary(),
+    );
+    let title = kit::galley(
+        ui,
+        title,
+        kit::size::HEADLINE + 1.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        row.width() - 24.0,
+    );
+    let end = row.left() + 24.0 + title.size().x;
+    ui.painter().galley(
+        pos2(row.left() + 24.0, row.center().y - title.size().y / 2.0),
+        title,
+        egui::Color32::PLACEHOLDER,
+    );
+    add(ui, row, end);
 }
 
 /// A scrolling body of `height`, inset like the header.

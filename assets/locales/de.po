@@ -7234,6 +7234,10 @@ msgstr[1] "„{name}“ importiert. {count} Werte in der Datei waren nicht verwe
 msgid "Import…"
 msgstr "Importieren …"
 
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "Im Pine Studio"
+
 #: src/ui/settings/api_keys.rs
 msgid ""
 "In Account Management, open Personal Access Tokens and generate a token."
@@ -7250,6 +7254,14 @@ msgstr "Im Gewinn"
 #: src/ui/chart/settings/compare.rs
 msgid "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "In der Symbolsuche (⌘K) fügt ⌥↵ den markierten Markt diesem Chart hinzu."
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "Im Layout-Menü der Werkzeugleiste"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "In der Watchlist-Seitenleiste"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -20760,10 +20772,6 @@ msgstr "Aus TradingView importieren"
 #: src/ui/workspace/toolbar.rs
 msgid "Import from TradingView…"
 msgstr "Aus TradingView importieren …"
-
-#: src/ui/tradingview/result.rs
-msgid "Imported layouts are in the toolbar’s layout menu."
-msgstr "Importierte Layouts findest du im Layout-Menü der Symbolleiste."
 
 #: src/ui/tradingview/result.rs
 msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."

@@ -1,7 +1,6 @@
 //! What there is to bring over: a heading for each kind and a card for each item, with a picture
 //! of what it holds. The whole card is its switch.
 
-use super::{heading, pictures};
 use crate::i18n::tr;
 use crate::model::tradingview::library::{Layout as TvLayout, Script, TvWatchlist};
 use crate::model::tradingview::plan::Mappings;
@@ -12,6 +11,7 @@ use crate::ui::kit::sheet_parts::card_background;
 use crate::ui::kit::{self, ticker_icon};
 use crate::ui::theme;
 use crate::ui::tradingview::{Action, Content, Group, words};
+use crate::ui::tradingview::{pictures, section_title};
 use eframe::egui::{self, Color32, CursorIcon, Id, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 use std::collections::HashSet;
 
@@ -124,7 +124,7 @@ fn section_heading(
     actions: &mut Vec<Action>,
 ) {
     let mut all = None;
-    heading(ui, icon, title, |ui, row, end| {
+    section_title(ui, icon, title, |ui, row, end| {
         let count = kit::galley(
             ui,
             &tr!("{count} of {total} selected", count = chosen, total = total),

@@ -134,8 +134,9 @@ pub struct Summary {
     /// `(id, name)` of each saved layout.
     pub layouts: Vec<(u64, String)>,
     pub drawings: usize,
-    pub watchlists: usize,
-    pub scripts: usize,
+    /// The names of the watchlists and scripts added.
+    pub watchlists: Vec<String>,
+    pub scripts: Vec<String>,
     pub failures: Vec<String>,
 }
 
@@ -245,6 +246,39 @@ pub enum LeftOut {
         symbol: String,
         count: usize,
     },
+}
+
+impl LeftOut {
+    /// Whether the thing still comes over, only not as it was, rather than not at all.
+    pub fn is_change(&self) -> bool {
+        match self {
+            Self::CutText(_)
+            | Self::IndicatorSettings(_)
+            | Self::ChartStyle(_)
+            | Self::Interval(_)
+            | Self::SameMarket(_)
+            | Self::DefaultLevels(_)
+            | Self::OtherMarket { .. }
+            | Self::PostsEstimated(_)
+            | Self::PostsPlacing(_)
+            | Self::PercentBands(_) => true,
+            Self::NoChart
+            | Self::Chart(_)
+            | Self::Comparison(_)
+            | Self::DrawingsOfMarket { .. }
+            | Self::DrawingsOfTool { .. }
+            | Self::Pictures(_)
+            | Self::PositionsWithoutPriceStep(_)
+            | Self::BrokenDrawings(_)
+            | Self::Indicator(_)
+            | Self::HiddenCharts(_)
+            | Self::Markets(_)
+            | Self::NoMarket
+            | Self::ListFull(_)
+            | Self::Pinned(_)
+            | Self::PostsUnplaced(_) => false,
+        }
+    }
 }
 
 /// The plan for `selection`. `base` is the look a new chart gets here.

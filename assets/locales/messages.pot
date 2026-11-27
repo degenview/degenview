@@ -7735,10 +7735,6 @@ msgid_plural "Import {count} Transactions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/tradingview/result.rs
-msgid "Imported layouts are in the toolbar’s layout menu."
-msgstr ""
-
 #: src/ui/settings/pine_studio/mod.rs
 msgid "Imported “{name}”."
 msgstr ""
@@ -7763,6 +7759,10 @@ msgstr[1] ""
 msgid "Import…"
 msgstr ""
 
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr ""
+
 #: src/ui/settings/api_keys.rs
 msgid "In Account Management, open Personal Access Tokens and generate a token."
 msgstr ""
@@ -7778,6 +7778,14 @@ msgstr ""
 #: src/ui/chart/settings/compare.rs
 msgid ""
 "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
+msgstr ""
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr ""
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
 msgstr ""
 
 #: src/ui/settings/window.rs

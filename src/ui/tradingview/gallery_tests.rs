@@ -35,7 +35,7 @@ fn frame(name: &str, view: &View<'_>) {
             modifiers: egui::Modifiers::NONE,
         });
         let pointer = egui::Event::PointerMoved(egui::pos2(300.0, 400.0));
-        for step in 0..12 {
+        for step in 0..120 {
             let events = match &scroll {
                 Some(wheel) if step == 1 => vec![pointer.clone(), wheel.clone()],
                 _ => Vec::new(),
@@ -84,8 +84,8 @@ fn tradingview_gallery() {
     let summary = Summary {
         layouts: vec![(1, "Majors".into())],
         drawings: 31,
-        watchlists: 1,
-        scripts: 2,
+        watchlists: vec!["Coins".into()],
+        scripts: vec!["My bands".into(), "Zigzag".into()],
         failures: vec!["Coins: you already have the most watchlists".into()],
     };
     let content = |step| {

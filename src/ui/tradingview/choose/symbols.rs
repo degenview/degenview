@@ -1,6 +1,5 @@
 //! Which market each TradingView symbol becomes: how they stand together, and a row for each.
 
-use super::heading;
 use crate::i18n::{tr, tr_n};
 use crate::model::tradingview::TvSymbol;
 use crate::model::tradingview::plan::{Match, Unmatched, Usage};
@@ -9,7 +8,7 @@ use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::matching::{self, RowAction, RowState, Tally};
 use crate::ui::kit::{self, ticker_icon};
 use crate::ui::theme;
-use crate::ui::tradingview::{Action, Content, words};
+use crate::ui::tradingview::{Action, Content, section_title, words};
 use eframe::egui::{self, Align, Color32, Id, Layout, Rect, Ui, Vec2, pos2};
 
 /// Where a symbol row's market starts: TradingView's names run longer than a CSV's tickers.
@@ -41,7 +40,7 @@ pub(super) fn show(
     tally: &Tally,
     actions: &mut Vec<Action>,
 ) {
-    heading(
+    section_title(
         ui,
         Icon::ArrowLeftRight,
         tr!("Match symbols to markets"),

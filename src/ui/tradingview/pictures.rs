@@ -48,21 +48,27 @@ pub(super) fn grid(ui: &Ui, rect: Rect, layout: &Layout) {
             );
             // Each chart a darker pane, so the arrangement reads.
             ui.painter().rect_filled(cell, 2.0, theme::chrome());
-            candles(ui, cell.shrink(1.0), chart);
+            candles(ui, cell.shrink(1.0), CANDLE_STEP, chart);
             chart += 1;
         }
     }
 }
 
-/// A run of candles filling `cell`; `seed` tells one chart's run from the next.
-fn candles(ui: &Ui, cell: Rect, seed: usize) {
-    const LEVELS: [f32; 9] = [0.70, 0.55, 0.63, 0.40, 0.50, 0.30, 0.42, 0.22, 0.34];
-    let count = (cell.width() / CANDLE_STEP).floor() as usize;
+/// A run of candles filling `cell`, one every `step` points or so; `seed` tells one chart's run
+/// from the next.
+pub(super) fn candles(ui: &Ui, cell: Rect, step: f32, seed: usize) {
+    let count = (cell.width() / step).floor() as usize;
     if count == 0 || cell.height() < 4.0 {
         return;
     }
     let step = cell.width() / count as f32;
-    let level = |index: usize| LEVELS[(index + seed * 3) % LEVELS.len()];
+    // Where the price is before candle `index`, from the top (0) to the foot (1): waves whose
+    // lengths do not divide one another, so a wide run does not repeat itself.
+    let level = |index: usize| {
+        let at = index as f32 + seed as f32 * 17.0;
+        0.5 + 0.2 * (at * 0.19).sin() + 0.1 * (at * 0.71).sin() + 0.06 * (at * 2.3).sin()
+    };
+    let body = (step * 0.5).max(2.0);
     for index in 0..count {
         let (open, close) = (level(index), level(index + 1));
         let color = if close <= open {
@@ -72,17 +78,13 @@ fn candles(ui: &Ui, cell: Rect, seed: usize) {
         };
         let x = cell.left() + step * (index as f32 + 0.5);
         let y = |level: f32| cell.top() + cell.height() * level;
-        let (top, bottom) = (
-            y(open.min(close)),
-            y(open.max(close).max(open.min(close) + 0.08)),
-        );
-        ui.painter().vline(
-            x,
-            (top - cell.height() * 0.1)..=(bottom + cell.height() * 0.1),
-            Stroke::new(0.75, color),
-        );
+        let top = y(open.min(close));
+        let bottom = y(open.max(close)).max(top + 1.0);
+        let wick = cell.height() * (0.05 + 0.05 * (index as f32 * 1.7).sin().abs());
+        ui.painter()
+            .vline(x, (top - wick)..=(bottom + wick), Stroke::new(0.75, color));
         ui.painter().rect_filled(
-            Rect::from_min_max(pos2(x - 1.25, top), pos2(x + 1.25, bottom)),
+            Rect::from_min_max(pos2(x - body / 2.0, top), pos2(x + body / 2.0, bottom)),
             0.5,
             color,
         );

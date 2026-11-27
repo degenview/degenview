@@ -36,6 +36,24 @@ pub fn lines(count: usize) -> String {
     tr_n!(count, "{count} line", "{count} lines")
 }
 
+/// How much of each kind there is to add, as one line.
+pub fn selected(layouts: usize, watchlists: usize, scripts: usize) -> String {
+    let parts: Vec<String> = [
+        (layouts, self::layouts as fn(usize) -> String),
+        (watchlists, self::watchlists),
+        (scripts, self::scripts),
+    ]
+    .into_iter()
+    .filter(|(count, _)| *count > 0)
+    .map(|(count, words)| words(count))
+    .collect();
+    if parts.is_empty() {
+        tr!("Nothing selected").to_owned()
+    } else {
+        dotted(&parts)
+    }
+}
+
 /// What uses a symbol.
 pub fn usage(exchange: &str, usage: Usage) -> String {
     let mut parts = vec![exchange.to_owned()];

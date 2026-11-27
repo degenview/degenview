@@ -83,6 +83,55 @@ pub fn paint(ui: &Ui, rect: Rect, time: f64) {
     }
 }
 
+/// How long the arrival takes to play.
+pub const ARRIVAL: f64 = 1.4;
+
+/// The end of the move, across `rect`: the DegenView window fills with what came over and a check
+/// is drawn beside it, once. `since` is how long ago that began; `whole` is `false` when nothing
+/// arrived, and then the window stays empty and unmarked.
+pub fn arrived(ui: &Ui, rect: Rect, since: f64, whole: bool) {
+    let painter = ui.painter().with_clip_rect(rect);
+    grid(&painter, rect);
+    let played = if whole {
+        (since / ARRIVAL).clamp(0.0, 1.0) as f32
+    } else {
+        0.0
+    };
+    let middle = rect.center() + vec2(0.0, 6.0);
+    let to = Rect::from_center_size(middle, WINDOW);
+    window(ui, &painter, to, "DegenView", Some(app_icon()));
+    let ramp = |from: f32, until: f32| ((played - from) / (until - from)).clamp(0.0, 1.0);
+    chart(&painter, body(to), ramp(0.0, 0.55), ramp(0.45, 0.75));
+    check(&painter, pos2(to.right() + 44.0, middle.y), ramp(0.65, 1.0));
+}
+
+/// A check mark drawn as far as `drawn` (0 to 1) of it.
+fn check(painter: &Painter, centre: Pos2, drawn: f32) {
+    if drawn <= 0.0 {
+        return;
+    }
+    let points = [
+        centre + vec2(-18.0, 1.0),
+        centre + vec2(-6.0, 13.0),
+        centre + vec2(19.0, -14.0),
+    ];
+    let first = (points[1] - points[0]).length();
+    let second = (points[2] - points[1]).length();
+    let mut left = (first + second) * drawn;
+    let mut line = vec![points[0]];
+    for (from, until, length) in [
+        (points[0], points[1], first),
+        (points[1], points[2], second),
+    ] {
+        if left <= 0.0 {
+            break;
+        }
+        line.push(from + (until - from) * (left / length).min(1.0));
+        left -= length;
+    }
+    painter.add(Shape::line(line, Stroke::new(4.0, theme::UP)));
+}
+
 fn app_icon() -> egui::ImageSource<'static> {
     egui::include_image!("../../../../assets/brand/app_icon.png")
 }

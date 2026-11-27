@@ -1,7 +1,7 @@
 //! The welcome to the import: a picture of what it does, what was found on this computer, and the
 //! way in. It is the import's first page, and the offer made once at launch.
 
-mod art;
+pub(super) mod art;
 #[cfg(test)]
 mod tests;
 

@@ -168,7 +168,7 @@ fn a_folder_is_read_matched_previewed_and_imported() {
     };
     assert!(summary.failures.is_empty(), "{:?}", summary.failures);
     assert_eq!(summary.layouts.len(), 1);
-    assert_eq!((summary.watchlists, summary.scripts), (1, 1));
+    assert_eq!((summary.watchlists.len(), summary.scripts.len()), (1, 1));
     assert!(import.take_added_scripts());
     assert!(!import.take_added_scripts(), "told once");
 

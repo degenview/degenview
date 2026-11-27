@@ -1,7 +1,6 @@
 //! The first step: what to bring over, and which market each of its symbols becomes.
 
 mod cards;
-mod pictures;
 mod symbols;
 
 use super::{Action, Content, scrolling, words};
@@ -101,23 +100,11 @@ fn missing(ui: &mut Ui, content: &Content<'_>, actions: &mut Vec<Action>) {
 /// What is chosen, and what still stands in the way, beside the two ways on.
 fn footer(ui: &mut Ui, content: &Content<'_>, tally: &Tally, jump: Id, actions: &mut Vec<Action>) {
     let selection = content.selection;
-    let parts: Vec<String> = [
-        (
-            selection.layouts.len(),
-            words::layouts as fn(usize) -> String,
-        ),
-        (selection.watchlists.len(), words::watchlists),
-        (selection.scripts.len(), words::scripts),
-    ]
-    .into_iter()
-    .filter(|(count, _)| *count > 0)
-    .map(|(count, words)| words(count))
-    .collect();
-    let summary = if parts.is_empty() {
-        tr!("Nothing selected").to_owned()
-    } else {
-        parts.join(" \u{00B7} ")
-    };
+    let summary = words::selected(
+        selection.layouts.len(),
+        selection.watchlists.len(),
+        selection.scripts.len(),
+    );
     sheet::footer_split(
         ui,
         |ui| {
@@ -198,31 +185,4 @@ fn status(ui: &mut Ui, tally: &Tally, jump: Id, opening: u64) {
             tr_n!(tally.matched, "{count} matched", "{count} matched"),
         );
     }
-}
-
-/// A heading of the step: a bare glyph and a title, with what follows it on the same line left to
-/// `add`.
-fn heading(ui: &mut Ui, icon: Icon, title: &str, add: impl FnOnce(&Ui, Rect, f32)) {
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(pos2(row.left() + 8.0, row.center().y), Vec2::splat(16.0)),
-        icon,
-        theme::text_secondary(),
-    );
-    let title = kit::galley(
-        ui,
-        title,
-        kit::size::HEADLINE + 1.0,
-        kit::SEMIBOLD,
-        theme::text_primary(),
-        row.width() - 24.0,
-    );
-    let end = row.left() + 24.0 + title.size().x;
-    ui.painter().galley(
-        pos2(row.left() + 24.0, row.center().y - title.size().y / 2.0),
-        title,
-        egui::Color32::PLACEHOLDER,
-    );
-    add(ui, row, end);
 }

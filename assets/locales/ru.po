@@ -7797,6 +7797,10 @@ msgstr[2] ""
 msgid "Import…"
 msgstr "Импорт…"
 
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "В Pine Studio"
+
 #: src/ui/settings/api_keys.rs
 msgid ""
 "In Account Management, open Personal Access Tokens and generate a token."
@@ -7814,6 +7818,14 @@ msgstr "В прибыли"
 msgid ""
 "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "В поиске символов (⌘K) ⌥↵ добавляет выделенный рынок на этот график."
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "В меню макетов на панели инструментов"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "В боковой панели списков наблюдения"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -22437,10 +22449,6 @@ msgstr "Импорт из TradingView"
 #: src/ui/workspace/toolbar.rs
 msgid "Import from TradingView…"
 msgstr "Импорт из TradingView…"
-
-#: src/ui/tradingview/result.rs
-msgid "Imported layouts are in the toolbar’s layout menu."
-msgstr "Импортированные макеты находятся в меню макетов на панели инструментов."
 
 #: src/service/tradingview/mod.rs
 msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."

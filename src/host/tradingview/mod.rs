@@ -434,7 +434,7 @@ impl TradingViewImport {
                 {
                     let summary = apply::apply(plan, &self.targets);
                     self.wrote = true;
-                    self.added_scripts = summary.scripts > 0;
+                    self.added_scripts = !summary.scripts.is_empty();
                     self.stage = Stage::Done(summary);
                 }
             }

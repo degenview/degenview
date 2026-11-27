@@ -7234,6 +7234,10 @@ msgstr[1] "“{name}” importado. {count} valores del archivo no se pudieron us
 msgid "Import…"
 msgstr "Importar…"
 
+#: src/ui/tradingview/done.rs
+msgid "In Pine Studio"
+msgstr "En Pine Studio"
+
 #: src/ui/settings/api_keys.rs
 msgid ""
 "In Account Management, open Personal Access Tokens and generate a token."
@@ -7250,6 +7254,14 @@ msgstr "Con beneficio"
 #: src/ui/chart/settings/compare.rs
 msgid "In the symbol search (⌘K), ⌥↵ adds the highlighted market to this chart."
 msgstr "En la búsqueda de símbolos (⌘K), ⌥↵ añade el mercado resaltado a este gráfico."
+
+#: src/ui/tradingview/done.rs
+msgid "In the toolbar’s layout menu"
+msgstr "En el menú de diseños de la barra de herramientas"
+
+#: src/ui/tradingview/done.rs
+msgid "In the watchlist sidebar"
+msgstr "En la barra lateral de listas de seguimiento"
 
 #: src/ui/settings/window.rs
 msgid "In-App Banners"
@@ -20743,9 +20755,6 @@ msgstr "Importar desde TradingView"
 
 msgid "Import from TradingView…"
 msgstr "Importar desde TradingView…"
-
-msgid "Imported layouts are in the toolbar’s layout menu."
-msgstr "Los diseños importados están en el menú de diseños de la barra de herramientas."
 
 msgid "Install the TradingView desktop app, sign in, and open the layouts and watchlists you want to bring over."
 msgstr "Instala la app de escritorio de TradingView, inicia sesión y abre los diseños y las listas de seguimiento que quieras traer."

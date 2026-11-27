@@ -49,7 +49,7 @@ fn add_scripts(plan: &Plan, targets: &Targets, summary: &mut Summary) -> HashMap
         match library.create(&script.name, kind, Some(&script.source), true) {
             Ok(created) => {
                 ids.insert(script.source_id.clone(), created.id);
-                summary.scripts += 1;
+                summary.scripts.push(created.name);
             }
             Err(error) => summary.failures.push(failed(&script.name, error)),
         }
@@ -64,7 +64,7 @@ fn add_watchlists(plan: &Plan, targets: &Targets, summary: &mut Summary) {
     let mut store = crate::lock::lock(&targets.watchlist);
     for planned in plan.watchlists.iter().filter(|list| list.markets > 0) {
         match store.add_list(planned.list.clone()) {
-            Ok(_) => summary.watchlists += 1,
+            Ok(_) => summary.watchlists.push(planned.list.name.clone()),
             Err(error) => summary.failures.push(failed(&planned.list.name, error)),
         }
     }

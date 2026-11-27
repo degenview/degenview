@@ -34,6 +34,12 @@ what it holds (the layout's grid, the list's logos, the script's lines); a kind 
 as a whole. Symbol matching follows, with the rows still to match listable on their own. The footer
 says how many that is and leads down to them.
 
+## Preview and done
+
+The preview draws each layout as the grid it will open as, and lists under each item what is left
+out and, apart from that, what comes over changed (`LeftOut::is_change`). The last step names what
+was added, says where each kind is now and opens any of the layouts.
+
 ## Where the data comes from
 
 TradingView keeps charts on its servers and has no export for drawings or layouts. The desktop app
