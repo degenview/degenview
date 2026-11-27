@@ -105,14 +105,16 @@ fn newest_candles(prices: &[(i64, f64)], timeframe: Timeframe, limit: u32) -> Ve
     candles[start..].to_vec()
 }
 
-/// Fold a price series into candles of `target`, one candle per calendar bucket.
+/// Fold a price series into candles of `target`, one candle per calendar bucket. A sample is the
+/// price at its instant, so it belongs to the bucket that was running just before it: the one on a
+/// boundary closes the candle that ends there.
 ///
 /// Each candle opens at the previous one's close, so the series is continuous and a bucket holding
 /// a single sample still gets a body (and a colour); only the first opens at its own first sample.
 fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
     let mut out: Vec<Kline> = Vec::new();
     for &(ms, price) in prices {
-        let bucket = bucket_start_ms(target, ms);
+        let bucket = bucket_start_ms(target, ms - 1);
         match out.last_mut() {
             Some(last) if last.open_time == bucket => {
                 last.high = last.high.max(price);
@@ -178,6 +180,27 @@ mod tests {
         for candle in shared {
             assert!(before.contains(candle), "{candle:?}");
         }
+    }
+
+    /// A sample is the price at its instant, so the one at a bucket's end is that candle's close,
+    /// not the first of the next.
+    #[test]
+    fn the_sample_on_a_boundary_closes_the_candle_that_ends_there() {
+        let samples = [(0, 10.0), (300_000, 11.0), (600_000, 12.0), (660_000, 13.0)];
+        let candles = newest_candles(&samples, Timeframe::MINUTE_5, 500);
+        let seen: Vec<(i64, f64, f64)> = candles
+            .iter()
+            .map(|candle| (candle.open_time, candle.open, candle.close))
+            .collect();
+        // The window's first sample closes a candle it does not hold the start of.
+        assert_eq!(
+            seen,
+            [
+                (0, 10.0, 11.0),
+                (300_000, 11.0, 12.0),
+                (600_000, 12.0, 13.0)
+            ][..]
+        );
     }
 
     #[test]

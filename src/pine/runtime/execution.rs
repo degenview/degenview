@@ -36,6 +36,8 @@ pub struct ExecutionController {
     bars: Vec<Kline>,
     visible_range: Option<(i64, i64)>,
     live_open_time: Option<i64>,
+    /// How long after its close the newest bar is still live; `None`: until a newer one arrives.
+    settle_delay_ms: Option<i64>,
     /// How the script last failed, until it runs again and succeeds. An update that changes nothing
     /// does not run the script, so it must still say the script is failing: otherwise a failure
     /// would be reported once and then read as a success.
@@ -87,6 +89,7 @@ impl ExecutionController {
             bars: Vec::new(),
             visible_range,
             live_open_time: None,
+            settle_delay_ms: Some(0),
             last_error: None,
         })
     }
@@ -107,6 +110,14 @@ impl ExecutionController {
     /// Makes the run an alert's: `runtime.calculation.mode` reads as the alert mode.
     pub fn with_alert_mode(mut self) -> Self {
         self.session.alert_mode = true;
+        self
+    }
+
+    /// Says how long the feed may still be changing a bar after its close, see
+    /// [`DataSource::settle_delay_ms`](crate::model::DataSource::settle_delay_ms). Without it a bar
+    /// closes by the clock, on the values it has then.
+    pub fn with_settle_delay(mut self, delay_ms: Option<i64>) -> Self {
+        self.settle_delay_ms = delay_ms;
         self
     }
 
@@ -176,8 +187,8 @@ impl ExecutionController {
     ) -> ExecutionUpdate {
         self.session.logs.set_clock(now_ms);
         self.session.now_ms = Some(now_ms);
-        let live_bar_has_closed =
-            self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
+        let live_bar_has_closed = self.live_open_time.is_some()
+            && bars.last().is_some_and(|bar| self.has_settled(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
             let standing = self.last_error.clone();
             return self.result(Vec::new(), standing, false);
@@ -211,7 +222,7 @@ impl ExecutionController {
         let old_last = self.bars.last().cloned().expect("non-empty snapshot");
         let new_last = bars.last().cloned().expect("non-empty snapshot");
         if old_last.open_time == new_last.open_time {
-            let phase = if is_closed(&new_last, now_ms) {
+            let phase = if self.has_settled(&new_last, now_ms) {
                 BarPhase::RealtimeClose { is_new: false }
             } else {
                 BarPhase::RealtimeTick { is_new: false }
@@ -233,7 +244,7 @@ impl ExecutionController {
                 );
             }
             if error.is_none() {
-                if is_closed(&new_last, now_ms) {
+                if self.has_settled(&new_last, now_ms) {
                     ran |= self.execute_event(
                         new_last.clone(),
                         BarPhase::Historical,
@@ -252,7 +263,7 @@ impl ExecutionController {
         }
         // Which bar is forming is a fact about the snapshot, whether or not the script ran it: a
         // stopped script must not look like new history on the next tick, which would replay it.
-        self.live_open_time = (!is_closed(&new_last, now_ms)).then_some(new_last.open_time);
+        self.live_open_time = (!self.has_settled(&new_last, now_ms)).then_some(new_last.open_time);
         self.bars = bars.to_vec();
         if ran {
             self.last_error = error.clone();
@@ -265,7 +276,9 @@ impl ExecutionController {
     fn rebuild(&mut self, bars: &[Kline], now_ms: i64) -> ExecutionUpdate {
         let mut alerts = Vec::new();
         let mut error = None;
-        let last_is_live = bars.last().is_some_and(|bar| !is_closed(bar, now_ms));
+        let last_is_live = bars
+            .last()
+            .is_some_and(|bar| !self.has_settled(bar, now_ms));
         let history_len = bars.len().saturating_sub(usize::from(last_is_live));
         // The live bar's own open, not an estimate from the history: a calendar bar has no fixed length.
         let live_open = bars
@@ -297,6 +310,12 @@ impl ExecutionController {
         self.bars = bars.to_vec();
         self.last_error = error.clone();
         self.result(alerts, error, true)
+    }
+
+    /// Whether the newest bar, with nothing newer to go by, is finished.
+    fn has_settled(&self, bar: &Kline, now_ms: i64) -> bool {
+        self.settle_delay_ms
+            .is_some_and(|delay| bar.close_time.saturating_add(delay) <= now_ms)
     }
 
     fn can_apply_incrementally(&self, next: &[Kline]) -> bool {
@@ -379,10 +398,6 @@ fn has_same_history(seen: &[Kline], next: &[Kline]) -> bool {
     next.len() >= seen.len()
         && seen.first().map(|bar| bar.open_time) == next.first().map(|bar| bar.open_time)
         && seen[..settled] == next[..settled]
-}
-
-fn is_closed(bar: &Kline, now_ms: i64) -> bool {
-    bar.close_time <= now_ms
 }
 
 #[cfg(test)]
