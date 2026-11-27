@@ -50,7 +50,9 @@ pub fn resolve(tv: &TvSymbol, search: &Search) -> Match {
     if let Some((source, name)) = &own {
         match exact(*source, name) {
             Ok(Some(market)) => return Match::Exact(market),
-            Err(ProviderError::MissingKey) => return Match::Unmatched(Unmatched::NeedsKey),
+            Err(ProviderError::MissingKey(DataSource::Alpaca)) => {
+                return Match::Unmatched(Unmatched::NeedsKey);
+            }
             // Not knowing is not a reason to take another exchange's market: search again.
             Err(_) => return Match::Unmatched(Unmatched::Unreachable),
             Ok(None) => {}
@@ -165,7 +167,7 @@ mod tests {
 
     #[test]
     fn a_missing_key_and_a_dead_network_are_said() {
-        let no_key = |_: DataSource, _: &str| Err(ProviderError::MissingKey);
+        let no_key = |source: DataSource, _: &str| Err(ProviderError::MissingKey(source));
         assert_eq!(
             resolve(&TvSymbol::read("NASDAQ:AAPL").unwrap(), &no_key),
             Match::Unmatched(Unmatched::NeedsKey)
