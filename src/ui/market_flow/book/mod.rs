@@ -74,7 +74,7 @@ pub(super) fn show(ui: &mut Ui, state: &mut BookViewState, body: &BookBody<'_>) 
             tr!("No order book").to_owned(),
             tr!(
                 "{exchange} does not list {symbol}.",
-                exchange = feed.venue.exchange.name(),
+                exchange = feed.venue.label(),
                 symbol = feed.symbol
             ),
         )),

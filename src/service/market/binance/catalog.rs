@@ -112,14 +112,26 @@ fn price_step(entry: &Value) -> Option<String> {
 }
 
 /// The price step of `pair` on `market`, from its list of markets; `None` for a pair the list
-/// does not hold.
+/// does not hold. A pair the day's list lacks may have been listed since, so it is looked for in
+/// a new one before it is called unknown.
 pub(in crate::service) fn tick_size(
     market: Market,
     pair: &str,
 ) -> Result<Option<String>, ProviderError> {
     let endpoints = endpoints(market);
-    let pairs = endpoints.catalog.get(|| download_pairs(endpoints))?;
-    Ok(step_of(&pairs, pair))
+    let held = endpoints.catalog.get(|| download_pairs(endpoints))?;
+    step_or_else(&held, pair, || download_pairs(endpoints))
+}
+
+fn step_or_else(
+    held: &[Pair],
+    pair: &str,
+    fresh: impl FnOnce() -> Result<Vec<Pair>, ProviderError>,
+) -> Result<Option<String>, ProviderError> {
+    match step_of(held, pair) {
+        Some(step) => Ok(Some(step)),
+        None => Ok(step_of(&fresh()?, pair)),
+    }
 }
 
 fn step_of(pairs: &[Pair], symbol: &str) -> Option<String> {
@@ -299,6 +311,9 @@ mod tests {
         let pairs = parse_pairs(body, is_trading_perpetual).expect("pairs");
         assert_eq!(step_of(&pairs, "BTCUSDT").as_deref(), Some("0.10"));
         assert_eq!(step_of(&pairs, "NOPEUSDT"), None);
+        // Listed since the held list was downloaded.
+        let found = step_or_else(&[], "BTCUSDT", || Ok(pairs.clone())).expect("asked");
+        assert_eq!(found.as_deref(), Some("0.10"));
     }
 
     #[test]
