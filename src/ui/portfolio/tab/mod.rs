@@ -945,6 +945,7 @@ fn remap_picker(ticker: &str) -> AssetPickerState {
         tr!("Move this asset's transactions to a different market."),
         tr!("Use Asset"),
     )
+    .for_holdings()
 }
 
 fn add_transaction_picker() -> AssetPickerState {
@@ -953,6 +954,7 @@ fn add_transaction_picker() -> AssetPickerState {
         tr!("Choose the asset this transaction is for."),
         tr!("Continue"),
     )
+    .for_holdings()
 }
 
 fn market_value_caption(

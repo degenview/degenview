@@ -106,7 +106,7 @@ pub(crate) fn recents_card(
         outcome.changed = true;
     }
     if clear {
-        recents.clear();
+        recents.retain(|market| !offered(&market.result()));
         outcome.changed = true;
     }
     outcome

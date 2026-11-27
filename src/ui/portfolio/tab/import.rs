@@ -63,7 +63,8 @@ fn show_cmc(ctx: &egui::Context, import: &mut PortfolioImportFlow, host: &Portfo
                         &tr!("Match {symbol}", symbol = symbol),
                         tr!("Pick the market that matches this CoinMarketCap ticker."),
                         tr!("Use Asset"),
-                    ),
+                    )
+                    .for_holdings(),
                 ));
             }
             CmcImportAction::Continue => {

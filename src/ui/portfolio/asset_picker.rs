@@ -108,6 +108,8 @@ pub struct AssetPickerState {
     recents_loaded: bool,
     /// The list changed in the sheet and still has to be saved.
     recents_dirty: bool,
+    /// Which markets the caller can take.
+    offers: fn(&SearchResult) -> bool,
 }
 
 #[derive(Clone, Debug)]
@@ -146,7 +148,14 @@ impl AssetPickerState {
             recents: Vec::new(),
             recents_loaded: false,
             recents_dirty: false,
+            offers: |_| true,
         }
+    }
+
+    /// Offers only what a portfolio can hold.
+    pub fn for_holdings(mut self) -> Self {
+        self.offers = holdable;
+        self
     }
 
     /// Offers only `tabs`, for a caller that cannot use what the others find.
@@ -278,13 +287,14 @@ impl AssetPickerState {
         };
         batch.sort_by_key(|(source, _)| order(*source));
         let query = self.searched_query.clone();
+        let offers = self.offers;
         self.results = batch
             .into_iter()
             .map(|(source, result)| {
                 (
                     source,
                     result.map(|mut hits| {
-                        hits.retain(holdable);
+                        hits.retain(offers);
                         crate::service::rank_results(hits, &query)
                     }),
                 )
@@ -529,18 +539,12 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                     }
                 }
             }
-            let has_recent = state
-                .recents
-                .iter()
-                .any(|recent| holdable(&recent.result()));
+            let offers = state.offers;
+            let has_recent = state.recents.iter().any(|recent| offers(&recent.result()));
             if state.tab != PickerTab::Predictions && has_recent {
                 ui.add_space(16.0);
-                let recents = widgets::recents_card(
-                    ui,
-                    &mut state.recents,
-                    state.selected.as_ref(),
-                    holdable,
-                );
+                let recents =
+                    widgets::recents_card(ui, &mut state.recents, state.selected.as_ref(), offers);
                 if let Some(result) = recents.commit {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(result)));
                 } else if let Some(result) = recents.pick {
@@ -877,7 +881,7 @@ mod tests {
         }
         recents::store_recents(&store.lock().unwrap(), &recents);
 
-        let mut state = AssetPickerState::new("Add Asset", "", "Continue");
+        let mut state = AssetPickerState::new("Add Asset", "", "Continue").for_holdings();
         let mut screen = crate::ui::render_tests::Screen::new(vec2(1000.0, 800.0));
         let mut output = None;
         for _ in 0..2 {
@@ -890,6 +894,27 @@ mod tests {
         assert!(words.iter().any(|word| word == "BTCUSDT"), "{words:?}");
         assert!(!words.iter().any(|word| word == "BTCUSDT.P"), "{words:?}");
         assert_eq!(recents::load_recents(&store.lock().unwrap()).len(), 2);
+    }
+
+    #[test]
+    fn a_picker_that_is_not_for_holdings_offers_a_recent_perpetual() {
+        let store = memory_store();
+        let mut recents = Vec::new();
+        let picked = hit(DataSource::Binance, "BTCUSDT.P", "BTCUSDT.P");
+        assert!(recents::record_recent(&mut recents, &picked));
+        recents::store_recents(&store.lock().unwrap(), &recents);
+
+        let mut state = AssetPickerState::new("Match", "", "Use Market");
+        let mut screen = crate::ui::render_tests::Screen::new(vec2(1000.0, 800.0));
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(screen.run(Vec::new(), |ui| {
+                show(ui.ctx(), &mut state, &store);
+            }));
+        }
+        let words = crate::ui::render_tests::Screen::words(&output.expect("a frame"));
+
+        assert!(words.iter().any(|word| word == "BTCUSDT.P"), "{words:?}");
     }
 
     #[test]
