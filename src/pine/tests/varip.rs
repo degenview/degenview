@@ -205,24 +205,26 @@ fn a_varip_field_of_an_imported_type_keeps_its_value_through_the_ticks() {
 }
 
 #[test]
-fn an_array_inside_a_varip_array_keeps_what_was_pushed_on_earlier_ticks() {
+fn an_array_held_by_an_object_in_a_varip_array_keeps_what_was_pushed_on_earlier_ticks() {
     let seen = live_bar(
-        "varip array<array<int>> outer = array.new<array<int>>()\n\
-         if array.size(outer) == 0\n    array.push(outer, array.new<int>())\n\
-         array.push(array.get(outer, 0), bar_index)\n\
-         plot(array.size(array.get(outer, 0)))",
+        "type Row\n    array<int> items\n\
+         varip array<Row> outer = array.new<Row>()\n\
+         if array.size(outer) == 0\n    array.push(outer, Row.new(array.new<int>()))\n\
+         array.push(array.get(outer, 0).items, bar_index)\n\
+         plot(array.size(array.get(outer, 0).items))",
     );
     assert_eq!(seen, [vec![3.0], vec![4.0], vec![5.0], vec![6.0]]);
 }
 
 #[test]
-fn an_array_made_on_a_tick_and_held_by_a_varip_array_survives_the_rollback() {
+fn an_array_made_on_a_tick_and_held_by_an_object_in_a_varip_array_survives_the_rollback() {
     let seen = live_bar(
-        "varip array<array<int>> outer = array.new<array<int>>()\n\
-         if barstate.isrealtime and array.size(outer) == 0\n    array.push(outer, array.new<int>())\n\
-         if array.size(outer) > 0\n    array.push(array.get(outer, 0), 1)\n\
+        "type Row\n    array<int> items\n\
+         varip array<Row> outer = array.new<Row>()\n\
+         if barstate.isrealtime and array.size(outer) == 0\n    array.push(outer, Row.new(array.new<int>()))\n\
+         if array.size(outer) > 0\n    array.push(array.get(outer, 0).items, 1)\n\
          plot(array.size(outer))\n\
-         plot(array.size(outer) > 0 ? array.size(array.get(outer, 0)) : 0)",
+         plot(array.size(outer) > 0 ? array.size(array.get(outer, 0).items) : 0)",
     );
     assert_eq!(
         seen,

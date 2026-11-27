@@ -319,6 +319,14 @@
   local shadow outside its block (`aVFtPnUh`) and unread shadows of `low`, `hl2`, `second`
   (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`). Parameters may reuse the name with a warning. TradingView's
   message text is undocumented.
+- Compile errors TradingView raises that the parser and checker mirror: `CE10025` (`template_argument`
+  in `syntax/parser.rs`: a collection inside the type template of `array`, `matrix` or `map`, in an
+  annotation or `*.new<…>`), `CE10150` (`identifier_rules::RESERVED_WORDS`: `catch class do ellipse in
+  is polygon range return struct text throw try` as a *declared* variable, function, parameter, loop
+  counter or tuple element name; named arguments, the `text.*` namespace, `ta.range`, UDT fields and
+  method names stay free, and a method named like a reserved word is unmeasured) and `PINE3069` (a
+  history offset the checker knows is a float; one it only guesses stays accepted, because a false
+  error on a working script is worse than a missed one).
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
   with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

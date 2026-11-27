@@ -1205,7 +1205,7 @@ impl Parser {
         if kind == ValueType::Array && next.kind == TokenKind::Less {
             self.advance();
             self.advance();
-            let element = self.type_reference();
+            let element = self.template_argument();
             self.expect(TokenKind::Greater, "Expected '>'.");
             self.annotated_arguments = element.into_iter().collect();
             return Some(ValueType::Array);
@@ -1213,7 +1213,7 @@ impl Parser {
         if kind == ValueType::Matrix && next.kind == TokenKind::Less {
             self.advance();
             self.advance();
-            let element = self.type_reference();
+            let element = self.template_argument();
             self.expect(TokenKind::Greater, "Expected '>'.");
             self.annotated_arguments = element.into_iter().collect();
             return Some(ValueType::Matrix);
@@ -1221,12 +1221,12 @@ impl Parser {
         if kind == ValueType::Map && next.kind == TokenKind::Less {
             self.advance();
             self.advance();
-            let key = self.type_reference();
+            let key = self.template_argument();
             self.expect(
                 TokenKind::Comma,
                 "Expected ',' between the key and value types.",
             );
-            let value = self.type_reference();
+            let value = self.template_argument();
             self.expect(TokenKind::Greater, "Expected '>'.");
             self.annotated_arguments = key.into_iter().chain(value).collect();
             return Some(ValueType::Map);
@@ -1256,12 +1256,28 @@ impl Parser {
 
     /// The text of a type used as a generic argument, for `array.new<float>` (`array.new_float`).
     fn type_argument(&mut self) -> Option<String> {
-        let reference = self.type_reference()?;
+        let reference = self.template_argument()?;
         Some(
             reference
                 .name
                 .unwrap_or_else(|| value_type_name(reference.kind).to_owned()),
         )
+    }
+
+    /// A type argument of an `array`, `matrix` or `map`: `type_reference`, refusing a collection.
+    /// TradingView cannot store a collection in a collection (`array<array<float>>`); the way round
+    /// is a user-defined type with the inner collection as a field.
+    fn template_argument(&mut self) -> Option<TypeRef> {
+        let range = self.current().range;
+        let reference = self.type_reference()?;
+        if is_collection_type(reference.kind) {
+            self.error(
+                "CE10025",
+                "Cannot use a collection in a type template of another collection. Wrap it in a user-defined type field instead.",
+                range,
+            );
+        }
+        Some(reference)
     }
 
     /// A type written inside `<…>`: a keyword, a collection with its own arguments, or a (dotted)
@@ -1291,9 +1307,14 @@ impl Parser {
         }
         let mut arguments = Vec::new();
         if self.take(TokenKind::Less) {
-            arguments.extend(self.type_reference());
+            let argument = if is_collection_type(kind) {
+                Self::template_argument
+            } else {
+                Self::type_reference
+            };
+            arguments.extend(argument(self));
             while self.take(TokenKind::Comma) {
-                arguments.extend(self.type_reference());
+                arguments.extend(argument(self));
             }
             self.expect(TokenKind::Greater, "Expected '>'.");
         }
@@ -1590,6 +1611,10 @@ fn exportable_name(statement: &Statement) -> Option<&str> {
 
 fn value_type_name(kind: ValueType) -> &'static str {
     kind.name()
+}
+
+fn is_collection_type(kind: ValueType) -> bool {
+    matches!(kind, ValueType::Array | ValueType::Matrix | ValueType::Map)
 }
 
 fn object_type(name: &str) -> Option<ValueType> {
