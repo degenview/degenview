@@ -201,11 +201,14 @@ fn hidden_overlays_are_not_fetched_until_shown() {
     list.set_visible(id, false);
     frame(&mut hub, 1, &list, now);
     assert_eq!(fake.pending(), 0);
-    assert!(hub.streamed_symbols(DataSource::Binance).is_empty());
+    assert!(hub.streamed_symbols(DataSource::Binance.into()).is_empty());
     list.set_visible(id, true);
     frame(&mut hub, 1, &list, now);
     assert_eq!(fake.pending(), 1);
-    assert_eq!(hub.streamed_symbols(DataSource::Binance), ["ETHUSDT"]);
+    assert_eq!(
+        hub.streamed_symbols(DataSource::Binance.into()),
+        ["ETHUSDT"]
+    );
 }
 
 #[test]
@@ -384,7 +387,7 @@ fn an_overlay_spelled_any_way_the_source_takes_streams_and_takes_the_bar_by_its_
     hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
 
     // The feed streams and names the market as OKX does.
-    assert_eq!(hub.streamed_symbols(DataSource::Okx), ["BTC-USDT"]);
+    assert_eq!(hub.streamed_symbols(DataSource::Okx.into()), ["BTC-USDT"]);
     hub.apply_live(
         DataSource::Okx,
         Timeframe::HOUR_1,

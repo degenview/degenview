@@ -24,7 +24,7 @@ use crate::model::market::history::OlderHistory;
 use crate::model::market::live::{LiveFold, LiveMark};
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::{self, LiveCandles, ProviderError};
 use eframe::egui;
 use std::collections::HashMap;
@@ -436,7 +436,10 @@ impl OverlayHub {
     ) {
         for series in self.series.values_mut() {
             if series.instrument.source != source
-                || !series.instrument.api_symbol().eq_ignore_ascii_case(symbol)
+                || !series
+                    .instrument
+                    .canonical_symbol()
+                    .eq_ignore_ascii_case(symbol)
             {
                 continue;
             }
@@ -455,13 +458,13 @@ impl OverlayHub {
         }
     }
 
-    /// The `source` symbols the live feed should also stream: shown overlay markets.
-    pub(super) fn streamed_symbols(&self, source: DataSource) -> Vec<String> {
+    /// The symbols of `listing` the live feed should also stream: shown overlay markets.
+    pub(super) fn streamed_symbols(&self, listing: Listing) -> Vec<String> {
         let mut symbols: Vec<String> = self
             .series
             .values()
-            .filter(|series| series.instrument.source == source && series.shown())
-            .map(|series| series.instrument.api_symbol())
+            .filter(|series| series.instrument.listing() == listing && series.shown())
+            .map(|series| series.instrument.canonical_symbol())
             .collect();
         symbols.sort();
         symbols.dedup();

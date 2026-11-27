@@ -1,4 +1,6 @@
-use crate::model::DataSource;
+use crate::model::exchange::Market;
+use crate::model::market::binance::{join_market, split_market};
+use crate::model::{DataSource, Listing};
 use serde::{Deserialize, Serialize};
 
 /// A market on one provider. Equality and identity are source-qualified: a
@@ -20,7 +22,7 @@ impl InstrumentId {
     /// Stable identity for equality, flags, list membership, quote lookup and sync merging:
     /// the market, however it was spelled. Binance, Coinbase and OKX spellings that the provider
     /// takes as one market (`BTC`, `btcusdt`, `BTC/USDT`; `ETH`, `ETH/USD`, `eth-usd`) share a
-    /// key, because it is built from `api_symbol`. Otherwise case-insensitive where the
+    /// key, because it is built from `canonical_symbol`. Otherwise case-insensitive where the
     /// provider is: DEX addresses and prediction-market ids are case-sensitive.
     pub fn key(&self) -> String {
         format!(
@@ -30,10 +32,25 @@ impl InstrumentId {
         )
     }
 
-    /// The id the provider's API takes. A bare Binance asset (`BTC`) is quoted in
-    /// USDT, Coinbase ids are `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in
-    /// USDT); Kraken's are `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`.
-    pub fn api_symbol(&self) -> String {
+    /// Which of its source's markets this is.
+    pub fn market(&self) -> Market {
+        match self.source {
+            DataSource::Binance => split_market(&self.symbol).1,
+            _ => Market::Spot,
+        }
+    }
+
+    pub fn listing(&self) -> Listing {
+        Listing::new(self.source, self.market())
+    }
+
+    /// The one spelling of the market the app stores and compares, which a provider's answers
+    /// are named by again. A bare Binance asset (`BTC`) is quoted in USDT, Coinbase ids are
+    /// `BASE-QUOTE` (a bare asset is quoted in USD) and so are OKX's (in USDT); Kraken's are
+    /// `BASE/QUOTE` (USD) in the common tickers, never the legacy `XBT`. It is also the id the
+    /// provider's API takes, except for a Binance perpetual (`BTCUSDT.P`), whose suffix the
+    /// Binance adapter takes off (`split_market`).
+    pub fn canonical_symbol(&self) -> String {
         match self.source {
             DataSource::Mexc => {
                 let upper = self.symbol.to_uppercase().replace(['/', '-', '_', ' '], "");
@@ -44,13 +61,13 @@ impl InstrumentId {
                     format!("{upper}USDT")
                 }
             }
-            DataSource::Binance | DataSource::Bybit => {
+            DataSource::Binance => {
                 let upper = self.symbol.to_uppercase().replace(['/', '-'], "");
-                if crate::model::market::source::split_binance_pair(&upper).is_some() {
-                    upper
-                } else {
-                    format!("{upper}USDT")
-                }
+                let (pair, market) = split_market(&upper);
+                join_market(&quoted_in_usdt(pair), market)
+            }
+            DataSource::Bybit => {
+                quoted_in_usdt(&self.symbol.to_uppercase().replace(['/', '-'], ""))
             }
             DataSource::Coinbase | DataSource::Okx => {
                 let id = self.symbol.to_uppercase().replace('/', "-");
@@ -88,7 +105,10 @@ impl InstrumentId {
     /// Whether both name one market on one provider, comparing by the id the
     /// provider's API takes.
     pub fn is_same_market(&self, other: &InstrumentId) -> bool {
-        self.source == other.source && self.api_symbol().eq_ignore_ascii_case(&other.api_symbol())
+        self.source == other.source
+            && self
+                .canonical_symbol()
+                .eq_ignore_ascii_case(&other.canonical_symbol())
     }
 
     /// The key of the market a stored `key()` string names, spelled the way `key()` spells
@@ -112,7 +132,7 @@ impl InstrumentId {
         }
         let pair = symbol.strip_suffix("USDT")?;
         let instrument = Self::new(source, pair);
-        (!released_as_pair(pair) && instrument.api_symbol() == pair).then(|| instrument.key())
+        (!released_as_pair(pair) && instrument.canonical_symbol() == pair).then(|| instrument.key())
     }
 
     fn normalized(symbol: &str, source: DataSource) -> String {
@@ -123,7 +143,7 @@ impl InstrumentId {
             | DataSource::Coinbase
             | DataSource::Okx
             | DataSource::Kraken
-            | DataSource::Gate => Self::new(source, symbol).api_symbol(),
+            | DataSource::Gate => Self::new(source, symbol).canonical_symbol(),
             DataSource::Alpaca | DataSource::Oanda => symbol.to_uppercase(),
             DataSource::CoinGecko => symbol.to_lowercase(),
             _ => symbol.to_owned(),
@@ -144,6 +164,15 @@ fn released_as_pair(symbol: &str) -> bool {
         .iter()
         .find_map(|quote| symbol.strip_suffix(quote).filter(|base| !base.is_empty()))
         .is_some_and(|base| base.len() > 1)
+}
+
+/// `pair` as Binance and Bybit write it: a bare asset is quoted in USDT.
+fn quoted_in_usdt(pair: &str) -> String {
+    if crate::model::market::source::split_binance_pair(pair).is_some() {
+        pair.to_owned()
+    } else {
+        format!("{pair}USDT")
+    }
 }
 
 #[cfg(test)]
@@ -283,33 +312,33 @@ mod tests {
     }
 
     #[test]
-    fn api_symbol_quotes_bare_binance_and_coinbase() {
+    fn canonical_symbol_quotes_bare_binance_and_coinbase() {
         assert_eq!(
-            InstrumentId::new(DataSource::Binance, "BTC").api_symbol(),
+            InstrumentId::new(DataSource::Binance, "BTC").canonical_symbol(),
             "BTCUSDT"
         );
         assert_eq!(
-            InstrumentId::new(DataSource::Binance, "ETHUSDT").api_symbol(),
+            InstrumentId::new(DataSource::Binance, "ETHUSDT").canonical_symbol(),
             "ETHUSDT"
         );
         assert_eq!(
-            InstrumentId::new(DataSource::Coinbase, "BTC").api_symbol(),
+            InstrumentId::new(DataSource::Coinbase, "BTC").canonical_symbol(),
             "BTC-USD"
         );
         assert_eq!(
-            InstrumentId::new(DataSource::Coinbase, "ETH/USD").api_symbol(),
+            InstrumentId::new(DataSource::Coinbase, "ETH/USD").canonical_symbol(),
             "ETH-USD"
         );
     }
 
     #[test]
-    fn api_symbol_keeps_any_quoted_binance_pair() {
+    fn canonical_symbol_keeps_any_quoted_binance_pair() {
         for pair in ["SOLBNB", "XRPBTC", "ETHFDUSD", "sol/bnb"] {
-            let api = InstrumentId::new(DataSource::Binance, pair).api_symbol();
+            let api = InstrumentId::new(DataSource::Binance, pair).canonical_symbol();
             assert_eq!(api, pair.to_uppercase().replace('/', ""));
         }
         assert_eq!(
-            InstrumentId::new(DataSource::Binance, "WBTC").api_symbol(),
+            InstrumentId::new(DataSource::Binance, "WBTC").canonical_symbol(),
             "WBTCUSDT"
         );
     }
@@ -331,7 +360,7 @@ mod tests {
                 ("ABUSD", "ABUSDUSDT"),
             ] {
                 assert_eq!(
-                    InstrumentId::new(source, typed).api_symbol(),
+                    InstrumentId::new(source, typed).canonical_symbol(),
                     api,
                     "{typed}"
                 );
@@ -343,7 +372,23 @@ mod tests {
     }
 
     #[test]
-    fn same_market_compares_by_api_symbol() {
+    fn a_binance_perpetual_is_another_market_than_its_spot_pair() {
+        let spot = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let perp = InstrumentId::new(DataSource::Binance, "btc.p");
+        assert_eq!(perp.canonical_symbol(), "BTCUSDT.P");
+        assert_ne!(perp.key(), spot.key());
+        assert!(!perp.is_same_market(&spot));
+        assert!(perp.is_same_market(&InstrumentId::new(DataSource::Binance, "BTC/USDT.P")));
+        assert_eq!(DataSource::Binance.base_asset("BTCUSDT.P"), "BTC");
+        assert_eq!(
+            DataSource::Binance.quote_asset("btcusdt.p").as_deref(),
+            Some("USDT")
+        );
+        assert_eq!(DataSource::Binance.base_asset("SUSDT.P"), "S");
+    }
+
+    #[test]
+    fn same_market_compares_by_canonical_symbol() {
         let bare = InstrumentId::new(DataSource::Binance, "BTC");
         let quoted = InstrumentId::new(DataSource::Binance, "BTCUSDT");
         assert!(bare.is_same_market(&quoted));

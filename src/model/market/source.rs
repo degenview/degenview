@@ -1,3 +1,4 @@
+use crate::model::market::binance::split_market;
 use serde::{Deserialize, Serialize};
 
 /// A market data provider. The symbol alone never identifies a market: `BTCUSDT`
@@ -173,6 +174,10 @@ impl DataSource {
     pub fn base_asset(self, symbol: &str) -> String {
         let upper = symbol.trim().to_uppercase();
         let head = upper.split(['/', '-', ' ', '_']).next().unwrap_or(&upper);
+        let head = match self {
+            Self::Binance => split_market(head).0,
+            _ => head,
+        };
         match self {
             Self::Binance | Self::Bybit => split_binance_pair(head)
                 .map(|(base, _)| base)
@@ -191,9 +196,10 @@ impl DataSource {
     pub fn quote_asset(self, symbol: &str) -> Option<String> {
         let upper = symbol.trim().to_uppercase();
         match self {
-            Self::Binance | Self::Bybit => {
-                split_binance_pair(&upper).map(|(_, quote)| quote.to_owned())
+            Self::Binance => {
+                split_binance_pair(split_market(&upper).0).map(|(_, quote)| quote.to_owned())
             }
+            Self::Bybit => split_binance_pair(&upper).map(|(_, quote)| quote.to_owned()),
             Self::Mexc => split_mexc_pair(&upper).map(|(_, quote)| quote.to_owned()),
             Self::Kraken => {
                 let (base, quote) = upper.split_once('/')?;

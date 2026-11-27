@@ -116,7 +116,7 @@ impl PineStudio {
                     let input = timeframe_picker::TimeframePickerInput {
                         current: state.market.timeframe,
                         pinned: &state.pinned,
-                        sources: &[state.market.source],
+                        sources: &[state.market.listing],
                     };
                     if let Some(pick) = timeframe_picker::show(ui, response, &input) {
                         actions.push(BarAction::Timeframe(pick));
@@ -170,7 +170,7 @@ mod tests {
                 title: "BTCUSDT".to_owned(),
                 price: Some("64,210.50  +1.20%".to_owned()),
                 timeframe: Timeframe::DAY_1,
-                source: DataSource::Binance,
+                listing: DataSource::Binance.into(),
             },
             pinned: Vec::new(),
         }

@@ -2,7 +2,7 @@
 //! chart, the symbol picker and MCP show; code decides on the variant, never on the text.
 
 use crate::i18n::tr;
-use crate::model::{DataSource, Timeframe};
+use crate::model::{DataSource, Listing, Timeframe};
 use crate::service::net::http;
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -32,7 +32,7 @@ pub enum ProviderError {
     /// No candle of the source reaches this timeframe: it is never answered with a nearby one.
     #[error("{}", no_history(.provider, .timeframe))]
     UnsupportedInterval {
-        provider: DataSource,
+        provider: Listing,
         timeframe: Timeframe,
     },
 }
@@ -69,10 +69,10 @@ fn data_error(error: &str) -> String {
     tr!("Data error: {error}", error = error)
 }
 
-fn no_history(provider: &DataSource, timeframe: &Timeframe) -> String {
+fn no_history(provider: &Listing, timeframe: &Timeframe) -> String {
     tr!(
         "{provider} has no {timeframe} history",
-        provider = provider.display_name(),
+        provider = provider.label(),
         timeframe = timeframe
     )
 }
@@ -88,9 +88,9 @@ impl ProviderError {
     }
 
     /// `provider` cannot chart `timeframe`.
-    pub fn unsupported(provider: DataSource, timeframe: Timeframe) -> Self {
+    pub fn unsupported(provider: impl Into<Listing>, timeframe: Timeframe) -> Self {
         Self::UnsupportedInterval {
-            provider,
+            provider: provider.into(),
             timeframe,
         }
     }

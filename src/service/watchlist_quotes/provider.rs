@@ -7,7 +7,7 @@ use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::market::oanda::OandaEnvironment;
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::OandaCredentials;
 use serde_json::Value;
@@ -59,19 +59,16 @@ impl QuoteFailure {
 /// An adapter that makes several requests reports the ones that failed in the `Outcome`
 /// and keeps the rest; `Err` is for a call that failed as a whole.
 pub trait QuoteProvider: Send + Sync {
-    fn quotes(
-        &self,
-        source: DataSource,
-        requests: &[QuoteRequest],
-    ) -> Result<Outcome, QuoteFailure>;
+    /// `requests` are all of `listing`'s markets.
+    fn quotes(&self, listing: Listing, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure>;
 
     /// The network of a DEX pair saved without one, from its address.
     fn resolve_chain(&self, address: &str) -> Option<String>;
 }
 
-/// The most symbols one request carries, per source.
-pub fn chunk_size(source: DataSource) -> usize {
-    match source {
+/// The most symbols one request carries, per listing.
+pub fn chunk_size(listing: Listing) -> usize {
+    match listing.source {
         DataSource::Binance => 100,
         DataSource::Alpaca => 200,
         DataSource::CoinGecko => 250,
@@ -115,14 +112,11 @@ const MEXC_URL: &str = crate::service::market::mexc::BASE_URL;
 const DEX_URL: &str = "https://api.dexscreener.com/latest/dex";
 
 impl QuoteProvider for LiveProvider {
-    fn quotes(
-        &self,
-        source: DataSource,
-        requests: &[QuoteRequest],
-    ) -> Result<Outcome, QuoteFailure> {
+    fn quotes(&self, listing: Listing, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
         if requests.is_empty() {
             return Ok(Outcome::default());
         }
+        let source = listing.source;
         match source {
             DataSource::Binance => binance(requests).map(Outcome::from_quotes),
             DataSource::Coinbase => Ok(coinbase(requests)),
@@ -353,7 +347,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
     let mut outcome = Outcome::default();
     let mut limited = false;
     for (chain, pairs) in by_chain {
-        for page in pairs.chunks(chunk_size(DataSource::DexScreener)) {
+        for page in pairs.chunks(chunk_size(DataSource::DexScreener.into())) {
             let names: Vec<String> = page.iter().map(|request| request.symbol.clone()).collect();
             if limited {
                 outcome.failed.push((names, QuoteFailure::RateLimited));
@@ -1837,9 +1831,9 @@ mod tests {
 
     #[test]
     fn chunk_sizes_respect_each_providers_limit() {
-        assert_eq!(chunk_size(DataSource::Coinbase), 20);
-        assert_eq!(chunk_size(DataSource::DexScreener), 30);
-        assert_eq!(chunk_size(DataSource::CoinGecko), 250);
+        assert_eq!(chunk_size(DataSource::Coinbase.into()), 20);
+        assert_eq!(chunk_size(DataSource::DexScreener.into()), 30);
+        assert_eq!(chunk_size(DataSource::CoinGecko.into()), 250);
     }
 
     #[test]

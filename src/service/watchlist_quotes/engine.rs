@@ -14,10 +14,11 @@ use super::quote_stream::StreamTick;
 use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::alert::AlertProviderHealth;
+use crate::model::exchange::Market;
 use crate::model::watchlist::quote::{
     Freshness, SourceQuote, WatchlistQuote, evaluate_freshness, refresh_interval_secs,
 };
-use crate::model::{DataSource, InstrumentId};
+use crate::model::{DataSource, InstrumentId, Listing};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -97,10 +98,10 @@ impl Default for SourceState {
     }
 }
 
-/// What a fetch round decided to ask one source.
+/// What a fetch round decided to ask one of a source's markets.
 #[derive(Clone, Debug)]
 pub struct Planned {
-    pub source: DataSource,
+    pub listing: Listing,
     /// `(instrument key, request)`.
     pub requests: Vec<(String, QuoteRequest)>,
 }
@@ -159,7 +160,8 @@ pub struct Engine {
     known: HashMap<String, WatchlistQuote>,
     /// When each price was last confirmed by its provider; what freshness is judged by.
     received: HashMap<String, i64>,
-    sources: HashMap<DataSource, SourceState>,
+    /// Per listing: a source's markets are separate APIs, which fail and back off on their own.
+    sources: HashMap<Listing, SourceState>,
     rejected: HashMap<String, i64>,
     chains: HashMap<String, String>,
     unresolved_chains: HashSet<String>,
@@ -327,7 +329,13 @@ impl Engine {
         sources
             .into_iter()
             .map(|source| {
-                let state = self.sources.get(&source).cloned().unwrap_or_default();
+                // Reported by source: what any of its markets last heard, said and waits for.
+                let states = || {
+                    self.sources
+                        .iter()
+                        .filter(|(listing, _)| listing.source == source)
+                        .map(|(_, state)| state)
+                };
                 let has_data_gap = wanted.iter().any(|(key, instrument)| {
                     instrument.source == source
                         && self
@@ -337,9 +345,14 @@ impl Engine {
                 });
                 AlertProviderHealth {
                     source,
-                    last_successful_quote_ms: state.last_successful_quote_ms,
-                    last_error: state.last_error,
-                    retry_at_ms: (state.next_allowed_ms > 0).then_some(state.next_allowed_ms),
+                    last_successful_quote_ms: states()
+                        .filter_map(|state| state.last_successful_quote_ms)
+                        .max(),
+                    last_error: states().find_map(|state| state.last_error.clone()),
+                    retry_at_ms: states()
+                        .map(|state| state.next_allowed_ms)
+                        .filter(|at| *at > 0)
+                        .max(),
                     has_data_gap,
                 }
             })
@@ -450,7 +463,7 @@ impl Engine {
                 streams
                     .entry(instrument.source)
                     .or_default()
-                    .insert(instrument.api_symbol().to_uppercase(), key.clone());
+                    .insert(instrument.canonical_symbol().to_uppercase(), key.clone());
                 self.stream_subscribed_at.entry(key.clone()).or_insert(now);
             }
         }
@@ -494,68 +507,73 @@ impl Engine {
         }
     }
 
-    /// The source to poll `instrument` through, or `None` when it should not be polled now.
-    fn polled(&self, key: &str, instrument: &InstrumentId, now: i64) -> Option<DataSource> {
+    /// Whether to poll `instrument` now.
+    fn is_polled(&self, key: &str, instrument: &InstrumentId, now: i64) -> bool {
         if self.rejected.get(key).is_some_and(|until| *until > now) {
-            return None;
+            return false;
         }
         match instrument.source {
-            DataSource::CoinMarketCap => None,
+            DataSource::CoinMarketCap => false,
             source if source.streams_quotes() => {
                 // The socket supplies prices; REST fills a product it has not answered, and
                 // refreshes one it has gone quiet on, so a thin market's price never ages.
                 if let Some(last) = self.received.get(key) {
-                    return (now - last >= self.config.stream_refresh_ms).then_some(source);
+                    return now - last >= self.config.stream_refresh_ms;
                 }
-                let since = self.stream_subscribed_at.get(key)?;
-                (now - since >= self.config.stream_fallback_delay_ms).then_some(source)
+                self.stream_subscribed_at
+                    .get(key)
+                    .is_some_and(|since| now - since >= self.config.stream_fallback_delay_ms)
             }
-            DataSource::DexScreener => self
-                .chains
-                .contains_key(key)
-                .then_some(DataSource::DexScreener),
-            source => Some(source),
+            DataSource::DexScreener => self.chains.contains_key(key),
+            _ => true,
         }
     }
 
-    fn is_due(&self, source: DataSource, now: i64) -> bool {
-        let state = self.sources.get(&source).cloned().unwrap_or_default();
+    fn is_due(&self, listing: Listing, now: i64) -> bool {
+        let state = self.sources.get(&listing).cloned().unwrap_or_default();
         if now < state.next_allowed_ms {
             return false;
         }
         // A second of slack: rounds drift a little late.
-        now - state.last_poll_ms >= refresh_interval_secs(source) as i64 * 1_000 - 1_000
+        now - state.last_poll_ms >= refresh_interval_secs(listing.source) as i64 * 1_000 - 1_000
     }
 
-    /// One round: every due source gets one batched request.
+    /// One round: every due listing gets one batched request.
     pub fn plan(&mut self, now: i64) -> Vec<Planned> {
         let wanted = self.wanted();
         self.prune(&wanted, now);
         self.age_quotes(now);
-        let mut by_source: BTreeMap<u8, Planned> = BTreeMap::new();
+        let mut by_listing: BTreeMap<(u8, bool), Planned> = BTreeMap::new();
         for (key, instrument) in &wanted {
-            let Some(source) = self.polled(key, instrument, now) else {
+            if !self.is_polled(key, instrument, now) {
                 continue;
-            };
+            }
+            let listing = instrument.listing();
             let request = QuoteRequest {
-                symbol: instrument.api_symbol(),
+                symbol: instrument.canonical_symbol(),
                 chain: self.chains.get(key).cloned(),
             };
-            by_source
-                .entry(source_order(source))
+            by_listing
+                .entry((
+                    source_order(listing.source),
+                    listing.market == Market::Perpetual,
+                ))
                 .or_insert_with(|| Planned {
-                    source,
+                    listing,
                     requests: Vec::new(),
                 })
                 .requests
                 .push((key.clone(), request));
         }
-        let plan: Vec<Planned> = by_source
+        let plan: Vec<Planned> = by_listing
             .into_values()
-            .filter(|planned| self.is_due(planned.source, now))
+            .filter(|planned| self.is_due(planned.listing, now))
             .collect();
         for planned in &plan {
-            self.sources.entry(planned.source).or_default().last_poll_ms = now;
+            self.sources
+                .entry(planned.listing)
+                .or_default()
+                .last_poll_ms = now;
         }
         plan
     }
@@ -563,8 +581,12 @@ impl Engine {
     // MARK: Applying results
 
     pub fn apply(&mut self, planned: &Planned, outcome: &Outcome, now: i64) {
-        let source = planned.source;
-        let mut state = self.sources.get(&source).cloned().unwrap_or_default();
+        let source = planned.listing.source;
+        let mut state = self
+            .sources
+            .get(&planned.listing)
+            .cloned()
+            .unwrap_or_default();
         let mut updates: HashMap<String, WatchlistQuote> = HashMap::new();
 
         // Why each failed symbol failed; the first reason wins.
@@ -640,7 +662,7 @@ impl Engine {
                 );
             }
         }
-        self.sources.insert(source, state);
+        self.sources.insert(planned.listing, state);
         for (key, quote) in &updates {
             self.known.insert(key.clone(), quote.clone());
         }
@@ -751,7 +773,7 @@ impl Engine {
             self.known.insert(key.clone(), quote.clone());
         }
         for source in heard {
-            let state = self.sources.entry(source).or_default();
+            let state = self.sources.entry(source.into()).or_default();
             state.last_successful_quote_ms = Some(now);
             state.last_error = None;
             state.next_allowed_ms = i64::MIN;
@@ -778,17 +800,13 @@ const ISOLATION_BUDGET: usize = 64;
 /// Fetches a batch in provider-sized pages. When the provider rejects a page outright,
 /// halves it until the bad symbols are found, so one delisted market does not blank the
 /// list. A rate limit stops the round's remaining requests at once.
-pub fn fetch(
-    provider: &dyn QuoteProvider,
-    source: DataSource,
-    requests: &[QuoteRequest],
-) -> Outcome {
-    fetch_chunked(provider, source, requests, chunk_size(source))
+pub fn fetch(provider: &dyn QuoteProvider, listing: Listing, requests: &[QuoteRequest]) -> Outcome {
+    fetch_chunked(provider, listing, requests, chunk_size(listing))
 }
 
 fn fetch_chunked(
     provider: &dyn QuoteProvider,
-    source: DataSource,
+    listing: Listing,
     requests: &[QuoteRequest],
     size: usize,
 ) -> Outcome {
@@ -800,7 +818,7 @@ fn fetch_chunked(
             merged.absorb(Outcome::failing(symbols(page), failure.clone()));
             continue;
         }
-        let part = fetch_page(provider, source, page, &mut budget);
+        let part = fetch_page(provider, listing, page, &mut budget);
         if part
             .failed
             .iter()
@@ -823,12 +841,12 @@ fn symbols(requests: &[QuoteRequest]) -> Vec<String> {
 /// One page: asks the provider; on a rejection, isolates the refused symbols.
 fn fetch_page(
     provider: &dyn QuoteProvider,
-    source: DataSource,
+    listing: Listing,
     requests: &[QuoteRequest],
     budget: &mut usize,
 ) -> Outcome {
     let mut rejection = String::new();
-    let outcome = bisect(provider, source, requests, budget, &mut rejection);
+    let outcome = bisect(provider, listing, requests, budget, &mut rejection);
     // Every symbol of a page refused one by one is the page's fault, not theirs: a request
     // the provider will not take (a revoked key, a region, a changed endpoint) must back
     // the source off, not mark a whole library as unknown markets.
@@ -844,12 +862,12 @@ fn fetch_page(
 
 fn bisect(
     provider: &dyn QuoteProvider,
-    source: DataSource,
+    listing: Listing,
     requests: &[QuoteRequest],
     budget: &mut usize,
     rejection: &mut String,
 ) -> Outcome {
-    match provider.quotes(source, requests) {
+    match provider.quotes(listing, requests) {
         Ok(outcome) => outcome,
         Err(QuoteFailure::Rejected(message)) => {
             if rejection.is_empty() {
@@ -872,7 +890,7 @@ fn bisect(
             }
             *budget -= 2;
             let (first, second) = requests.split_at(requests.len() / 2);
-            let mut merged = bisect(provider, source, first, budget, rejection);
+            let mut merged = bisect(provider, listing, first, budget, rejection);
             // A rate limit in one half means the other half would meet it too.
             if merged
                 .failed
@@ -881,7 +899,7 @@ fn bisect(
             {
                 merged.absorb(Outcome::failing(symbols(second), QuoteFailure::RateLimited));
             } else {
-                merged.absorb(bisect(provider, source, second, budget, rejection));
+                merged.absorb(bisect(provider, listing, second, budget, rejection));
             }
             merged
         }
@@ -911,7 +929,7 @@ pub fn poll(engine: &Mutex<Engine>, provider: &dyn QuoteProvider, now: &dyn Fn()
                     .iter()
                     .map(|(_, request)| request.clone())
                     .collect();
-                scope.spawn(move || fetch(provider, planned.source, &requests))
+                scope.spawn(move || fetch(provider, planned.listing, &requests))
             })
             .collect();
         handles
@@ -975,14 +993,14 @@ mod tests {
     impl QuoteProvider for FakeProvider {
         fn quotes(
             &self,
-            source: DataSource,
+            listing: Listing,
             requests: &[QuoteRequest],
         ) -> Result<Outcome, QuoteFailure> {
             let mut symbols: Vec<String> = requests.iter().map(|r| r.symbol.clone()).collect();
             symbols.sort();
             let made = {
                 let mut calls = self.calls.lock().unwrap();
-                calls.push((source, symbols));
+                calls.push((listing.source, symbols));
                 calls.len()
             };
             if let Some(failure) = self.failure.lock().unwrap().clone() {
@@ -1111,6 +1129,46 @@ mod tests {
             Some(100.0),
             "price/previous-1 with previous = price/2"
         );
+    }
+
+    #[test]
+    fn a_perpetual_is_asked_for_apart_from_spot_and_fails_alone() {
+        let book = WatchlistQuoteBook::default();
+        let config = Config {
+            failure_backoff: (600.0, 600.0),
+            ..Config::default()
+        };
+        let engine = Arc::new(Mutex::new(Engine::new(book.clone(), config)));
+        let provider = Arc::new(FakeProvider::default());
+        provider.price("BTCUSDT", 100.0);
+        provider.price("BTCUSDT.P", 101.0);
+        provider
+            .page_fails
+            .lock()
+            .unwrap()
+            .insert("BTCUSDT.P".to_owned());
+        let spot = id(DataSource::Binance, "BTCUSDT");
+        let perp = id(DataSource::Binance, "BTCUSDT.P");
+        lock(&engine).update(1, vec![spot.clone(), perp.clone()], true, T0);
+
+        round(&engine, &provider, T0);
+        let mut calls = provider.calls();
+        calls.sort_by_key(|(_, symbols)| symbols.clone());
+        assert_eq!(
+            calls,
+            [
+                (DataSource::Binance, vec!["BTCUSDT".into()]),
+                (DataSource::Binance, vec!["BTCUSDT.P".into()]),
+            ]
+        );
+        assert_eq!(last(&book, &spot), Some(100.0));
+        assert_eq!(last(&book, &perp), None);
+
+        // Only the perpetual's API backs off: spot is asked again at its own interval.
+        let again = T0 + refresh_interval_secs(DataSource::Binance) as i64 * 1_000;
+        let planned = lock(&engine).plan(again);
+        let listings: Vec<Listing> = planned.iter().map(|planned| planned.listing).collect();
+        assert_eq!(listings, [Listing::from(DataSource::Binance)]);
     }
 
     #[test]
@@ -1796,7 +1854,7 @@ mod tests {
             .map(|index| id(DataSource::Coinbase, &format!("A{index}-USD")))
             .collect();
         for instrument in &instruments {
-            provider.price(&instrument.api_symbol(), 1.0);
+            provider.price(&instrument.canonical_symbol(), 1.0);
         }
         lock(&engine).update(1, instruments, true, T0);
         round(&engine, &provider, T0 + 10_000);

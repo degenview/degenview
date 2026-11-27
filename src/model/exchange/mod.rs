@@ -1,5 +1,6 @@
 //! Which exchange and which of its markets a feed is about. Liquidations, taker flow and the order
-//! book all name their sources this way, so adding an exchange starts here.
+//! book all name their sources this way, so adding an exchange starts here. [`Market`] is also
+//! which market a chart's instrument is (`InstrumentId::market`).
 
 use crate::i18n::tr;
 

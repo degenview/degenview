@@ -9,7 +9,7 @@ use crate::model::tab::title::{MAX_CUSTOM_TITLE_CHARS, TabChart};
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, InstrumentId,
-    Timeframe,
+    Listing, Timeframe,
 };
 use crate::service::market::live::LiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
@@ -169,7 +169,7 @@ pub struct ChartWorkspace {
     symbol_picker: SymbolPicker,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
-    live_feeds: HashMap<DataSource, LiveFeed>,
+    live_feeds: HashMap<Listing, LiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlay::OverlayHub,
     settings_chart: Option<u64>,

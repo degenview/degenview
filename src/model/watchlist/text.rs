@@ -315,7 +315,7 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
             if !valid {
                 return Err("Kraken markets are written BASE/QUOTE, like BTC/USD".to_owned());
             }
-            let symbol = InstrumentId::new(source, rest.as_str()).api_symbol();
+            let symbol = InstrumentId::new(source, rest.as_str()).canonical_symbol();
             Ok(item(source, &symbol, &symbol, &symbol))
         }
         DataSource::Alpaca => stock(&rest),

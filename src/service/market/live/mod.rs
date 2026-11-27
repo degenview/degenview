@@ -1,5 +1,6 @@
 use crate::lock::lock;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::exchange::Market;
+use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::net::ws::{Frame, Session};
 use eframe::egui;
 use std::collections::BTreeMap;
@@ -67,14 +68,18 @@ pub struct LiveFeed {
 }
 
 impl LiveFeed {
-    /// Opens the stream of `base` candles for `symbols`; `None` when `source` streams none.
+    /// Opens the stream of `base` candles for `symbols`; `None` when `listing` streams none.
     pub fn connect(
-        source: DataSource,
+        listing: impl Into<Listing>,
         symbols: Vec<String>,
         base: Timeframe,
         ctx: egui::Context,
     ) -> Option<Self> {
-        let (sessions, parse): (Vec<Session>, Parser) = match source {
+        let listing = listing.into();
+        if listing.market == Market::Perpetual {
+            return None;
+        }
+        let (sessions, parse): (Vec<Session>, Parser) = match listing.source {
             DataSource::Binance => (
                 vec![binance::session(&symbols, base)],
                 text_parser(binance::parse_kline),

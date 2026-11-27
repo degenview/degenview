@@ -24,6 +24,6 @@ pub fn market_of(source: DataSource, symbol: &str) -> Option<DepthMarket> {
             exchange,
             market: Market::Spot,
         },
-        symbol: InstrumentId::new(source, symbol).api_symbol(),
+        symbol: InstrumentId::new(source, symbol).canonical_symbol(),
     })
 }

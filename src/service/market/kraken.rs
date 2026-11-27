@@ -32,7 +32,7 @@ pub(crate) fn interval(timeframe: Timeframe) -> Option<u32> {
 /// Kraken's name of a market, `BTC/USD`, which both its REST API and its websocket take.
 /// `BTC-USD`, a bare `BTC` (USD) and the legacy `XBT/USD` are accepted.
 pub(crate) fn pair(symbol: &str) -> String {
-    InstrumentId::new(DataSource::Kraken, symbol).api_symbol()
+    InstrumentId::new(DataSource::Kraken, symbol).canonical_symbol()
 }
 
 impl MarketSource for Kraken {

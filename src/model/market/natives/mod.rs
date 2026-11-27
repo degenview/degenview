@@ -30,8 +30,7 @@ const fn native(count: u16, unit: TimeUnit) -> Timeframe {
     }
 }
 
-/// Binance's kline intervals, its `1s` among them (spot markets only, which is all that is
-/// listed). Its `3d` is left out: Binance counts those from a day of its own
+/// Binance's spot kline intervals, its `1s` among them. Its `3d` is left out: Binance counts those from a day of its own
 /// (not a multiple of three since 1970-01-01), so they would not match every other source's.
 /// Weeks start on Monday, as here.
 const BINANCE: [Timeframe; 15] = [
@@ -51,6 +50,17 @@ const BINANCE: [Timeframe; 15] = [
     Timeframe::WEEK_1,
     Timeframe::MONTH_1,
 ];
+
+/// Binance's USDⓈ-M futures kline intervals: the spot ones without `1s`, which it refuses.
+pub(in crate::model) const BINANCE_PERPETUAL: [Timeframe; 14] = {
+    let mut natives = [Timeframe::MINUTE_1; 14];
+    let mut index = 0;
+    while index < natives.len() {
+        natives[index] = BINANCE[index + 1];
+        index += 1;
+    }
+    natives
+};
 
 /// OKX's candle bars, `1s` among them. Its plain `6H`, `12H`, `1D`, `1W`, `1M` and `3M` are cut at UTC+8
 /// midnight, so the `utc` bars are the ones used: they are cut as everything else is. Left out:

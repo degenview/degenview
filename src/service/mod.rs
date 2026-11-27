@@ -26,7 +26,7 @@ pub use market::error::ProviderError;
 pub use market::oanda::test_connection as oanda_test_connection;
 
 use crate::model::market::asset_name::AssetNames;
-use crate::model::{DataSource, Kline, PmSeries, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
 
@@ -277,7 +277,8 @@ pub fn fetch_klines_live(
     limit: u32,
 ) -> Result<LiveCandles, ProviderError> {
     let candles = fetch_klines(source, symbol, timeframe, limit)?;
-    let bars = source
+    let bars = InstrumentId::new(source, symbol)
+        .listing()
         .plan(timeframe)
         .filter(|plan| !plan.is_native() && DataSource::CANDLE_STREAMS.contains(&source))
         .and_then(|plan| {

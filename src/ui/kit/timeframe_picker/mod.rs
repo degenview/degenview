@@ -18,7 +18,7 @@ use super::{
     menu_scope, menu_separator, size, tile_chip, tile_chip_text_width,
 };
 use crate::i18n::tr;
-use crate::model::{DataSource, Timeframe};
+use crate::model::{Listing, Timeframe};
 use crate::ui::icons::Icon;
 use crate::ui::theme;
 use eframe::egui::{self, Id, Response, Sense, Ui, Vec2, vec2};
@@ -46,7 +46,7 @@ pub struct TimeframePickerInput<'a> {
     pub pinned: &'a [Timeframe],
     /// The market sources of the charts the pick would reach, for the line that warns of one that
     /// cannot draw it.
-    pub sources: &'a [DataSource],
+    pub sources: &'a [Listing],
 }
 
 /// What the person picked.

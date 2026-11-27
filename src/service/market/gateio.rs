@@ -99,7 +99,7 @@ pub(crate) fn interval(timeframe: Timeframe) -> Option<&'static str> {
 /// Gate.io's name of a market, `BTC_USDT`. `BTC/USDT`, `btc-usdt` and a bare `BTC` (USDT) are
 /// accepted.
 pub(crate) fn pair_id(symbol: &str) -> String {
-    InstrumentId::new(DataSource::Gate, symbol).api_symbol()
+    InstrumentId::new(DataSource::Gate, symbol).canonical_symbol()
 }
 
 impl MarketSource for Gate {

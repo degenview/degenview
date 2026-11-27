@@ -264,7 +264,7 @@ mod tests {
     };
     use crate::model::watchlist::new_id;
     use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
-    use crate::model::{DataSource, InstrumentId};
+    use crate::model::{DataSource, InstrumentId, Listing};
     use crate::service::alert::macos_notifications::Notifier;
     use crate::service::watchlist_quotes::{
         Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest,
@@ -276,7 +276,7 @@ mod tests {
     struct NoNetwork;
 
     impl QuoteProvider for NoNetwork {
-        fn quotes(&self, _: DataSource, _: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+        fn quotes(&self, _: Listing, _: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
             Ok(Outcome::default())
         }
 

@@ -1,12 +1,12 @@
 //! The line that says a chart of the tab cannot draw the highlighted timeframe.
 
 use crate::i18n::{tr, tr_n};
-use crate::model::{DataSource, Timeframe};
+use crate::model::{Listing, Timeframe};
 
 /// "CoinGecko can't chart 1m", naming up to two sources and counting more; `None` when every
 /// source can.
-pub(super) fn cannot_chart(sources: &[DataSource], timeframe: Timeframe) -> Option<String> {
-    let mut refusing: Vec<DataSource> = Vec::new();
+pub(super) fn cannot_chart(sources: &[Listing], timeframe: Timeframe) -> Option<String> {
+    let mut refusing: Vec<Listing> = Vec::new();
     for source in sources {
         if !source.serves(timeframe) && !refusing.contains(source) {
             refusing.push(*source);
@@ -15,17 +15,17 @@ pub(super) fn cannot_chart(sources: &[DataSource], timeframe: Timeframe) -> Opti
     (!refusing.is_empty()).then(|| sentence(&refusing, timeframe))
 }
 
-fn sentence(refusing: &[DataSource], timeframe: Timeframe) -> String {
+fn sentence(refusing: &[Listing], timeframe: Timeframe) -> String {
     match refusing {
         [one] => tr!(
             "{source} can't chart {timeframe}",
-            source = one.display_name(),
+            source = one.label(),
             timeframe = timeframe
         ),
         [first, second] => tr!(
             "{first} and {second} can't chart {timeframe}",
-            first = first.display_name(),
-            second = second.display_name(),
+            first = first.label(),
+            second = second.label(),
             timeframe = timeframe
         ),
         many => tr_n!(
@@ -40,13 +40,23 @@ fn sentence(refusing: &[DataSource], timeframe: Timeframe) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::DataSource;
+
+    #[test]
+    fn a_perpetual_chart_says_which_market_lacks_the_length() {
+        let sources = [DataSource::Binance.into(), Listing::BINANCE_PERPETUAL];
+        assert_eq!(
+            cannot_chart(&sources, Timeframe::SECOND_1).as_deref(),
+            Some("Binance perp can't chart 1s")
+        );
+    }
 
     #[test]
     fn one_source_is_named() {
-        let sources = [
-            DataSource::Binance,
-            DataSource::CoinGecko,
-            DataSource::CoinGecko,
+        let sources: [Listing; 3] = [
+            DataSource::Binance.into(),
+            DataSource::CoinGecko.into(),
+            DataSource::CoinGecko.into(),
         ];
         assert_eq!(
             cannot_chart(&sources, Timeframe::MINUTE_1).as_deref(),
@@ -58,7 +68,7 @@ mod tests {
     fn nothing_is_said_when_every_source_can() {
         assert_eq!(
             cannot_chart(
-                &[DataSource::Binance, DataSource::Polymarket],
+                &[DataSource::Binance.into(), DataSource::Polymarket.into()],
                 Timeframe::MINUTE_1
             ),
             None
@@ -68,11 +78,12 @@ mod tests {
 
     #[test]
     fn two_sources_are_named_and_more_are_counted() {
-        let (a, b, c) = (
+        let [a, b, c]: [Listing; 3] = [
             DataSource::CoinGecko,
             DataSource::Alpaca,
             DataSource::Binance,
-        );
+        ]
+        .map(Listing::from);
         assert_eq!(
             sentence(&[a, b], Timeframe::MINUTE_5),
             "CoinGecko and Alpaca (IEX) can't chart 5m"

@@ -1,6 +1,7 @@
 //! Markets and their data: instruments, sources, timeframes, candles and prediction-market series.
 
 pub mod asset_name;
+pub mod binance;
 pub mod bucket;
 pub mod cmc;
 pub mod feed;
@@ -8,6 +9,7 @@ pub mod history;
 pub(in crate::model) mod instrument;
 pub(in crate::model) mod kline;
 pub mod line;
+pub(in crate::model) mod listing;
 pub mod live;
 pub mod natives;
 pub mod oanda;

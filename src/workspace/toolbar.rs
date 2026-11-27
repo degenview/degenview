@@ -4,7 +4,7 @@ use super::alerts::AlertRequest;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::host::tradingview::Start;
 use crate::i18n::tr;
-use crate::model::{ChartType, DataSource, Timeframe};
+use crate::model::{ChartType, DataSource, InstrumentId, Listing, Timeframe};
 use crate::ui::chart::settings::ChartSettingsState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::workspace::toolbar::{self, ToolbarAction};
@@ -49,11 +49,11 @@ impl ChartWorkspace {
             .lock()
             .map(|store| store.pinned_timeframes_cached())
             .unwrap_or_default();
-        let sources: Vec<DataSource> = self
+        let sources: Vec<Listing> = self
             .charts
             .iter()
             .filter(|chart| chart.is_market())
-            .map(|chart| chart.source)
+            .map(|chart| InstrumentId::new(chart.source, chart.symbol.as_str()).listing())
             .collect();
         let input = toolbar::ToolbarInput {
             timeframe: self.timeframe,

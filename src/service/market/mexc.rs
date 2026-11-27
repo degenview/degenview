@@ -69,7 +69,7 @@ fn table(timeframe: Timeframe) -> Option<(&'static str, &'static str)> {
 /// MEXC's name of a market, `BTCUSDT`. `BTC/USDT`, `btc-usdt` and a bare `BTC` (USDT) are
 /// accepted.
 pub(crate) fn symbol_id(symbol: &str) -> String {
-    InstrumentId::new(DataSource::Mexc, symbol).api_symbol()
+    InstrumentId::new(DataSource::Mexc, symbol).canonical_symbol()
 }
 
 impl MarketSource for Mexc {

@@ -50,7 +50,7 @@ impl<'a> Frame<'a> {
 
     /// Notes that `market` is on screen and returns what is known of its week.
     fn trend(&mut self, market: &Market) -> Option<&'a Trend> {
-        let instrument = InstrumentId::new(market.source, market.api_symbol);
+        let instrument = InstrumentId::new(market.source, market.canonical_symbol);
         let trends = self.trends;
         let trend = trends.get(&instrument.key());
         self.wanted.push(instrument);
@@ -63,7 +63,7 @@ pub struct Market<'a> {
     /// The ticker the artwork is looked up by.
     pub icon_symbol: &'a str,
     /// The id the provider takes, to read its week by.
-    pub api_symbol: &'a str,
+    pub canonical_symbol: &'a str,
     pub source: DataSource,
     pub title: &'a str,
     pub subtitle: Option<&'a str>,

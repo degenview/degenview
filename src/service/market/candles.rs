@@ -2,14 +2,18 @@
 //! it. Bucket boundaries, folds and gap filling are `model::market::bucket`.
 
 use crate::model::market::bucket::FoldPlan;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 
-/// How `source` makes `timeframe` from the candles it has, or the error that it cannot.
-pub(crate) fn plan(source: DataSource, timeframe: Timeframe) -> Result<FoldPlan, ProviderError> {
-    source
+/// How a source's market makes `timeframe` from the candles it has, or the error that it cannot.
+pub(crate) fn plan(
+    listing: impl Into<Listing>,
+    timeframe: Timeframe,
+) -> Result<FoldPlan, ProviderError> {
+    let listing = listing.into();
+    listing
         .plan(timeframe)
-        .ok_or_else(|| ProviderError::unsupported(source, timeframe))
+        .ok_or_else(|| ProviderError::unsupported(listing, timeframe))
 }
 
 /// What every provider's candles pass through: ascending by open time, one candle per open time
@@ -41,6 +45,7 @@ pub(crate) fn normalize(mut candles: Vec<Kline>) -> Vec<Kline> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::DataSource;
 
     const DAY_MS: i64 = 86_400_000;
 
