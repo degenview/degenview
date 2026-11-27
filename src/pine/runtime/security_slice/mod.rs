@@ -58,6 +58,9 @@ use self::effects::{
     Aliases, Effect, Functions, Origin, Walker, persistent_names, reference_names,
 };
 use self::locate::{Location, locate};
+pub(crate) use self::members::{
+    COLLECTION_NAMESPACES, MUTATING_METHODS, collection_argument, request_expression,
+};
 use self::members::{expression_argument, is_sliced_request, makes_request};
 use self::reads::Reads;
 use crate::pine::syntax::ast::{Expression, Statement};

@@ -8,7 +8,7 @@ const SLICED_REQUESTS: [&str; 2] = ["request.security", "request.security_lower_
 /// Their parameters in order, the first three being `symbol`, `timeframe` and `expression`.
 const EXPRESSION_POSITION: usize = 2;
 /// The namespaces whose functions take the collection as their first argument.
-pub(super) const COLLECTION_NAMESPACES: [&str; 3] = ["array", "map", "matrix"];
+pub(crate) const COLLECTION_NAMESPACES: [&str; 3] = ["array", "map", "matrix"];
 /// Members that never change the collection they are given. Any other member is taken to, so a
 /// function added to the language later errs towards running more, not towards wrong results.
 pub(super) const READ_ONLY_MEMBERS: [&str; 62] = [
@@ -81,7 +81,7 @@ pub(super) const READ_ONLY_MEMBERS: [&str; 62] = [
 const COLLECTION_RETURNING_MEMBERS: [&str; 5] = ["from", "copy", "slice", "keys", "values"];
 /// Methods that change the variable they are called on, whatever it is declared from (a collection
 /// a script function returned, say).
-pub(super) const MUTATING_METHODS: [&str; 21] = [
+pub(crate) const MUTATING_METHODS: [&str; 21] = [
     "push",
     "pop",
     "shift",
@@ -125,8 +125,7 @@ pub(super) fn returns_reference(callee: &str) -> bool {
             && COLLECTION_RETURNING_MEMBERS.contains(&member))
 }
 
-/// The `expression` argument of a request call, found the way the call binds its arguments: by
-/// name, or as the third argument that has none.
+/// The `expression` argument of a request call that gets a slice.
 pub(super) fn expression_argument<'a>(
     name: &str,
     arguments: &'a [Argument],
@@ -134,6 +133,12 @@ pub(super) fn expression_argument<'a>(
     if !is_sliced_request(name) {
         return None;
     }
+    request_expression(arguments)
+}
+
+/// The `expression` argument of a request that takes it third, found the way the call binds its
+/// arguments: by name, or as the third argument that has none.
+pub(crate) fn request_expression(arguments: &[Argument]) -> Option<&Expression> {
     let mut position = 0;
     for argument in arguments {
         match argument.name.as_deref() {
@@ -152,7 +157,7 @@ pub(super) fn expression_argument<'a>(
 
 /// The collection a function of `array.*`, `map.*` or `matrix.*` is given: the argument labelled
 /// `id` (`id1` for `array.concat`), else the first one without a label.
-pub(super) fn collection_argument(arguments: &[Argument]) -> Option<&Expression> {
+pub(crate) fn collection_argument(arguments: &[Argument]) -> Option<&Expression> {
     arguments
         .iter()
         .find(|argument| matches!(argument.name.as_deref(), Some("id" | "id1")))

@@ -395,8 +395,10 @@ impl Parser {
         let condition = self.expression(0)?;
         let when_true = self.indented_block("if")?;
         let mut when_false = Vec::new();
+        let mut else_if = false;
         if self.take(TokenKind::Else) {
             if self.take(TokenKind::If) {
+                else_if = true;
                 if let Some(chained) = self.if_statement() {
                     self.record_end(&chained);
                     when_false = vec![chained];
@@ -412,6 +414,7 @@ impl Parser {
             condition,
             when_true,
             when_false,
+            else_if,
             range: start,
         })
     }

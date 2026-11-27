@@ -155,6 +155,8 @@ pub enum Statement {
         condition: Expression,
         when_true: Vec<Statement>,
         when_false: Vec<Statement>,
+        /// `when_false` is the chained `else if`, not an `else` block that holds an `if`.
+        else_if: bool,
         range: SourceRange,
     },
     /// `for i = from to end [by step]`
