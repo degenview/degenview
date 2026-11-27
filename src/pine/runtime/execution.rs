@@ -192,9 +192,12 @@ impl ExecutionController {
             return self.result(Vec::new(), None, true);
         }
 
+        // A stopped script runs nothing, so what a live feed does to its newest bars (finishing
+        // one after its close, adding the next) is no reason to replay and start it again.
+        let stays_stopped = self.session.is_halted() && has_same_history(&self.bars, bars);
         let must_rebuild = self.bars.is_empty()
             || self.visible_range != visible_range
-            || !self.can_apply_incrementally(bars);
+            || !(stays_stopped || self.can_apply_incrementally(bars));
         self.visible_range = visible_range;
         self.session.visible_range = visible_range;
         if must_rebuild {
@@ -367,6 +370,15 @@ fn script_error(error: RunError) -> Option<Diagnostic> {
         RunError::Script(diagnostic) => Some(diagnostic),
         RunError::Rejection => None,
     }
+}
+
+/// Whether `next` is the history `seen` was, at most with its two newest bars changed or bars added
+/// after them.
+fn has_same_history(seen: &[Kline], next: &[Kline]) -> bool {
+    let settled = seen.len().saturating_sub(2);
+    next.len() >= seen.len()
+        && seen.first().map(|bar| bar.open_time) == next.first().map(|bar| bar.open_time)
+        && seen[..settled] == next[..settled]
 }
 
 fn is_closed(bar: &Kline, now_ms: i64) -> bool {
@@ -586,6 +598,36 @@ mod tests {
         // it, so only the standing error says it is stopped.
         assert!(controller.update(&bars, None, 250_000).error.is_some());
         assert_stays_stopped(&mut controller, bars, 260_000);
+    }
+
+    /// A live feed finishes a bar after the script has already run its close, and may do so once
+    /// the next bar is forming. That is the same history.
+    #[test]
+    fn the_feed_finishing_a_closed_bar_does_not_start_a_stopped_script() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\n\
+            if barstate.isrealtime and barstate.isconfirmed\n    runtime.error(\"on close\")",
+        );
+        let mut bars = history(4);
+        assert!(controller.update(&bars, None, 200_000).error.is_none());
+        assert!(controller.update(&bars, None, 250_000).error.is_some());
+        let stopped = |controller: &mut ExecutionController, bars: &[Kline], now: i64| {
+            let update = controller.update(bars, None, now);
+            assert!(!update.rebuilt, "at {now}");
+            assert!(update.error.is_some(), "at {now}");
+        };
+        bars[3].close += 0.1;
+        stopped(&mut controller, &bars, 251_000);
+        bars.push(bar(4 * 60_000, 14.0));
+        stopped(&mut controller, &bars, 252_000);
+        bars[3].close += 0.1;
+        stopped(&mut controller, &bars, 253_000);
+
+        // Older bars replaced: a new history, replayed from the start.
+        bars[0].close += 1.0;
+        let update = controller.update(&bars, None, 254_000);
+        assert!(update.rebuilt);
+        assert!(update.error.is_none(), "{:?}", update.error);
     }
 
     #[test]

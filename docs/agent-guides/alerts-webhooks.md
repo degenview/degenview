@@ -17,7 +17,8 @@
   doesn't compile" or "Script stopped with an error" with it, and `degenview_list_pine_alerts`
   reports it as `cannot_run`. A build that accepts the script again needs no re-arm. A script
   stopped by a runtime error stays stopped, as on TradingView, until its history is replayed
-  (changed history or inputs, a restart, Pause then Re-arm); a replay that gets through clears it.
+  (older bars or inputs changed, a restart,
+  Pause then Re-arm); the feed finishing its newest bars or adding to them does not replay it; a replay that gets through clears it.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
   save/webhook actions back as `WorkspaceAction`s; only Alerts-window edits host the sheet there.
 - An open sheet holds `alert_editor::quote_owner` demand and gets the current quote each frame,
