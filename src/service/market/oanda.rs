@@ -19,8 +19,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
 
-/// Oanda's live trading API, the one the standalone `oandaohlc` downloader uses.
-pub(in crate::service) const BASE_URL: &str = "https://api-fxtrade.oanda.com/v3";
+/// Oanda's two environments. A token is minted for one of them and is refused by the other's
+/// host with `401`, so the host a request goes to follows the account, never a global default.
+const LIVE_URL: &str = "https://api-fxtrade.oanda.com/v3";
+const PRACTICE_URL: &str = "https://api-fxpractice.oanda.com/v3";
+
+/// The host of an account: fxTrade Practice numbers its accounts `101-…`, fxTrade `001-…`. An
+/// id in neither shape keeps the live host, the only one this provider spoke before.
+pub(in crate::service) fn base_url(account_id: &str) -> &'static str {
+    if account_id.trim().starts_with("101-") {
+        PRACTICE_URL
+    } else {
+        LIVE_URL
+    }
+}
 
 pub struct Oanda;
 
@@ -64,7 +76,8 @@ fn granularity(bar: Timeframe) -> String {
 /// credentials (the ones typed in the fields, saved or not), which is what Oanda charts need them
 /// for.
 pub fn test_connection(account_id: &str, access_token: &str) -> Result<(), ProviderError> {
-    let url = format!("{BASE_URL}/accounts/{}/instruments", account_id.trim());
+    let account_id = account_id.trim();
+    let url = format!("{}/accounts/{account_id}/instruments", base_url(account_id));
     let auth = bearer(access_token);
     crate::service::net::http::get_text(
         &url,
@@ -134,9 +147,15 @@ impl MarketSource for Oanda {
 
 /// Mid prices aligned to the UTC grid. An end cursor asks for a count of
 /// candles leading up to that time, including when the market was closed.
-fn candles_url(instrument: &str, bar: Timeframe, to_ms: Option<i64>, count: usize) -> String {
+fn candles_url(
+    base: &str,
+    instrument: &str,
+    bar: Timeframe,
+    to_ms: Option<i64>,
+    count: usize,
+) -> String {
     let mut url = format!(
-        "{BASE_URL}/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count={}",
+        "{base}/instruments/{instrument}/candles?price=M&granularity={}&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count={}",
         granularity(bar),
         count.clamp(1, MAX_PER_REQUEST),
     );
@@ -168,10 +187,10 @@ fn candles_request(
     to_ms: Option<i64>,
     count: usize,
 ) -> Result<String, ProviderError> {
-    let (_, token) = credentials()?;
+    let (account_id, token) = credentials()?;
     let auth = bearer(&token);
     crate::service::net::http::get_text(
-        &candles_url(instrument, bar, to_ms, count),
+        &candles_url(base_url(&account_id), instrument, bar, to_ms, count),
         &[("Authorization", auth.as_str())],
         crate::service::net::http::Retry::Transient,
     )
@@ -232,7 +251,8 @@ pub(in crate::service) fn clear_catalog() {
 }
 
 fn download_instruments(account_id: &str, token: &str) -> Result<Vec<Instrument>, ProviderError> {
-    let url = format!("{BASE_URL}/accounts/{account_id}/instruments");
+    let account_id = account_id.trim();
+    let url = format!("{}/accounts/{account_id}/instruments", base_url(account_id));
     let auth = bearer(token);
     let body = crate::service::net::http::get_text(
         &url,
@@ -333,18 +353,45 @@ mod tests {
     fn a_candles_request_asks_for_mid_prices_of_the_granularity_on_the_utc_grid() {
         let to = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
         assert_eq!(
-            candles_url("EUR_USD", Timeframe::HOUR_4, None, 500),
+            candles_url(LIVE_URL, "EUR_USD", Timeframe::HOUR_4, None, 500),
             "https://api-fxtrade.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=H4&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=500"
         );
         assert_eq!(
-            candles_url("XAU_USD", Timeframe::DAY_1, Some(to), 5_000),
+            candles_url(LIVE_URL, "XAU_USD", Timeframe::DAY_1, Some(to), 5_000),
             format!(
                 "https://api-fxtrade.oanda.com/v3/instruments/XAU_USD/candles?price=M&granularity=D&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=5000&to={}",
                 crate::format::iso8601(to)
             )
         );
         // The count is capped at what one request holds.
-        assert!(candles_url("EUR_USD", Timeframe::MINUTE_1, None, 9_999).ends_with("count=5000"));
+        assert!(
+            candles_url(LIVE_URL, "EUR_USD", Timeframe::MINUTE_1, None, 9_999)
+                .ends_with("count=5000")
+        );
+    }
+
+    #[test]
+    fn an_accounts_environment_picks_its_host() {
+        // fxTrade Practice numbers its accounts 101-…, fxTrade 001-…, and a token minted for one
+        // environment is refused by the other's host with 401.
+        assert_eq!(base_url("101-001-4111997-001"), PRACTICE_URL);
+        assert_eq!(base_url("  101-001-4111997-001 "), PRACTICE_URL);
+        assert_eq!(base_url("001-001-4111997-001"), LIVE_URL);
+        assert_eq!(
+            base_url(""),
+            LIVE_URL,
+            "an unknown shape keeps the live host"
+        );
+        assert!(
+            candles_url(
+                base_url("101-001-4111997-001"),
+                "XAU_USD",
+                Timeframe::MINUTE_1,
+                None,
+                500,
+            )
+            .starts_with("https://api-fxpractice.oanda.com/v3/instruments/XAU_USD/")
+        );
     }
 
     #[test]

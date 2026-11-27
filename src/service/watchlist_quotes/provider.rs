@@ -404,6 +404,7 @@ fn oanda(
     let Some((account_id, token)) = crate::service::keychain::api_keys::oanda_credentials() else {
         return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
     };
+    let account_id = account_id.trim();
     let symbols = requests
         .iter()
         .map(|request| request.symbol.to_uppercase())
@@ -411,7 +412,7 @@ fn oanda(
         .join(",");
     let url = format!(
         "{}/accounts/{account_id}/pricing?instruments={symbols}",
-        crate::service::market::oanda::BASE_URL
+        crate::service::market::oanda::base_url(account_id)
     );
     let auth = format!("Bearer {token}");
     let body = get(DataSource::Oanda, &url, &[("Authorization", auth.as_str())])?;
