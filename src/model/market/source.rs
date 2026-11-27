@@ -87,19 +87,20 @@ impl DataSource {
             .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
     }
 
-    /// How long after a bar's close this source may still change it with no newer bar to show for
-    /// it; `None` when only a newer bar says one is finished. A script alert takes the newest bar
-    /// as closed once this has passed, and as live until then, so a late value is a tick of the bar
-    /// rather than a rewrite of history.
+    /// How long after a bar's close this source may still change it; `None` when only a newer bar
+    /// says one is finished. A script alert keeps the newest bar live until this has passed, so a
+    /// late value is a tick of it, and takes a correction to an older bar still within it as no new
+    /// history: committed at the close, either would be a rewrite and a silent replay.
     ///
-    /// Measured 2026-11-27: the streamed exchanges were done within 15 s, Coinbase published
-    /// minute bars up to 200 s after they opened, GeckoTerminal filled one 105 s after its close,
-    /// and CoinGecko delivers and finishes bars minutes late, at no fixed delay.
+    /// Measured 2026-11-27: the streamed exchanges were done within 15 s, Coinbase corrected
+    /// minute bars up to 185 s after their close (its servers differ by cents, also on bars with a
+    /// successor), GeckoTerminal filled one 105 s after its close, and CoinGecko delivers and
+    /// finishes bars minutes late, at no fixed delay.
     pub fn settle_delay_ms(self) -> Option<i64> {
         const SECOND: i64 = 1_000;
         match self {
             Self::CoinGecko => None,
-            Self::Coinbase => Some(300 * SECOND),
+            Self::Coinbase => Some(240 * SECOND),
             Self::DexScreener => Some(180 * SECOND),
             Self::Binance | Self::Okx | Self::Kraken | Self::Bybit | Self::Gate | Self::Mexc => {
                 Some(30 * SECOND)

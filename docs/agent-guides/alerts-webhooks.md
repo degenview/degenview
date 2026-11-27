@@ -35,7 +35,9 @@
   stays live until a newer one arrives, or until `DataSource::settle_delay_ms` has passed since its
   close (30 s on streamed exchanges, minutes where bars come late, never for CoinGecko). A value
   that arrives after the close is then a tick of that bar; committed at the close, it would be
-  rewritten history, and the replay raises nothing. So a bar-close alert fires when the next bar
+  rewritten history, and the replay raises nothing. A correction to an older bar still within that
+  time (Coinbase's servers disagree for minutes) is no new history either: the script keeps what it
+  saw. So a bar-close alert fires when the next bar
   arrives, or after the delay on a market that has gone quiet. Price-based chart bars are finished
   by construction and close by the clock. `request.*` candles are also judged by the clock, so just
   after a close a request can read a candle as confirmed while the chart bar is not. Chart script runs still close by

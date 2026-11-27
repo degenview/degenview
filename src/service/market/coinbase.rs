@@ -235,20 +235,31 @@ impl Coinbase {
         start: Option<i64>,
         end: Option<i64>,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let mut url = format!("{BASE_URL}/products/{id}/candles?granularity={granularity}");
-        if let (Some(start), Some(end)) = (start, end) {
-            url.push_str(&format!(
-                "&start={}&end={}",
-                crate::format::iso8601(start),
-                crate::format::iso8601(end)
-            ));
-        }
+        let url = page_url(id, granularity, start.zip(end), now_ms());
         let body = crate::service::net::http::get_text(
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
         )?;
         parse_page(&body, granularity)
+    }
+}
+
+/// The address of one page of candles: those of `window`, or the newest ones as of `now_ms`.
+///
+/// The newest page names the moment it is asked for because Coinbase's cache answers one address
+/// for 300 s (`max-age=300`, a `no-cache` request header ignored): asked without it, a chart ran up
+/// to five minutes behind and then took several candles at once. The API ignores `end` without a
+/// `start`, so the answer is still the newest candles, however far back a quiet market's reach.
+fn page_url(id: &str, granularity: i64, window: Option<(i64, i64)>, now_ms: i64) -> String {
+    let url = format!("{BASE_URL}/products/{id}/candles?granularity={granularity}");
+    match window {
+        Some((start, end)) => format!(
+            "{url}&start={}&end={}",
+            crate::format::iso8601(start),
+            crate::format::iso8601(end)
+        ),
+        None => format!("{url}&end={}", crate::format::iso8601(now_ms)),
     }
 }
 
@@ -475,6 +486,24 @@ mod tests {
         assert_eq!(weekly[0].low, 9.0);
         assert_eq!(weekly[0].close, 11.5);
         assert_eq!(weekly[0].volume, 3.0);
+    }
+
+    /// Coinbase's cache answers one address for five minutes, so the newest candles must be asked
+    /// for under an address that says when they were wanted.
+    #[test]
+    fn the_newest_candles_are_never_asked_for_at_the_same_address_twice() {
+        let now = 1_800_000_000_000;
+        let first = page_url("BTC-USD", 60, None, now);
+        let later = page_url("BTC-USD", 60, None, now + 5_000);
+        assert_ne!(first, later);
+        // A start would cut a quiet market off: one bound alone leaves the answer the newest rows.
+        assert!(!first.contains("start="), "{first}");
+        // An older page names its own candles and may well be answered from the cache.
+        let window = Some((now - 600_000, now - 300_000));
+        assert_eq!(
+            page_url("BTC-USD", 60, window, now),
+            page_url("BTC-USD", 60, window, now + 5_000)
+        );
     }
 
     #[test]

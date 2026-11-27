@@ -191,7 +191,8 @@ the window on with every new bar, and a series that moved with it would be anoth
 time (scripts would start over, silently, and a new bar's once-per-bar alerts would be lost with
 the replay). The series starts again only when it does not have the candle an answer begins with:
 what lies between is unknown (a sleeping computer, or a live candle added after an outage), and what
-was known of the older history is forgotten with it. An empty answer changes nothing. One gap is not
+was known of the older history is forgotten with it. An empty answer changes nothing, and neither does one that ends before the newest candle held (a
+provider's server behind the others). One gap is not
 seen: a live feed that kept adding candles for longer than an answer spans while every refresh failed,
 with candles of its own missing. Line charts (prediction markets,
 CoinMarketCap) are the window they were asked for, so each answer replaces them.
