@@ -13,6 +13,8 @@ pub(in crate::pine) mod corpus;
 #[cfg(test)]
 pub(in crate::pine) mod language;
 #[cfg(test)]
+pub(in crate::pine) mod request_builtin_history;
+#[cfg(test)]
 pub(in crate::pine) mod security_conditional;
 #[cfg(test)]
 pub(in crate::pine) mod stock_session;

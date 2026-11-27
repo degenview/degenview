@@ -99,8 +99,9 @@
   cleared at a new bar and at the close. Never add `RuntimeState` fields for this: cloned per tick,
   one extra set measured 11% slower with four sessions.
 - Builtin variables read with `[]` (`hlcc4[1]`, `ta.tr[1]`) are recorded by `read_history_builtins`
-  at each confirmed bar's end; names found once by `history_builtin_names`. Not inside
-  `request.security`.
+  at each confirmed bar's end; names found once by `history_builtin_names`. Inside
+  `request.security` the same call runs in the request's frame, before its candle is committed
+  (`evaluate_higher_timeframe`), so `ta.tr[1]` reads the requested series' previous bar.
 - `strategy.*` state reaching the `expression` of `request.security`, `request.security_lower_tf` or
   `request.seed` is a compile error (`PINE3074`, TradingView's CE10059), `check/request_rules.rs`.
   A request's own broker is empty, so nothing it could read there is meaningful. It is a

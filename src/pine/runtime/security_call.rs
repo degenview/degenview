@@ -1255,7 +1255,9 @@ impl Session {
             ReferenceExport::new(&self.working).export(evaluated, &mut chart.working)
         });
         if commit && value.is_ok() {
-            self.commit_histories(candle.clone(), false, Vec::new());
+            // Inside the request's frame: the builtins are read for the requested series' bar.
+            let builtins = self.read_history_builtins(&mut security_context);
+            self.commit_histories(candle.clone(), false, builtins);
         }
         let request_frame = self.leave_series(chart);
         if commit {
