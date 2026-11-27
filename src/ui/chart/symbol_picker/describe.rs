@@ -56,13 +56,6 @@ impl Names {
         }
     }
 
-    /// Whether a load may still answer.
-    #[cfg(test)]
-    pub fn is_loading(&self) -> bool {
-        self.coins.as_ref().is_some_and(Pending::is_pending)
-            || self.listed.as_ref().is_some_and(Pending::is_pending)
-    }
-
     pub fn of(&self, result: &SearchResult) -> AssetNames {
         self.directory.names(result)
     }

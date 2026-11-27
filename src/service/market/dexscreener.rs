@@ -92,10 +92,10 @@ fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderEr
             event: None,
             base: Some(base.to_uppercase()),
             quote: Some(quote.to_uppercase()),
-            names: AssetNames::new(
+            names: Box::new(AssetNames::new(
                 pair.pointer("/baseToken/name").and_then(Value::as_str),
                 pair.pointer("/quoteToken/name").and_then(Value::as_str),
-            ),
+            )),
         };
         match by_pair.get(&key) {
             Some((existing, _)) if *existing >= liquidity => {}

@@ -80,11 +80,12 @@ impl SymbolPicker {
             pos2(area.left() + PADDING, area.top()),
             pos2(right, area.bottom()),
         );
-        hint_row(
+        spaced_hint_row(
             ui,
             row,
             hints,
             13.0,
+            WIDE_HINT_GAP,
             &[
                 tr!("Compare"),
                 tr!("Add as new chart"),

@@ -25,7 +25,7 @@ pub struct Directory {
 impl Directory {
     /// What `result`'s two sides are called, as far as anything says.
     pub fn names(&self, result: &SearchResult) -> AssetNames {
-        let own = result.names.clone();
+        let own = (*result.names).clone();
         let base = result.base_asset();
         let quote = result
             .quote

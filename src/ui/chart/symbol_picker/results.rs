@@ -1,7 +1,9 @@
 //! The list area: the rows, the captions above groups of them and what stands in for them.
 
+use super::columns::{self, Columns};
 use super::notice::{NOTICE_HEIGHT, show_notice};
 use super::*;
+use crate::ui::kit::scroll::Beyond;
 
 impl SymbolPicker {
     /// The rows, or what stands in for them. Returns a pick.
@@ -39,13 +41,22 @@ impl SymbolPicker {
         }
         let pointer_moved = ui.input(|input| input.pointer.delta() != Vec2::ZERO);
         let reveal = std::mem::take(&mut self.reveal);
-        let width = body.available_width();
         let replacing = self.replacing(env);
-        egui::ScrollArea::vertical()
+        kit::scroll::keep_bars_visible(&mut body);
+        let width = body.available_width() - body.spacing().scroll.allocated_width();
+        let columns = Columns::for_width(
+            width,
+            columns::venue_text_width(&body),
+            env.can_overlay && self.mode != PickMode::Watchlist,
+        );
+        if self.shows_header() && !rows.items.is_empty() {
+            column_header(&mut body, &columns, width);
+        }
+        let scrolled = egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(&mut body, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
-                ui.set_width(width - 8.0);
+                ui.set_width(width);
                 if topics {
                     self.topics(ui, rows);
                 }
@@ -56,23 +67,31 @@ impl SymbolPicker {
                     let state = self.row_state(index, item, env);
                     let (response, out) = match item {
                         Item::Market(result) => {
-                            list::row(ui, result, state, replacing, ui.available_width())
+                            let names = self.names.of(result);
+                            list::row(ui, result, &names, state, replacing, &columns)
                         }
                         Item::Choice(result) => predictions::rows::choice(
                             ui,
                             result,
                             predictions::is_ticked(self.ticked.as_ref(), result),
                             state,
-                            ui.available_width(),
+                            &columns,
                         ),
-                        Item::Event(head) => predictions::rows::event_header(
-                            ui,
-                            head,
-                            state.highlighted,
-                            ui.available_width(),
-                        ),
-                        Item::Tile(tile) => dashboards::row(ui, tile, state, ui.available_width()),
+                        Item::Event(head) => {
+                            predictions::rows::event_header(ui, head, state.highlighted, &columns)
+                        }
+                        Item::Tile(tile) => dashboards::row(ui, tile, state, &columns),
                     };
+                    // A hairline between neighbours, none against the highlighted box or a
+                    // caption.
+                    let next = index + 1;
+                    if next < rows.items.len()
+                        && !state.highlighted
+                        && next != self.highlight
+                        && rows.head_before(next).is_none()
+                    {
+                        list::paint_separator(ui, response.rect);
+                    }
                     if reveal && state.highlighted {
                         response.scroll_to_me(None);
                     }
@@ -112,7 +131,23 @@ impl SymbolPicker {
                     note_line(ui, note);
                 }
             });
+        let viewport = scrolled.inner_rect;
+        let beyond = Beyond::of(
+            scrolled.state.offset.y,
+            scrolled.content_size.y,
+            viewport.height(),
+        );
+        kit::scroll::fade_edges(ui.painter(), viewport, theme::chrome(), beyond);
         picked
+    }
+
+    /// Whether the list is of markets, whose columns the captions name; events and tiles are
+    /// titles that run across them.
+    fn shows_header(&self) -> bool {
+        matches!(
+            self.scope,
+            Scope::All | Scope::Stocks | Scope::Crypto | Scope::Forex | Scope::Watchlists
+        )
     }
 
     /// How `item`'s row is drawn: highlighted, already held, drawn over the chart.
@@ -331,7 +366,7 @@ pub(super) fn section_heading(ui: &mut Ui, title: &str) {
     );
     ui.painter().galley(
         pos2(
-            rect.left() + 10.0,
+            rect.left() + columns::PAD,
             rect.center().y - galley.size().y / 2.0 + 2.0,
         ),
         galley,
@@ -359,3 +394,33 @@ pub(super) fn note_line(ui: &mut Ui, text: &str) {
         theme::text_secondary(),
     );
 }
+
+/// The captions over the list's columns, with a hairline under them. They stay put while the rows
+/// scroll.
+fn column_header(ui: &mut Ui, columns: &Columns, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(width, HEADER_HEIGHT), Sense::hover());
+    let captions = [
+        Some((columns::PAD, tr!("Symbol"))),
+        columns.description.map(|left| (left, tr!("Description"))),
+        Some((columns.venue, tr!("Venue"))),
+    ];
+    for (left, caption) in captions.into_iter().flatten() {
+        let galley = kit::galley(
+            ui,
+            caption,
+            12.5,
+            MEDIUM,
+            theme::text_secondary(),
+            rect.right() - rect.left() - left,
+        );
+        ui.painter().galley(
+            pos2(rect.left() + left, rect.center().y - galley.size().y / 2.0),
+            galley,
+            theme::text_secondary(),
+        );
+    }
+    list::paint_separator(ui, rect);
+}
+
+/// The height of the column captions.
+pub(super) const HEADER_HEIGHT: f32 = 28.0;

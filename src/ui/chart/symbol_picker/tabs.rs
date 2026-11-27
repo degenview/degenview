@@ -1,6 +1,11 @@
 //! The row of scope tabs and the pull-down at its right.
 
 use super::*;
+use crate::ui::kit::outline;
+
+/// The height of the tabs' well and of the pull-down beside it.
+const CONTROL: f32 = 32.0;
+const TAB_TEXT: f32 = 14.0;
 
 impl SymbolPicker {
     /// The tabs and the filter at their right. Returns what was chosen this frame.
@@ -14,7 +19,7 @@ impl SymbolPicker {
                 kit::galley(
                     ui,
                     tab.title(),
-                    15.0,
+                    TAB_TEXT,
                     if *tab == self.scope { SEMIBOLD } else { MEDIUM },
                     theme::text_secondary(),
                     f32::INFINITY,
@@ -23,7 +28,7 @@ impl SymbolPicker {
                 .x
             })
             .collect();
-        let fit = fit_tabs(&widths, full_filter, area.width() - 2.0 * PADDING);
+        let fit = fit_tabs(&widths, full_filter, tab_room(area.width()));
 
         // A language whose tabs do not fit even in the tightest row is cut where the pull-down
         // starts, never drawn under it.
@@ -35,14 +40,21 @@ impl SymbolPicker {
             area.min,
             pos2(tabs_right, area.bottom()),
         ));
+        // The tabs sit in one well, the chosen one raised on a pill.
+        let all: f32 = widths.iter().map(|label| label + fit.padding).sum();
+        let well = Rect::from_min_size(
+            pos2(area.left() + PADDING, area.center().y - CONTROL / 2.0),
+            vec2(all + 2.0 * outline::INSET, CONTROL),
+        );
+        outline::paint_track(&painter, well, outline::RADIUS, outline::Wash::Rest);
         let mut scope = None;
-        let mut x = area.left() + PADDING;
+        let mut x = well.left() + outline::INSET;
         for tab in tabs {
             let active = tab == self.scope;
             let label = kit::galley(
                 ui,
                 tab.title(),
-                15.0,
+                TAB_TEXT,
                 if active { SEMIBOLD } else { MEDIUM },
                 if active {
                     theme::text_primary()
@@ -52,7 +64,7 @@ impl SymbolPicker {
                 f32::INFINITY,
             );
             let width = label.size().x + fit.padding;
-            let rect = Rect::from_min_size(pos2(x, area.top()), vec2(width, area.height()));
+            let rect = Rect::from_min_size(pos2(x, well.top()), vec2(width, well.height()));
             let response = ui
                 .interact(
                     rect,
@@ -66,6 +78,14 @@ impl SymbolPicker {
             } else {
                 theme::text_secondary()
             };
+            if active {
+                outline::paint_plate(
+                    &painter,
+                    rect.shrink2(vec2(0.0, outline::INSET)),
+                    outline::PLATE_RADIUS,
+                    false,
+                );
+            }
             painter.galley(
                 pos2(
                     rect.center().x - label.size().x / 2.0,
@@ -74,16 +94,6 @@ impl SymbolPicker {
                 label,
                 color,
             );
-            if active {
-                painter.rect_filled(
-                    Rect::from_min_max(
-                        pos2(rect.left() + 8.0, rect.bottom() - 2.0),
-                        pos2(rect.right() - 8.0, rect.bottom()),
-                    ),
-                    1.0,
-                    theme::text_primary(),
-                );
-            }
             if response.clicked() {
                 scope = Some(tab);
             }
@@ -177,8 +187,11 @@ impl SymbolPicker {
             filter_width_of(galley.size().x)
         };
         let rect = Rect::from_min_size(
-            pos2(area.right() - PADDING - width, area.center().y - 16.0),
-            vec2(width, 32.0),
+            pos2(
+                area.right() - PADDING - width,
+                area.center().y - CONTROL / 2.0,
+            ),
+            vec2(width, CONTROL),
         );
         let response = ui
             .interact(rect, Id::new("symbol_picker_venue"), Sense::click())
@@ -190,9 +203,14 @@ impl SymbolPicker {
             response
         };
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-        if response.hovered() || open {
-            ui.painter().rect_filled(rect, 6.0, theme::ink(10));
-        }
+        let wash = if open {
+            outline::Wash::Open
+        } else if response.hovered() {
+            outline::Wash::Hover
+        } else {
+            outline::Wash::Rest
+        };
+        outline::paint_track(ui.painter(), rect, outline::RADIUS, wash);
         let color = if menu.active {
             theme::text_primary()
         } else {
@@ -271,7 +289,7 @@ pub(super) const FILTER_COMPACT: f32 = 48.0;
 /// The gap between the tabs and the pull-down.
 pub(super) const FILTER_GAP: f32 = 8.0;
 /// Space a tab adds around its label, from roomy to tight.
-pub(super) const TAB_PADDINGS: [f32; 3] = [28.0, 20.0, 14.0];
+pub(super) const TAB_PADDINGS: [f32; 3] = [28.0, 20.0, 12.0];
 
 /// How wide the pull-down is with `label` written out: the icon, the label and the chevron, with
 /// as much room after the chevron as before the icon.
@@ -285,6 +303,12 @@ pub(super) fn filter_width(ui: &Ui, label: &str) -> f32 {
             .size()
             .x,
     )
+}
+
+/// The room the tabs and the pull-down share in a row `width` wide: inside the sheet's padding
+/// and the tabs' well.
+pub(super) fn tab_room(width: f32) -> f32 {
+    width - 2.0 * PADDING - 2.0 * outline::INSET
 }
 
 /// How the tab row spends its room.

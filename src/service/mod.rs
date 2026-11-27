@@ -46,8 +46,9 @@ pub struct SearchResult {
     pub base: Option<String>,
     /// What the pair is priced in (`USDT`, `USD`).
     pub quote: Option<String>,
-    /// What the provider calls the two sides (`Bitcoin`, `Tether`), when it says.
-    pub names: AssetNames,
+    /// What the provider calls the two sides (`Bitcoin`, `Tether`), when it says. Boxed, like an
+    /// event's figures, to keep a hit small enough to be an enum's variant.
+    pub names: Box<AssetNames>,
 }
 
 /// What separates an equity's ticker from its company name in [`SearchResult::symbol`].
@@ -68,13 +69,13 @@ impl SearchResult {
             event: None,
             base: None,
             quote: None,
-            names: AssetNames::default(),
+            names: Box::default(),
         }
     }
 
     /// The provider's own names for the market's two sides.
     pub fn named(mut self, base: Option<&str>, quote: Option<&str>) -> Self {
-        self.names = AssetNames::new(base, quote);
+        self.names = Box::new(AssetNames::new(base, quote));
         self
     }
 

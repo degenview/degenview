@@ -14,6 +14,7 @@ use crate::model::DataSource;
 use crate::service::market::coin_index::CoinIndex;
 use crate::service::market::names::{self, Listed};
 use crate::service::market::search_rank::{self, is_dollar_quote};
+use crate::service::market::trend::Fetch;
 use crate::service::work_queue::{self, Pending};
 use crate::service::{self, ProviderError, SearchResult};
 use crate::ui::chart::picker_kit::suggestions::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
@@ -207,6 +208,8 @@ pub struct Backend {
     pub coin_names: fn() -> Arc<CoinIndex>,
     /// The names the exchanges that publish them list.
     pub listed_names: fn() -> Arc<Listed>,
+    /// The candles the preview's chart draws.
+    pub candles: Fetch,
 }
 
 impl Backend {
@@ -216,6 +219,7 @@ impl Backend {
         trending: service::trending,
         coin_names: names::load_coins,
         listed_names: names::load_listed,
+        candles: service::fetch_klines,
     };
 }
 

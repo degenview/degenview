@@ -58,7 +58,7 @@ pub(crate) fn record_recent(recents: &mut Vec<RecentMarket>, result: &SearchResu
             source: result.source,
             base: result.base.clone(),
             quote: result.quote.clone(),
-            names: result.names.clone(),
+            names: (*result.names).clone(),
         },
     );
     recents.truncate(RECENT_LIMIT);
@@ -75,7 +75,7 @@ impl RecentMarket {
             event: None,
             base: self.base.clone(),
             quote: self.quote.clone(),
-            names: self.names.clone(),
+            names: Box::new(self.names.clone()),
         }
     }
 }

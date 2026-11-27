@@ -1,26 +1,26 @@
-//! The symbol picker's rows: one market per row, laid out like the symbol search of the charting
-//! sites the toolbar follows: artwork, the market's own name over what it trades, the exchange
-//! with its kind at the right, and a check for a market already on the tab or a plus to add it.
+//! The symbol picker's rows: one market per row on the list's shared columns: artwork, the
+//! market's own name over the pair it is, what it trades, the exchange with its kind, and a
+//! check for a market already on the tab or a plus to add it.
 
-use super::search::{market_kind, trading_kind};
+use super::columns::{self, Columns, END, ICON, MARK, PAD, VENUE_GAP, VENUE_LOGO};
+use super::describe;
+use super::search::market_kind;
 use crate::i18n::tr;
 use crate::model::DataSource;
+use crate::model::market::asset_name::AssetNames;
 use crate::service::SearchResult;
 use crate::ui::chart::picker_kit::artwork::result_icon;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::{kit::source_logo, theme};
-use eframe::egui::{self, Id, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 pub const ROW_HEIGHT: f32 = 56.0;
-const ICON: f32 = 36.0;
-pub const PAD: f32 = 12.0;
-const LOGO: f32 = 18.0;
-/// The column at the right edge that holds the check or the plus.
-const MARK: f32 = 28.0;
 pub const TITLE_SIZE: f32 = 15.0;
 pub const SUBTITLE_SIZE: f32 = 13.0;
-const VENUE_SIZE: f32 = 14.0;
+const DESCRIPTION_SIZE: f32 = 14.0;
+/// The corner radius of the highlighted row's box.
+const RADIUS: f32 = 10.0;
 
 /// How a row is drawn this frame.
 #[derive(Clone, Copy)]
@@ -85,27 +85,6 @@ pub struct RowOutput {
     pub fold: bool,
 }
 
-/// What the second line of a row says: the pair (`BTC / USDT`), the company, or the coin.
-pub fn subtitle(result: &SearchResult) -> String {
-    if result.source.is_prediction_market() {
-        return result
-            .event
-            .as_ref()
-            .map(|event| event.title.as_str())
-            .filter(|title| !title.is_empty() && *title != result.symbol)
-            .unwrap_or_default()
-            .to_owned();
-    }
-    if let Some(company) = result.company() {
-        return company.to_owned();
-    }
-    match (&result.base, &result.quote) {
-        (Some(base), Some(quote)) => format!("{base} / {quote}"),
-        _ if result.source == DataSource::CoinGecko => title_case(&result.full_symbol),
-        _ => String::new(),
-    }
-}
-
 /// The first line of a row: the market's own name. A prediction market's name is a sentence,
 /// which may hold the company separator.
 pub fn name(result: &SearchResult) -> &str {
@@ -116,35 +95,23 @@ pub fn name(result: &SearchResult) -> &str {
     }
 }
 
-/// `wrapped-bitcoin` → `Wrapped Bitcoin`.
-fn title_case(id: &str) -> String {
-    id.split('-')
-        .filter(|word| !word.is_empty())
-        .map(|word| {
-            let mut chars = word.chars();
-            chars.next().map_or_else(String::new, |first| {
-                first.to_uppercase().chain(chars).collect()
-            })
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// What the row's right-click menu offers: `Replace <chart's market>` while a chart is focused, and
 /// always `Add as new chart`. The shortcuts are the keys that do the same.
-const REPLACE_KEY: &str = "↵";
-const ADD_KEY: &str = "⇧↵";
-const COMPARE_KEY: &str = "⌥↵";
+pub const REPLACE_KEY: &str = "↵";
+pub const ADD_KEY: &str = "⇧↵";
+pub const COMPARE_KEY: &str = "⌥↵";
 
-/// Draws one row, `width` wide. `replacing` is the market on the focused chart, which a pick would
+/// Draws one row on `columns`. `replacing` is the market on the focused chart, which a pick would
 /// replace; `None` when there is no chart to replace.
 pub fn row(
     ui: &mut Ui,
     result: &SearchResult,
+    names: &AssetNames,
     state: RowState,
     replacing: Option<&str>,
-    width: f32,
+    columns: &Columns,
 ) -> (Response, RowOutput) {
+    let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
     let mut out = RowOutput {
         hovered: response.hovered(),
@@ -163,7 +130,7 @@ pub fn row(
         return (response, out);
     }
     paint_background(ui, rect, state.highlighted, response.hovered());
-    let content_right = marks(ui, rect, result, state, &mut out);
+    marks(ui, rect, result, state, &mut out);
     out.pick |= response.clicked() && !out.add && !out.overlay;
 
     let icon = Rect::from_center_size(
@@ -174,77 +141,121 @@ pub fn row(
         Vec2::splat(ICON),
     );
     result_icon(ui, icon, result);
+    venue_block(ui, rect, columns, result.source);
 
-    // The exchange sits at the right edge; a prediction market's chance is left of it.
-    let logo_left = venue_block(ui, rect, content_right, result.source);
-    let mut text_right = logo_left;
-    if result.source.is_prediction_market()
-        && let Some(chance) = result.price
-    {
-        text_right = chance_label(ui, rect, logo_left - 18.0, chance);
+    // A prediction market's name is a sentence: it takes the description's column too, and its
+    // chance stands before the exchange.
+    let text_left = rect.left() + columns.symbol + state.indent;
+    if result.source.is_prediction_market() {
+        let mut right = rect.left() + columns.title_width() + columns.symbol;
+        if let Some(chance) = result.price {
+            right = chance_label(ui, rect, right, chance) - 16.0;
+        }
+        two_lines(
+            ui,
+            rect,
+            text_left,
+            (right - text_left).max(40.0),
+            name(result),
+            &describe::pair_line(result),
+        );
+        return (response, out);
     }
 
-    // The market, as its exchange names it.
-    let text_left = icon.right() + 12.0;
-    let text_width = (text_right - 16.0 - text_left).max(40.0);
-    let title = kit::galley(
+    let described = describe::column(result, names);
+    let pair = describe::pair_line(result);
+    // Without a column of its own the description is the second line.
+    let under = match columns.description {
+        Some(_) => pair,
+        None if described.is_empty() => pair,
+        None => described.clone(),
+    };
+    two_lines(
         ui,
+        rect,
+        text_left,
+        columns.symbol_width - state.indent,
         name(result),
-        TITLE_SIZE,
-        SEMIBOLD,
-        theme::text_primary(),
-        text_width,
+        &under,
     );
-    let sub = subtitle(result);
-    let sub = (!sub.is_empty()).then(|| {
-        kit::galley(
+    if let Some(left) = columns.description
+        && !described.is_empty()
+    {
+        let galley = kit::galley(
             ui,
-            &sub,
-            SUBTITLE_SIZE,
+            &described,
+            DESCRIPTION_SIZE,
             REGULAR,
-            theme::text_secondary(),
-            text_width,
-        )
-    });
-    let block = title.size().y + sub.as_ref().map_or(0.0, |sub| sub.size().y + 2.0);
-    let top = rect.center().y - block / 2.0;
-    let sub_top = top + title.size().y + 2.0;
-    ui.painter()
-        .galley(pos2(text_left, top), title, theme::text_primary());
-    if let Some(sub) = sub {
-        ui.painter()
-            .galley(pos2(text_left, sub_top), sub, theme::text_secondary());
+            theme::text_primary(),
+            columns.description_width,
+        );
+        ui.painter().galley(
+            pos2(rect.left() + left, rect.center().y - galley.size().y / 2.0),
+            galley,
+            theme::text_primary(),
+        );
     }
     (response, out)
 }
 
-/// The fill behind the keyboard's row or the pointer's.
-pub fn paint_background(ui: &Ui, rect: Rect, highlighted: bool, hovered: bool) {
-    if highlighted {
+/// A bold title over a quieter line, the pair of them centred in `rect`; a title alone is
+/// centred by itself.
+pub fn two_lines(ui: &Ui, rect: Rect, left: f32, width: f32, title: &str, under: &str) {
+    let area = Rect::from_min_max(pos2(left, rect.top()), pos2(left + width, rect.bottom()));
+    two_lines_sized(ui, area, (title, TITLE_SIZE, SEMIBOLD), under);
+}
+
+/// [`two_lines`] filling `area`, with the title's size and weight chosen.
+pub fn two_lines_sized(ui: &Ui, area: Rect, (title, size, weight): (&str, f32, f32), under: &str) {
+    let width = area.width();
+    let title = kit::galley(ui, title, size, weight, theme::text_primary(), width);
+    let under = (!under.is_empty()).then(|| {
+        kit::galley(
+            ui,
+            under,
+            SUBTITLE_SIZE,
+            REGULAR,
+            theme::text_secondary(),
+            width,
+        )
+    });
+    let block = title.size().y + under.as_ref().map_or(0.0, |under| under.size().y + 2.0);
+    let top = area.center().y - block / 2.0;
+    let under_top = top + title.size().y + 2.0;
+    ui.painter()
+        .galley(pos2(area.left(), top), title, theme::text_primary());
+    if let Some(under) = under {
         ui.painter()
-            .rect_filled(rect, 10.0, theme::selected_tint(false));
-    } else if hovered {
-        ui.painter().rect_filled(rect, 10.0, theme::ink(10));
+            .galley(pos2(area.left(), under_top), under, theme::text_secondary());
     }
 }
 
-/// Where a row's own content stops at the right: left of the column that holds the plus and the
-/// check. Rows with no compare button end here, so headers and lone rows line up.
-pub fn content_right(rect: Rect) -> f32 {
-    rect.right() - PAD - MARK - 10.0
+/// The box around the keyboard's row, or the fill behind the pointer's.
+pub fn paint_background(ui: &Ui, rect: Rect, highlighted: bool, hovered: bool) {
+    let rect = rect.shrink2(vec2(0.0, 1.0));
+    if highlighted {
+        ui.painter()
+            .rect_filled(rect, RADIUS, theme::selected_tint(false));
+        ui.painter()
+            .rect_stroke(rect, RADIUS, theme::selected_stroke(), StrokeKind::Inside);
+    } else if hovered {
+        ui.painter().rect_filled(rect, RADIUS, theme::ink(10));
+    }
+}
+
+/// The hairline under a row of `rect`.
+pub fn paint_separator(ui: &Ui, rect: Rect) {
+    ui.painter().hline(
+        (rect.left() + PAD)..=(rect.right() - END),
+        rect.bottom() - 0.5,
+        Stroke::new(1.0, theme::separator()),
+    );
 }
 
 /// The compare button, the plus and the check at a row's right edge, as `state` shows them.
-/// Returns the x the row's own content must stop short of.
-pub fn marks(
-    ui: &mut Ui,
-    rect: Rect,
-    result: &SearchResult,
-    state: RowState,
-    out: &mut RowOutput,
-) -> f32 {
+pub fn marks(ui: &mut Ui, rect: Rect, result: &SearchResult, state: RowState, out: &mut RowOutput) {
     let mark = Rect::from_center_size(
-        pos2(rect.right() - PAD - MARK / 2.0, rect.center().y),
+        pos2(rect.right() - END - MARK / 2.0, rect.center().y),
         Vec2::splat(MARK),
     );
     // The compare button sits left of the plus, a target of its own over the row's.
@@ -299,44 +310,52 @@ pub fn marks(
             theme::UP,
         );
     }
-    if state.can_overlay {
-        compare_mark.left() - 10.0
-    } else {
-        mark.left() - 10.0
-    }
 }
 
-/// The exchange at the right of a row: its logo and name over what it lists, right-aligned to
-/// `right`. Returns the block's left edge.
-pub fn venue_block(ui: &Ui, rect: Rect, right: f32, source: DataSource) -> f32 {
-    let venue = kit::galley(
+/// The venue column of a row: the exchange's logo and name over what it lists.
+pub fn venue_block(ui: &Ui, rect: Rect, columns: &Columns, source: DataSource) {
+    venue_lines(
         ui,
+        rect,
+        columns,
         source.display_name(),
-        VENUE_SIZE,
+        market_kind(source),
+    );
+    let logo = Rect::from_center_size(
+        pos2(
+            rect.left() + columns.venue + VENUE_LOGO / 2.0,
+            rect.center().y,
+        ),
+        Vec2::splat(VENUE_LOGO),
+    );
+    source_logo::paint(ui, source, logo);
+}
+
+/// The two lines of a venue column, beside the room its logo takes.
+pub fn venue_lines(ui: &Ui, rect: Rect, columns: &Columns, name: &str, kind: &str) {
+    let name = kit::galley(
+        ui,
+        name,
+        columns::VENUE_SIZE,
         MEDIUM,
         theme::text_primary(),
-        150.0,
+        columns.venue_width,
     );
     let kind = kit::galley(
         ui,
-        market_kind(source),
-        SUBTITLE_SIZE,
+        kind,
+        columns::VENUE_KIND_SIZE,
         REGULAR,
         theme::text_secondary(),
-        150.0,
+        columns.venue_width,
     );
-    let name_left = right - venue.size().x;
-    let top = rect.center().y - (venue.size().y + kind.size().y + 2.0) / 2.0;
-    let painter = ui.painter();
-    painter.galley(pos2(name_left, top), venue, theme::text_primary());
-    painter.galley(
-        pos2(right - kind.size().x, top + 2.0 + 17.0),
-        kind,
-        theme::text_secondary(),
-    );
-    let logo = Rect::from_min_size(pos2(name_left - 6.0 - LOGO, top - 0.5), Vec2::splat(LOGO));
-    source_logo::paint(ui, source, logo);
-    logo.left()
+    let left = rect.left() + columns.venue + VENUE_LOGO + VENUE_GAP;
+    let top = rect.center().y - (name.size().y + kind.size().y + 1.0) / 2.0;
+    let kind_top = top + name.size().y + 1.0;
+    ui.painter()
+        .galley(pos2(left, top), name, theme::text_primary());
+    ui.painter()
+        .galley(pos2(left, kind_top), kind, theme::text_secondary());
 }
 
 /// A prediction market's YES chance, right-aligned to `right`. Returns its left edge.
@@ -432,91 +451,11 @@ pub fn row_id(ui: &Ui, result: &SearchResult, part: &str) -> Id {
         .with((part, result.source as u8, result.full_symbol.as_str()))
 }
 
-/// A compact row for the detail panel's "also trades as" list: artwork, name, how it trades and
-/// where. Returns whether it was clicked.
-pub fn related_row(ui: &mut Ui, result: &SearchResult, width: f32) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 44.0), Sense::click());
-    let response = crate::ui::accessibility::label(
-        response.on_hover_cursor(egui::CursorIcon::PointingHand),
-        tr!(
-            "{symbol} on {venue}",
-            symbol = result.symbol,
-            venue = result.source.display_name()
-        ),
-    );
-    if response.hovered() {
-        ui.painter().rect_filled(rect, 8.0, theme::ink(10));
-    }
-    let icon = Rect::from_center_size(
-        pos2(rect.left() + 12.0 + 12.0, rect.center().y),
-        Vec2::splat(24.0),
-    );
-    result_icon(ui, icon, result);
-    let name = kit::galley(
-        ui,
-        result.ticker(),
-        TITLE_SIZE,
-        SEMIBOLD,
-        theme::text_primary(),
-        width * 0.4,
-    );
-    ui.painter().galley(
-        pos2(icon.right() + 12.0, rect.center().y - name.size().y / 2.0),
-        name,
-        theme::text_primary(),
-    );
-    // Right to left: the exchange, its logo, how it trades.
-    let venue = kit::galley(
-        ui,
-        result.source.display_name(),
-        SUBTITLE_SIZE + 1.0,
-        REGULAR,
-        theme::text_secondary(),
-        110.0,
-    );
-    let venue_left = rect.right() - 12.0 - venue.size().x;
-    ui.painter().galley(
-        pos2(venue_left, rect.center().y - venue.size().y / 2.0),
-        venue,
-        theme::text_secondary(),
-    );
-    let logo = Rect::from_center_size(
-        pos2(venue_left - 8.0 - 8.0, rect.center().y),
-        Vec2::splat(16.0),
-    );
-    source_logo::paint(ui, result.source, logo);
-    let kind = kit::galley(
-        ui,
-        trading_kind(result.source),
-        SUBTITLE_SIZE + 1.0,
-        REGULAR,
-        theme::text_secondary(),
-        80.0,
-    );
-    ui.painter().galley(
-        pos2(
-            logo.left() - 14.0 - kind.size().x,
-            rect.center().y - kind.size().y / 2.0,
-        ),
-        kind,
-        theme::text_secondary(),
-    );
-    response.clicked()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_row_names_the_pair_the_company_or_the_coin() {
-        let pair = SearchResult::new(DataSource::Binance, "BTCUSDT", "BTCUSDT").pair("BTC", "USDT");
-        assert_eq!(subtitle(&pair), "BTC / USDT");
-        let stock = SearchResult::new(DataSource::Alpaca, "AAPL — Apple Inc.", "AAPL");
-        assert_eq!(subtitle(&stock), "Apple Inc.");
-        let coin = SearchResult::new(DataSource::CoinGecko, "WBTC", "wrapped-bitcoin");
-        assert_eq!(subtitle(&coin), "Wrapped Bitcoin");
-        let bare = SearchResult::new(DataSource::Binance, "BTC", "BTC");
-        assert_eq!(subtitle(&bare), "");
-    }
+/// What a screen reader calls a compact row of a market.
+pub fn result_label(result: &SearchResult) -> String {
+    tr!(
+        "{symbol} on {venue}",
+        symbol = result.symbol,
+        venue = result.source.display_name()
+    )
 }

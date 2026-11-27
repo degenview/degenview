@@ -8,8 +8,10 @@ use eframe::egui::{self, Rect, Ui};
 
 /// Between a hint's keycaps and its label, and between its keycaps.
 const KEY_GAP: f32 = 6.0;
-/// After each hint.
+/// After each hint, in a pull-down's footer.
 const HINT_GAP: f32 = 10.0;
+/// After each hint, along the foot of a large sheet.
+pub const WIDE_HINT_GAP: f32 = 22.0;
 
 /// One hint: the keys to press, and what they do.
 pub struct Hint<'a> {
@@ -28,7 +30,14 @@ impl<'a> Hint<'a> {
 
 /// How wide the hints are together, with the gap after each.
 pub fn hints_width(ui: &Ui, hints: &[Hint], text_size: f32) -> f32 {
-    hints.iter().map(|hint| width(ui, hint, text_size)).sum()
+    spaced_width(ui, hints, text_size, HINT_GAP)
+}
+
+fn spaced_width(ui: &Ui, hints: &[Hint], text_size: f32, gap: f32) -> f32 {
+    hints
+        .iter()
+        .map(|hint| width(ui, hint, text_size) + gap)
+        .sum()
 }
 
 fn width(ui: &Ui, hint: &Hint, text_size: f32) -> f32 {
@@ -45,20 +54,32 @@ fn width(ui: &Ui, hint: &Hint, text_size: f32) -> f32 {
         .iter()
         .map(|key| keycap_width(ui, key) + KEY_GAP)
         .sum();
-    keys + label.size().x + KEY_GAP + HINT_GAP
+    keys + label.size().x + KEY_GAP
 }
 
 /// Draws `hints` left to right in `row`, labels `text_size` large. While they do not fit, the
 /// hint whose label is first in `least_needed` (and is present) is dropped, then the next.
-pub fn hint_row(
+pub fn hint_row(ui: &mut Ui, row: Rect, hints: Vec<Hint>, text_size: f32, least_needed: &[&str]) {
+    spaced_hint_row(ui, row, hints, text_size, HINT_GAP, least_needed);
+}
+
+/// [`hint_row`] with `gap` after each hint. A row too narrow closes the gaps up before it drops
+/// any hint.
+pub fn spaced_hint_row(
     ui: &mut Ui,
     row: Rect,
     mut hints: Vec<Hint>,
     text_size: f32,
+    gap: f32,
     least_needed: &[&str],
 ) {
+    let gap = if spaced_width(ui, &hints, text_size, gap) <= row.width() {
+        gap
+    } else {
+        HINT_GAP
+    };
     for label in least_needed {
-        if hints_width(ui, &hints, text_size) <= row.width() {
+        if spaced_width(ui, &hints, text_size, gap) <= row.width() {
             break;
         }
         hints.retain(|hint| hint.label != *label);
@@ -80,6 +101,6 @@ pub fn hint_row(
             REGULAR,
             theme::text_secondary(),
         ));
-        cell.add_space(HINT_GAP);
+        cell.add_space(gap);
     }
 }

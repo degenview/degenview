@@ -9,6 +9,7 @@
 //! It opens searching for the market the focused chart shows, so a different exchange or quote
 //! of the same asset is one keystroke away. See `docs/symbol-picker.md`.
 
+pub mod columns;
 pub mod dashboards;
 mod describe;
 mod detail;
@@ -32,12 +33,14 @@ use crate::model::{DataSource, InstrumentId};
 use crate::service::{self, ProviderError, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::hints::{Hint, hint_row};
+use crate::ui::kit::hints::{Hint, WIDE_HINT_GAP, spaced_hint_row};
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use dashboards::{Tile, TilePick};
 use describe::Names;
+use detail::PreviewChart;
+use detail::action::{Action, Actions};
 use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use list::RowState;
 use lookup::Lookup;
@@ -51,17 +54,20 @@ use watchlists::WatchlistGroup;
 use {
     footer::market_label,
     notice::{NOTICE_HEIGHT, notice_button_rect},
-    tabs::{FILTER_COMPACT, FILTER_GAP, TabFit, fit_tabs},
+    tabs::{FILTER_COMPACT, FILTER_GAP, TabFit, fit_tabs, tab_room},
 };
 
 const SIZE: Vec2 = vec2(1000.0, 660.0);
 /// The narrowest the picker gets: still wide enough for every tab plus the pull-down's icon.
 const MIN_WIDTH: f32 = 560.0;
-const PADDING: f32 = 16.0;
-const TABS: f32 = 44.0;
-const FOOTER: f32 = 44.0;
-const DETAIL: f32 = 372.0;
-/// The detail panel is dropped below this window width, so the list keeps room.
+const PADDING: f32 = 20.0;
+const TABS: f32 = 52.0;
+const FOOTER: f32 = 52.0;
+/// The detail panel's share of the sheet, and the narrowest and widest it gets.
+const DETAIL_SHARE: f32 = 0.344;
+const DETAIL_MIN: f32 = 300.0;
+const DETAIL_MAX: f32 = 344.0;
+/// The detail panel is dropped when the sheet is narrower than this, so the list keeps room.
 const DETAIL_MIN_WIDTH: f32 = 760.0;
 /// The search field asks for focus this many frames: the first only measures the modal.
 const FOCUS_FRAMES: u8 = 3;
@@ -199,6 +205,8 @@ pub struct SymbolPicker {
     search: SymbolSearch,
     /// What the markets' assets are called.
     names: Names,
+    /// The preview's chart of the highlighted market.
+    chart: PreviewChart,
     /// The prediction events listed, and which show their choices.
     events: predictions::Events,
     /// The choices ticked to chart together, as the pick that charts them.
@@ -241,6 +249,7 @@ impl SymbolPicker {
             card_scope: None,
             search: SymbolSearch::new(backend),
             names: Names::default(),
+            chart: PreviewChart::new(backend.candles),
             events: predictions::Events::default(),
             ticked: None,
             trending: predictions::Trending::new(backend.trending),
@@ -295,8 +304,11 @@ impl SymbolPicker {
     fn open_for(&mut self, current: &str, mode: PickMode) {
         let store = self.store.clone();
         let names = std::mem::take(&mut self.names).reopened();
+        let chart =
+            std::mem::replace(&mut self.chart, PreviewChart::new(self.backend.candles)).reopened();
         *self = Self::with_backend(store, self.backend);
         self.names = names;
+        self.chart = chart;
         self.recents = self
             .store
             .lock()
@@ -836,13 +848,13 @@ impl SymbolPicker {
         let mut picked = None;
         let search_area = Rect::from_min_size(
             full.min + vec2(PADDING, PADDING),
-            vec2(full.width() - 2.0 * PADDING, 44.0),
+            vec2(full.width() - 2.0 * PADDING, kit::search_box::LARGE_HEIGHT),
         );
         let mut field = ui.new_child(egui::UiBuilder::new().max_rect(search_area));
         let focus = self.focus_frames > 0;
         self.focus_frames = self.focus_frames.saturating_sub(1);
         let placeholder = self.placeholder();
-        let event = kit::search_box::search_box(
+        let event = kit::search_box::large_search_box(
             &mut field,
             Icon::Magnifier,
             &mut self.query,
@@ -862,7 +874,7 @@ impl SymbolPicker {
         }
 
         let tabs = Rect::from_min_size(
-            pos2(full.left(), search_area.bottom() + 6.0),
+            pos2(full.left(), search_area.bottom() + 4.0),
             vec2(full.width(), TABS),
         );
         let (scope, filter) = self.tab_row(ui, tabs);
@@ -886,7 +898,9 @@ impl SymbolPicker {
         );
 
         let detail_width = if full.width() >= DETAIL_MIN_WIDTH {
-            DETAIL
+            (full.width() * DETAIL_SHARE)
+                .clamp(DETAIL_MIN, DETAIL_MAX)
+                .round()
         } else {
             0.0
         };
@@ -907,14 +921,30 @@ impl SymbolPicker {
                 panel.y_range(),
                 Stroke::new(1.0, theme::separator()),
             );
-            if let Some(item) = &self.highlighted {
+            if let Some(item) = self.highlighted.clone() {
+                let names = item
+                    .market()
+                    .map(|result| self.names.of(result))
+                    .unwrap_or_default();
                 let shown = detail::Detail {
-                    item,
+                    item: &item,
+                    names,
                     quote: env.quote,
                     related,
+                    actions: self.actions(&item, env),
                 };
-                if let Some(other) = detail::show(ui, panel, &shown) {
+                let out = detail::show(ui, panel, &shown, &mut self.chart);
+                if let Some(other) = out.related {
                     picked = Some((Pick::Market(other), self.default_kind()));
+                }
+                if let Some(kind) = out.action {
+                    picked = match &item {
+                        Item::Market(result) | Item::Choice(result) => {
+                            Some((Pick::Market(self.selection(result)), kind))
+                        }
+                        Item::Tile(tile) => Some((Self::tile_pick(tile), kind)),
+                        Item::Event(_) => None,
+                    };
                 }
             }
         }
@@ -926,6 +956,113 @@ impl SymbolPicker {
             picked = Some(hit);
         }
         picked
+    }
+
+    /// What the preview's button offers for `item`: what Return does, and what else can be done.
+    /// An event is only folded open, so it has no button.
+    fn actions(&self, item: &Item, env: &Env) -> Option<Actions> {
+        let market = match item {
+            Item::Event(_) => return None,
+            Item::Market(result) | Item::Choice(result) => Some(result),
+            Item::Tile(_) => None,
+        };
+        let held = match item {
+            Item::Tile(Tile {
+                pick: TilePick::Card(card),
+                ..
+            }) => {
+                if self.mode == PickMode::Watchlist {
+                    self.held(env, &card.instrument_id())
+                } else {
+                    env.cards_on_tab.iter().any(|on| on.same_card(card))
+                }
+            }
+            _ => item.market().is_some_and(|result| {
+                self.held(env, &InstrumentId::new(result.source, &result.full_symbol))
+            }),
+        };
+        let compare = market.filter(|result| {
+            env.can_overlay && Self::comparable(result) && !Self::overlaid(env, result)
+        });
+        let action = |label: &str, icon, shortcut, kind| Action {
+            label: label.to_owned(),
+            icon,
+            shortcut,
+            kind,
+        };
+        let add = || {
+            action(
+                tr!("Add as new chart"),
+                Icon::Plus,
+                list::ADD_KEY,
+                PickKind::Add,
+            )
+        };
+        let overlay = |shortcut| action(tr!("Compare"), Icon::Compare, shortcut, PickKind::Overlay);
+        let card = matches!(
+            item,
+            Item::Tile(Tile {
+                pick: TilePick::Card(_),
+                ..
+            })
+        );
+        let (main, enabled, others) = match self.mode {
+            PickMode::Watchlist => (
+                action(
+                    tr!("Add to watchlist"),
+                    Icon::Plus,
+                    list::REPLACE_KEY,
+                    PickKind::Watchlist,
+                ),
+                !held,
+                Vec::new(),
+            ),
+            _ if card => (
+                action(
+                    tr!("Add card"),
+                    Icon::Plus,
+                    list::REPLACE_KEY,
+                    self.default_kind(),
+                ),
+                true,
+                Vec::new(),
+            ),
+            PickMode::Compare => (
+                overlay(list::REPLACE_KEY),
+                market.is_some_and(|result| !Self::overlaid(env, result)),
+                vec![add()],
+            ),
+            PickMode::Chart if env.replacing.is_some() => (
+                action(
+                    tr!("Replace chart"),
+                    Icon::Exchange,
+                    list::REPLACE_KEY,
+                    PickKind::Replace,
+                ),
+                true,
+                std::iter::once(add())
+                    .chain(compare.map(|_| overlay(list::COMPARE_KEY)))
+                    .collect(),
+            ),
+            PickMode::Chart | PickMode::Add => (
+                action(
+                    tr!("Add chart"),
+                    Icon::Plus,
+                    list::REPLACE_KEY,
+                    self.default_kind(),
+                ),
+                true,
+                compare
+                    .map(|_| overlay(list::COMPARE_KEY))
+                    .into_iter()
+                    .collect(),
+            ),
+        };
+        Some(Actions {
+            main,
+            enabled,
+            others,
+        })
     }
 
     /// Whether `market` is already where a pick would put it: on a chart of the tab, or in the
