@@ -157,8 +157,12 @@ view list the values as they are (`ValueKind::Plain` in the table). `scale.left`
 are still warned about (`PINE7001`: one value axis), and so is `scale.none` on a script with its
 own pane, which TradingView only allows with `overlay = true`. Not verified against TradingView:
 the margins the hidden scale leaves (we use the chart's) and whether it follows a Percent or Log
-price axis (we keep it linear), nor whether a `fill()` between hidden plots moves TradingView's
-scales. The price axis itself does not yet reach for either on an ordinary overlay.
+price axis (we keep it linear).
+
+Measured on TradingView: its price axis stretches to an overlay's `location.absolute` markers and
+to the plots a `fill()` spans even when they are `display.none`; hidden plots without a fill leave
+it alone. The price axis here does the same, and so do panes and the hidden scale (inferred for
+those two).
 
 ### Panes
 

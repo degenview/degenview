@@ -806,12 +806,9 @@ impl VisibleBars {
 // MARK: Value range
 
 /// Everything per bar that a script's own scale (its pane, or the hidden scale of
-/// `scale.none`) has to reach: all the renderer draws at a value there. Plots and plotcandles,
-/// the baseline of filled styles, `location.absolute` markers and the plots a `fill()` spans.
+/// `scale.none`) has to reach: [`series_values_in_pane`] and the baseline of filled styles.
 fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let mut values = series_values_in_pane(pine, visible);
-    values.extend(absolute_marker_values(pine, visible));
-    values.extend(hidden_fill_values(pine, visible));
     values.extend(
         pine.plots
             .iter()
@@ -1050,7 +1047,9 @@ pub fn overlay_extent<'a>(
     extent
 }
 
-/// Plot and plotcandle values shown in the main pane (no filled-style baselines, as in Swift).
+/// All a script draws per bar at a value, on whichever scale: plots and plotcandles,
+/// `location.absolute` markers and the plots a `fill()` spans (no filled-style baselines on the
+/// price axis, as in Swift). TradingView fits its price axis to the markers and the fills too.
 fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let mut values = Vec::new();
     for output in pine.plots.iter().filter(|o| o.display & DISPLAY_PANE != 0) {
@@ -1075,6 +1074,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
             values.extend([high, low]);
         }
     }
+    values.extend(absolute_marker_values(pine, visible));
+    values.extend(hidden_fill_values(pine, visible));
     values
 }
 
@@ -2113,6 +2114,53 @@ mod tests {
         );
         assert_eq!(overlay_future_bars([]), 0);
         assert_eq!(overlay_extent([], newest(20), 0), OverlayExtent::default());
+    }
+
+    #[test]
+    fn the_price_axis_reaches_an_overlays_absolute_markers_and_hidden_fills() {
+        let mut overlay = visual(3);
+        overlay.markers.push(MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: vec![true; 3],
+            character: None,
+            color: 0xFF00_00FF,
+            location: MarkerLocation::Absolute,
+            style: MarkerShape::Circle,
+            prices: vec![Some(900.0); 3],
+            colors: Vec::new(),
+            size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
+            display: DISPLAY_PANE,
+            force_overlay: false,
+        });
+        for id in [1, 2] {
+            overlay.plots.push(PlotOutput {
+                id,
+                display: 0,
+                ..plot(vec![Some(id as f64 * 100.0); 3], PlotStyle::Line)
+            });
+        }
+        let reach = |output: &VisualOutput| {
+            let mut values = overlay_extent([output], newest(3), 0).values;
+            values.sort_by(f64::total_cmp);
+            values.dedup();
+            values
+        };
+        assert_eq!(reach(&overlay), [900.0], "hidden and spanned by nothing");
+        overlay.fills.push(FillOutput {
+            id: 0,
+            plot_a: 1,
+            plot_b: 2,
+            colors: Vec::new(),
+            title: None,
+            gradients: Vec::new(),
+        });
+        assert_eq!(reach(&overlay), [100.0, 200.0, 900.0]);
     }
 
     #[test]

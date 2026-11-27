@@ -1061,3 +1061,30 @@ plotshape(bar_index % 7 == 0, style = shape.labeldown, location = location.above
         );
     }
 }
+
+#[test]
+fn the_price_axis_reaches_an_overlays_markers_and_hidden_fill() {
+    let (_, measured, drawn) = painted_at_rest(
+        "//@version=6
+indicator(\"On price\", overlay = true)
+a = plot(close * 1.5, display = display.none)
+b = plot(close * 1.6, display = display.none)
+fill(a, b, color = color.fuchsia)
+plotshape(close * 0.5, style = shape.circle, location = location.absolute, color = color.fuchsia)
+",
+    );
+    let plot = measured.view.plot;
+    let (top, bottom) = reach_of(&drawn, FUCHSIA).expect("the band is painted");
+    assert!(
+        top >= plot.top() && bottom <= plot.bottom(),
+        "{top}..{bottom}"
+    );
+    let markers: Vec<Pos2> = drawn
+        .circles
+        .iter()
+        .filter(|(_, fill)| *fill == FUCHSIA)
+        .map(|(centre, _)| *centre)
+        .collect();
+    assert!(markers.len() >= 50, "{}", markers.len());
+    assert!(markers.iter().all(|at| plot.contains(*at)), "{markers:?}");
+}
