@@ -189,13 +189,18 @@ impl Series {
         true
     }
 
+    /// Forgets what was learnt of the history behind the candles, and any page on its way.
+    fn forget_history(&mut self) {
+        self.older_inbox = None;
+        self.older = OlderHistory::default();
+    }
+
     /// Forgets the candles and everything learnt about the history behind them: they were
     /// another timeframe's. Anything in flight is abandoned.
     fn reset(&mut self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.inbox = None;
-        self.older_inbox = None;
-        self.older = OlderHistory::default();
+        self.forget_history();
         self.last_fetch = None;
         self.retry_at = None;
         self.live = None;
@@ -621,9 +626,12 @@ fn receive_fetch(series: &mut Series, timeframe: Timeframe, now: Instant) -> boo
                 live_open,
                 CANDLE_LIMIT as usize,
             );
-            let candles =
-                market::history::with_older(&series.candles, merged, series.older.keeps_older());
-            series.set_candles(candles);
+            let refreshed =
+                market::history::refreshed(series.instrument.source, &series.candles, merged);
+            if refreshed.restarted {
+                series.forget_history();
+            }
+            series.set_candles(refreshed.candles);
             series.status = OverlayStatus::Ready;
             series.retry_at = None;
         }

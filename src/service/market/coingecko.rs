@@ -29,9 +29,7 @@ impl MarketSource for CoinGecko {
             crate::service::net::http::Retry::Never,
         )?;
         let prices = parse_prices(&body)?;
-        let candles = fold_prices(&prices, timeframe);
-        let start = candles.len().saturating_sub(limit as usize);
-        Ok(candles[start..].to_vec())
+        Ok(newest_candles(&prices, timeframe, limit))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -97,6 +95,16 @@ fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
     Ok(prices)
 }
 
+/// The newest `limit` candles of a window of price samples. A candle opens where the one before it
+/// closed, which the window does not say of its first bucket: that one is left out, unless it is all
+/// there is.
+fn newest_candles(prices: &[(i64, f64)], timeframe: Timeframe, limit: u32) -> Vec<Kline> {
+    let candles = fold_prices(prices, timeframe);
+    let unanchored = usize::from(candles.len() > 1);
+    let start = candles.len().saturating_sub(limit as usize).max(unanchored);
+    candles[start..].to_vec()
+}
+
 /// Fold a price series into candles of `target`, one candle per calendar bucket.
 ///
 /// Each candle opens at the previous one's close, so the series is continuous and a bucket holding
@@ -151,6 +159,31 @@ mod tests {
                 ProviderError::unsupported(DataSource::CoinGecko, timeframe)
             );
         }
+    }
+
+    /// The window the samples cover moves on with time: two answers a bucket apart must say the
+    /// same of every candle both have, or a chart takes the older one for changed history.
+    #[test]
+    fn answers_a_bucket_apart_agree_on_the_candles_they_share() {
+        let samples: Vec<(i64, f64)> = (0..6)
+            .map(|index| (index * 300_000, 10.0 + index as f64))
+            .collect();
+        let before = newest_candles(&samples[..5], Timeframe::MINUTE_5, 500);
+        let after = newest_candles(&samples[1..], Timeframe::MINUTE_5, 500);
+        let shared: Vec<&Kline> = after
+            .iter()
+            .filter(|candle| before.iter().any(|old| old.open_time == candle.open_time))
+            .collect();
+        assert_eq!(shared.len(), 3);
+        for candle in shared {
+            assert!(before.contains(candle), "{candle:?}");
+        }
+    }
+
+    #[test]
+    fn a_history_of_one_candle_is_that_candle() {
+        let candles = newest_candles(&[(0, 10.0)], Timeframe::MINUTE_5, 500);
+        assert_eq!(candles.len(), 1);
     }
 
     #[test]

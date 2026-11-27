@@ -152,6 +152,36 @@ fn removing_an_overlay_while_its_request_is_in_flight_is_safe() {
     );
 }
 
+/// An overlay of a source that answers a window of its latest candles keeps the ones the window
+/// has left, and starts again when an answer does not join them.
+#[test]
+fn a_refresh_adds_to_an_overlays_candles_and_a_gap_starts_them_again() {
+    let (mut hub, fake) = hub();
+    let mut list = OverlayList::new();
+    let bitcoin = InstrumentId::new(DataSource::CoinGecko, "bitcoin");
+    list.add(&market("BTCUSDT"), bitcoin.clone(), None);
+    let mut now = Instant::now();
+    let mut refresh = |hours: [i64; 2]| {
+        fake.answer(
+            &bitcoin.symbol,
+            Ok(hours.map(|hour| candle(hour * HOUR, 1.0)).to_vec()),
+        );
+        frame(&mut hub, 1, &list, now);
+        fake.run_jobs();
+        hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
+        now += refresh_after(DataSource::CoinGecko, 1);
+        hub.feed(&bitcoin)
+            .unwrap()
+            .candles
+            .iter()
+            .map(|bar| bar.open_time / HOUR)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(refresh([10, 11]), [10, 11]);
+    assert_eq!(refresh([11, 12]), [10, 11, 12]);
+    assert_eq!(refresh([20, 21]), [20, 21]);
+}
+
 #[test]
 fn a_market_that_stays_keeps_its_candles_when_the_chart_changes() {
     let (mut hub, fake) = hub();

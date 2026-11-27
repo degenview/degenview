@@ -72,7 +72,6 @@ fn an_empty_page_is_the_start_of_history() {
     history.started();
     history.arrived(0);
     assert!(!history.should_request(true, true, 500, Instant::now()));
-    assert!(!history.keeps_older(), "nothing was added to keep");
 }
 
 #[test]
@@ -118,36 +117,85 @@ fn a_page_of_nothing_new_changes_nothing() {
     assert_eq!(times(&held), (100..120).collect::<Vec<_>>());
 }
 
+fn refresh(held: &[Kline], fresh: Vec<Kline>) -> Refreshed {
+    refreshed(DataSource::Binance, held, fresh)
+}
+
 #[test]
 fn a_refresh_keeps_the_older_candles_it_did_not_bring() {
-    let held = bars(50..120);
-    let fresh = bars(80..125);
-    let merged = with_older(&held, fresh, true);
-    assert_eq!(times(&merged), (50..125).collect::<Vec<_>>());
+    let merged = refresh(&bars(50..120), bars(80..125));
+    assert_eq!(times(&merged.candles), (50..125).collect::<Vec<_>>());
+    assert!(!merged.restarted);
 }
 
 #[test]
-fn a_refresh_replaces_everything_while_no_history_was_loaded() {
-    let held = bars(50..120);
-    let merged = with_older(&held, bars(80..125), false);
-    assert_eq!(times(&merged), (80..125).collect::<Vec<_>>());
+fn a_sliding_window_keeps_the_first_candle() {
+    let mut held = bars(0..10);
+    for start in 1..4 {
+        held = refresh(&held, bars(start..start + 10)).candles;
+    }
+    assert_eq!(times(&held), (0..13).collect::<Vec<_>>());
 }
 
 #[test]
-fn a_refresh_with_nothing_is_nothing() {
-    assert!(with_older(&bars(0..10), Vec::new(), true).is_empty());
+fn a_refresh_that_starts_after_the_newest_candle_held_starts_the_series_again() {
+    let merged = refresh(&bars(10..20), bars(30..40));
+    assert_eq!(times(&merged.candles), (30..40).collect::<Vec<_>>());
+    assert!(merged.restarted);
 }
 
 #[test]
-fn kept_history_is_bounded() {
-    let held = bars(0..(MAX_CANDLES as i64 + 50));
-    let fresh = bars((MAX_CANDLES as i64 + 40)..(MAX_CANDLES as i64 + 60));
-    let merged = with_older(&held, fresh, true);
-    assert_eq!(merged.len(), MAX_CANDLES);
+fn the_first_answer_has_nothing_to_restart() {
+    let merged = refresh(&[], bars(0..10));
+    assert_eq!(merged.candles.len(), 10);
+    assert!(!merged.restarted);
+}
+
+#[test]
+fn a_line_chart_is_what_the_latest_answer_drew() {
+    let merged = refreshed(DataSource::Polymarket, &bars(0..10), bars(2..12));
+    assert_eq!(times(&merged.candles), (2..12).collect::<Vec<_>>());
+    assert!(!merged.restarted);
+}
+
+#[test]
+fn a_candle_added_after_an_outage_does_not_join_the_two_sides_of_it() {
+    let mut held = bars(0..100);
+    held.extend(bars(700..701));
+    let merged = refresh(&held, bars(201..701));
+    assert_eq!(times(&merged.candles), (201..701).collect::<Vec<_>>());
+    assert!(merged.restarted);
+}
+
+#[test]
+fn a_refresh_that_reaches_further_back_than_what_is_held_is_the_series() {
+    let merged = refresh(&bars(50..51), bars(0..51));
+    assert_eq!(times(&merged.candles), (0..51).collect::<Vec<_>>());
+    assert!(!merged.restarted);
+}
+
+#[test]
+fn a_refresh_with_nothing_changes_nothing() {
+    let merged = refresh(&bars(0..10), Vec::new());
+    assert_eq!(times(&merged.candles), (0..10).collect::<Vec<_>>());
+    assert!(!merged.restarted);
+}
+
+#[test]
+fn a_full_series_makes_room_for_a_page_of_candles_at_once() {
+    let full = MAX_CANDLES as i64;
+    let kept = refresh(&bars(0..full), bars(full - 10..full + 1)).candles;
+    assert_eq!(kept.len(), MAX_CANDLES - PAGE);
     assert_eq!(
-        merged.last().map(|bar| bar.open_time),
-        Some((MAX_CANDLES as i64 + 59) * 3_600_000),
+        kept.last().map(|bar| bar.open_time),
+        Some(full * 3_600_000),
         "the newest candles are the ones that stay"
+    );
+    let next = refresh(&kept, bars(full - 10..full + 2)).candles;
+    assert_eq!(
+        next.first(),
+        kept.first(),
+        "the next candle does not move the series' start"
     );
 }
 
@@ -157,10 +205,9 @@ fn a_refresh_during_the_first_page_does_not_drop_the_bar_the_page_ends_before() 
     let mut held = bars(10..20);
     let end = page_end(&held).unwrap();
     history.started();
-    assert!(history.keeps_older(), "a page is on its way");
 
     // A bar opened while the page was out: the refresh brings the newest ten, 11..21.
-    held = with_older(&held, bars(11..21), history.keeps_older());
+    held = refresh(&held, bars(11..21)).candles;
     assert_eq!(times(&held), (10..21).collect::<Vec<_>>());
 
     // The page was asked for with the old end and stops before hour 10.
@@ -175,15 +222,6 @@ fn a_refresh_during_the_first_page_does_not_drop_the_bar_the_page_ends_before() 
         (5..21).collect::<Vec<_>>(),
         "hour 10 is still there"
     );
-}
-
-#[test]
-fn a_refresh_replaces_the_candles_when_nothing_is_loaded_or_on_its_way() {
-    let mut history = OlderHistory::default();
-    assert!(!history.keeps_older());
-    history.started();
-    history.failed(Instant::now());
-    assert!(!history.keeps_older());
 }
 
 #[test]

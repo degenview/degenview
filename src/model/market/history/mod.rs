@@ -1,10 +1,11 @@
 //! Older candles for a chart that is scrolled back toward the start of what it holds.
 //!
-//! A refresh brings the newest candles; scrolling back asks the provider for the page before the
-//! oldest one held. The rules here are pure: when to ask, how long to wait after a failure, and how
-//! pages and refreshes merge without a candle twice or out of order. The workspace owns the request.
+//! A refresh brings the newest candles and adds them to what is held; scrolling back asks the
+//! provider for the page before the oldest one held. The rules here are pure: when to ask, how long
+//! to wait after a failure, and how pages and refreshes merge without a candle twice or out of
+//! order. The workspace owns the request.
 
-use crate::model::Kline;
+use crate::model::{DataSource, Kline};
 use std::time::{Duration, Instant};
 
 /// Candles asked for at once.
@@ -23,7 +24,7 @@ pub const RETRY_AFTER: Duration = Duration::from_secs(15);
 /// What a chart knows about the history behind its oldest candle.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct OlderHistory {
-    /// A page has been merged: refreshes must keep what they did not bring back.
+    /// A page has been merged.
     loaded: bool,
     /// The provider has nothing older.
     exhausted: bool,
@@ -85,13 +86,6 @@ impl OlderHistory {
     pub fn abandoned(&mut self) {
         self.in_flight = false;
     }
-
-    /// Whether a refresh must keep the older candles it did not bring back: a page is held, or
-    /// one is on its way. The page ends before the oldest candle held when it was asked for, so a
-    /// refresh that dropped that candle in the meantime would leave a hole.
-    pub fn keeps_older(&self) -> bool {
-        self.loaded || self.in_flight
-    }
 }
 
 /// Whether a chart that runs scripts holds fewer candles than they are meant to run over.
@@ -123,26 +117,55 @@ pub fn prepend(held: &mut Vec<Kline>, mut page: Vec<Kline>) -> usize {
     added
 }
 
-/// What a refresh leaves on the chart: the candles it brought, with the older ones the chart
-/// already held in front. Without loaded history the refresh simply replaces them.
-pub fn with_older(held: &[Kline], mut fresh: Vec<Kline>, keep_older: bool) -> Vec<Kline> {
-    let Some(first) = fresh.first().map(|candle| candle.open_time) else {
-        return fresh;
+/// What a refresh leaves of a series.
+#[derive(Debug, PartialEq)]
+pub struct Refreshed {
+    pub candles: Vec<Kline>,
+    /// The candles held are gone, so what was learnt of the history behind them no longer holds.
+    pub restarted: bool,
+}
+
+/// `held` brought up to date with `fresh`, a fetch of the newest candles of `source`.
+///
+/// The fetch says nothing about the candles before its first, so they stay: a series that dropped
+/// one for each that opens would be another history on every new bar, and scripts would start over
+/// on it. They stay only if the series has the candle the fetch begins with. Without it what lies
+/// between is unknown (the computer slept, or a feed added a candle after an outage), so the series
+/// starts again with the fetch. A fetch of nothing says nothing. A line chart is the window it was
+/// asked for, with points that fall where the request put them: each answer replaces it.
+pub fn refreshed(source: DataSource, held: &[Kline], mut fresh: Vec<Kline>) -> Refreshed {
+    let kept = |candles| Refreshed {
+        candles,
+        restarted: false,
     };
-    if !keep_older {
-        return fresh;
+    if source.is_line_chart() {
+        return kept(fresh);
     }
+    let Some(first) = fresh.first().map(|candle| candle.open_time) else {
+        return kept(held.to_vec());
+    };
     let older = held.partition_point(|candle| candle.open_time < first);
     if older == 0 {
-        return fresh;
+        return kept(fresh);
     }
-    let mut merged = Vec::with_capacity(older + fresh.len());
-    merged.extend_from_slice(&held[..older]);
-    merged.append(&mut fresh);
-    if merged.len() > MAX_CANDLES {
-        merged.drain(..merged.len() - MAX_CANDLES);
+    if held
+        .get(older)
+        .is_none_or(|candle| candle.open_time != first)
+    {
+        return Refreshed {
+            candles: fresh,
+            restarted: true,
+        };
     }
-    merged
+    let mut candles = Vec::with_capacity(older + fresh.len());
+    candles.extend_from_slice(&held[..older]);
+    candles.append(&mut fresh);
+    // Cutting the front makes it another history, so a full series makes room for a page of new
+    // candles at once rather than for each.
+    if candles.len() > MAX_CANDLES {
+        candles.drain(..candles.len() - (MAX_CANDLES - PAGE));
+    }
+    kept(candles)
 }
 
 #[cfg(test)]

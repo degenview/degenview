@@ -181,10 +181,19 @@ the user scrolls), or while a script on the chart is visible and the chart holds
 keeps state over days, so over the first 500 candles it draws less than it does there), the chart
 asks `service::fetch_klines_range` for the 1,000 candles before it,
 through the work queue. One request is out at a time, a failure waits 15 s, an empty page marks the
-start of history, and a page for a market or timeframe the chart has left is dropped. A refresh
-keeps the older candles it did not bring (`history::with_older`) once a page has been loaded or
-while one is in flight (a bar that opened meanwhile moves the oldest bar held, and the page, asked
-for with the old end, would leave it missing); the chart holds at most 100,000 candles.
+start of history, and a page for a market or timeframe the chart has left is dropped; the chart
+holds at most 100,000 candles, and a full series drops its oldest 1,000 at once.
+
+A refresh asks for the newest candles and never forgets the ones before them
+(`history::refreshed`), paged or not: a provider that answers a window of its latest candles moves
+the window on with every new bar, and a series that moved with it would be another history each
+time (scripts would start over, silently, and a new bar's once-per-bar alerts would be lost with
+the replay). The series starts again only when it does not have the candle an answer begins with:
+what lies between is unknown (a sleeping computer, or a live candle added after an outage), and what
+was known of the older history is forgotten with it. An empty answer changes nothing. One gap is not
+seen: a live feed that kept adding candles for longer than an answer spans while every refresh failed,
+with candles of its own missing. Line charts (prediction markets,
+CoinMarketCap) are the window they were asked for, so each answer replaces them.
 
 `DataSource::supports_older_history(timeframe)` says what can page. Coarser bars (1w, 1M, 3M, 1Y)
 are folded from finer pages with `bucket::Grid::fold`, whose first bucket is dropped when the
@@ -201,7 +210,7 @@ page was cut by the request, so a bar is never split across two pages.
 | OKX | Yes, every timeframe (`history-candles` pages of 300 with an `after` cursor, folded; spaced 100 ms for its 20 requests per 2 seconds). Bucket opens match Binance and Coinbase (`live_sources_cut_the_same_buckets`). |
 | Alpaca | Yes, every timeframe (needs the API keys; `start`/`end` bars). Not verified live. |
 | DexScreener | Hourly only. GeckoTerminal's free API serves the last 180 days (`before_timestamp` older than that is HTTP 401, taken as the start of history), so daily bars arrive whole (about 180) and 1W / 1M / 3M / 1Y are shallow by nature. |
-| CoinGecko, prediction markets, CoinMarketCap | No: no time-range fetch is implemented. The chart stops at what a refresh brings. |
+| CoinGecko, prediction markets, CoinMarketCap | No: no time-range fetch is implemented. The chart reaches back to its first load (CoinGecko keeps what later refreshes leave behind; line charts do not). |
 
 There is no loading indicator; the view does not move while a page loads.
 
