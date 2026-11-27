@@ -145,6 +145,21 @@ impl PineAlertSubscription {
         self.chart() == Some(chart)
     }
 
+    /// Whether this alert is armed on that indicator for that market. Only one alert at a time
+    /// may be, or every signal would be sent twice.
+    pub fn arms(
+        &self,
+        chart: ChartKey,
+        instance_id: u64,
+        symbol_key: &str,
+        timeframe: &str,
+    ) -> bool {
+        self.is_active()
+            && self.is_on(chart)
+            && self.instance_id == Some(instance_id)
+            && self.watches(symbol_key, timeframe)
+    }
+
     /// Whether this is the market the subscription was created for.
     pub fn watches(&self, symbol_key: &str, timeframe: &str) -> bool {
         self.symbol_key == symbol_key && self.timeframe == timeframe

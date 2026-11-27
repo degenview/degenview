@@ -16,7 +16,9 @@ A script alert watches one applied instance on one chart. Chart ids start over i
 subscription names the tab and the chart (`ChartKey`), and `PineSubscriptionHost::reconcile` reads
 every open chart at once. When the alert's tab is not open (closed, or a row saved before alerts
 named their tab), it moves only to a chart of the same id that runs the same script source on the
-same market, which is what opening its saved layout in another tab gives; otherwise it waits.
+same market, which is what opening its saved layout in another tab gives; otherwise it waits. An
+active one also waits while another active alert watches that instance there, so no signal is sent
+twice (`PineAlertSubscription::arms`, shared with the creation sheet and Re-arm).
 
 An instance keeps the source it was applied with, so editing a script changes no alert; taking the
 indicator off the chart switches the alert to "script changed". Re-arm rebinds it

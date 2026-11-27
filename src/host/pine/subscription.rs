@@ -63,14 +63,39 @@ impl ChartFeed {
 
     /// Whether an alert whose tab is not open belongs here now: the chart of the same id, on the
     /// alert's market, running the very script it was armed on. Nothing less is taken, so an
-    /// unrelated chart that happens to share the id never claims the alert.
-    fn can_take_over(&self, subscription: &PineAlertSubscription) -> bool {
+    /// unrelated chart that happens to share the id never claims the alert. An active one also
+    /// waits while another alert watches that indicator.
+    fn can_take_over(
+        &self,
+        subscription: &PineAlertSubscription,
+        subscriptions: &[PineAlertSubscription],
+    ) -> bool {
         self.on.chart_id == subscription.chart_id
             && subscription.watches(&self.symbol_key, &self.timeframe)
-            && self
-                .instance_of(subscription)
-                .is_some_and(|instance| has_source_of(subscription, instance))
+            && self.instance_of(subscription).is_some_and(|instance| {
+                has_source_of(subscription, instance)
+                    && !(subscription.is_active()
+                        && watched(subscriptions, subscription, self.on, instance.id))
+            })
     }
+}
+
+/// Whether an alert other than `subscription` is armed on `instance_id` of `on` for its market.
+fn watched(
+    subscriptions: &[PineAlertSubscription],
+    subscription: &PineAlertSubscription,
+    on: ChartKey,
+    instance_id: u64,
+) -> bool {
+    subscriptions.iter().any(|other| {
+        other.id != subscription.id
+            && other.arms(
+                on,
+                instance_id,
+                &subscription.symbol_key,
+                &subscription.timeframe,
+            )
+    })
 }
 
 fn has_source_of(subscription: &PineAlertSubscription, instance: &PineInstance) -> bool {
@@ -154,14 +179,7 @@ fn rearm_target(
         [one] => *one,
         _ => return Err(RearmBlock::AppliedMoreThanOnce),
     };
-    let taken = subscriptions.iter().any(|other| {
-        other.id != subscription.id
-            && other.is_active()
-            && other.is_on(on)
-            && other.instance_id == Some(instance.id)
-            && other.watches(&subscription.symbol_key, &subscription.timeframe)
-    });
-    if taken {
+    if watched(subscriptions, subscription, on, instance.id) {
         return Err(RearmBlock::AlreadyArmed);
     }
     Ok(RearmTarget {
@@ -319,13 +337,20 @@ impl PineSubscriptionHost {
     /// inputs are persisted so the independent host never falls back to input defaults.
     pub fn reconcile(&mut self, charts: &[ChartFeed], store: &Store) {
         let mut changed = false;
-        for subscription in &mut self.subscriptions {
-            if !tab_open(subscription, charts)
-                && let Some(chart) = charts
-                    .iter()
-                    .find(|chart| chart.can_take_over(subscription))
-            {
-                subscription.workspace_id = Some(chart.on.workspace_id);
+        // One at a time: each move is judged against the ones already made.
+        for index in 0..self.subscriptions.len() {
+            let subscription = &self.subscriptions[index];
+            let moved_to = (!tab_open(subscription, charts))
+                .then(|| {
+                    charts
+                        .iter()
+                        .find(|chart| chart.can_take_over(subscription, &self.subscriptions))
+                })
+                .flatten()
+                .map(|chart| chart.on.workspace_id);
+            let subscription = &mut self.subscriptions[index];
+            if let Some(workspace_id) = moved_to {
+                subscription.workspace_id = Some(workspace_id);
                 changed = true;
             }
             if !subscription.is_active() {
@@ -830,6 +855,35 @@ mod tests {
             host.reconcile(&[chart(2, &[]), chart(5, &applied)], &store);
             let moved = &store.pine_subscriptions()[0];
             assert_eq!((moved.workspace_id, moved.state), (Some(5), state));
+        }
+    }
+
+    #[test]
+    fn an_alert_never_moves_onto_an_indicator_another_active_alert_watches() {
+        let source = "//@version=6\nindicator(\"S\")\nalert(\"hi\", alert.freq_all)";
+        let on_tab = |id: u64, tab: u64| PineAlertSubscription {
+            workspace_id: Some(tab),
+            ..subscription(id, source)
+        };
+        let applied = [instance(source)];
+        // One layout armed in two tabs, one of them closed since; and two closed tabs that
+        // would land on the same chart.
+        for (subscriptions, tabs) in [
+            (vec![on_tab(1, 1), on_tab(2, 2)], [Some(1), Some(2)]),
+            (vec![on_tab(1, 8), on_tab(2, 9)], [Some(2), Some(9)]),
+        ] {
+            let (store, mut host) = host_of(&subscriptions);
+            let mut live = chart(2, &applied);
+            host.reconcile(std::slice::from_ref(&live), &store);
+            let stored: Vec<_> = store
+                .pine_subscriptions()
+                .iter()
+                .map(|subscription| subscription.workspace_id)
+                .collect();
+            assert_eq!(stored, tabs);
+            assert!(host.run_active_on(&live, LIVE_NOW).is_empty());
+            live.bars[4].close += 1.0;
+            assert_eq!(host.run_active_on(&live, LIVE_NOW + 1).len(), 1);
         }
     }
 
