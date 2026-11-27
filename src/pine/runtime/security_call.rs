@@ -1374,12 +1374,11 @@ fn last_index(open_time: i64, candles: &[Kline]) -> Option<usize> {
 // MARK: Reference export
 
 /// Copies the collections and objects a security expression returned out of the site's own state
-/// and into the chart's, so a handle that crossed over does not name an unrelated value. Arrays and
-/// instances are copied following the handles they hold (a handle reached twice is copied once);
-/// handles inside a map or matrix are not followed and become `na`, and so do drawing handles.
+/// and into the chart's. Each supported handle is registered before copying its contents so aliases
+/// and cycles survive. Unsupported handles, such as drawings, become `na`.
 struct ReferenceExport<'a> {
     source: &'a RuntimeState,
-    copies: HashMap<usize, RuntimeValue>,
+    copies: HashMap<(RefKind, usize), usize>,
 }
 
 impl<'a> ReferenceExport<'a> {
@@ -1392,73 +1391,75 @@ impl<'a> ReferenceExport<'a> {
 
     fn export(&mut self, value: RuntimeValue, target: &mut RuntimeState) -> RuntimeValue {
         match value {
-            RuntimeValue::Tuple(items) => RuntimeValue::Tuple(
-                items
-                    .into_iter()
-                    .map(|item| self.export(item, target))
-                    .collect(),
-            ),
+            RuntimeValue::Tuple(mut items) => {
+                self.export_values(&mut items, target);
+                RuntimeValue::Tuple(items)
+            }
             RuntimeValue::Ref(kind, id) => self.copy(kind, id, target),
             other => other,
         }
     }
 
-    fn copy(&mut self, kind: RefKind, id: usize, target: &mut RuntimeState) -> RuntimeValue {
-        if let Some(known) = self.copies.get(&id) {
-            return known.clone();
+    fn export_values<'value>(
+        &mut self,
+        values: impl IntoIterator<Item = &'value mut RuntimeValue>,
+        target: &mut RuntimeState,
+    ) {
+        for value in values {
+            *value = self.export(std::mem::replace(value, RuntimeValue::Na), target);
         }
-        match kind {
+    }
+
+    fn copy(&mut self, kind: RefKind, id: usize, target: &mut RuntimeState) -> RuntimeValue {
+        if let Some(&handle) = self.copies.get(&(kind, id)) {
+            return RuntimeValue::Ref(kind, handle);
+        }
+        let handle = match kind {
             RefKind::Array => {
-                let Some(items) = self.source.arrays.get(&id).cloned() else {
+                let Some(mut items) = self.source.arrays.get(&id).cloned() else {
                     return RuntimeValue::Na;
                 };
                 let handle = self.register(kind, id, target);
-                let copied = items
-                    .into_iter()
-                    .map(|item| self.export(item, target))
-                    .collect();
-                target.arrays.insert(handle, copied);
-                self.copies[&id].clone()
+                self.export_values(&mut items, target);
+                target.arrays.insert(handle, items);
+                handle
             }
             RefKind::Object => {
-                let Some(object) = self.source.instances.get(&id).cloned() else {
+                let Some(mut object) = self.source.instances.get(&id).cloned() else {
                     return RuntimeValue::Na;
                 };
                 let handle = self.register(kind, id, target);
-                let mut copied = object.clone();
-                copied.fields = object
-                    .fields
-                    .into_iter()
-                    .map(|(name, field)| (name, self.export(field, target)))
-                    .collect();
-                target.instances.insert(handle, copied);
-                self.copies[&id].clone()
+                self.export_values(object.fields.values_mut(), target);
+                target.instances.insert(handle, object);
+                handle
             }
             RefKind::Map => {
-                let Some(map) = self.source.maps.get(&id).cloned() else {
+                let Some(mut map) = self.source.maps.get(&id).cloned() else {
                     return RuntimeValue::Na;
                 };
                 let handle = self.register(kind, id, target);
+                self.export_values(map.values_mut(), target);
                 target.maps.insert(handle, map);
-                self.copies[&id].clone()
+                handle
             }
             RefKind::Matrix => {
-                let Some(matrix) = self.source.matrices.get(&id).cloned() else {
+                let Some(mut matrix) = self.source.matrices.get(&id).cloned() else {
                     return RuntimeValue::Na;
                 };
                 let handle = self.register(kind, id, target);
+                self.export_values(matrix.all_elements_mut(), target);
                 target.matrices.insert(handle, matrix);
-                self.copies[&id].clone()
+                handle
             }
-            // Drawing handles and any other reference belong to the expression's state.
-            _ => RuntimeValue::Na,
-        }
+            _ => return RuntimeValue::Na,
+        };
+        RuntimeValue::Ref(kind, handle)
     }
 
     fn register(&mut self, kind: RefKind, id: usize, target: &mut RuntimeState) -> usize {
         target.next_reference += 1;
         let handle = target.next_reference;
-        self.copies.insert(id, RuntimeValue::Ref(kind, handle));
+        self.copies.insert((kind, id), handle);
         handle
     }
 }
@@ -1466,6 +1467,7 @@ impl<'a> ReferenceExport<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::runtime::containers::{Map, Matrix, Object};
     use crate::pine::runtime::support::SecurityDataProvider;
 
     fn bar(open_time: i64, close: f64) -> Kline {
@@ -1598,6 +1600,72 @@ mod tests {
             target.arrays[&cycle_handle],
             vec![RuntimeValue::Ref(RefKind::Array, cycle_handle)],
             "a cycle survives the copy"
+        );
+    }
+
+    #[test]
+    fn reference_export_remaps_maps_and_matrices_in_the_same_graph() {
+        let mut source = RuntimeState::default();
+        let mut target = RuntimeState::default();
+        let sample = |price, grid| Object {
+            type_name: "Sample".to_owned(),
+            fields: HashMap::from([
+                ("price".to_owned(), RuntimeValue::Float(price)),
+                ("grid".to_owned(), grid),
+            ]),
+        };
+        target.instances.insert(1, sample(1.0, RuntimeValue::Na));
+        target.next_reference = 1;
+        source
+            .instances
+            .insert(1, sample(123.0, RuntimeValue::Ref(RefKind::Matrix, 2)));
+        let sample_ref = RuntimeValue::Ref(RefKind::Object, 1);
+        source.matrices.insert(
+            2,
+            Matrix::from_elements(
+                2,
+                1,
+                vec![sample_ref.clone(), RuntimeValue::Ref(RefKind::Footprint, 1)],
+            ),
+        );
+        let mut map = Map::default();
+        map.insert(&RuntimeValue::Int(2), sample_ref.clone())
+            .unwrap();
+        map.insert(&RuntimeValue::Int(1), sample_ref).unwrap();
+        source.maps.insert(3, map);
+        source.next_reference = 3;
+
+        let value =
+            ReferenceExport::new(&source).export(RuntimeValue::Ref(RefKind::Map, 3), &mut target);
+        let RuntimeValue::Ref(RefKind::Map, map_id) = value else {
+            panic!("{value:?}");
+        };
+        let map = &target.maps[&map_id];
+        assert_eq!(map.keys(), vec![RuntimeValue::Int(2), RuntimeValue::Int(1)]);
+        let values = map.values();
+        let RuntimeValue::Ref(RefKind::Object, sample_id) = values[0] else {
+            panic!("{values:?}");
+        };
+        assert_eq!(values[0], values[1]);
+        let fields = &target.instances[&sample_id].fields;
+        assert_eq!(fields["price"], RuntimeValue::Float(123.0));
+        assert_eq!(
+            target.instances[&1].fields["price"],
+            RuntimeValue::Float(1.0)
+        );
+        let RuntimeValue::Ref(RefKind::Matrix, matrix_id) = fields["grid"] else {
+            panic!("{fields:?}");
+        };
+        assert_eq!(
+            target.matrices[&matrix_id],
+            Matrix::from_elements(
+                2,
+                1,
+                vec![
+                    RuntimeValue::Ref(RefKind::Object, sample_id),
+                    RuntimeValue::Na
+                ],
+            )
         );
     }
 
@@ -2388,6 +2456,32 @@ mod tests {
             Some(100.0),
             "no out-of-bounds read of an array nothing filled"
         );
+    }
+
+    #[test]
+    fn a_map_returns_objects_from_the_requested_series() {
+        let script = r#"type Sample
+    float price
+makeMap() =>
+    m = map.new<string, Sample>()
+    map.put(m, "close", Sample.new(close))
+    m
+requested = request.security("ETHUSDT", "1", makeMap())
+Sample result = map.get(requested, "close")
+x = result.price"#;
+        assert_eq!(last_plotted(script), Some(120.0));
+    }
+
+    #[test]
+    fn a_matrix_returns_objects_from_the_requested_series() {
+        let script = r#"type Sample
+    float price
+makeMatrix() =>
+    matrix.new<Sample>(1, 2, Sample.new(close))
+requested = request.security("ETHUSDT", "1", makeMatrix())
+Sample result = matrix.get(requested, 0, 1)
+x = result.price"#;
+        assert_eq!(last_plotted(script), Some(120.0));
     }
 
     #[test]
