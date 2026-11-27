@@ -28,8 +28,9 @@ watchlists.
 ## Names and search
 
 - Binance and Bybit ids join base and quote, and a bare asset is quoted in USDT. Telling the two
-  apart is `split_binance_pair`: every quote the exchanges list belongs in `BINANCE_QUOTES` (a
-  missing one asks for a market that does not exist), and an asset whose name ends like a quote
+  apart is `split_binance_pair`: every quote the exchanges list or have listed belongs in
+  `BINANCE_QUOTES` (a missing one asks for a market that does not exist, and a halted market's
+  history is still served), and an asset whose name ends like a quote
   (`PENGU`) in `ASSETS_READING_AS_PAIRS`.
 - Name a market as its exchange does (`BTCUSDT`, `BTC-USD`); `DataSource::display_symbol` only
   upper-cases. Never rebuild `BTC/USDT` labels. Asset: `DataSource::base_asset` /

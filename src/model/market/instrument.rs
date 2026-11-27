@@ -406,10 +406,29 @@ mod tests {
             ] {
                 assert_eq!(canonical(source, pair), pair, "{source:?}");
             }
+            // Halted markets, whose history is still asked for.
+            for pair in [
+                "BNBPAX",
+                "BTCAUD",
+                "BTCRUB",
+                "BTCNGN",
+                "BTCUAH",
+                "BTCRON",
+                "BTCBKRW",
+                "BTCIDRT",
+                "BTCBVND",
+                "BTCBIDR",
+                "BTCUST",
+                "BTCVAI",
+                "BNBUSDSOLD",
+                "BTTTRX",
+            ] {
+                assert_eq!(canonical(source, pair), pair, "{source:?}");
+            }
             // Bare assets that end like a quote, or are one letter before a coin or `U`.
             for asset in [
                 "PENGU", "XAU", "TRU", "BNSOL", "WBETH", "STETH", "PYUSD", "SUSD", "GUSD", "MU",
-                "WBTC", "WSOL", "WXRP",
+                "WBTC", "WSOL", "WXRP", "TRUST", "KORUB", "BABYDOGE",
             ] {
                 assert_eq!(
                     canonical(source, asset),

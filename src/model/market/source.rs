@@ -233,11 +233,13 @@ pub fn kraken_asset(asset: &str) -> String {
 
 /// Quote assets Binance and Bybit pairs end in. The first that ends an id decides, so a longer
 /// quote stands before a shorter one inside it (`BTCFDUSD` is BTC/FDUSD, not BTCFD/USD). One that
-/// is missing here makes the app ask for another market (`BTCMXN` as `BTCMXNUSDT`).
-const BINANCE_QUOTES: [&str; 33] = [
-    "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS", "BUSD", "TUSD", "USDP", "EURI",
-    "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP", "ZAR", "IDR", "THB", "KZT",
-    "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
+/// is missing here makes the app ask for another market (`BTCMXN` as `BTCMXNUSDT`), so the quotes
+/// of halted markets stay: their history is still served.
+const BINANCE_QUOTES: [&str; 50] = [
+    "USDSOLD", "BKRW", "IDRT", "BVND", "BIDR", "PAX", "UST", "VAI", "AUD", "RUB", "NGN", "UAH",
+    "RON", "CZK", "TRX", "DOGE", "DOT", "RLUSD", "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDS",
+    "BUSD", "TUSD", "USDP", "EURI", "DAI", "EUR", "GBP", "TRY", "BRL", "JPY", "ARS", "MXN", "COP",
+    "ZAR", "IDR", "THB", "KZT", "AED", "PLN", "USD", "BTC", "ETH", "BNB", "XRP", "SOL", "U",
 ];
 
 /// Quote assets MEXC's spot catalog ends its ids in, the dollar stablecoins first.
@@ -248,19 +250,59 @@ const MEXC_QUOTES: [&str; 9] = [
 /// Quotes before which a one-letter base is a real asset (`SUSDT` is S/USDT, `STRY` S/TRY):
 /// dollar stablecoins and fiat currencies. Before any other it is part of the asset's own name:
 /// `WBTC` is not W/BTC, `TUSD` not T/USD.
-const ONE_LETTER_BASE_QUOTES: [&str; 21] = [
+const ONE_LETTER_BASE_QUOTES: [&str; 27] = [
     "FDUSD", "USDT", "USDC", "USD1", "USDE", "USDF", "USD", "EUR", "GBP", "TRY", "BRL", "JPY",
-    "ARS", "MXN", "COP", "ZAR", "IDR", "THB", "KZT", "AED", "PLN",
+    "ARS", "MXN", "COP", "ZAR", "IDR", "THB", "KZT", "AED", "PLN", "AUD", "RUB", "NGN", "UAH",
+    "RON", "CZK",
 ];
 
 /// Assets whose names end like a quote, so that only a list tells them from a pair: `PENGU` is
 /// not PENG/U, `SUSD` not S/USD. Those Binance and Bybit have listed, and the other dollar tokens
 /// of one letter before `USD`.
-const ASSETS_READING_AS_PAIRS: [&str; 39] = [
-    "ACU", "AEUR", "AGPU", "AUSD", "BBSOL", "BFUSD", "BGBP", "BIDR", "BNSOL", "CUSD", "DUSD",
-    "EDU", "FUSD", "GUSD", "HUSD", "HYUNDAI", "KORU", "KUAISHOU", "LUSD", "MSTU", "MUSD", "MUU",
-    "NEIROETH", "OUSD", "PENGU", "PUMPBTC", "PYUSD", "RAYSOL", "RENBTC", "RWUSD", "SKUU", "STETH",
-    "SUSD", "TRU", "USDBRL", "WBETH", "XAU", "XUSD", "ZHIPU",
+const ASSETS_READING_AS_PAIRS: [&str; 43] = [
+    "1MBABYDOGE",
+    "ACU",
+    "AEUR",
+    "AGPU",
+    "AUSD",
+    "BABYDOGE",
+    "BBSOL",
+    "BFUSD",
+    "BGBP",
+    "BIDR",
+    "BNSOL",
+    "CUSD",
+    "DUSD",
+    "EDU",
+    "FUSD",
+    "GUSD",
+    "HUSD",
+    "HYUNDAI",
+    "KORU",
+    "KORUB",
+    "KUAISHOU",
+    "LUSD",
+    "MSTU",
+    "MUSD",
+    "MUU",
+    "NEIROETH",
+    "OUSD",
+    "PENGU",
+    "PUMPBTC",
+    "PYUSD",
+    "RAYSOL",
+    "RENBTC",
+    "RWUSD",
+    "SKUU",
+    "STETH",
+    "SUSD",
+    "TRU",
+    "TRUST",
+    "USDBRL",
+    "WBETH",
+    "XAU",
+    "XUSD",
+    "ZHIPU",
 ];
 
 /// Splits an upper-case id that writes base and quote together. The first of `quotes` that ends
