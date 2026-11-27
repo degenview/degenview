@@ -12,8 +12,8 @@
 //! stamped on the last day of the previous month even then, off that grid, so months are folded
 //! from days rather than asked for.
 
-use super::candles::plan;
 use super::catalog::Catalog;
+use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::market::oanda::OandaEnvironment;
@@ -106,6 +106,49 @@ pub fn test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
     get(&login, &instruments_path(&login.account_id), Retry::Never).map(|_| ())
 }
 
+/// Oanda's candles endpoint, asked as one login over `transport`.
+struct Klines<'a, T> {
+    login: &'a OandaCredentials,
+    transport: T,
+}
+
+impl<'a> Klines<'a, fn(&ApiRequest) -> Result<String, ProviderError>> {
+    /// The endpoint of `login` over the network.
+    fn over_http(login: &'a OandaCredentials) -> Self {
+        Self {
+            login,
+            transport: |request| send(request, Retry::Transient),
+        }
+    }
+}
+
+impl<T: Fn(&ApiRequest) -> Result<String, ProviderError>> KlineEndpoint for Klines<'_, T> {
+    const SOURCE: DataSource = DataSource::Oanda;
+    const PAGING: Paging = PAGING;
+
+    fn id(&self, symbol: &str) -> String {
+        symbol.to_owned()
+    }
+
+    fn page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let fetch = |count| {
+            let path = candles_path(id, base, before, count);
+            let body = (self.transport)(&api_request(self.login, &path))?;
+            parse_candles(&body, base)
+        };
+        match before {
+            Some(before) => candle_page(before, limit, fetch),
+            None => fetch(limit),
+        }
+    }
+}
+
 /// The candles of one login that open in `[start_ms, end_ms)`, at most `max` of them, paged back
 /// from the end.
 pub(in crate::service) fn klines_range(
@@ -116,31 +159,14 @@ pub(in crate::service) fn klines_range(
     end_ms: i64,
     max: usize,
 ) -> Result<Vec<Kline>, ProviderError> {
-    klines_range_through(login, symbol, timeframe, start_ms, end_ms, max, |request| {
-        send(request, Retry::Transient)
-    })
-}
-
-/// [`klines_range`] over any transport.
-fn klines_range_through(
-    login: &OandaCredentials,
-    symbol: &str,
-    timeframe: Timeframe,
-    start_ms: i64,
-    end_ms: i64,
-    max: usize,
-    transport: impl Fn(&ApiRequest) -> Result<String, ProviderError>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let plan = plan(DataSource::Oanda, timeframe)?;
-    let requested = PAGING.requested(plan, max);
-    let candles = PAGING.back(start_ms, end_ms, requested, |before, wanted| {
-        candle_page(before, wanted, |count| {
-            let path = candles_path(symbol, plan.base(), Some(before), count);
-            let body = transport(&api_request(login, &path))?;
-            parse_candles(&body, plan.base())
-        })
-    })?;
-    Ok(plan.shape_since(candles, requested, start_ms, max))
+    kline_endpoint::range(
+        &Klines::over_http(login),
+        symbol,
+        timeframe,
+        start_ms,
+        end_ms,
+        max,
+    )
 }
 
 impl MarketSource for Oanda {
@@ -150,21 +176,12 @@ impl MarketSource for Oanda {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Oanda, timeframe)?;
-        let login = credentials()?;
-        let requested = plan.base_count(limit as usize);
-        if requested > MAX_PER_REQUEST {
-            // More finer candles than one request holds: page back from now.
-            let end_ms = crate::clock::now_ms() + 1;
-            return klines_range(&login, symbol, timeframe, 0, end_ms, limit as usize);
-        }
-        let path = candles_path(symbol, plan.base(), None, requested);
-        let body = get(&login, &path, Retry::Transient)?;
-        Ok(plan.shape(
-            parse_candles(&body, plan.base())?,
-            requested,
+        kline_endpoint::latest(
+            &Klines::over_http(&credentials()?),
+            symbol,
+            timeframe,
             limit as usize,
-        ))
+        )
     }
 
     fn fetch_klines_range(
@@ -340,6 +357,7 @@ fn matching_instruments(instruments: &[Instrument], needle: &str) -> Vec<SearchR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::candles::plan;
 
     const DAY_MS: i64 = 86_400_000;
 
@@ -418,14 +436,9 @@ mod tests {
         let end_ms = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
         let asked = std::cell::RefCell::new(Vec::new());
         // Every page is full, so the pager goes back for a second one.
-        let candles = klines_range_through(
-            &login,
-            "EUR_USD",
-            Timeframe::MINUTE_1,
-            0,
-            end_ms,
-            MAX_PER_REQUEST + 100,
-            |request| {
+        let endpoint = Klines {
+            login: &login,
+            transport: |request: &ApiRequest| {
                 asked
                     .borrow_mut()
                     .push((request.url.clone(), request.authorization.clone()));
@@ -444,6 +457,14 @@ mod tests {
                     .collect();
                 Ok(format!(r#"{{"candles":[{}]}}"#, rows.join(",")))
             },
+        };
+        let candles = kline_endpoint::range(
+            &endpoint,
+            "EUR_USD",
+            Timeframe::MINUTE_1,
+            0,
+            end_ms,
+            MAX_PER_REQUEST + 100,
         )
         .expect("history");
 

@@ -5,8 +5,8 @@
 //! `endTime` window; an `endTime` alone is ignored. Failures are HTTP 400 with a JSON code, and
 //! some regions get 403.
 
-use super::candles::plan;
 use super::catalog::Catalog;
+use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
@@ -72,6 +72,35 @@ pub(crate) fn symbol_id(symbol: &str) -> String {
     InstrumentId::new(DataSource::Mexc, symbol).canonical_symbol()
 }
 
+/// MEXC's `/klines` endpoint.
+struct Klines;
+
+impl KlineEndpoint for Klines {
+    const SOURCE: DataSource = DataSource::Mexc;
+    const PAGING: Paging = PAGING;
+
+    fn id(&self, symbol: &str) -> String {
+        symbol_id(symbol)
+    }
+
+    fn page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let Some(before) = before else {
+            return fetch_page(id, base, limit, None);
+        };
+        let window = window_before(before, limit, base);
+        if window.0 >= window.1 {
+            return Ok(Vec::new());
+        }
+        fetch_page(id, base, limit, Some(window))
+    }
+}
+
 impl MarketSource for Mexc {
     fn fetch_klines(
         &self,
@@ -79,15 +108,7 @@ impl MarketSource for Mexc {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Mexc, timeframe)?;
-        let requested = PAGING.requested(plan, limit as usize);
-        if requested > PAGING.page {
-            // More base candles than one request holds: page back from now.
-            let end_ms = crate::clock::now_ms() + 1;
-            return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
-        }
-        let rows = fetch_page(&symbol_id(symbol), plan.base(), requested, None)?;
-        Ok(plan.shape(rows, requested, limit as usize))
+        kline_endpoint::latest(&Klines, symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -98,17 +119,7 @@ impl MarketSource for Mexc {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let plan = plan(DataSource::Mexc, timeframe)?;
-        let requested = PAGING.requested(plan, max);
-        let id = symbol_id(symbol);
-        let candles = PAGING.back(start_ms, end_ms, requested, |after, wanted| {
-            let window = window_before(after, wanted, plan.base());
-            if window.0 >= window.1 {
-                return Ok(Vec::new());
-            }
-            fetch_page(&id, plan.base(), wanted, Some(window))
-        })?;
-        Ok(plan.shape(candles, requested, max))
+        kline_endpoint::range(&Klines, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn asset_names(&self) -> Vec<(String, String)> {
@@ -290,6 +301,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::candles::plan;
 
     #[test]
     fn every_native_has_its_interval_and_socket_name_and_nothing_else_does() {
@@ -338,15 +350,6 @@ mod tests {
         assert_eq!(base_of("3D"), ("1d", 501 * 3));
         assert_eq!(base_of("3M"), ("1M", 501 * 3));
         assert_eq!(base_of("1Y"), ("1M", 501 * 12));
-    }
-
-    #[test]
-    fn a_request_wider_than_the_paging_is_capped_before_it_is_folded() {
-        // 500 candles of 1,439 minutes is 720,939 one-minute candles; paging reaches 20,000.
-        let wide = plan(DataSource::Mexc, Timeframe::parse("1439m").unwrap()).unwrap();
-        assert_eq!(PAGING.requested(wide, 500), PAGING.max_candles);
-        let hour = plan(DataSource::Mexc, Timeframe::HOUR_1).unwrap();
-        assert_eq!(PAGING.requested(hour, 500), 500);
     }
 
     #[test]
