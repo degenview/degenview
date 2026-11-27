@@ -106,7 +106,9 @@ pub fn plan(
         *declarations.entry(name).or_default() += 1;
     }
     let contested = |name: &str| {
-        !name.starts_with(SYNTHETIC)
+        // `_` discards a value: it names no variable, however often it is written.
+        name != "_"
+            && !name.starts_with(SYNTHETIC)
             && (program != Program::Script
                 || bindings.globals().contains(name)
                 || is_builtin(name)
@@ -435,6 +437,15 @@ mod tests {
                 .any(|name| name.starts_with("color#") && name.ends_with(".red")),
             "{read:?}"
         );
+    }
+
+    #[test]
+    fn a_discarded_name_is_never_a_variable_to_rename() {
+        let source = "if close > 0\n    [_, a] = f()\nif close < 0\n    [_, b] = f()\n";
+        for program in [Program::Script, Program::Library(1)] {
+            let declared = names(&renamed(source, program));
+            assert_eq!((declared[0].as_str(), declared[2].as_str()), ("_", "_"));
+        }
     }
 
     #[test]
