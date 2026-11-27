@@ -19,6 +19,10 @@ msgstr "Строка {line}: {message}"
 msgid "Script doesn't compile"
 msgstr "Скрипт не компилируется"
 
+#: src/ui/alert/script_list.rs
+msgid "Script stopped with an error"
+msgstr "Скрипт остановлен из-за ошибки"
+
 #: src/model/editor_theme/codec/mod.rs
 msgid "\"fontFamily\" is not a usable font name."
 msgstr "«fontFamily» не является подходящим названием шрифта."
