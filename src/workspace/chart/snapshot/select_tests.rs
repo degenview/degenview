@@ -148,7 +148,7 @@ impl Rig {
             workspace.handle_keyboard(ui);
         }
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
+            .frame(egui::Frame::new())
             .show(ui, |ui| {
                 let window = ui.max_rect();
                 workspace.render_grid(ui, paper, window)
@@ -281,7 +281,8 @@ fn the_charts_are_laid_out_side_by_side_with_room_for_a_selection() {
     let (a, b) = (rig.frame_of(0), rig.frame_of(1));
     assert!(a.width() > 200.0 && a.height() > 200.0, "{a:?}");
     assert!(b.width() > 200.0 && b.height() > 200.0, "{b:?}");
-    assert!(!a.intersects(b));
+    // Side by side: the two share an edge and nothing more.
+    assert!(a.right() <= b.left(), "{a:?} {b:?}");
 }
 
 fn layout(rig: &Rig) -> &LayoutCapture {

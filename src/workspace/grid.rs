@@ -227,7 +227,9 @@ impl ChartWorkspace {
         window: egui::Rect,
     ) {
         if self.charts.is_empty() {
-            self.show_empty_state(ui);
+            egui::Frame::new()
+                .inner_margin(egui::Margin::same(10))
+                .show(ui, |ui| self.show_empty_state(ui));
             return;
         }
         // The next visit to the empty page starts from fresh data.
@@ -241,8 +243,7 @@ impl ChartWorkspace {
             .map(|column| column.chart_ids.len())
             .max()
             .unwrap_or(0);
-        let card_height =
-            ChartLayout::grid_card_height(available.y, max_rows, ui.spacing().item_spacing.y);
+        let card_height = ChartLayout::grid_card_height(available.y, max_rows);
 
         let plan = self.columns.clone();
         let index_map: HashMap<u64, usize> = self
@@ -367,7 +368,16 @@ impl ChartWorkspace {
         let mut zones = ui::workspace::grid_drop::Zones::default();
         let grid_rect = ui.available_rect_before_wrap();
 
+        let column_lengths: Vec<usize> = plan
+            .iter()
+            .map(|column| column.chart_ids.len())
+            .chain(previewed.map(|_| 0))
+            .collect();
+
         ui.horizontal_top(|ui| {
+            // Cards abut, in a column and across them; inside a card the usual spacing returns.
+            let spacing = ui.spacing().item_spacing;
+            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
             ui.allocate_ui_with_layout(
                 egui::vec2(available.x, available.y),
                 egui::Layout::left_to_right(egui::Align::Min),
@@ -396,25 +406,21 @@ impl ChartWorkspace {
                                     egui::vec2(column_rect.width(), available.y),
                                 ),
                             ));
-                            for &chart_id in &column.chart_ids {
+                            for (row, &chart_id) in column.chart_ids.iter().enumerate() {
                                 let Some(&index) = index_map.get(&chart_id) else {
                                     continue;
                                 };
                                 let is_focused = multi && focused == Some(chart_id);
-                                let card = egui::Frame::new()
-                                    .fill(ui::theme::surface())
-                                    .corner_radius(10.0)
-                                    .inner_margin(egui::Margin::same(6))
-                                    .stroke(egui::Stroke::new(
-                                        1.0,
-                                        if replay_ms.is_some() {
-                                            ui::theme::REPLAY.gamma_multiply(0.45)
-                                        } else if is_focused {
-                                            ui::theme::ACCENT
-                                        } else {
-                                            ui::theme::border()
-                                        },
-                                    ));
+                                let slot = ui::workspace::grid_card::Slot {
+                                    column_lengths: &column_lengths,
+                                    column: column_index,
+                                    row,
+                                };
+                                let outline = if replay_ms.is_some() {
+                                    Some(ui::theme::REPLAY)
+                                } else {
+                                    is_focused.then_some(ui::theme::ACCENT)
+                                };
 
                                 let drawn = column_ui.allocate_ui_with_layout(
                                     egui::vec2(column_ui.available_width(), card_height),
@@ -438,38 +444,48 @@ impl ChartWorkspace {
                                                         }
                                                     })
                                                     .collect();
-                                            return card.show(ui, |ui| {
-                                                let mut action = ChartCardAction::default();
-                                                let data = card_env.as_ref().map(|env| {
-                                                    let runtime = chart
-                                                        .card_runtime
-                                                        .get_or_insert_with(|| env.runtime());
-                                                    env.view(runtime, &shown, ui.ctx())
-                                                });
-                                                let scope = data.as_ref().map_or_else(
-                                                    || shown.scope_name(&[]),
-                                                    |data| data.scope_name.clone(),
-                                                );
-                                                ui::portfolio::cards::header(
-                                                    ui,
-                                                    &shown,
-                                                    &scope,
-                                                    chart_id,
-                                                    favorites.contains(&instrument.key()),
-                                                    &memberships,
-                                                    &mut action,
-                                                );
-                                                if ui::portfolio::cards::body(
-                                                    ui,
-                                                    &mut shown,
-                                                    data.as_ref(),
-                                                    chart_id,
-                                                ) {
-                                                    action.focus_requested = true;
-                                                }
-                                                chart.card = Some(shown);
-                                                action
-                                            });
+                                            return ui::workspace::grid_card::show(
+                                                ui,
+                                                slot,
+                                                outline,
+                                                |ui| {
+                                                    ui.spacing_mut().item_spacing = spacing;
+                                                    ui::workspace::grid_card::padded(ui, |ui| {
+                                                        let mut action = ChartCardAction::default();
+                                                        let data = card_env.as_ref().map(|env| {
+                                                            let runtime = chart
+                                                                .card_runtime
+                                                                .get_or_insert_with(|| {
+                                                                    env.runtime()
+                                                                });
+                                                            env.view(runtime, &shown, ui.ctx())
+                                                        });
+                                                        let scope = data.as_ref().map_or_else(
+                                                            || shown.scope_name(&[]),
+                                                            |data| data.scope_name.clone(),
+                                                        );
+                                                        ui::portfolio::cards::header(
+                                                            ui,
+                                                            &shown,
+                                                            &scope,
+                                                            chart_id,
+                                                            favorites.contains(&instrument.key()),
+                                                            &memberships,
+                                                            &mut action,
+                                                        );
+                                                        if ui::portfolio::cards::body(
+                                                            ui,
+                                                            &mut shown,
+                                                            data.as_ref(),
+                                                            chart_id,
+                                                        ) {
+                                                            action.focus_requested = true;
+                                                        }
+                                                        chart.card = Some(shown);
+                                                        action
+                                                    })
+                                                },
+                                            );
                                         }
                                         chart.chart.set_series_cutoff(replay_ms);
                                         chart.chart.set_timeframe(timeframe);
@@ -523,19 +539,25 @@ impl ChartWorkspace {
                                                     }
                                                 })
                                                 .collect();
-                                        card.show(ui, |ui| {
+                                        ui::workspace::grid_card::show(ui, slot, outline, |ui| {
+                                            ui.spacing_mut().item_spacing = spacing;
                                             let mut action = ChartCardAction::default();
-                                            // The chart reaches the card's top edge and the header is drawn
-                                            // over it afterwards, so its widgets sit above the plot's own
-                                            // pointer area and its empty space still pans the chart.
+                                            // The chart reaches the card's edges and the header is drawn over
+                                            // it afterwards, so its widgets sit above the plot's own pointer
+                                            // area and its empty space still pans the chart.
+                                            let padding =
+                                                f32::from(ui::workspace::grid_card::PADDING);
                                             let header_rect = egui::Rect::from_min_size(
-                                                ui.available_rect_before_wrap().min,
+                                                ui.available_rect_before_wrap().min
+                                                    + egui::Vec2::splat(padding),
                                                 egui::vec2(
-                                                    ui.available_width(),
+                                                    ui.available_width() - 2.0 * padding,
                                                     ui::CHART_HEADER_HEIGHT,
                                                 ),
                                             );
-                                            chart.chart.set_top_inset(ui::CHART_HEADER_HEIGHT);
+                                            chart
+                                                .chart
+                                                .set_top_inset(padding + ui::CHART_HEADER_HEIGHT);
                                             let selected = selected_drawing
                                                 .as_ref()
                                                 .filter(|(chart, _)| *chart == chart_id)
@@ -716,25 +738,25 @@ impl ChartWorkspace {
                                     },
                                 );
 
-                                if drawn.inner.inner.focus_requested {
+                                if drawn.inner.focus_requested {
                                     commands.push(ChartCommand::Focus(chart_id));
                                 }
-                                if drawn.inner.inner.remove_requested {
+                                if drawn.inner.remove_requested {
                                     commands.push(ChartCommand::Remove(chart_id));
                                 }
-                                if drawn.inner.inner.settings_requested {
+                                if drawn.inner.settings_requested {
                                     commands.push(ChartCommand::Settings(chart_id));
                                 }
-                                if let Some(action) = drawn.inner.inner.indicator_action {
+                                if let Some(action) = drawn.inner.indicator_action {
                                     commands.push(ChartCommand::Indicator(chart_id, action));
                                 }
-                                if drawn.inner.inner.toggle_favorite {
+                                if drawn.inner.toggle_favorite {
                                     favorite_toggles.push(chart_id);
                                 }
-                                if let Some(change) = drawn.inner.inner.watchlist_change {
+                                if let Some(change) = drawn.inner.watchlist_change {
                                     watchlist_changes.push((chart_id, change));
                                 }
-                                if let Some(side) = drawn.inner.inner.quick_trade {
+                                if let Some(side) = drawn.inner.quick_trade {
                                     let reference_price =
                                         displayed_candles(&self.charts[index].candles, replay_ms)
                                             .last()
@@ -743,7 +765,7 @@ impl ChartWorkspace {
                                 }
                                 paper_actions.append(&mut self.charts[index].chart.paper.actions);
                                 live_actions.append(&mut self.charts[index].chart.live.actions);
-                                if let Some(side) = drawn.inner.inner.live_trade {
+                                if let Some(side) = drawn.inner.live_trade {
                                     live_trade = Some((chart_id, side));
                                 }
                                 zones.cards.push((column.id, chart_id, drawn.response.rect));

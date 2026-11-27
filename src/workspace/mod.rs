@@ -683,11 +683,7 @@ impl ChartWorkspace {
         }
 
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(ui::theme::background())
-                    .inner_margin(egui::Margin::same(10)),
-            )
+            .frame(egui::Frame::new().fill(ui::theme::background()))
             .show(ui, |ui| self.render_grid(ui, &mut lock(paper), window));
         if let Some(item) = self.watchlist_pane.take_new_tab_request() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));

@@ -13,6 +13,9 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   visible lighter gray, not faint), radius `kit::CARD_RADIUS` (10). Build cards with `kit::card_frame`.
   No gradients, lit top edge or drop shadows; shadows only for things floating above the app (menus,
   popovers, dialogs).
+- **The chart grid is the exception.** Its cards are square and fill the grid edge to edge, told
+  apart by one hairline seam; no gaps, radius or margin (`ui::workspace::grid_card`). Only focus and
+  replay outline a card.
 - **Icons stand alone.** Bare, in `theme::text_secondary()` (`text_primary()` when the row is
   selected): no tile, disc, circle, rounded square or colour behind. Cards use `kit::paint_card_badge`
   (18px, no tile); sidebars 16px icons. Exception: a brand logo (broker, data source) keeps its own
