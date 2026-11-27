@@ -406,6 +406,14 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
   empty list for as long as the chart stayed loaded (real window, BTCUSDT 5m with a `"1"` request,
   14:20: `n = 0`). A refresh the provider fails keeps the candles the run had; history runs never
   refresh (a rebuild asks again).
+  `barstate.ishistory` in a request is `!isrealtime`, the final incomplete candle included. Probes
+  A and B (2026-11-21) read ishistory 0 and isrealtime 0 there; that did not reproduce. Measured
+  2026-11-23 to 11-26 (flags islast isconfirmed ishistory isrealtime islastconfirmedhistory), the
+  setup of those probes with the market closed (AAPL 1D, `"1M"`, `lookahead_on`, US Thanksgiving)
+  reads `0 1 1 0 1` on Oct 1, 15 and 30 as they did and `1 0 1 0 0` on Nov 2, 10 and 20; the
+  incomplete candle also read ishistory 1 on XETR:SAP, TSE:7203 and ASX:BHP closed, on the history
+  bars of a live BTCUSDT 4h chart and in Bar Replay on BTCUSDT 1D. Not checked: the primary NASDAQ
+  feed and intraday replay (paid plans).
   `barstate.isconfirmed` in a request is true once the candle closed, and on history also for a
   developing candle (`lookahead_on`) that closes by the history's end (`ChartBar::loaded_end`): the
   candle is complete in the data whichever chart bar reads it. The candle still open at the
