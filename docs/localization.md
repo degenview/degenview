@@ -286,14 +286,19 @@ distribution puts Noto Sans CJK, WenQuanYi or Droid under another name and the b
 `:lang=zh-cn` can be a font with no Han characters; inside the Flatpak sandbox the ranking lists the
 host's fonts under `/run/host/fonts`, which the app can read. Checked with the real Flatpak build on
 Fedora (Noto Sans CJK) and Kali (Droid Sans Fallback only)). A machine with none of them shows the
-missing-glyph box for every Han character; nothing is bundled because a font with the catalog's
+missing-glyph box for every Han character; no font for the catalog is bundled because one with its
 characters is megabytes.
+
+The language picker lists each language by its own name whatever language is in use, so `简体中文` must
+draw in an English interface, which reads no Chinese font. Its four characters are bundled as a 4 KB
+subset of Noto Sans SC (`assets/fonts`), after the system's font in the chain. A test draws every
+language's own name with the app's fonts.
 
 egui centres each font's line box in the line and a Chinese font's line gap is large, so its
 characters sit about 0.23 em above Inter's; the font is shifted by the difference of the two
 fonts' own `ascent - height / 2` (read from their tables, `cjk::baseline_offset`), whichever Chinese
 font the machine has. Han characters a person types or a provider sends (a watchlist name, a
-Chinese market) are drawn only when the interface is Chinese.
+Chinese market) are drawn only when the interface is Chinese, apart from the four of the picker.
 
 ### German
 

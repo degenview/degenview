@@ -1,8 +1,8 @@
 # Bundled fonts
 
-Three fonts are compiled into DegenView (`include_bytes!` in `src/ui/theme/mod.rs`), both under the
+Four fonts are compiled into DegenView (`include_bytes!` in `src/ui/theme/`), all under the
 **SIL Open Font License 1.1** and none with a Reserved Font Name. The licence texts are
-`OFL-JetBrainsMono.txt`, `OFL-NotoSansSymbols2.txt` and `OFL-Inter.txt`. They are copied into the macOS app
+`OFL-JetBrainsMono.txt`, `OFL-NotoSansSymbols2.txt`, `OFL-Inter.txt` and `OFL-NotoSansSC.txt`. They are copied into the macOS app
 (`Contents/Resources/Licenses/`), the Flatpak (`/app/share/licenses/es.nico.degenview/`) and the Linux
 and Windows downloads, because the licence requires its text and the copyright notice to accompany
 every copy of the font, a program that embeds it included. DegenView itself is GPL-3.0-only; the fonts keep
@@ -13,6 +13,7 @@ their own licence.
 | `JetBrainsMonoNL-Regular.ttf` | JetBrains Mono NL Regular 2.304 | the Pine editor's code (the default font), and the first stop of the code families | `OFL-JetBrainsMono.txt` |
 | `Inter-Regular.ttf` | Inter 4.1 Regular (static) | the text of the whole app, first in the proportional family on every platform | `OFL-Inter.txt` |
 | `NotoSansSymbols2-subset.ttf` | Noto Sans Symbols 2 2.008, subset | the last glyph fallback of every font family | `OFL-NotoSansSymbols2.txt` |
+| `NotoSansSC-language-names.otf` | Noto Sans SC Regular 2.004, subset | the Han characters of the languages' own names in the language picker | `OFL-NotoSansSC.txt` |
 
 ## JetBrains Mono
 
@@ -93,3 +94,30 @@ pyftsubset NotoSansSymbols2-Regular.ttf \
 
 (`pyftsubset` is from `pip install fonttools`.) Not covered: the flags ⚐ ⚑, which are in Noto Sans
 Symbols, not Symbols 2.
+
+## Noto Sans SC
+
+`NotoSansSC-language-names.otf` is **Noto Sans SC** Regular (version 2.004, © 2014-2021 Adobe,
+<https://github.com/notofonts/noto-cjk>), licensed under the SIL Open Font License 1.1
+(`OFL-NotoSansSC.txt`: the copyright notice of the font's name table, then the repository's `LICENSE`). It
+declares no Reserved Font Name.
+
+The language picker lists every language by its own name in every interface language, and no other
+bundled font has a Han character, so this holds exactly the four of `简体中文` (3,960 bytes of the
+original's 8,331,336). A Chinese interface is drawn with the system's font instead (`ui::theme::cjk`).
+A new language whose own name needs characters no font has fails
+`every_language_s_own_name_draws_whatever_the_interface_language`: add its code points below, or its
+script's font beside this one.
+
+```
+sha256  f00f31be09aa3449f648a488c33b6e4d78fa917dd156568c5bfbc0174efb2b31  NotoSansSC-language-names.otf
+```
+
+To regenerate it (`hb-subset` is HarfBuzz's, here 15.2.0; another version may write other bytes):
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf
+shasum -a 256 NotoSansSC-Regular.otf   # faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9
+hb-subset NotoSansSC-Regular.otf --unicodes=U+7B80,U+4F53,U+4E2D,U+6587 \
+  --layout-features= --no-hinting '--name-IDs=*' --output-file=NotoSansSC-language-names.otf
+```

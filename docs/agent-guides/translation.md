@@ -70,6 +70,7 @@ column; word for word is wrong in one of them.
 | `assets/locales/messages.pot` | Only when you changed source text or added a context: `UPDATE_POT=1 cargo test --lib i18n::tests::the_template_lists`. |
 | Source with a shared msgid | `tr_c!` split, or the code that built language (see above). |
 | `src/ui/theme/mod.rs` (`base_fonts`) | Only for a script egui's fonts lack (CJK, Thai, Arabic, Hebrew, Indic). Latin, Cyrillic and Greek need nothing. |
+| `assets/fonts/` | A `native_name` in such a script must draw in every interface language: add its characters to the bundled subset (`assets/fonts/README.md`). A test fails until it does. |
 | `tools/bundle.sh` | `CFBundleLocalizations` in both `Info.plist` files. |
 | `packaging/windows/degenview.iss` | `[Languages]` entry and translated `[CustomMessages]` / shortcut names. |
 | `packaging/flatpak/es.nico.degenview.metainfo.xml` and `.desktop` | `xml:lang` summary and description, `Comment[<tag>]`. |

@@ -5,8 +5,8 @@ DegenView is licensed under the [GNU General Public License v3.0 only](../LICENS
 
 ## Fonts
 
-Two fonts are built into DegenView. They are not covered by the GPL. Each keeps its own licence, the
-[SIL Open Font License 1.1](https://openfontlicense.org), and neither declares a Reserved Font Name. The
+Four fonts are built into DegenView. They are not covered by the GPL. Each keeps its own licence, the
+[SIL Open Font License 1.1](https://openfontlicense.org), and none declares a Reserved Font Name. The
 licence texts are in [`assets/fonts`](../assets/fonts) and ship with every download (the macOS app's
 `Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives and the
 Windows installer's `licenses` folder).
@@ -20,5 +20,8 @@ Windows installer's `licenses` folder).
 - **Inter** (version 4.1, static Regular), the font of the app's text on every platform.
   Copyright 2016 The Inter Project Authors, <https://github.com/rsms/inter>.
   [Licence](../assets/fonts/OFL-Inter.txt).
+- **Noto Sans SC** (a subset of version 2.004), the Chinese characters of the language picker. Copyright
+  2014-2021 Adobe, <https://github.com/notofonts/noto-cjk>.
+  [Licence](../assets/fonts/OFL-NotoSansSC.txt).
 
 Where each file comes from, how to fetch it again and how it is checked: [`assets/fonts/README.md`](../assets/fonts/README.md).

@@ -79,6 +79,7 @@ Source: "{#ExePath}"; DestDir: "{app}"; DestName: "degenview.exe"; Flags: ignore
 Source: "..\..\assets\fonts\OFL-JetBrainsMono.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\OFL-NotoSansSymbols2.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\OFL-Inter.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\..\assets\fonts\OFL-NotoSansSC.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\README.md"; DestDir: "{app}\licenses"; DestName: "FONTS.md"; Flags: ignoreversion
 
 [Icons]
