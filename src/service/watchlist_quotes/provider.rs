@@ -749,10 +749,11 @@ const DOLLAR_QUOTES: [&str; 8] = [
 ];
 
 /// The tickers of a `/ticker/24hr` answer: a list, or the one object of a market asked for alone.
-/// A futures market asked for alone that no longer trades is answered with an empty object.
+/// A futures market asked for alone that no longer trades is answered with an empty object. An
+/// empty list says nothing about any market, so it is no answer.
 fn binance_tickers(answer: &Value) -> Option<&[Value]> {
     match answer {
-        Value::Array(tickers) => Some(tickers),
+        Value::Array(tickers) if !tickers.is_empty() => Some(tickers),
         Value::Object(ticker) if ticker.is_empty() => Some(&[]),
         Value::Object(ticker) if ticker.contains_key("symbol") => {
             Some(std::slice::from_ref(answer))

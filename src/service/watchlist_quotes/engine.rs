@@ -848,8 +848,10 @@ fn fetch_page(
     let outcome = bisect(provider, listing, requests, budget, &mut rejection);
     // Every symbol of a page refused one by one is the page's fault, not theirs: a request
     // the provider will not take (a revoked key, a region, a changed endpoint) must back
-    // the source off, not mark a whole library as unknown markets.
+    // the source off, not mark a whole library as unknown markets. Refusals that are the
+    // provider's own word (`Outcome::complete`) stand.
     if requests.len() > 1
+        && !outcome.complete
         && outcome.quotes.is_empty()
         && outcome.failed.is_empty()
         && outcome.rejected.len() == requests.len()
@@ -1147,6 +1149,71 @@ mod tests {
         lock(&engine).apply(&planned, &outcome, T0);
         assert_eq!(book.get(&gone).unwrap().freshness, Freshness::Unavailable);
         assert_eq!(lock(&engine).provider_health()[0].last_error, None);
+    }
+
+    /// Answers as the futures API does for its whole list, which is `body`.
+    struct FuturesList(&'static str);
+
+    impl QuoteProvider for FuturesList {
+        fn quotes(
+            &self,
+            listing: Listing,
+            requests: &[QuoteRequest],
+        ) -> Result<Outcome, QuoteFailure> {
+            crate::service::watchlist_quotes::provider::binance_outcome(
+                listing.market,
+                self.0,
+                requests,
+            )
+        }
+
+        fn resolve_chain(&self, _: &str) -> Option<String> {
+            None
+        }
+    }
+
+    #[test]
+    fn perpetuals_the_whole_list_lacks_are_unknown_even_when_none_asked_is_listed() {
+        let (engine, book, _) = setup();
+        let gone = [
+            id(DataSource::Binance, "OMGUSDT.P"),
+            id(DataSource::Binance, "WAVESUSDT.P"),
+        ];
+        lock(&engine).update(1, gone.to_vec(), true, T0);
+
+        let list = FuturesList(r#"[{"symbol":"BTCUSDT","lastPrice":"1"}]"#);
+        poll(&engine, &list, &|| T0);
+
+        for instrument in &gone {
+            let quote = book.get(instrument).unwrap();
+            assert_eq!(quote.freshness, Freshness::Unavailable);
+            assert_eq!(
+                quote.note.as_deref(),
+                Some("The provider doesn't know this market")
+            );
+        }
+        assert_eq!(lock(&engine).provider_health()[0].last_error, None);
+    }
+
+    #[test]
+    fn an_empty_futures_list_is_a_failure_and_names_no_market_unknown() {
+        let (engine, book, _) = setup();
+        let held = [
+            id(DataSource::Binance, "BTCUSDT.P"),
+            id(DataSource::Binance, "ETHUSDT.P"),
+        ];
+        lock(&engine).update(1, held.to_vec(), true, T0);
+
+        poll(&engine, &FuturesList("[]"), &|| T0);
+
+        assert_eq!(
+            lock(&engine).provider_health()[0].last_error.as_deref(),
+            Some("Unexpected Binance response")
+        );
+        assert_ne!(
+            book.get(&held[0]).and_then(|quote| quote.note).as_deref(),
+            Some("The provider doesn't know this market")
+        );
     }
 
     #[test]
