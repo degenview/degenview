@@ -22,6 +22,9 @@ pub struct PreviewChart {
     wanted: Arc<Mutex<String>>,
     key: String,
     since: Instant,
+    /// The frame that last drew the chart, so a test knows whether it is still waited on.
+    #[cfg(test)]
+    shown_in: Option<u64>,
 }
 
 impl PreviewChart {
@@ -31,6 +34,8 @@ impl PreviewChart {
             wanted: Arc::default(),
             key: String::new(),
             since: Instant::now(),
+            #[cfg(test)]
+            shown_in: None,
         }
     }
 
@@ -43,7 +48,18 @@ impl PreviewChart {
             wanted: Arc::clone(&self.wanted),
             key: String::new(),
             since: Instant::now(),
+            #[cfg(test)]
+            shown_in: None,
         }
+    }
+
+    /// Whether the last frame of `ctx` drew a chart whose day has not been read yet (the highlight
+    /// is still resting, or the fetch is under way).
+    #[cfg(test)]
+    pub fn is_loading(&self, ctx: &egui::Context) -> bool {
+        self.shown_in
+            .is_some_and(|frame| frame + 1 == ctx.cumulative_frame_nr())
+            && self.loader.get(&self.key).is_none()
     }
 
     /// Draws `market`'s last day in `rect`, ending at the price quoted beside it and coloured as
@@ -55,6 +71,10 @@ impl PreviewChart {
         market: &InstrumentId,
         quote: Option<&WatchlistQuote>,
     ) {
+        #[cfg(test)]
+        {
+            self.shown_in = Some(ui.ctx().cumulative_frame_nr());
+        }
         let key = market.key();
         if self.key != key {
             self.key.clone_from(&key);
@@ -141,6 +161,7 @@ mod tests {
     fn only_the_market_the_highlight_rests_on_is_fetched() {
         let mut chart = PreviewChart::new(fetch);
         let mut screen = Screen::new(vec2(320.0, 200.0));
+        let ctx = screen.ctx.clone();
         let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(300.0, 100.0));
         let mut show = |chart: &mut PreviewChart, symbol: &str| {
             let market = InstrumentId::new(DataSource::Binance, symbol);
@@ -153,13 +174,14 @@ mod tests {
             ASKED.lock().expect("asked").is_empty(),
             "passing over asks nothing"
         );
-        std::thread::sleep(SETTLE);
-        show(&mut chart, "CCCUSDT");
-        for _ in 0..200 {
-            if !ASKED.lock().expect("asked").is_empty() {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            show(&mut chart, "CCCUSDT");
+            if !chart.is_loading(&ctx) {
                 break;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            assert!(Instant::now() < deadline, "the chart was never read");
+            std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(*ASKED.lock().expect("asked"), ["CCCUSDT"]);
     }

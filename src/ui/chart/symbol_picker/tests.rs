@@ -8,7 +8,7 @@ use crate::service::net::http;
 use crate::service::{EventInfo, ProviderError};
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn pair(source: DataSource, symbol: &str, base: &str, quote: &str) -> SearchResult {
     SearchResult::new(source, symbol, symbol).pair(base, quote)
@@ -290,11 +290,40 @@ impl Rig {
         (found, output)
     }
 
-    /// Runs frames until the searches have answered.
+    /// Whether the picker still waits for something it draws: a search (or the pause before it),
+    /// the highlighted asset's other markets, the names or the preview's chart.
+    fn is_waiting(&mut self) -> bool {
+        if !self.picker.is_open() {
+            return false;
+        }
+        let ctx = self.screen.ctx.clone();
+        let highlighted = self.picker.highlighted.as_ref().and_then(Item::market);
+        let highlighted = highlighted.cloned();
+        self.picker.listing(&ctx).searching
+            || highlighted.is_some_and(|of| self.picker.search.related(&ctx, &of).is_none())
+            || self.picker.caches.names.is_loading()
+            || self.picker.caches.chart.is_loading(&ctx)
+    }
+
+    /// Runs frames until every answer is in and drawn, then a few more for egui's animations
+    /// (the harness's clock moves a tenth of a second a frame).
     fn settle(&mut self) {
-        for _ in 0..40 {
+        /// Frames in a row with nothing to wait for.
+        const STILL: usize = 5;
+        // Only ends a test whose answer never comes; nothing waits this long when it does.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut still = 0;
+        while still < STILL {
+            // Idle on both sides of the frame: it drew every answer and asked for nothing new.
+            let idle = !self.is_waiting();
             self.frame(Vec::new());
-            std::thread::sleep(Duration::from_millis(10));
+            if idle && !self.is_waiting() {
+                still += 1;
+            } else {
+                still = 0;
+                assert!(Instant::now() < deadline, "the picker never settled");
+                std::thread::sleep(Duration::from_millis(5));
+            }
         }
     }
 
@@ -1653,7 +1682,6 @@ fn gallery_of_the_symbol_picker() {
         let mut rig = Rig::sized(width, height, query);
         rig.quote = Some(bitcoin.clone());
         rig.can_overlay = true;
-        std::thread::sleep(Duration::from_millis(250));
         rig.settle();
         let (_, output) = rig.frame_with_output(Vec::new());
         rig.screen.save(name, output);
