@@ -5,8 +5,8 @@ use super::{APPLY_DELAY, PreviewState};
 use crate::model::pine::script::ScriptType;
 use crate::pine::compiler;
 use crate::pine::compiler::program::VisualOutput;
+use crate::pine::inputs::values::{self, InputEdit, InputValues};
 use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
-use crate::pine_studio::inputs::{self, InputEdit, InputValues};
 use crate::pine_studio::workspace::PreviewInput;
 use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::PREVIEW_INSTANCE;
@@ -60,7 +60,7 @@ impl PreviewState {
         if self.applied_source.as_deref() != Some(input.source.as_str()) {
             // The script's declared inputs, with the user's overrides kept where they still fit.
             let program = compiler::compile(&input.source, Limits::default(), &LibraryRegistry);
-            self.input_values = inputs::prune_values(&self.input_values, &program.input_schema);
+            self.input_values = values::prune_values(&self.input_values, &program.input_schema);
             self.input_schema = program.input_schema;
             self.card.set_pine_inputs(self.input_values.clone());
             self.card.set_pine_source(Some(input.source.clone()));
@@ -70,7 +70,7 @@ impl PreviewState {
 
     /// Applies a card's change: a value equal to the default is no override at all.
     pub(in crate::pine_studio) fn apply_input_edit(&mut self, edit: InputEdit) {
-        inputs::apply_edit(&mut self.input_values, &self.input_schema, edit);
+        values::apply_edit(&mut self.input_values, &self.input_schema, edit);
         self.card.set_pine_inputs(self.input_values.clone());
         self.inputs_dirty_at = Some(Instant::now());
     }

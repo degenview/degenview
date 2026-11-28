@@ -3,7 +3,7 @@
 //! positional argument is matched to the parameter in its place.
 
 use crate::pine::runtime::value::RuntimeValue;
-use crate::pine::syntax::ast::{Argument, Expression, Literal};
+use crate::pine::syntax::ast::{Argument, Expression};
 
 const PLAIN: &[&str] = &[
     "defval", "title", "tooltip", "inline", "group", "display", "active",
@@ -108,11 +108,11 @@ impl<'a> InputArguments<'a> {
         constant(&self.find(key)?.value)?.number()
     }
 
-    /// Whether the call passes a literal `true` for `key`.
-    pub fn flag(&self, key: &str) -> bool {
+    /// Whether the call passes a constant `true` for `key`.
+    pub fn flag(&self, key: &str, constant: &dyn Fn(&Expression) -> Option<RuntimeValue>) -> bool {
         matches!(
-            self.find(key).map(|a| &a.value),
-            Some(Expression::Literal(Literal::Bool(true), _))
+            self.find(key).and_then(|a| constant(&a.value)),
+            Some(RuntimeValue::Bool(true))
         )
     }
 }
@@ -120,6 +120,7 @@ impl<'a> InputArguments<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::syntax::ast::Literal;
     use crate::pine::syntax::token::SourceRange;
 
     fn literal(value: Literal) -> Expression {
@@ -199,6 +200,6 @@ mod tests {
         assert_eq!(area.string("group", &constant), Some("grp".into()));
         let plain = InputArguments::new("input.bool", &args);
         assert_eq!(plain.string("inline", &constant), Some("grp".into()));
-        assert!(!plain.flag("confirm"));
+        assert!(!plain.flag("confirm", &constant));
     }
 }

@@ -33,6 +33,17 @@ pub enum InputValue {
     Source(String),
 }
 
+impl InputValue {
+    /// The value as an input of type `kind` holds it: a whole number written for a float input
+    /// (`input.price(100)`) is a float.
+    pub fn typed(self, kind: ValueType) -> Self {
+        match (self, kind) {
+            (Self::Int(value), ValueType::Float) => Self::Float(value as f64),
+            (value, _) => value,
+        }
+    }
+}
+
 /// What an input is edited with, beyond what its value says: the string inputs of `input.symbol`,
 /// `input.timeframe`, `input.session` and `input.text_area` and the float of `input.price` hold the
 /// same kinds of value as `input.string` and `input.float` but are not typed the same way.
@@ -75,6 +86,16 @@ pub struct InputSchema {
 }
 
 impl InputSchema {
+    /// Gives every value the type its input declares. Values for no input of the schema are kept
+    /// as they are.
+    pub fn type_values(&self, values: &mut HashMap<String, InputValue>) {
+        for input in &self.inputs {
+            if let Some(value) = values.get_mut(&input.id) {
+                *value = value.clone().typed(input.kind);
+            }
+        }
+    }
+
     /// Whether the user can change `input` while the inputs hold `values` (an input with no entry
     /// holds its default). A greyed-out input still holds its value, and the script reads it.
     pub fn is_active(&self, input: &InputDefinition, values: &HashMap<String, InputValue>) -> bool {
@@ -340,6 +361,8 @@ pub struct CompiledProgram {
     pub statements: Vec<Statement>,
     pub declaration: DeclarationMetadata,
     pub input_schema: InputSchema,
+    /// The `input.*` calls of the schema: call-site number to the variable each declares.
+    pub input_sites: HashMap<usize, String>,
     pub diagnostics: Vec<Diagnostic>,
     /// Names declared with `method`, which `value.name(…)` resolves ahead of builtins.
     pub method_names: HashSet<String>,

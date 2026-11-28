@@ -6,6 +6,7 @@ use crate::format::{civil_from_days, days_from_civil};
 use crate::i18n::{tr, tr_c, tr_n};
 use crate::model::pine::instance::StoredInput as Stored;
 use crate::pine::compiler::program::{InputControl, InputDefinition, InputSchema, InputValue};
+use crate::pine::inputs::values::{InputEdit, InputValues};
 use crate::pine::syntax::token::ValueType;
 use crate::ui::icons::Icon;
 use crate::ui::kit::StepDirection as Direction;
@@ -14,16 +15,6 @@ use crate::ui::theme;
 use eframe::egui::{self, Align, Color32, FontId, Id, Layout, Margin, Ui, vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-/// Override map by input id; an input with no entry shows its default.
-pub type InputValues = HashMap<String, InputValue>;
-
-/// What a card changed.
-#[derive(Clone, Debug, PartialEq)]
-pub enum InputEdit {
-    Set(String, InputValue),
-    Reset,
-}
 
 // MARK: Persistence
 
@@ -100,39 +91,6 @@ impl InputsStore {
                 let _ = std::fs::create_dir_all(dir);
             }
             let _ = std::fs::write(path, bytes);
-        }
-    }
-}
-
-/// Keeps only the overrides whose input still exists with the same kind of value.
-pub fn prune_values(values: &InputValues, schema: &InputSchema) -> InputValues {
-    values
-        .iter()
-        .filter(|(id, value)| {
-            schema.inputs.iter().any(|input| {
-                input.id == **id
-                    && std::mem::discriminant(&input.default_value) == std::mem::discriminant(value)
-            })
-        })
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
-}
-
-/// Applies a card's change: a value equal to the default is no override at all.
-pub fn apply_edit(values: &mut InputValues, schema: &InputSchema, edit: InputEdit) {
-    match edit {
-        InputEdit::Reset => values.clear(),
-        InputEdit::Set(id, value) => {
-            let default = schema
-                .inputs
-                .iter()
-                .find(|input| input.id == id)
-                .map(|input| input.default_value.clone());
-            if default.as_ref() == Some(&value) {
-                values.remove(&id);
-            } else {
-                values.insert(id, value);
-            }
         }
     }
 }
@@ -1026,20 +984,6 @@ mod tests {
     }
 
     #[test]
-    fn values_for_removed_or_retyped_inputs_are_pruned() {
-        let schema = InputSchema {
-            inputs: vec![def("len", ValueType::Int, InputValue::Int(1), None)],
-        };
-        let mut values = InputValues::new();
-        values.insert("len".into(), InputValue::Int(9));
-        values.insert("gone".into(), InputValue::Int(1));
-        let kept = prune_values(&values, &schema);
-        assert_eq!(kept.len(), 1);
-        values.insert("len".into(), InputValue::Float(1.0));
-        assert!(prune_values(&values, &schema).is_empty(), "type changed");
-    }
-
-    #[test]
     fn typed_integers_parse_whole_numbers_only() {
         assert_eq!(parse_int("14"), Some(14));
         assert_eq!(parse_int("  -3 "), Some(-3));
@@ -1205,33 +1149,6 @@ mod tests {
         let [r, g, b, a] = c.to_srgba_unmultiplied();
         assert_eq!(a, 0x80);
         assert!(r.abs_diff(0x11) <= 1 && g.abs_diff(0x22) <= 1 && b.abs_diff(0x33) <= 1);
-    }
-
-    #[test]
-    fn a_value_equal_to_the_default_is_no_override() {
-        let schema = InputSchema {
-            inputs: vec![def("len", ValueType::Int, InputValue::Int(14), None)],
-        };
-        let mut values = InputValues::new();
-        apply_edit(
-            &mut values,
-            &schema,
-            InputEdit::Set("len".into(), InputValue::Int(30)),
-        );
-        assert_eq!(values.get("len"), Some(&InputValue::Int(30)));
-        apply_edit(
-            &mut values,
-            &schema,
-            InputEdit::Set("len".into(), InputValue::Int(14)),
-        );
-        assert!(values.is_empty(), "back at the default");
-        apply_edit(
-            &mut values,
-            &schema,
-            InputEdit::Set("len".into(), InputValue::Int(5)),
-        );
-        apply_edit(&mut values, &schema, InputEdit::Reset);
-        assert!(values.is_empty());
     }
 
     #[test]

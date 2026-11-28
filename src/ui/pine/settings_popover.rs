@@ -7,9 +7,10 @@ use crate::i18n::tr;
 use crate::model::pine::instance::PineInstance;
 use crate::pine::compiler;
 use crate::pine::compiler::program::InputSchema;
+use crate::pine::inputs::values::{self, InputValues};
 use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow};
 use crate::pine::syntax::token::Limits;
-use crate::pine_studio::inputs::{self, InputValues};
+use crate::pine_studio::inputs;
 use crate::store::scripts::registry::LibraryRegistry;
 use crate::ui::icons::Icon;
 use crate::ui::kit::popover;
@@ -64,6 +65,8 @@ impl PineSettingsPopover {
         } else {
             declared.to_owned()
         };
+        let mut values = instance.input_values();
+        program.input_schema.type_values(&mut values);
         Self {
             chart_id,
             instance_id: instance.id,
@@ -71,7 +74,7 @@ impl PineSettingsPopover {
             title,
             schema: program.input_schema,
             rows,
-            inputs: instance.input_values(),
+            inputs: values,
             style: instance.style_overrides.clone(),
             page: Page::Inputs,
         }
@@ -182,7 +185,7 @@ impl PineSettingsPopover {
             }
             Page::Inputs => {
                 for edit in inputs::cards(ui, &self.schema, &self.inputs) {
-                    inputs::apply_edit(&mut self.inputs, &self.schema, edit);
+                    values::apply_edit(&mut self.inputs, &self.schema, edit);
                 }
             }
         }
