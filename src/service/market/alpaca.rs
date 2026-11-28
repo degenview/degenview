@@ -156,24 +156,26 @@ impl MarketSource for Alpaca {
                 )
             })
             .collect();
-        Ok(rank_results(results, query).into_iter().take(30).collect())
+        Ok(rank_results(results, query)
+            .into_iter()
+            .take(HITS)
+            .collect())
     }
 }
 
+/// How many hits a search keeps, where the pair venues keep `search::HITS`: a company name matches
+/// as well as a ticker.
+const HITS: usize = 30;
+
 /// One tradable US equity from `/v2/assets`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Asset {
+pub(super) struct Asset {
     symbol: String,
     name: String,
 }
 
 /// Every tradable asset (the response is tens of megabytes), downloaded at most once a day.
-static CATALOG: Catalog<Asset> = Catalog::new("catalog_alpaca");
-
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
+pub(super) static CATALOG: Catalog<Asset> = Catalog::new("catalog_alpaca");
 
 fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError> {
     let url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity";

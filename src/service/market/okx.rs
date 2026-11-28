@@ -6,13 +6,13 @@
 //! with a `code` other than `"0"`.
 
 use super::catalog::Catalog;
+use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
-use super::search_rank::normalize;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
-use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -96,14 +96,9 @@ impl MarketSource for Okx {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        // `BTC-USDT`, `btc/usdt` and `BTCUSDT` are one query.
-        let needle = normalize(query);
-        if needle.is_empty() {
-            return Ok(Vec::new());
-        }
-        let pairs = CATALOG.get(download_pairs)?;
-        let results = matching_pairs(&pairs, &needle);
-        Ok(rank_results(results, query).into_iter().take(20).collect())
+        search::find(DataSource::Okx, query, search::HITS, || {
+            CATALOG.get(download_pairs)
+        })
     }
 }
 
@@ -182,34 +177,26 @@ pub(crate) fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderE
     })
 }
 
-/// The listed markets whose name, without its dash, contains `needle` (letters and digits, upper
-/// case).
-fn matching_pairs(pairs: &[Pair], needle: &str) -> Vec<SearchResult> {
-    pairs
-        .iter()
-        .filter(|pair| normalize(&pair.id).contains(needle))
-        .map(|pair| {
-            SearchResult::new(DataSource::Okx, pair.id.clone(), pair.id.clone())
-                .pair(pair.base.clone(), pair.quote.clone())
-        })
-        .collect()
-}
-
 /// One tradable spot market from `/public/instruments`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
+pub(super) struct Pair {
     id: String,
     base: String,
     quote: String,
 }
 
-/// Every spot market that is live, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_okx");
+impl ListedMarket for Pair {
+    fn id(&self) -> &str {
+        &self.id
+    }
 
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
+    fn sides(&self) -> Option<(&str, &str)> {
+        Some((&self.base, &self.quote))
+    }
 }
+
+/// Every spot market that is live, downloaded at most once a day.
+pub(super) static CATALOG: Catalog<Pair> = Catalog::new("catalog_okx");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     let body = http::get_text(
@@ -239,6 +226,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use std::sync::Arc;
 
     #[test]
     fn every_native_has_its_bar_and_nothing_else_does() {
@@ -399,11 +387,21 @@ mod tests {
                 quote: "BTC".into(),
             },
         ];
+        let pairs = Arc::new(pairs);
         for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
-            let found = matching_pairs(&pairs, &normalize(query));
+            let found = search::find(DataSource::Okx, query, search::HITS, || {
+                Ok(Arc::clone(&pairs))
+            })
+            .unwrap();
             assert_eq!(found.len(), 1, "{query}");
             assert_eq!(found[0].symbol, "BTC-USDT");
+            assert_eq!(found[0].base.as_deref(), Some("BTC"));
+            assert_eq!(found[0].quote.as_deref(), Some("USDT"));
         }
-        assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
+        let all = search::find(DataSource::Okx, "BTC", search::HITS, || {
+            Ok(Arc::clone(&pairs))
+        })
+        .unwrap();
+        assert_eq!(all.len(), 2);
     }
 }

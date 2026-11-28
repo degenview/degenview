@@ -5,26 +5,21 @@ use crate::model::DataSource;
 use crate::model::InstrumentId;
 use crate::model::exchange::Market;
 use crate::model::market::binance::join_market;
+use crate::service::market::catalog::search::HITS;
 use crate::service::market::search_rank::normalize;
 use crate::service::{ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The most hits one market kind contributes.
-const HITS_PER_MARKET: usize = 20;
-
 /// The hits of both markets, ranked together. The spot list is what a pair's name means, so a
 /// search without it has failed whatever the perpetuals' list says; without the perpetuals' list
-/// the spot hits stand.
+/// the spot hits stand. Each market keeps its best `HITS`.
 pub(super) fn search(query: &str, needle: &str) -> Result<Vec<SearchResult>, ProviderError> {
     let [spot, perpetual] = [Market::Spot, Market::Perpetual].map(|market| {
         let endpoints = endpoints(market);
         let pairs = endpoints.catalog.get(|| download_pairs(endpoints))?;
         let hits = matching_pairs(&pairs, needle, market);
-        Ok(rank_results(hits, query)
-            .into_iter()
-            .take(HITS_PER_MARKET)
-            .collect())
+        Ok(rank_results(hits, query).into_iter().take(HITS).collect())
     });
     merge(query, spot, perpetual)
 }
@@ -67,13 +62,6 @@ pub(in crate::service) struct Pair {
     /// The smallest step the price moves in, as written.
     #[serde(default)]
     tick: Option<String>,
-}
-
-/// Forgets the lists held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    for market in [Market::Spot, Market::Perpetual] {
-        endpoints(market).catalog.clear_memory();
-    }
 }
 
 /// What this one download may read: six times the spot list of today, so listings can grow
