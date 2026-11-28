@@ -205,7 +205,13 @@ impl ChartCard {
                 self.layer.update(
                     ui,
                     response,
-                    &view.projection(plot, bars, self.appearance.price_format(), ui.ctx()),
+                    &view.projection(
+                        plot,
+                        bars,
+                        self.appearance.price_format(),
+                        self.bar_calendar(),
+                        ui.ctx(),
+                    ),
                     drawing,
                 );
             }
@@ -223,7 +229,13 @@ impl ChartCard {
             self.handle_demonstration(
                 ui,
                 response,
-                &view.projection(plot, bars, self.appearance.price_format(), ui.ctx()),
+                &view.projection(
+                    plot,
+                    bars,
+                    self.appearance.price_format(),
+                    self.bar_calendar(),
+                    ui.ctx(),
+                ),
                 plot,
             );
         }
@@ -423,6 +435,7 @@ impl ChartCard {
             self.appearance.style.effective_type(source)
         };
         self.drawn_type = chart_type;
+        self.grid = source.grid();
         let constructed = self.constructed_series(candles, chart_type);
         // Editing a price-based type's construction (box size, reversal) rebuilds its bars, which
         // is a different series for a stored view as much as another type is.
@@ -500,7 +513,8 @@ impl ChartCard {
                 maximum: view.scale.maximum,
             });
         }
-        let projection = view.projection(plot, bars, self.appearance.price_format(), ui.ctx());
+        let format = self.appearance.price_format();
+        let projection = view.projection(plot, bars, format, self.bar_calendar(), ui.ctx());
         pointer.context = self.context_request(
             &response,
             &regions,

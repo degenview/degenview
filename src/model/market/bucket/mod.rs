@@ -22,9 +22,11 @@
 use crate::format::{civil_from_days, days_from_civil};
 use crate::model::{Kline, TimeUnit, Timeframe};
 
+mod calendar;
 mod grid;
 mod plan;
 
+pub use calendar::Calendar;
 pub use grid::Grid;
 pub use plan::FoldPlan;
 

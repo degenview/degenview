@@ -5,6 +5,7 @@ use super::*;
 use crate::model::chart::snapshot::framing::Base;
 use crate::model::chart::viewport::zoom::{self, Selection, Slots};
 use crate::model::chart::viewport::{HorizontalViewport, VerticalViewport};
+use crate::model::market::bucket::Calendar;
 
 /// The geometry of the last frame, as a test needs it to aim a pointer.
 #[cfg(test)]
@@ -159,6 +160,7 @@ impl View {
         plot: Rect,
         candles: &'a [Kline],
         format: PriceFormat,
+        calendar: Option<Calendar>,
         ctx: &egui::Context,
     ) -> Projection<'a> {
         Projection {
@@ -167,7 +169,7 @@ impl View {
             measure: TextMeasure::new(ctx),
             format,
             scale: &self.scale,
-            times: TimeIndex::new(candles),
+            times: TimeIndex::new(candles, calendar),
             start: self.start,
             slot_width: self.slot_width,
             lead: self.lead,
@@ -176,6 +178,16 @@ impl View {
 }
 
 impl ChartCard {
+    /// The clock the drawn bars follow; `None` for a price-based chart and before a timeframe
+    /// is set.
+    pub(super) fn bar_calendar(&self) -> Option<Calendar> {
+        let timeframe = self.timeframe?;
+        self.drawn_type.is_time_based().then_some(Calendar {
+            grid: self.grid,
+            timeframe,
+        })
+    }
+
     /// Tells the card how much of the plot's top the header covers (zero when there is none). The
     /// plot reaches the card's top edge; the price scale starts below the header.
     pub fn set_top_inset(&mut self, inset: f32) {

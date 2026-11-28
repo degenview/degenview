@@ -39,7 +39,7 @@ pub(super) fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projec
         pixels_per_point: 2.0,
         format: PriceFormat::AUTO,
         scale,
-        times: TimeIndex::new(data),
+        times: TimeIndex::new(data, None),
         start: 0,
         slot_width: 100.0,
         lead: 0.0,
