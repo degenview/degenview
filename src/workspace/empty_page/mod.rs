@@ -38,7 +38,7 @@ impl Default for EmptyPageCache {
             was_focused: false,
             last_drawn: None,
             state: EmptyStateState::default(),
-            trends: TrendLoader::new(TREND_DAYS),
+            trends: TrendLoader::new(TREND_DAYS, crate::service::fetch_klines),
         }
     }
 }

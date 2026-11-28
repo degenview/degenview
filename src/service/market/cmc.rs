@@ -498,7 +498,7 @@ fn parse_date(text: &str) -> Option<i64> {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     const LATEST_FEAR: &str = r#"{"data":{"value":56,"update_time":"2026-11-15T08:00:00.000Z","value_classification":"Neutral"},"status":{"error_code":0}}"#;
     const FEAR_HISTORY: &str = r#"{"data":[
@@ -827,7 +827,7 @@ mod tests {
 
     #[test]
     fn a_refusal_without_a_key_asks_for_one_and_with_one_blames_the_key_or_the_plan() {
-        use crate::service::net::http::Error;
+        use crate::service::market::ports::http::Error;
         let kind = |key, code| {
             ProviderError::http_with(
                 DataSource::CoinMarketCap,

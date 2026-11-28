@@ -20,7 +20,7 @@ pub mod tradingview;
 pub mod update;
 pub mod watchlist_quotes;
 pub mod webhook;
-pub mod wiring;
+pub(in crate::service) mod wiring;
 pub mod work_queue;
 
 pub use market::error::ProviderError;
@@ -29,7 +29,6 @@ use crate::model::exchange::Market;
 use crate::model::market::asset_name::AssetNames;
 use crate::model::market::oanda::OandaCredentials;
 use crate::model::{DataSource, InstrumentId, Kline, PmSeries, Timeframe};
-use keychain::api_keys::CredentialPair;
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
 
@@ -220,7 +219,38 @@ pub fn alpaca_test_connection(key_id: &str, secret_key: &str) -> Result<(), Prov
 
 /// Settings ▸ Oanda ▸ Test Connection, with the login typed on the page.
 pub fn oanda_test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
-    wiring::venues().oanda.test_connection(&login.trimmed())
+    wiring::venues().oanda.test_connection(login)
+}
+
+/// Settings ▸ CoinMarketCap ▸ Test Connection, with the key saved (or in the environment).
+pub fn cmc_test_connection() -> Result<(), ProviderError> {
+    wiring::venues().cmc.test_connection()
+}
+
+/// The last reading fetched for a CoinMarketCap "Latest" chart, if any. Cheap enough to ask at
+/// every frame: it reads what a fetch kept.
+pub fn cmc_latest_reading(symbol: &str) -> Option<market::cmc::LatestReading> {
+    wiring::venues().cmc.latest_reading(symbol)
+}
+
+/// The names the venues that publish them call the assets they list, from their day-long market
+/// lists. Blocks.
+pub fn listed_asset_names() -> std::sync::Arc<market::names::Listed> {
+    market::names::listed(
+        DataSource::ALL
+            .into_iter()
+            .flat_map(|source| for_source(source).asset_names()),
+    )
+}
+
+/// The month every watchlist sidebar draws. One for the app, so tabs and windows showing the same
+/// markets share their reads.
+pub fn month_trends() -> &'static market::trend::TrendLoader {
+    static MONTH: std::sync::LazyLock<market::trend::TrendLoader> =
+        std::sync::LazyLock::new(|| {
+            market::trend::TrendLoader::new(market::trend::MONTH_DAYS, fetch_klines)
+        });
+    &MONTH
 }
 
 /// Fetch candles of `timeframe` from the provider behind `source`, oldest first. A source folds

@@ -340,7 +340,7 @@ mod tests {
     fn a_source_that_did_not_answer_gives_nothing_not_its_newest_candles() {
         let failed = ProviderError::http(
             crate::model::DataSource::Binance,
-            crate::service::net::http::Error::Status(503),
+            crate::service::market::ports::http::Error::Status(503),
         );
         let got = intrabars_or_series(Err(failed), || panic!("the series is not asked for"));
         assert_eq!(got, None);

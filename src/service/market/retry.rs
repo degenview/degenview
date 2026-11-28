@@ -28,7 +28,7 @@ pub fn while_transient<T>(
 mod tests {
     use super::*;
     use crate::model::{DataSource, Timeframe};
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     const NO_WAIT: [Duration; 2] = [Duration::ZERO; 2];
 

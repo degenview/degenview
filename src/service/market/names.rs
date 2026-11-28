@@ -89,13 +89,10 @@ pub fn load_coins() -> Arc<CoinIndex> {
     coin_index::load().0
 }
 
-/// The names the venues that publish them list with their markets, from their day-long market
-/// lists; the first venue to name a ticker keeps it. Blocks.
-pub fn load_listed() -> Arc<Listed> {
+/// The names the venues that publish them list with their markets, as `(ticker, name)` pairs from
+/// their day-long market lists; the first venue to name a ticker keeps it.
+pub fn listed(names: impl IntoIterator<Item = (String, String)>) -> Arc<Listed> {
     let mut listed = Listed::new();
-    let names = DataSource::ALL
-        .into_iter()
-        .flat_map(|source| crate::service::for_source(source).asset_names());
     for (ticker, name) in names {
         if let Some(name) = sanitize(&name) {
             listed.entry(ticker).or_insert(name);

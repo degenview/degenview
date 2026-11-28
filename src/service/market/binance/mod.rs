@@ -230,7 +230,7 @@ fn parse_row(listing: Listing, row: &Value) -> Result<Kline, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::{self, Retry};
+    use crate::service::market::ports::http::{self, Retry};
 
     const MINUTE: i64 = 60_000;
     const NOON: i64 = Rig::NOON;

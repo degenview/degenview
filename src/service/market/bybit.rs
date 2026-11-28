@@ -301,7 +301,7 @@ mod tests {
     use super::*;
     use crate::service::market::candles::plan;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::{self, Retry};
+    use crate::service::market::ports::http::{self, Retry};
     use std::sync::Arc;
 
     const MINUTE: i64 = 60_000;

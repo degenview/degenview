@@ -7,8 +7,10 @@
 2. Implement `service::MarketSource` on a value built with its ports: `new(&MarketContext)` keeps
    the ones it uses (`Http` for every request, `Clock` for the time it plans by, `Credentials` for
    a key, `CacheStore` for a `Catalog`'s lookups; `service::market::ports`) and nothing under
-   `service::market` calls a global (`net::http::get_text`, `crate::clock::now_ms`,
-   `service::keychain`, `lookup::shared`: `layout_tests.rs` fails for it). A request is
+   `service::market` names a global (`service::net::http`, `ureq`, `crate::clock`, `SystemTime`,
+   `service::keychain`, `cache::lookup`, `service::for_source`: `layout_tests.rs` fails for it,
+   whatever the `use` or alias). The ports have their own `http::Error`, `http::Retry` and
+   `cache::Cached`; import those, never the transport's. A request is
    `Request::get(url)` and, where the venue needs it, `.headers(..)`, `.retry(Retry::Never)`,
    `.max_body_bytes(..)`, `.paced(Pace::..)` (a host's own schedule) or `.statuses(..)` (what its
    HTTP statuses mean, below), sent through

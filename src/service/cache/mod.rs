@@ -219,7 +219,7 @@ fn forget_where(forget: impl Fn(&str) -> bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn candle(open_time: i64, close: f64) -> Kline {

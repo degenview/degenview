@@ -9,7 +9,7 @@ use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
-use crate::service::net::http::Retry;
+use crate::service::market::ports::http::Retry;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -407,7 +407,7 @@ fn parse_iso8601(text: &str) -> Option<i64> {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     fn venue(rig: &Rig) -> Alpaca {
         rig.credentials.save_alpaca("key-id", "secret");
@@ -460,19 +460,12 @@ mod tests {
             .expect("bars");
         let sent = rig.http.sent();
         assert_eq!(sent.len(), 1);
-        assert!(
-            sent[0].url.starts_with(
-                "https://data.alpaca.markets/v2/stocks/AAPL/bars?timeframe=1Day&start="
-            ),
-            "{}",
-            sent[0].url
-        );
-        assert!(
-            sent[0]
-                .url
-                .ends_with("&limit=3&adjustment=all&feed=sip&sort=desc"),
-            "{}",
-            sent[0].url
+        // The clock stands at noon on 2026-11-16 and three daily bars are looked for six days back
+        // (two days a bar, for the weekends between sessions).
+        assert_eq!(
+            sent[0].url,
+            "https://data.alpaca.markets/v2/stocks/AAPL/bars?timeframe=1Day\
+             &start=2026-11-10T12:00:00.000Z&limit=3&adjustment=all&feed=sip&sort=desc"
         );
         assert_eq!(headers_of(&sent[0]), KEY_HEADERS);
         assert_eq!(sent[0].retry, http::Retry::Transient);
@@ -967,7 +960,7 @@ mod tests {
     }
 
     fn status_means(statuses: Statuses, code: u16) -> ErrorKind {
-        use crate::service::net::http::Error;
+        use crate::service::market::ports::http::Error;
         ProviderError::http_with(DataSource::Alpaca, statuses, Error::Status(code)).kind
     }
 
@@ -1007,7 +1000,7 @@ mod tests {
         // The asset list and Test Connection name none.
         assert_eq!(
             status_means(super::ACCOUNT_STATUSES, 400),
-            ErrorKind::Transport(crate::service::net::http::Error::Status(400))
+            ErrorKind::Transport(crate::service::market::ports::http::Error::Status(400))
         );
     }
 }

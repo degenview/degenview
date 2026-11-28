@@ -146,7 +146,7 @@ fn get_with(
 ) -> Result<String, ProviderError> {
     let venue = venue.into();
     crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
-        .map_err(|error| ProviderError::http_with(venue, statuses, error))
+        .map_err(|error| ProviderError::http_with(venue, statuses, error.into()))
 }
 
 /// The 24-hour ticker URL of `market` for `requests`. Spot takes a list: `symbols` is a JSON
@@ -1233,7 +1233,7 @@ mod tests {
         ProviderError::http_with(
             listing,
             quote_statuses(listing, &requests),
-            crate::service::net::http::Error::Status(code),
+            crate::service::market::ports::http::Error::Status(code),
         )
     }
 
@@ -1302,7 +1302,7 @@ mod tests {
             let failure = quote_failure(source.into(), &["AAA", "BBB", "CCC"], 400);
             assert_eq!(
                 failure.kind,
-                ErrorKind::Transport(crate::service::net::http::Error::Status(400)),
+                ErrorKind::Transport(crate::service::market::ports::http::Error::Status(400)),
                 "{source:?}"
             );
             assert_eq!(failure.kind.scope(), Scope::Source, "{source:?}");

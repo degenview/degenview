@@ -44,11 +44,17 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
   edge where it is shown.
 - **Ports.** A market venue (`service::market`) is a value built with the ports it uses
   (`service::market::ports`: `Http`, `Clock`, `Credentials`, `CacheStore`) and calls no global: not
-  `service::net::http::get_text`, `crate::clock::now_ms`, `service::keychain` nor
-  `cache::lookup::shared`. The app's implementations are in `service::wiring`, which builds the one
-  set of venues (`wiring::venues()`, what `service::for_source` answers from); a test builds a venue
-  from `ports::fakes::Rig` and checks the requests it makes and the errors it maps without a
-  network. `layout_tests.rs` fails for a venue that reaches past its ports.
+  `service::net::http`, `ureq`, `crate::clock`, `SystemTime::now`, `service::keychain`,
+  `cache::lookup`, nor `service::for_source` / `service::fetch_*`, which answer from the app's
+  wiring. The ports speak in their own types (`http::Error`, `http::Retry`, `cache::Cached`), so a
+  venue does not depend on `service::net` or `service::cache`. The app's implementations are in
+  `service::wiring` (private to `service`: the layers above go through `service::for_source`,
+  `service::cmc_test_connection` and the like), which builds the one set of venues
+  (`wiring::venues()`, what `service::for_source` answers from) and converts between the two sets
+  of types; a test builds a venue from `ports::fakes::Rig` and checks the requests it makes and the
+  errors it maps without a network. `layout_tests.rs` fails for production code in `service::market`
+  that names such a path by `use`, alias or full path; `fx_rates` and `coin_index` are listed as
+  known debt, which only shrinks. Secrets in a type that holds them are kept out of its `Debug`.
 - **Locks.** Take a `Mutex`/`RwLock` through `crate::lock::{lock, read, write}`, which recover from a
   poisoning panic; no `.expect("… poisoned")` and no hand-rolled `unwrap_or_else(PoisonError::into_inner)`.
   Code that treats a poisoned store as unavailable (`if let Ok(store) = store.lock()`) does so on

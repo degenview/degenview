@@ -8,7 +8,8 @@ use std::time::Duration;
 use ureq::http::Response;
 
 const TIMEOUT: Duration = Duration::from_secs(12);
-const MAX_BODY_BYTES: u64 = 8 * 1024 * 1024;
+/// The most a body may hold unless the caller asks for more.
+pub(in crate::service) const MAX_BODY_BYTES: u64 = 8 * 1024 * 1024;
 
 static AGENT: LazyLock<FollowingAgent> = LazyLock::new(|| {
     FollowingAgent::new(|config| {

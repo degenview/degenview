@@ -8,7 +8,7 @@ use crate::model::market::natives::{GECKOTERMINAL_HISTORY_DAYS, GECKOTERMINAL_PA
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::ProviderError;
 use crate::service::market::error::ErrorKind;
-use crate::service::net::http::{Error, Retry};
+use crate::service::market::ports::http::{Error, Retry};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -524,7 +524,7 @@ mod tests {
 
         rig.http.fail(
             "before_timestamp=",
-            crate::service::net::http::Error::Status(401),
+            crate::service::market::ports::http::Error::Status(401),
         );
         let past = gecko
             .fetch_klines_range(POOL, Timeframe::HOUR_1, 0, end - 24 * HOUR, 5)
@@ -532,14 +532,16 @@ mod tests {
         assert!(past.is_empty());
 
         // A refusal of the newest page is a failure like any other.
-        rig.http
-            .fail("/ohlcv/", crate::service::net::http::Error::Status(401));
+        rig.http.fail(
+            "/ohlcv/",
+            crate::service::market::ports::http::Error::Status(401),
+        );
         assert_eq!(
             gecko
                 .fetch_klines(POOL, Timeframe::HOUR_1, 3)
                 .unwrap_err()
                 .kind,
-            ErrorKind::Transport(crate::service::net::http::Error::Status(401))
+            ErrorKind::Transport(crate::service::market::ports::http::Error::Status(401))
         );
     }
 

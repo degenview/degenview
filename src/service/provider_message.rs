@@ -5,11 +5,23 @@
 use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::market::error::{ErrorKind, ProviderError};
+use crate::service::market::ports::http;
 
 /// Who failed, as a message names it: the service that answered in the venue's place, or the
 /// venue (`Binance perp` for its perpetuals).
 fn provider(error: &ProviderError) -> String {
     error.via.map_or_else(|| error.venue.label(), str::to_owned)
+}
+
+/// What a failed request says for itself, after "Network error:".
+fn transport_detail(error: &http::Error) -> String {
+    match error {
+        http::Error::Status(code) => format!("HTTP {code}"),
+        http::Error::BodyTooLarge(limit) => {
+            tr!("response exceeds {limit} bytes", limit = limit).to_owned()
+        }
+        http::Error::Network(detail) => detail.clone(),
+    }
 }
 
 /// The failure as the chart, the symbol picker, Settings and MCP word it.
@@ -76,7 +88,9 @@ pub fn message(error: &ProviderError) -> String {
             symbol = symbol,
             feed = feed
         ),
-        ErrorKind::Transport(error) => tr!("Network error: {error}", error = error),
+        ErrorKind::Transport(error) => {
+            tr!("Network error: {error}", error = transport_detail(error))
+        }
         ErrorKind::Malformed(_) => tr!(
             "{provider} sent an answer DegenView could not read",
             provider = provider
@@ -118,7 +132,7 @@ pub fn quote_message(error: &ProviderError) -> String {
 mod tests {
     use super::*;
     use crate::model::{DataSource, Timeframe};
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     fn said(source: DataSource, kind: ErrorKind) -> String {
         message(&ProviderError::new(source, kind))
@@ -217,6 +231,21 @@ mod tests {
             ),
             "Network error: HTTP 500"
         );
+        for (error, wording) in [
+            (
+                http::Error::BodyTooLarge(1_024),
+                "Network error: response exceeds 1024 bytes",
+            ),
+            (
+                http::Error::Network("timed out".to_owned()),
+                "Network error: timed out",
+            ),
+        ] {
+            assert_eq!(
+                said(DataSource::Binance, ErrorKind::Transport(error)),
+                wording
+            );
+        }
         let malformed = ProviderError::malformed(DataSource::Binance, "expected a candle array");
         assert_eq!(
             message(&malformed),

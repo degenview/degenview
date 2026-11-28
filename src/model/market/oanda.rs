@@ -35,16 +35,35 @@ impl OandaEnvironment {
     }
 }
 
-/// The Oanda account id, personal access token and the environment they belong to, as one item.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+/// The Oanda account id, personal access token and the environment they belong to, as one login.
+/// How it is stored is the keychain's business (`service::keychain::api_keys`); its `Debug` leaves
+/// the token out, so a login in a log or a failed assertion does not leak it.
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct OandaCredentials {
-    #[serde(rename = "accountId")]
     pub account_id: String,
-    #[serde(rename = "accessToken")]
     pub access_token: String,
-    /// Items saved before the choice existed were all sent to the live API.
-    #[serde(default)]
     pub environment: OandaEnvironment,
+}
+
+impl OandaCredentials {
+    /// The login without the whitespace a pasted id or token may carry.
+    pub fn trimmed(&self) -> Self {
+        Self {
+            account_id: self.account_id.trim().to_owned(),
+            access_token: self.access_token.trim().to_owned(),
+            environment: self.environment,
+        }
+    }
+}
+
+impl std::fmt::Debug for OandaCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OandaCredentials")
+            .field("account_id", &self.account_id)
+            .field("access_token", &"<redacted>")
+            .field("environment", &self.environment)
+            .finish()
+    }
 }
 
 #[cfg(test)]
@@ -63,5 +82,34 @@ mod tests {
         );
         assert_eq!(OandaEnvironment::parse("demo"), None);
         assert_eq!(OandaEnvironment::parse(""), None);
+    }
+
+    #[test]
+    fn a_login_is_trimmed_in_its_id_and_token_and_keeps_its_environment() {
+        let pasted = OandaCredentials {
+            account_id: " 101-001-1 \n".to_owned(),
+            access_token: "\ttoken ".to_owned(),
+            environment: OandaEnvironment::Practice,
+        };
+        assert_eq!(
+            pasted.trimmed(),
+            OandaCredentials {
+                account_id: "101-001-1".to_owned(),
+                access_token: "token".to_owned(),
+                environment: OandaEnvironment::Practice,
+            }
+        );
+    }
+
+    #[test]
+    fn a_login_printed_for_debugging_does_not_hold_its_token() {
+        let login = OandaCredentials {
+            account_id: "101-001-1".to_owned(),
+            access_token: "s3cr3t-token".to_owned(),
+            environment: OandaEnvironment::Live,
+        };
+        let printed = format!("{login:?} {login:#?}");
+        assert!(!printed.contains("s3cr3t-token"), "{printed}");
+        assert!(printed.contains("101-001-1"), "the account is no secret");
     }
 }

@@ -4,7 +4,7 @@ use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::samples;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::error::ErrorKind;
-use crate::service::net::http::Retry;
+use crate::service::market::ports::http::Retry;
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
@@ -195,7 +195,7 @@ fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     fn venue(rig: &Rig) -> CoinGecko {
         CoinGecko::new(&rig.context())

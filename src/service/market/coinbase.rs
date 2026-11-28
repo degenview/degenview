@@ -323,7 +323,7 @@ fn parse_page(body: &str, granularity: i64) -> Result<Vec<Kline>, ProviderError>
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::{self, Retry};
+    use crate::service::market::ports::http::{self, Retry};
 
     const HOUR: i64 = 3_600_000;
     const NOON: i64 = Rig::NOON;

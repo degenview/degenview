@@ -3,7 +3,7 @@
 //! reads are written where they are shown (`service::provider_message`), in the language in use.
 
 use crate::model::{DataSource, Listing, Timeframe};
-use crate::service::net::http;
+use crate::service::market::ports::http;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderError {

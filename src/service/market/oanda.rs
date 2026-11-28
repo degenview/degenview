@@ -24,7 +24,7 @@ use super::search_rank::normalize;
 use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
-use crate::service::net::http::Retry;
+use crate::service::market::ports::http::Retry;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -161,7 +161,8 @@ impl Oanda {
     /// Settings ▸ Oanda ▸ Test Connection: the account's instrument list, asked for with the given
     /// login (the one typed on the page, saved or not), which is what Oanda charts need it for.
     pub fn test_connection(&self, login: &OandaCredentials) -> Result<(), ProviderError> {
-        self.get_account(login, &instruments_path(&login.account_id), Retry::Never)
+        let login = login.trimmed();
+        self.get_account(&login, &instruments_path(&login.account_id), Retry::Never)
             .map(|_| ())
     }
 
@@ -415,7 +416,7 @@ mod tests {
     use super::*;
     use crate::service::market::candles::plan;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
     use std::sync::Arc;
 
     const DAY_MS: i64 = 86_400_000;
@@ -642,15 +643,26 @@ mod tests {
     }
 
     #[test]
-    fn a_connection_test_uses_the_login_it_is_given_and_asks_once() {
+    fn a_connection_test_sends_the_login_it_is_given_trimmed_and_asks_once() {
         let rig = Rig::new();
         rig.http
             .on("/accounts/101-001/instruments", r#"{"instruments":[]}"#);
-        venue(&rig)
-            .test_connection(&practice_login())
-            .expect("a connection");
+        let pasted = OandaCredentials {
+            account_id: " 101-001 ".into(),
+            access_token: " tok\n".into(),
+            environment: OandaEnvironment::Practice,
+        };
+        venue(&rig).test_connection(&pasted).expect("a connection");
         let sent = rig.http.sent();
         assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://api-fxpractice.oanda.com/v3/accounts/101-001/instruments"
+        );
+        assert_eq!(
+            sent[0].headers,
+            [("Authorization".to_owned(), "Bearer tok".to_owned())]
+        );
         assert_eq!(sent[0].retry, Retry::Never);
         assert_eq!(rig.credentials.oanda_lookups(), 0);
     }
@@ -828,7 +840,7 @@ mod tests {
 
     #[test]
     fn a_400_names_an_unknown_instrument_only_where_one_was_asked_for() {
-        use crate::service::net::http::Error;
+        use crate::service::market::ports::http::Error;
         let kind = |statuses, code| {
             ProviderError::http_with(DataSource::Oanda, statuses, Error::Status(code)).kind
         };

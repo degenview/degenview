@@ -1,15 +1,13 @@
 //! Stand-ins for the ports, so a venue's tests run on recorded answers: no network, no Keychain,
 //! no disk, and a clock that stands still.
 
-use super::cache::CacheStore;
+use super::cache::{CacheStore, Cached};
 use super::clock::Clock;
 use super::context::MarketContext;
 use super::credentials::Credentials;
-use super::http::{Http, Pace, Request};
+use super::http::{Error, Http, Pace, Request, Retry};
 use crate::lock::lock;
 use crate::model::market::oanda::OandaCredentials;
-use crate::service::cache::lookup::Hit;
-use crate::service::net::http::{Error, Retry};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
@@ -188,7 +186,7 @@ impl MemoryCache {
 }
 
 impl CacheStore for MemoryCache {
-    fn get_value(&self, namespace: &str, key: &str, ttl: Duration) -> Option<Hit<Value>> {
+    fn get_value(&self, namespace: &str, key: &str, ttl: Duration) -> Option<Cached<Value>> {
         let (at_ms, value) = lock(&self.entries)
             .get(&(namespace.to_owned(), key.to_owned()))?
             .clone();
@@ -199,7 +197,7 @@ impl CacheStore for MemoryCache {
                 .max(0)
                 .unsigned_abs(),
         );
-        Some(Hit {
+        Some(Cached {
             value,
             age,
             fresh: age < ttl,

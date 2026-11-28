@@ -130,7 +130,7 @@ mod tests {
     use super::*;
     use crate::service::market::error::ErrorKind;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     #[test]
     fn a_query_outside_ascii_is_escaped_in_the_search_address() {

@@ -293,7 +293,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
 
     #[test]
     fn every_native_has_its_interval_in_minutes_and_nothing_else_does() {

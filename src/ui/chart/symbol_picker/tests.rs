@@ -5,7 +5,7 @@ use crate::model::{Kline, Timeframe};
 use crate::service::market::coin_index::CoinIndex;
 use crate::service::market::error::ErrorKind;
 use crate::service::market::names::Listed;
-use crate::service::net::http;
+use crate::service::market::ports::http;
 use crate::service::{EventInfo, ProviderError};
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};

@@ -710,7 +710,7 @@ mod tests {
         ));
         dex.error = Some(ProviderError::http(
             DataSource::DexScreener,
-            crate::service::net::http::Error::Status(429),
+            crate::service::market::ports::http::Error::Status(429),
         ));
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
         assert_eq!(dex.refresh_after(), SLOW_RETRY_INTERVAL);
@@ -722,7 +722,7 @@ mod tests {
         assert_eq!(kraken.refresh_after(), SLOW_REFRESH_INTERVAL);
         kraken.error = Some(ProviderError::http(
             DataSource::Kraken,
-            crate::service::net::http::Error::Status(429),
+            crate::service::market::ports::http::Error::Status(429),
         ));
         assert_eq!(kraken.refresh_after(), SLOW_RETRY_INTERVAL);
     }

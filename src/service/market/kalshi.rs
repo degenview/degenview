@@ -394,7 +394,7 @@ impl Kalshi {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::{self, Retry};
+    use crate::service::market::ports::http::{self, Retry};
 
     fn window_of(timeframe: &str) -> (i64, i64) {
         kalshi_window(Timeframe::parse(timeframe).unwrap())

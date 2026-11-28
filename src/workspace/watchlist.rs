@@ -8,7 +8,6 @@ use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
 use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{EntryId, WatchlistError, WatchlistInstrument, WatchlistNotice};
-use crate::service::market::trend;
 use crate::service::system::file_dialog;
 use crate::service::work_queue::{self, Pending};
 use crate::ui::watchlist::sidebar::{
@@ -150,7 +149,7 @@ impl ChartWorkspace {
             let lists = store.lists();
             let flags = store.flags();
             let quote = |id: &InstrumentId| self.quote_book.get(id);
-            let trends = trend::month().snapshot();
+            let trends = crate::service::month_trends().snapshot();
             let focused_market = self
                 .resolved_focused_id()
                 .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
@@ -181,7 +180,7 @@ impl ChartWorkspace {
             true,
         );
         let repaint = ctx.clone();
-        trend::month().request(
+        crate::service::month_trends().request(
             self.watchlist_pane.sidebar.trend_demand(),
             Arc::new(move || repaint.request_repaint()),
         );

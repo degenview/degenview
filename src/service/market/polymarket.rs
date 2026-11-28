@@ -320,7 +320,7 @@ impl Polymarket {
 mod tests {
     use super::*;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::{self, Retry};
+    use crate::service::market::ports::http::{self, Retry};
 
     fn venue(rig: &Rig) -> Polymarket {
         Polymarket::new(&rig.context())

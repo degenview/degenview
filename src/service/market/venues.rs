@@ -36,7 +36,9 @@ pub struct Venues {
 }
 
 impl Venues {
-    pub fn new(context: &MarketContext) -> Self {
+    /// Every venue, built with `context`. The app has one set (`service::wiring::venues`), which
+    /// is what the cache clears, so only the wiring and tests build one.
+    pub(in crate::service) fn new(context: &MarketContext) -> Self {
         Self {
             alpaca: Alpaca::new(context),
             binance: Binance::new(context),

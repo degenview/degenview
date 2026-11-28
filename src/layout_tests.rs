@@ -368,25 +368,368 @@ fn no_layer_imports_a_layer_above_it() {
     );
 }
 
-/// What `service/market` may not reach for, with the port a venue has instead
-/// (`service::market::ports`): each is text that names a global the ports stand in front of. The
-/// implementations the app runs on are in `service::wiring`, which is where they are named.
-const PORTED_GLOBALS: &[(&str, &str)] = &[
-    ("keychain", "Credentials"),
-    ("lookup::shared", "CacheStore"),
-    ("http::get_", "Http"),
-    ("http::head_", "Http"),
-    ("rate_limit::", "a Pace of Http"),
+/// What `service/market` may not name, as the path of a module or item and what a venue has
+/// instead (`service::market::ports`). A segment ending in `*` is a prefix: `fetch_*` is every
+/// `service::fetch_…`. The implementations the app runs on are in `service::wiring`, which is
+/// where they are named; `service::for_source` and the `service::fetch_*` functions answer from
+/// them, so a venue that calls one reaches the app's own wiring from inside it.
+const PORTED_GLOBALS: &[(&[&str], &str)] = &[
+    (&["crate", "service", "net", "http"], "the Http port"),
+    (&["crate", "service", "net", "agent"], "the Http port"),
+    (
+        &["crate", "service", "net", "rate_limit"],
+        "a Pace of the Http port",
+    ),
+    (&["ureq"], "the Http port"),
+    (
+        &["crate", "service", "cache", "lookup"],
+        "the CacheStore port",
+    ),
+    (&["crate", "service", "keychain"], "the Credentials port"),
+    (&["std", "time", "SystemTime"], "the Clock port"),
+    (
+        &["crate", "service", "wiring"],
+        "the context the venue is built with",
+    ),
+    (
+        &["crate", "service", "for_source"],
+        "the venue the caller holds",
+    ),
+    (
+        &["crate", "service", "fetch_*"],
+        "the venue or the fetch the caller holds",
+    ),
 ];
 
-/// Uses of [`PORTED_GLOBALS`] that are not behind a port yet, as `(file under src/, text)`. The
-/// coin index is no venue but an application service with a global of its own, so it is not given
-/// ports with them; the list only shrinks, and an entry that no longer matches fails the test too.
+/// Uses of [`PORTED_GLOBALS`] that are not behind a port yet, as `(file under src/, path named)`.
+/// None is a venue. The coin index is an application service with a global of its own, and the FX
+/// rates keep a transport of their own (raw replies, their own retry schedule); both are planned
+/// for `docs/architecture-refactor/plan.md` step 6. The list only shrinks, and an entry that no
+/// longer matches fails the test too.
 const KNOWN_UNPORTED: &[(&str, &str)] = &[
-    ("service/market/coin_index.rs", "lookup::shared"),
-    ("service/market/coin_index.rs", "http::get_"),
-    ("service/market/coin_index.rs", "rate_limit::"),
+    (
+        "service/market/coin_index.rs",
+        "crate::service::cache::lookup",
+    ),
+    ("service/market/coin_index.rs", "crate::service::net::http"),
+    (
+        "service/market/coin_index.rs",
+        "crate::service::net::rate_limit",
+    ),
+    ("service/market/fx_rates.rs", "crate::service::for_source"),
+    ("service/market/fx_rates.rs", "crate::service::net::agent"),
+    ("service/market/fx_rates.rs", "std::time::SystemTime"),
+    ("service/market/fx_rates.rs", "ureq"),
 ];
+
+/// A token of Rust source as far as paths go: a name, `::`, or any other single character.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Token {
+    Name(String),
+    PathSep,
+    Punct(char),
+}
+
+/// The tokens of `source`, with comments dropped and the inside of every string and character
+/// literal left out (a path in a message or a doc is no dependency).
+fn tokens(source: &str) -> Vec<Token> {
+    let chars: Vec<char> = source.chars().collect();
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        let ch = chars[at];
+        let next = chars.get(at + 1).copied();
+        match ch {
+            '/' if next == Some('/') => {
+                while at < chars.len() && chars[at] != '\n' {
+                    at += 1;
+                }
+            }
+            '/' if next == Some('*') => {
+                let mut depth = 0;
+                while at < chars.len() {
+                    match (chars[at], chars.get(at + 1)) {
+                        ('/', Some('*')) => {
+                            depth += 1;
+                            at += 2;
+                        }
+                        ('*', Some('/')) => {
+                            depth -= 1;
+                            at += 2;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => at += 1,
+                    }
+                }
+            }
+            '"' => at = end_of_string(&chars, at + 1, 0),
+            'r' | 'b'
+                if raw_string_hashes(&chars, at).is_some()
+                    && !chars
+                        .get(at.wrapping_sub(1))
+                        .is_some_and(|before| before.is_alphanumeric() || *before == '_') =>
+            {
+                let hashes = raw_string_hashes(&chars, at).unwrap_or(0);
+                let quote = chars[at..].iter().position(|c| *c == '"').unwrap_or(0);
+                at = end_of_string(&chars, at + quote + 1, hashes + 1);
+            }
+            '\'' => {
+                // A character literal is `'x'` or `'\…'`; anything else is a lifetime.
+                let literal = match (next, chars.get(at + 2)) {
+                    (Some('\\'), _) => chars[at + 2..]
+                        .iter()
+                        .position(|c| *c == '\'')
+                        .map(|n| n + 3),
+                    (Some(_), Some('\'')) => Some(3),
+                    _ => None,
+                };
+                at += literal.unwrap_or(1);
+            }
+            ':' if next == Some(':') => {
+                found.push(Token::PathSep);
+                at += 2;
+            }
+            c if c.is_alphabetic() || c == '_' => {
+                let mut name = String::new();
+                while at < chars.len() && (chars[at].is_alphanumeric() || chars[at] == '_') {
+                    name.push(chars[at]);
+                    at += 1;
+                }
+                found.push(Token::Name(name));
+            }
+            c if c.is_whitespace() => at += 1,
+            c => {
+                found.push(Token::Punct(c));
+                at += 1;
+            }
+        }
+    }
+    found
+}
+
+/// How many `#` open the raw string (`r"…"`, `br#"…"#`) that starts at `at`, if one does.
+fn raw_string_hashes(chars: &[char], at: usize) -> Option<usize> {
+    let mut cursor = at;
+    if chars[cursor] == 'b' {
+        cursor += 1;
+    }
+    if chars.get(cursor) != Some(&'r') {
+        return None;
+    }
+    cursor += 1;
+    let hashes = chars[cursor..].iter().take_while(|c| **c == '#').count();
+    (chars.get(cursor + hashes) == Some(&'"')).then_some(hashes)
+}
+
+/// Where the string whose contents start at `from` ends (after its closing quote and the `closing`
+/// hashes of a raw one, which has no escapes; 0 for an ordinary string).
+fn end_of_string(chars: &[char], from: usize, closing: usize) -> usize {
+    let mut at = from;
+    while at < chars.len() {
+        match chars[at] {
+            '\\' if closing == 0 => at += 2,
+            '"' if closing <= 1 => return at + 1,
+            '"' if chars[at + 1..].iter().take_while(|c| **c == '#').count() >= closing - 1 => {
+                return at + closing;
+            }
+            _ => at += 1,
+        }
+    }
+    chars.len()
+}
+
+/// The paths a `use` tree names, one per leaf, with the name each leaf is known by (`None` for a
+/// glob). `tokens` start after the `use` keyword and stop before its `;`.
+fn use_leaves(tokens: &[Token], prefix: &[String]) -> Vec<(Vec<String>, Option<String>)> {
+    let mut leaves = Vec::new();
+    let mut path = prefix.to_vec();
+    let mut at = 0;
+    let mut alias = None;
+    while at < tokens.len() {
+        match &tokens[at] {
+            Token::Name(name) if name == "as" => {
+                if let Some(Token::Name(local)) = tokens.get(at + 1) {
+                    alias = Some(local.clone());
+                }
+                at += 2;
+            }
+            Token::Name(name) if name == "self" && path.len() > prefix.len() => at += 1,
+            Token::Name(name) if name == "self" => {
+                // `a::{self, b}`: the module `a` itself.
+                at += 1;
+            }
+            Token::Name(name) => {
+                path.push(name.clone());
+                at += 1;
+            }
+            Token::PathSep => at += 1,
+            Token::Punct('*') => {
+                path.push("*".to_owned());
+                at += 1;
+            }
+            Token::Punct('{') => {
+                let mut depth = 0;
+                let mut end = at;
+                for (offset, token) in tokens[at..].iter().enumerate() {
+                    match token {
+                        Token::Punct('{') => depth += 1,
+                        Token::Punct('}') => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = at + offset;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let inner = &tokens[at + 1..end];
+                let mut start = 0;
+                let mut level = 0;
+                for (offset, token) in inner.iter().enumerate() {
+                    match token {
+                        Token::Punct('{') => level += 1,
+                        Token::Punct('}') => level -= 1,
+                        Token::Punct(',') if level == 0 => {
+                            leaves.extend(use_leaves(&inner[start..offset], &path));
+                            start = offset + 1;
+                        }
+                        _ => {}
+                    }
+                }
+                if start < inner.len() {
+                    leaves.extend(use_leaves(&inner[start..], &path));
+                }
+                return leaves;
+            }
+            Token::Punct(_) => at += 1,
+        }
+    }
+    if path.len() > prefix.len() || tokens.iter().any(|t| *t == Token::Name("self".to_owned())) {
+        let local = alias.or_else(|| path.last().filter(|last| *last != "*").cloned());
+        leaves.push((path, local));
+    }
+    leaves
+}
+
+/// Every path `source` names, resolved: a `use` leaf as it is written out, and a path in the code
+/// through the names the file's `use`s gave its first segment (`use a::b as c; c::d()` names
+/// `a::b::d`). `module` is where the file sits (`["crate", "service", "market", "okx"]`), which is
+/// what `self::` and `super::` start from.
+fn named_paths(source: &str, module: &[String]) -> Vec<Vec<String>> {
+    let tokens = tokens(source);
+    let absolute = |path: Vec<String>| -> Vec<String> {
+        let mut base = module.to_vec();
+        let mut rest = path.as_slice();
+        match rest.first().map(String::as_str) {
+            Some("self") => rest = &rest[1..],
+            Some("super") => {
+                while rest.first().map(String::as_str) == Some("super") {
+                    base.pop();
+                    rest = &rest[1..];
+                }
+            }
+            _ => return path,
+        }
+        base.extend(rest.iter().cloned());
+        base
+    };
+    let mut imported = BTreeMap::new();
+    let mut named = Vec::new();
+    let mut at = 0;
+    let mut spans = Vec::new();
+    while at < tokens.len() {
+        let is_use = tokens[at] == Token::Name("use".to_owned())
+            && (at == 0 || tokens[at - 1] != Token::PathSep)
+            && tokens.get(at + 1) != Some(&Token::Punct('('));
+        if is_use {
+            let end = tokens[at..]
+                .iter()
+                .position(|token| *token == Token::Punct(';'))
+                .map_or(tokens.len(), |offset| at + offset);
+            for (path, local) in use_leaves(&tokens[at + 1..end], &[]) {
+                let path = absolute(path);
+                if let Some(local) = local {
+                    imported.insert(local, path.clone());
+                }
+                named.push(path);
+            }
+            spans.push((at, end));
+            at = end;
+        }
+        at += 1;
+    }
+    let mut at = 0;
+    while at < tokens.len() {
+        if spans
+            .iter()
+            .any(|(start, end)| (*start..=*end).contains(&at))
+        {
+            at += 1;
+            continue;
+        }
+        let Token::Name(first) = &tokens[at] else {
+            at += 1;
+            continue;
+        };
+        let mut path = vec![first.clone()];
+        at += 1;
+        while tokens.get(at) == Some(&Token::PathSep) {
+            if let Some(Token::Name(next)) = tokens.get(at + 1) {
+                path.push(next.clone());
+                at += 2;
+            } else {
+                break;
+            }
+        }
+        named.push(match imported.get(&path[0]) {
+            Some(target) => {
+                let mut resolved = target.clone();
+                resolved.extend(path.into_iter().skip(1));
+                resolved
+            }
+            None => absolute(path),
+        });
+    }
+    named
+}
+
+/// The forbidden paths `source` names, as written in [`PORTED_GLOBALS`] (`a::b::c`), with what to
+/// ask instead. A glob import of a module that holds a forbidden one counts.
+fn ported_globals_named(source: &str, module: &[String]) -> BTreeMap<String, &'static str> {
+    let mut found = BTreeMap::new();
+    for path in named_paths(source, module) {
+        for (forbidden, port) in PORTED_GLOBALS {
+            let glob = path.last().is_some_and(|last| last == "*");
+            let head: &[String] = if glob { &path[..path.len() - 1] } else { &path };
+            let matches = forbidden.iter().enumerate().all(|(index, wanted)| {
+                match (head.get(index), wanted.strip_suffix('*')) {
+                    (Some(segment), Some(prefix)) => segment.starts_with(prefix),
+                    (Some(segment), None) => segment == wanted,
+                    // A glob stops short: it brings in what is below it.
+                    (None, _) => glob,
+                }
+            });
+            if matches {
+                found.insert(forbidden.join("::"), *port);
+            }
+        }
+    }
+    found
+}
+
+/// The module a file under `src/` declares: `service/market/okx.rs` is `crate::service::market::okx`
+/// and `service/market/ports/mod.rs` is `crate::service::market::ports`.
+fn module_of(file: &str) -> Vec<String> {
+    let mut module = vec!["crate".to_owned()];
+    module.extend(file.trim_end_matches(".rs").split('/').map(str::to_owned));
+    if module.last().is_some_and(|last| last == "mod") {
+        module.pop();
+    }
+    module
+}
 
 #[test]
 fn venues_reach_the_world_only_through_their_ports() {
@@ -394,20 +737,17 @@ fn venues_reach_the_world_only_through_their_ports() {
     let mut found_debt = BTreeSet::new();
     for (file, text) in module_sources("service/market") {
         let code = production_code(&text);
-        for (global, port) in PORTED_GLOBALS {
-            if !code.contains(global) {
-                continue;
-            }
-            if KNOWN_UNPORTED.contains(&(file.as_str(), *global)) {
-                found_debt.insert((file.clone(), *global));
+        for (global, port) in ported_globals_named(&code, &module_of(&file)) {
+            if KNOWN_UNPORTED.contains(&(file.as_str(), global.as_str())) {
+                found_debt.insert((file.clone(), global));
             } else {
-                offenders.push(format!("{file} uses `{global}`: ask the {port} port"));
+                offenders.push(format!("{file} names `{global}`: ask {port}"));
             }
         }
     }
     let settled: Vec<String> = KNOWN_UNPORTED
         .iter()
-        .filter(|(file, global)| !found_debt.contains(&((*file).to_owned(), *global)))
+        .filter(|(file, global)| !found_debt.contains(&((*file).to_owned(), (*global).to_owned())))
         .map(|(file, global)| format!("(\"{file}\", \"{global}\")"))
         .collect();
     assert!(
@@ -419,6 +759,109 @@ fn venues_reach_the_world_only_through_their_ports() {
         settled.is_empty(),
         "these are behind a port now; remove them from KNOWN_UNPORTED:\n{}",
         settled.join("\n")
+    );
+}
+
+#[test]
+fn the_detection_follows_a_path_through_braces_aliases_and_relative_names() {
+    let found = |source: &str| ported_globals_named(source, &module_of("service/market/okx.rs"));
+    let names = |source: &str| found(source).into_keys().collect::<Vec<_>>();
+    // A braced import, with the other names beside it.
+    assert_eq!(
+        names("use crate::service::net::http::{Retry, get_text};"),
+        ["crate::service::net::http"]
+    );
+    assert_eq!(
+        names("use crate::service::cache::lookup::{self, Hit};"),
+        ["crate::service::cache::lookup"]
+    );
+    // A group of modules, a rename, and the module reached through its parent.
+    assert_eq!(
+        names("use crate::service::net::{http, rate_limit as limits};"),
+        [
+            "crate::service::net::http",
+            "crate::service::net::rate_limit"
+        ]
+    );
+    assert_eq!(
+        names("use crate::service::net;\nfn f() { net::http::get_text(); }"),
+        ["crate::service::net::http"]
+    );
+    // An alias for a module, used where the call is.
+    assert_eq!(
+        names("use crate::service::net::http as transport;\nfn f() { transport::get_text(); }"),
+        ["crate::service::net::http"]
+    );
+    // The path written out in the code, relative paths and external crates.
+    assert_eq!(
+        names("fn f() { let _ = crate::service::keychain::api_keys::cmc_api_key(); }"),
+        ["crate::service::keychain"]
+    );
+    assert_eq!(
+        names("fn f() { let _ = super::super::net::http::get_text; }"),
+        ["crate::service::net::http"],
+        "this file is in `market`, so two `super`s reach `service`"
+    );
+    assert_eq!(
+        names("use super::super::keychain::api_keys;"),
+        ["crate::service::keychain"]
+    );
+    assert_eq!(names("fn f() { ureq::get(url); }"), ["ureq"]);
+    assert_eq!(
+        names("use std::time::{Duration, SystemTime};\nfn f() { SystemTime::now(); }"),
+        ["std::time::SystemTime"]
+    );
+    // The production wiring, whether by its function or its module.
+    assert_eq!(
+        names("use crate::service::{self, for_source};\nfn f() { service::fetch_klines(); }"),
+        ["crate::service::fetch_*", "crate::service::for_source"]
+    );
+    assert_eq!(
+        names("use crate::service::wiring::venues;"),
+        ["crate::service::wiring"]
+    );
+    // A glob brings in what is below it.
+    assert_eq!(
+        names("use crate::service::net::*;"),
+        [
+            "crate::service::net::agent",
+            "crate::service::net::http",
+            "crate::service::net::rate_limit"
+        ]
+    );
+    // What is no dependency: the ports, a message, a comment, a lifetime and a char.
+    assert!(
+        found(
+            "use super::ports::http::{Http, Request};\n\
+             use crate::service::net::url::encode_component;\n\
+             // use crate::service::net::http;\n\
+             /* crate::service::keychain */\n\
+             const WHY: &str = \"crate::service::net::http::get_text\";\n\
+             const RAW: &str = r#\"ureq::get\"#;\n\
+             fn f<'a>(x: &'a str) -> char { '\"' }"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn venues_are_built_only_by_the_wiring_and_tests() {
+    let mut offenders = Vec::new();
+    for module in EVERY_MODULE {
+        for (file, text) in module_sources(module) {
+            if file != "service/wiring/mod.rs"
+                && file != "service/market/venues.rs"
+                && production_code(&text).contains("Venues::new(")
+            {
+                offenders.push(file);
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a second set of venues holds catalogs the cache clearing never reaches; ask \
+         `service::wiring::venues()`:\n{}",
+        offenders.join("\n")
     );
 }
 

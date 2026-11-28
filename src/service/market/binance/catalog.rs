@@ -173,7 +173,7 @@ mod tests {
     use crate::service::MarketSource;
     use crate::service::market::error::ErrorKind;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::Error;
+    use crate::service::market::ports::http::Error;
 
     #[test]
     fn a_pair_is_found_however_it_is_separated() {

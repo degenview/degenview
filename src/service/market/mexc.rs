@@ -324,7 +324,7 @@ mod tests {
     use super::*;
     use crate::service::market::candles::plan;
     use crate::service::market::ports::fakes::Rig;
-    use crate::service::net::http::{self, Retry};
+    use crate::service::market::ports::http::{self, Retry};
     use std::sync::Arc;
 
     const MINUTE: i64 = 60_000;
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn a_400_names_an_unknown_market_only_where_one_was_asked_for() {
-        use crate::service::net::http::Error;
+        use crate::service::market::ports::http::Error;
         let kind = |statuses, code| {
             ProviderError::http_with(DataSource::Mexc, statuses, Error::Status(code)).kind
         };

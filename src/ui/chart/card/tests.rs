@@ -14,7 +14,7 @@ fn contained_center_keeps_an_item_inside_the_bounds() {
 #[test]
 fn the_refresh_warning_names_rate_limits() {
     use super::{DataSource, ProviderError, refresh_warning_text};
-    use crate::service::net::http;
+    use crate::service::market::ports::http;
     let source = DataSource::CoinMarketCap;
     let limited = ProviderError::http(source, http::Error::Status(429));
     assert_eq!(

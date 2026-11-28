@@ -1,5 +1,5 @@
-use crate::service::cache::lookup::{self, Hit};
-use crate::service::market::ports::cache::CacheStore;
+use crate::service::cache::lookup;
+use crate::service::market::ports::cache::{CacheStore, Cached};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -7,8 +7,13 @@ use std::time::Duration;
 pub struct SharedLookups;
 
 impl CacheStore for SharedLookups {
-    fn get_value(&self, namespace: &str, key: &str, ttl: Duration) -> Option<Hit<Value>> {
-        lookup::shared().get_value(namespace, key, ttl)
+    fn get_value(&self, namespace: &str, key: &str, ttl: Duration) -> Option<Cached<Value>> {
+        let hit = lookup::shared().get_value(namespace, key, ttl)?;
+        Some(Cached {
+            value: hit.value,
+            age: hit.age,
+            fresh: hit.fresh,
+        })
     }
 
     fn put_value(&self, namespace: &str, key: &str, value: Value) {
