@@ -15,6 +15,7 @@ use crate::pine_studio::ExitReason;
 use crate::pine_studio::editor::EditAction;
 use crate::store::scripts::hash_source;
 use crate::ui::window::tab_bar;
+use crate::workspace::AddOutcome;
 use eframe::egui;
 
 impl DegenViewApp {
@@ -194,14 +195,21 @@ impl DegenViewApp {
                     name,
                     source,
                 } => {
+                    let mut waiting = None;
                     for tab in self.tabs.slots() {
                         if let Ok(mut content) = tab.content.lock()
                             && let TabContent::Chart(workspace) = &mut *content
                         {
                             let script = NewScript::new(script_id.clone(), &name, &source);
-                            workspace.add_script_on_focused(script);
+                            let outcome = workspace.add_script_on_focused(script);
+                            waiting =
+                                matches!(outcome, AddOutcome::AwaitingInputs(_)).then(|| tab.id());
                             break;
                         }
+                    }
+                    // A script that asks for clicks has to be seen to be answered.
+                    if let Some(tab) = waiting {
+                        self.tabs.show(ctx, tab);
                     }
                 }
                 AppAction::CreatePineAlert {

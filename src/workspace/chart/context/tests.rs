@@ -677,7 +677,7 @@ fn a_script_picked_from_the_plus_menu_is_applied_by_id_and_undo_takes_it_off() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     let script = NewScript::new(Some("saved-script".to_owned()), "Saved", "//@version=6");
-    let added = rig.workspace.add_script(chart, script);
+    let added = rig.workspace.insert_script(chart, script);
     assert!(added.is_some());
     let instances = rig.chart_mut(chart).chart.pine_instances().to_vec();
     assert_eq!(instances[0].script_id.as_deref(), Some("saved-script"));

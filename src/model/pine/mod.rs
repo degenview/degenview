@@ -7,3 +7,4 @@ pub mod instance;
 pub mod logs_view;
 pub mod script;
 pub mod script_name;
+pub mod setup;

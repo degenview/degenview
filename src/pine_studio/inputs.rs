@@ -200,7 +200,7 @@ pub fn show(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<Inpu
             egui::Frame::new()
                 .inner_margin(Margin::same(12))
                 .show(ui, |ui| {
-                    edits = cards(ui, schema, values);
+                    edits = cards(ui, schema, values, |_| true);
                     ui.add_space(12.0);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
@@ -220,10 +220,20 @@ pub fn show(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<Inpu
 
 /// `PineInputsView`: one card per input, sectioned by group. Stateless and unscrolled, so a
 /// popover and the Pine Studio can each frame it their own way.
-pub fn cards(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<InputEdit> {
+pub fn cards(
+    ui: &mut Ui,
+    schema: &InputSchema,
+    values: &InputValues,
+    shown: impl Fn(&InputDefinition) -> bool,
+) -> Vec<InputEdit> {
     let mut edits = Vec::new();
     ui.spacing_mut().item_spacing.y = 12.0;
     for (title, inputs) in groups(schema) {
+        let inputs: Vec<&InputDefinition> =
+            inputs.into_iter().filter(|input| shown(input)).collect();
+        if inputs.is_empty() {
+            continue;
+        }
         if let Some(title) = title {
             ui.add_space(6.0);
             ui.label(crate::ui::kit::text(
@@ -1250,7 +1260,7 @@ mod tests {
                 ..Default::default()
             };
             let mut output = ctx.run_ui(input, |ui| {
-                *edits = cards(ui, schema, values);
+                *edits = cards(ui, schema, values, |_| true);
                 used = ui.min_rect();
             });
             output.textures_delta.clear();

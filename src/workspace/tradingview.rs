@@ -25,7 +25,7 @@ impl ChartWorkspace {
 
     /// Whether a sheet that takes the whole keyboard is over the charts.
     pub(super) fn sheet_over_charts(&self) -> bool {
-        self.studio_open() || self.tradingview.is_some()
+        self.studio_open() || self.tradingview.is_some() || self.script_setups.dialog_open()
     }
 
     pub(super) fn show_tradingview_import(

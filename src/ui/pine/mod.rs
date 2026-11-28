@@ -6,4 +6,5 @@ pub mod logs_view;
 pub mod report;
 pub mod script_catalog;
 pub mod settings_popover;
+pub mod setup;
 pub mod style_view;

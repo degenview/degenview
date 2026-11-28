@@ -32,6 +32,7 @@ use drawing::tools::DrawingTools;
 use eframe::egui;
 use empty_page::EmptyPageCache;
 use layout::session::LayoutSession;
+pub use pine::setup::AddOutcome;
 use replay::ReplayState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -175,6 +176,8 @@ pub struct ChartWorkspace {
     settings_chart: Option<u64>,
     /// The Inputs and Style popover of an applied script, up beside its chip or settings row.
     script_popover: Option<PineSettingsPopover>,
+    /// Scripts being set up by clicking their chart.
+    script_setups: pine::setup::ScriptSetups,
     /// The settings of a compared market, up beside its row on the chart's overlay card.
     overlay_popover: Option<OverlaySettingsPopover>,
     /// The armed tool, the strip's options, the selection and the dialogs about drawings.
@@ -314,6 +317,7 @@ impl ChartWorkspace {
             overlay_hub: overlay::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
+            script_setups: Default::default(),
             overlay_popover: None,
             tools: DrawingTools::default(),
             removing_chart: None,
@@ -713,6 +717,7 @@ impl ChartWorkspace {
         if let Some(chart_id) = self.removing_chart {
             self.confirm_chart_removal(&ctx, chart_id);
         }
+        self.show_setup_dialog(&ctx);
         actions.extend(self.show_alert_editor(&ctx));
         // Before the notices (in the context UI), so a result is drawn over the window.
         self.show_studio(&ctx);

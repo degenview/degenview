@@ -355,6 +355,19 @@ impl Projection<'_> {
         }
     }
 
+    /// The anchor on the bar whose slot holds `point`, at that bar's open (also before the first
+    /// bar and after the last), and whether the magnet took the price from the bar.
+    pub(in crate::ui) fn bar_anchor(&self, point: Pos2, magnet: MagnetMode) -> (Anchor, bool) {
+        if let Some(snapped) = snap::snap(point, self, magnet) {
+            return (snapped, true);
+        }
+        let anchor = Anchor {
+            time_ms: self.times.time_at(self.index_at(point.x).round()),
+            price: self.scale.price(point.y),
+        };
+        (anchor, false)
+    }
+
     fn key(&self) -> ProjectionKey {
         let time_at = |index: Option<usize>| {
             index

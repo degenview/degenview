@@ -263,7 +263,7 @@ pub fn show(
 }
 
 /// The X in the corner: a quiet glyph that takes a tint on hover.
-fn close_button(ui: &mut Ui, id: Id, rect: Rect) -> Response {
+pub(in crate::ui) fn close_button(ui: &mut Ui, id: Id, rect: Rect) -> Response {
     // Escape closes too, so the Tab order is the buttons alone.
     let response = ui.interact(rect, id, Sense::CLICK);
     let response = accessibility::label(response, tr!("Close")).on_hover_text(tr!("Close"));

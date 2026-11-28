@@ -648,7 +648,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_add_pine_script_to_chart",
-        description = "Apply a saved Pine indicator or strategy to a chart, as the app's Add to Chart does, optionally with input overrides. Uses the script's last saved source (save a draft first with degenview_save_pine_script). Refuses libraries and scripts that do not compile. The same script can be applied more than once. The script runs once its chart draws it, so check degenview_list_chart_pine_instances for run_status. The user can undo it in the app.",
+        description = "Apply a saved Pine indicator or strategy to a chart, as the app's Add to Chart does, optionally with input overrides. Uses the script's last saved source (save a draft first with degenview_save_pine_script). Refuses libraries and scripts that do not compile. Nothing is asked on screen: inputs the script marks confirm = true that you give no value run at their defaults and come back in confirm_inputs_at_default. The same script can be applied more than once. The script runs once its chart draws it, so check degenview_list_chart_pine_instances for run_status. The user can undo it in the app.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,

@@ -21033,3 +21033,24 @@ msgstr "Este Flatpak no puede buscar por sí solo los datos de TradingView."
 
 msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
 msgstr "Elige la carpeta de datos de TradingView: normalmente snap/tradingview/current/.config/TradingView o .config/TradingView en tu carpeta personal. Pulsa Ctrl+H para ver las carpetas ocultas."
+
+#: src/ui/pine/setup/dialog.rs
+msgid "Confirm Inputs"
+msgstr "Confirmar entradas"
+
+#: src/model/chart/context/mod.rs
+#: src/ui/chart/indicator_strip.rs
+msgid "Reset points…"
+msgstr "Restablecer puntos…"
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” time for “{script}”"
+msgstr "Fija la hora “{name}” de “{script}”"
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” price for “{script}”"
+msgstr "Fija el precio “{name}” de “{script}”"
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” time and price for “{script}”"
+msgstr "Fija la hora y el precio “{name}” de “{script}”"

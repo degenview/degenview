@@ -36,6 +36,8 @@ pub enum Action {
     EmaPeriod(usize),
     /// Open (or put away) a script's settings popover, pointing at the chip `Rect`.
     ConfigureScript(u64, Rect),
+    /// Ask for every point of a script again, by clicks on the chart.
+    ResetPoints(u64),
     OpenIndicatorSettings,
     /// Open the Pine logs pane on a script.
     OpenPineLogs(u64),
@@ -51,8 +53,10 @@ struct Item {
     title: String,
     visible: bool,
     error: bool,
-    /// The script is still running and has been for a while.
+    /// The script is still running and has been for a while, or waits for its inputs.
     busy: bool,
+    /// The script waits for its inputs and is not on the chart yet: it can only be taken off.
+    pending: bool,
 }
 
 /// What a chip says about its script beside the name.
@@ -88,6 +92,15 @@ impl Mark {
 /// were applied, so they stay behind the scripts rather than jumping to the left when added.
 fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
     let now = Instant::now();
+    // The newest first, and a script still being added is newer than any on the chart.
+    let waiting = card.pending_scripts().iter().rev().map(|pending| Item {
+        kind: Kind::Script(pending.id),
+        title: pending.name.clone(),
+        visible: true,
+        error: false,
+        busy: true,
+        pending: true,
+    });
     let scripts = card.pine_instances().iter().rev().map(|instance| Item {
         kind: Kind::Script(instance.id),
         title: instance.name.clone(),
@@ -96,6 +109,7 @@ fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
             .pine_status(instance.id)
             .is_some_and(|status| status.error.is_some()),
         busy: card.pine_busy(instance.id, now),
+        pending: false,
     });
     let built_ins = BuiltIn::ALL
         .into_iter()
@@ -106,8 +120,9 @@ fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
             visible: !kind.hidden(config),
             error: false,
             busy: false,
+            pending: false,
         });
-    scripts.chain(built_ins).collect()
+    waiting.chain(scripts).chain(built_ins).collect()
 }
 
 /// Which script's settings popover is up, as (chart id, instance id), so its chip keeps its
@@ -160,6 +175,8 @@ const LIST_BUTTON: f32 = 22.0;
 const LIST_SCROLLS_FROM: usize = 8;
 const LIST_MAX_HEIGHT: f32 = 300.0;
 const SPACING: f32 = 4.0;
+/// The EMA period menu's width: its rows are numbers, narrower than its heading.
+const EMA_MENU_WIDTH: f32 = 130.0;
 
 impl BuiltIn {
     pub(in crate::ui) fn icon(self) -> Icon {
@@ -182,6 +199,7 @@ impl Item {
             visible,
             error: false,
             busy: false,
+            pending: false,
         }
     }
 
@@ -202,7 +220,7 @@ impl Item {
     }
 
     fn has_settings(&self) -> bool {
-        matches!(self.kind, Kind::Script(_) | Kind::BuiltIn(BuiltIn::Ema))
+        !self.pending && matches!(self.kind, Kind::Script(_) | Kind::BuiltIn(BuiltIn::Ema))
     }
 
     fn title_galley(&self, ui: &Ui, visible_color: Color32) -> Arc<Galley> {
@@ -277,7 +295,7 @@ pub fn show(
         };
         if chips_fit {
             for item in items.iter().take(inline) {
-                chip(ui, item, config, chart_id, &mut action);
+                chip(ui, item, card, config, chart_id, &mut action);
             }
             if items.len() > inline {
                 let overflow = &items[inline..];
@@ -288,13 +306,13 @@ pub fn show(
                     "{count} more indicators"
                 );
                 let pill = count_pill(ui, None, &label, &tooltip);
-                overflow_list(ui, &pill, overflow, config, chart_id, &mut action);
+                overflow_list(ui, &pill, overflow, card, config, chart_id, &mut action);
             }
         } else {
             let label = items.len().to_string();
             let tooltip = tr_n!(items.len(), "{count} indicator", "{count} indicators");
             let pill = count_pill(ui, Some(Icon::ChartLine), &label, &tooltip);
-            overflow_list(ui, &pill, &items, config, chart_id, &mut action);
+            overflow_list(ui, &pill, &items, card, config, chart_id, &mut action);
         }
     }
 
@@ -441,10 +459,12 @@ fn remove_action(item: &Item) -> Action {
 /// indicator, built-ins before scripts, each with its controls. It stays up while a chip's
 /// settings popover is open, so the indicators stay in view as they are configured; a press
 /// elsewhere or Esc puts it away.
+#[allow(clippy::too_many_arguments)]
 fn overflow_list(
     ui: &Ui,
     anchor: &egui::Response,
     items: &[Item],
+    card: &ChartCard,
     config: &IndicatorConfig,
     chart_id: u64,
     action: &mut Option<Action>,
@@ -488,7 +508,7 @@ fn overflow_list(
                             kit::menu_heading(ui, heading);
                         }
                         for item in group {
-                            list_row(ui, item, config, chart_id, picked);
+                            list_row(ui, item, card, config, chart_id, picked);
                         }
                     }
                 };
@@ -563,6 +583,7 @@ fn list_header(ui: &mut Ui, title: &str, count: usize) {
 fn list_row(
     ui: &mut Ui,
     item: &Item,
+    card: &ChartCard,
     config: &IndicatorConfig,
     chart_id: u64,
     action: &mut Option<Action>,
@@ -670,6 +691,7 @@ fn list_row(
     if body.clicked() {
         match item.kind {
             Kind::BuiltIn(BuiltIn::Ema) => {}
+            Kind::Script(_) if item.pending => {}
             Kind::Script(script) => *action = Some(Action::ConfigureScript(script, rect)),
             Kind::BuiltIn(_) => *action = Some(Action::ToggleVisible(item.kind)),
         }
@@ -679,9 +701,12 @@ fn list_row(
             .id(id.with("period"))
             .frame(kit::menu_frame())
             .gap(6.0)
-            .show(|ui| ema_menu(ui, config, action));
+            .show(|ui| {
+                ui.set_width(EMA_MENU_WIDTH);
+                ema_menu(ui, config, action);
+            });
     }
-    item_context_menu(ui, &body, item, rect, config, action);
+    item_context_menu(ui, &body, item, rect, card, config, action);
 }
 
 /// One applied indicator: a quiet name capsule with a small x at its right end that removes it,
@@ -689,6 +714,7 @@ fn list_row(
 fn chip(
     ui: &mut Ui,
     item: &Item,
+    card: &ChartCard,
     config: &IndicatorConfig,
     chart_id: u64,
     action: &mut Option<Action>,
@@ -742,6 +768,7 @@ fn chip(
     if name_response.clicked() {
         match item.kind {
             Kind::BuiltIn(BuiltIn::Ema) => {}
+            Kind::Script(_) if item.pending => {}
             Kind::Script(script) => *action = Some(Action::ConfigureScript(script, rect)),
             Kind::BuiltIn(_) => *action = Some(Action::ToggleVisible(item.kind)),
         }
@@ -751,7 +778,10 @@ fn chip(
             .id(id.with("period"))
             .frame(kit::menu_frame())
             .gap(6.0)
-            .show(|ui| ema_menu(ui, config, action));
+            .show(|ui| {
+                ui.set_width(EMA_MENU_WIDTH);
+                ema_menu(ui, config, action);
+            });
     }
     if let Some(mark) = item.mark() {
         x += SPACING;
@@ -824,7 +854,7 @@ fn chip(
         .is_some_and(|pos| rect.contains(pos));
     ui.ctx()
         .data_mut(|data| data.insert_temp(id, under_pointer));
-    item_context_menu(ui, &body, item, rect, config, action);
+    item_context_menu(ui, &body, item, rect, card, config, action);
 }
 
 struct Control {
@@ -847,6 +877,9 @@ fn chip_description(item: &Item) -> String {
 
 /// The eye and, where the indicator has settings, the settings control. Removing is the x.
 fn control_buttons(item: &Item) -> Vec<Control> {
+    if item.pending {
+        return Vec::new();
+    }
     let mut buttons = vec![Control {
         icon: if item.visible {
             Icon::Eye
@@ -891,7 +924,6 @@ pub(crate) fn menu_heading(ui: &mut Ui, title: &str) {
 }
 
 fn ema_menu(ui: &mut Ui, config: &IndicatorConfig, action: &mut Option<Action>) {
-    ui.set_width(130.0);
     ui.spacing_mut().item_spacing.y = 0.0;
     menu_heading(ui, tr!("EMA period"));
     for period in EMA_PERIODS {
@@ -913,26 +945,48 @@ fn item_context_menu(
     body: &egui::Response,
     item: &Item,
     chip: Rect,
+    card: &ChartCard,
     config: &IndicatorConfig,
     action: &mut Option<Action>,
 ) {
-    body.context_menu(|ui| item_menu(ui, item, chip, config, action));
+    body.context_menu(|ui| item_menu(ui, item, chip, card, config, action));
 }
 
 fn item_menu(
     ui: &mut Ui,
     item: &Item,
     chip: Rect,
+    card: &ChartCard,
     config: &IndicatorConfig,
     action: &mut Option<Action>,
 ) {
-    ui.set_width(180.0);
     ui.spacing_mut().item_spacing.y = 0.0;
+    if item.pending {
+        kit::menu_fit_rows(ui, &[(tr!("Remove"), None)]);
+        if kit::menu_item(ui, Icon::Trash, tr!("Remove"), true, true) {
+            *action = Some(remove_action(item));
+            ui.close();
+        }
+        return;
+    }
+    let resettable = matches!(item.kind, Kind::Script(id) if card.has_point_inputs(id));
     let (icon, label) = if item.visible {
         (Icon::EyeSlash, tr!("Hide"))
     } else {
         (Icon::Eye, tr!("Show"))
     };
+    let mut rows = vec![(label, None)];
+    if matches!(item.kind, Kind::Script(_)) {
+        rows.push((tr!("Settings…"), None));
+        rows.extend(resettable.then(|| (tr!("Reset points…"), None)));
+        rows.push((tr!("Pine logs"), None));
+    }
+    rows.push((tr!("Remove"), None));
+    if item.kind == Kind::BuiltIn(BuiltIn::Ema) {
+        ui.set_width(EMA_MENU_WIDTH);
+    } else {
+        kit::menu_fit_rows(ui, &rows);
+    }
     if kit::menu_item(ui, icon, label, true, false) {
         *action = Some(Action::ToggleVisible(item.kind));
         ui.close();
@@ -945,6 +999,10 @@ fn item_menu(
         Kind::Script(id) => {
             if kit::menu_item(ui, Icon::Sliders, tr!("Settings…"), true, false) {
                 *action = Some(Action::ConfigureScript(id, chip));
+                ui.close();
+            }
+            if resettable && kit::menu_item(ui, Icon::Target, tr!("Reset points…"), true, false) {
+                *action = Some(Action::ResetPoints(id));
                 ui.close();
             }
             if kit::menu_item(ui, Icon::DocText, tr!("Pine logs"), true, false) {

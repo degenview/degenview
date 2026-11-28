@@ -39,12 +39,11 @@ impl Overlays for LiveOverlays<'_> {
         drawing: &mut DrawingFrame,
         layout: &FrameLayout,
     ) {
-        if layout.main_visible
-            && !self.replay.selecting
-            && !self
-                .card
-                .pointer_is_held(layout.main_visible, self.replay.selecting)
-        {
+        let held = self
+            .card
+            .pointer_is_held(layout.main_visible, self.replay.selecting);
+        let taken = self.replay.selecting || held;
+        if layout.main_visible && !taken && !self.card.picking_point(drawing.tool, taken) {
             layer.overlay(self.ui, projection, drawing);
         }
     }
@@ -101,6 +100,11 @@ impl Overlays for LiveOverlays<'_> {
     }
 
     fn pane(&mut self, painter: &egui::Painter, layout: &FrameLayout, slot: &PaneSlot) {
+        // A script waiting for its inputs names its empty pane and has nothing to act on yet.
+        if self.card.pending_script(slot.id).is_some() {
+            paint_pane_title(painter, layout, slot, true);
+            return;
+        }
         let hovered = self.ui.rect_contains_pointer(slot.rect);
         paint_pane_title(painter, layout, slot, hovered);
         if let Some(action) = buttons::pane(

@@ -968,6 +968,8 @@ This operation should:
 - Create a new `PineInstance` through the existing chart pipeline.
 - Preserve instance identity.
 - Return the new instance ID.
+- Never ask on screen for `confirm = true` inputs; name the ones left at their defaults in
+  `confirm_inputs_at_default`.
 
 Use a separate permission:
 

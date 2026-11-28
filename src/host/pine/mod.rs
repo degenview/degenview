@@ -6,6 +6,7 @@
 
 pub mod batch;
 pub mod chart;
+pub mod declaration;
 pub mod subscription;
 
 use crate::clock::now_ms;

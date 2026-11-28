@@ -28,6 +28,9 @@ an anchor needs the lines and the tags), and Esc or the tile brings it back.
   of its parts to draw (lines, price and time tags, the box naming the bar). Hover reporting is
   unchanged, so linked charts, replay and compared markets behave as before. Other charts' shared
   column follows the same caps, since the mode is the tab's.
+  While a script's point is picked ([Interactive inputs](interactive-inputs.md)) the chart that
+  answers shows the Cross, narrowed to what the click sets (the vertical line for a time, the
+  horizontal one for a price), and names a time past the last bar too.
 - **Pointer.** `ChartCard::set_cursor` (`navigation.rs`) maps the caps' `PointerShape` to the system
   pointer over the plot, only when nothing else chose one (a drawing's Move or Grab, an alert tag):
   Cross the system crosshair, Arrow the platform arrow, Dot hides the system pointer

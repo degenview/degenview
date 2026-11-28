@@ -3,12 +3,14 @@
 use crate::model::pine::command::{NewScript, ScriptCommand};
 use crate::workspace::ChartWorkspace;
 use crate::workspace::chart::Chart;
+use crate::workspace::pine::setup::AddOutcome;
 use crate::workspace::undo::Snapshot;
 
 impl ChartWorkspace {
-    /// Adds a script to a chart, after the ones already there. `None` when the chart is not one
-    /// that takes indicators in this workspace.
-    pub fn add_script(&mut self, chart_id: u64, script: NewScript) -> Option<u64> {
+    /// Puts a script on a chart as it is given, after the ones already there, asking for
+    /// nothing: an agent's add, or a person's once nothing needs asking (`add_script`). `None`
+    /// when the chart is not one that takes indicators in this workspace.
+    pub fn insert_script(&mut self, chart_id: u64, script: NewScript) -> Option<u64> {
         let chart = self
             .charts
             .iter_mut()
@@ -24,9 +26,11 @@ impl ChartWorkspace {
     }
 
     /// Adds a script to the focused chart (the Pine Studio's "Add to Chart").
-    pub fn add_script_on_focused(&mut self, script: NewScript) -> Option<u64> {
-        let id = self.resolved_focused_id()?;
-        self.add_script(id, script)
+    pub fn add_script_on_focused(&mut self, script: NewScript) -> AddOutcome {
+        match self.resolved_focused_id() {
+            Some(id) => self.add_script(id, script),
+            None => AddOutcome::Refused,
+        }
     }
 
     /// The eye of an applied script: shows it, or hides it and keeps its settings.

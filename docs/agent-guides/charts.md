@@ -211,8 +211,10 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   bars or question (cached, never per frame). Panel state is card state, unsaved, in no template.
   Every answer carries sample size and a 95% interval and is a historical frequency, never a
   forecast. [Session statistics](../session-stats.md).
-- Scripts are added and changed only through `ChartWorkspace::{add_script, edit_script}`
-  (`workspace/pine/scripts.rs`), one undo step per real change. A view, the card's pane buttons
+- Scripts are added and changed only through `ChartWorkspace::{add_script, insert_script,
+  edit_script}`, one undo step per real change. `add_script` is a person's add and may first ask
+  for inputs on the chart ([Interactive inputs](../interactive-inputs.md)); `insert_script` asks
+  nothing (MCP). A view, the card's pane buttons
   included, reports a `model::pine::command::ScriptCommand`; it never writes the card's list.
   Restoring a saved chart (`set_pine_instances`) is not a change.
 - Undo: one typed stack (`Snapshot`) of drawings, or indicators and scripts. Bulk changes = one

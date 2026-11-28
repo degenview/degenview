@@ -10,6 +10,24 @@ impl ChartCard {
         &self.instances
     }
 
+    /// An instance id this card has not given out, so a script waiting to be added, or one undo
+    /// brings back, never shares another's.
+    pub fn reserve_instance_id(&mut self) -> u64 {
+        let held = self.instances.iter().map(|i| i.id).max().unwrap_or(0);
+        self.last_instance_id = self.last_instance_id.max(held) + 1;
+        self.last_instance_id
+    }
+
+    /// Puts an instance with its own reserved id on the chart, after the ones already there.
+    pub fn insert_pine_instance(&mut self, instance: PineInstance) {
+        self.instances.push(instance);
+    }
+
+    /// Brings a pane that fills the chart back down, so every pane and the price chart show.
+    pub fn restore_panes(&mut self) {
+        self.maximized_pane = None;
+    }
+
     /// Replaces every instance (restoring a saved chart).
     pub fn set_pine_instances(&mut self, instances: Vec<PineInstance>) {
         self.instances = instances;
@@ -23,14 +41,8 @@ impl ChartCard {
         name: &str,
         source: &str,
     ) -> u64 {
-        let id = self
-            .instances
-            .iter()
-            .map(|i| i.id)
-            .max()
-            .map_or(1, |max| max + 1);
-        self.instances
-            .push(PineInstance::new(id, script_id, name, source));
+        let id = self.reserve_instance_id();
+        self.insert_pine_instance(PineInstance::new(id, script_id, name, source));
         id
     }
 
@@ -219,7 +231,16 @@ impl ChartCard {
             },
             visible_range: self.visible_open_range(bars),
         };
-        self.pine.update(ctx, &chart, &self.instances)
+        let mut outputs = self.pine.update(ctx, &chart, &self.instances);
+        // A script waiting for its inputs that draws under the chart has its pane already, empty.
+        outputs.extend(
+            self.setup
+                .pending
+                .iter()
+                .filter(|pending| !pending.overlay)
+                .map(|pending| (Arc::default(), VisualOrder::Script, pending.id)),
+        );
+        outputs
     }
 
     /// Takes a pane button. Order and removal change the chart's scripts, which the workspace does
@@ -299,6 +320,21 @@ pub(super) fn pane_labels(
         .collect()
 }
 
+/// The part of a script pane its values are drawn in: top and bottom leave just enough room for
+/// the outermost axis labels.
+pub(super) fn pane_plot(price_plot: Rect, pane: Rect) -> Rect {
+    Rect::from_min_max(
+        Pos2::new(price_plot.left(), pane.top() + 8.0),
+        Pos2::new(price_plot.right(), pane.bottom() - 8.0),
+    )
+}
+
+/// The value scale of a script pane, fitted to what the script draws over the `shown` bars.
+pub(super) fn pane_scale(pine: &VisualOutput, shown: usize, plot: Rect) -> PriceScale {
+    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown, 0.1);
+    PriceScale::linear(low, high, plot.top(), plot.height())
+}
+
 /// The own pane under the candles for `overlay=false` scripts, ported from `PineScriptPaneView`:
 /// a value axis fitted to the script's outputs, sharing the price chart's horizontal layout so
 /// bar slots line up with the candles above (the time axis stays up there). The pane takes the
@@ -317,17 +353,12 @@ pub(super) fn draw_script_pane(
     tick_xs: &[f32],
     pointer: Option<Pos2>,
 ) -> Option<HoverTarget> {
-    // Top and bottom leave just enough room for the outermost axis labels.
-    let plot = Rect::from_min_max(
-        Pos2::new(price_plot.left(), pane.top() + 8.0),
-        Pos2::new(price_plot.right(), pane.bottom() - 8.0),
-    );
+    let plot = pane_plot(price_plot, pane);
     if plot.height() <= 1.0 {
         return None;
     }
-    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown.len(), 0.1);
-    let span = (high - low).max(f64::EPSILON);
-    let y_for = |value: f64| plot.bottom() - ((value - low) / span) as f32 * plot.height();
+    let scale = pane_scale(pine, shown.len(), plot);
+    let y_for = |value: f64| scale.y(value);
     let labels = pane_labels(pine, shown.len(), plot.height(), style);
     if let Some(grid) = style.vertical_grid {
         for x in tick_xs {

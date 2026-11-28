@@ -7,6 +7,7 @@ use super::*;
 /// The map is linear, or logarithmic where `logarithmic` is set. `mode` and `reference` only
 /// change what the axis, its tags and the crosshair say: Percent and Indexed are linear in the
 /// price, so they move no pixel and every price a chart stores or sends stays a real price.
+#[derive(Clone)]
 pub(in crate::ui) struct PriceScale {
     pub(in crate::ui) minimum: f64,
     pub(in crate::ui) maximum: f64,

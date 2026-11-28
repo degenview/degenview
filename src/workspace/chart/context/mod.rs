@@ -285,6 +285,7 @@ impl ChartWorkspace {
                     .find(|candidate| candidate.id == *instance)
                     .map(|instance| PaneFacts {
                         name: instance.name.clone(),
+                        has_points: self.charts[index].chart.has_point_inputs(instance.id),
                         visible: instance.visible,
                         order: instance.visual_order,
                     });
@@ -512,6 +513,7 @@ impl ChartWorkspace {
                 self.settings_chart = Some(chart_id);
             }
             Command::PaneToggle(instance) => self.toggle_script(chart_id, instance),
+            Command::PaneResetPoints(instance) => self.reset_points(chart_id, instance),
             Command::PaneRemove(instance) => {
                 self.edit_script(chart_id, &ScriptCommand::Remove(instance));
             }
@@ -1166,6 +1168,7 @@ impl ChartWorkspace {
 
     /// Removes the chart's built-in indicators, scripts and compared markets as one undo step.
     fn remove_all_indicators(&mut self, chart_id: u64) {
+        self.script_setups.forget_chart(chart_id);
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };
