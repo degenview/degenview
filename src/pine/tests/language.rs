@@ -1319,6 +1319,257 @@ fn the_history_of_a_local_in_a_block_carries_over_the_bars_the_block_did_not_run
     );
 }
 
+// MARK: Locals that share a name with something else (`syntax::rename`)
+
+#[test]
+fn a_function_locals_history_is_its_own_when_a_global_has_the_name() {
+    // The `u[1]` of the local is the local's last value (bar 2's 20.0), never the global's -99.0.
+    let session = run(
+        "u = -99.0\nf() =>\n    out = -1.0\n    if bar_index % 2 == 0\n        u = bar_index * 10.0\n        out := nz(u[1], -5.0)\n    out\n\
+         r = f()",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(20.0));
+    assert_eq!(value(&session, "u"), RuntimeValue::Float(-99.0));
+}
+
+#[test]
+fn sibling_blocks_with_a_name_in_common_keep_a_history_each() {
+    // Block 1 runs on even bars, block 2 on odd ones (`a` and `b` start every bar at 0). Block 1's
+    // `x[1]` on bar 2 is what it left on bar 0 (101.0); block 2's on bar 3, what it left on bar 1
+    // (1010.0).
+    let body = "a = 0.0\nb = 0.0\n\
+                if bar_index % 2 == 0\n    x = close\n    a := nz(x[1], -1.0)\n\
+                if bar_index % 2 == 1\n    x = open * 10\n    b := nz(x[1], -1.0)";
+    assert_eq!(value(&run(body, 3), "a"), RuntimeValue::Float(101.0));
+    assert_eq!(value(&run(body, 4), "b"), RuntimeValue::Float(1010.0));
+}
+
+#[test]
+fn a_block_locals_history_is_not_the_globals_of_the_same_name() {
+    // On bar 4 the block local is 11.0 and was 10.0 on bar 3; the global is the close.
+    let session = run(
+        "x = close\nr = 0.0\nif bar_index > 1\n    x = 7.0 + bar_index\n    r := nz(x[1], -1.0)",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(10.0));
+    assert_eq!(value(&session, "x"), RuntimeValue::Float(105.0));
+}
+
+#[test]
+fn another_variable_of_the_name_does_not_keep_a_call_off_the_bars_its_branch_skips() {
+    // The first arm reads the global `a`, the second declares an `a` of its own. The `[1]` of the
+    // call is the value it has on every bar: bar 3's close on bar 4, not bar 2's, the last bar
+    // that arm ran on.
+    let session = run(
+        "a = close\n\
+         r = switch\n    bar_index % 2 == 0 =>\n        math.abs(a)[1]\n    =>\n        a = 0.0\n        a",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(104.0));
+}
+
+#[test]
+fn a_function_called_from_a_block_that_hides_a_global_reads_the_global() {
+    let session = run(
+        "x = 5.0\nf() =>\n    x * 2\nr = 0.0\nif close > 0\n    x = 1.0\n    r := f() + x",
+        3,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(11.0));
+}
+
+#[test]
+fn a_parameter_named_like_a_global_is_its_own_in_a_nested_call() {
+    let session = run(
+        "x = 3.0\nf(x) =>\n    x + 1\ng(y) =>\n    f(y * 2) + x\nr = g(1.0)",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(6.0));
+}
+
+#[test]
+fn a_named_argument_finds_a_parameter_that_was_renamed() {
+    let session = run(
+        "len = 10\nf(len, shift) =>\n    len * 10 + shift\nr = f(shift = 2, len = 5)",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(52));
+    assert_eq!(value(&session, "len"), RuntimeValue::Int(10));
+}
+
+#[test]
+fn a_var_in_a_block_named_like_a_global_is_not_the_global() {
+    let session = run(
+        "var g = 0.0\nif close > 0\n    var g = 10.0\n    g += 1\nafter = g",
+        4,
+    );
+    assert_eq!(value(&session, "after"), RuntimeValue::Float(0.0));
+}
+
+#[test]
+fn a_loop_counter_named_like_a_global_leaves_the_global_alone() {
+    let session = run(
+        "i = 100\ntotal = 0\nfor i = 0 to 3\n    total += i\nafter = i",
+        2,
+    );
+    assert_eq!(value(&session, "total"), RuntimeValue::Int(6));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(100));
+}
+
+#[test]
+fn a_library_local_is_not_the_scripts_global_of_the_same_name() {
+    struct Lib;
+    impl compiler::LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Twice/1").then(|| {
+                "//@version=6\nlibrary(\"Twice\")\nexport twice(float y) =>\n    x = y * 2\n    x\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source = "//@version=6\nindicator(\"T\")\nimport user/Twice/1 as t\nx = 100.0\ny = 7.0\nr = t.twice(3.0)\n";
+    let program = compiler::compile(source, Limits::default(), &Lib);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(3)).expect("runs");
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(6.0));
+    assert_eq!(value(&session, "x"), RuntimeValue::Float(100.0));
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(7.0));
+}
+
+/// The message of the error `body` fails with at run time, under `limits`.
+fn failure_message(body: &str, limits: Limits) -> String {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, limits, &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        limits,
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    match session.evaluate(&bars(3)) {
+        Err(crate::pine::runtime::session::RunError::Script(diagnostic)) => diagnostic.message,
+        Ok(_) => panic!("expected a run-time error"),
+        Err(other) => panic!("expected a script error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_message_names_a_renamed_local_as_the_script_does() {
+    // `b` in the function hides the global `b`, so the interpreter holds it as `b#…`. The call that
+    // runs out of depth on it names it as written. (The checker refuses a script whose calls could
+    // reach the other messages that hold a call's name.)
+    let message = failure_message(
+        "type B\n    float v = 1.0\nmethod area(B self) => self.v\nb = B.new()\n\
+         f() =>\n    b = B.new()\n    b.area()\nr = f()",
+        Limits {
+            call_depth: 1,
+            ..Limits::default()
+        },
+    );
+    assert!(!message.contains('#'), "{message}");
+    assert!(message.contains("b.area"), "{message}");
+}
+
+// MARK: A local that is called like a builtin's namespace
+
+/// A session over `body`, run over `count` bars with its logs on.
+fn run_logging(body: &str, count: usize) -> Session {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.logs.enable();
+    if let Err(error) = session.evaluate(&bars(count)) {
+        panic!("{error:?}");
+    }
+    session
+}
+
+#[test]
+fn a_call_of_a_builtin_works_where_a_local_is_called_like_its_namespace() {
+    let mut session = run_logging(
+        "log = 1.0\nf() =>\n    log = 2.0\n    log.info(\"hello\")\n    log\nr = f()",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(2.0));
+    let messages: Vec<String> = session
+        .logs
+        .take()
+        .events
+        .into_iter()
+        .map(|event| event.message)
+        .collect();
+    assert_eq!(messages, ["hello", "hello"]);
+}
+
+#[test]
+fn a_request_replays_the_bars_it_skipped_where_a_local_is_called_request() {
+    // Both requests sit under a local `request`, so the interpreter holds that as `request#…`; the
+    // gated one runs on every second bar and must read what the ungated one does (it replays the
+    // chart bars it skipped, which only a script that calls `request.security` by its name does).
+    let body = "always = 0.0\ngated = 0.0\n\
+                if true\n    request = 1.0\n    always := request.security(syminfo.tickerid, timeframe.period, ta.sma(close, 3))\n\
+                if bar_index % 2 == 0\n    request = 2.0\n    gated := request.security(syminfo.tickerid, timeframe.period, ta.sma(close, 3))\n\
+                plot(always, \"always\")\nplot(gated, \"gated\")";
+    let always = plot_values(body, 12, "always");
+    let gated = plot_values(body, 12, "gated");
+    assert!(always.iter().flatten().count() > 6, "{always:?}");
+    for bar in (2..12).step_by(2) {
+        assert_eq!(gated[bar], always[bar], "bar {bar}");
+    }
+}
+
+#[test]
+fn a_named_constant_is_read_by_its_written_name_where_a_local_has_its_namespace() {
+    let session = run(
+        "color = 1\nf() =>\n    color = 2\n    color.red\nr = f()",
+        2,
+    );
+    assert_eq!(
+        value(&session, "r"),
+        RuntimeValue::Color(crate::pine::builtins::color("color.red").expect("a colour"))
+    );
+}
+
+#[test]
+fn a_field_of_a_local_wins_over_a_constant_of_the_same_spelling() {
+    let session = run(
+        "type P\n    int red = 7\ncolor = 1\nf() =>\n    color = P.new()\n    color.red\nr = f()",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Int(7));
+}
+
+#[test]
+fn a_math_function_takes_a_local_called_math_as_its_argument() {
+    let session = run(
+        "math = 1.0\nf() =>\n    math = -2.0\n    math.abs(math)\nr = f()",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(2.0));
+}
+
 /// The values of the plot titled `title` after `body` ran over `count` bars.
 fn plot_values(body: &str, count: usize, title: &str) -> Vec<Option<f64>> {
     let session = run(body, count);
@@ -3876,4 +4127,48 @@ fn after_a_holiday_a_stocks_week_begins_with_the_first_day_that_trades() {
     );
     // The open of the 8th, the open of the 9th and noon of the 9th.
     assert_eq!(value(&session, "n"), RuntimeValue::Int(3));
+}
+
+#[test]
+fn a_local_named_like_an_import_alias_leaves_the_librarys_calls_alone() {
+    struct Lib;
+    impl compiler::LibraryResolver for Lib {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Twice/1").then(|| {
+                "//@version=6\nlibrary(\"Twice\")\nexport twice(float y) =>\n    y * 2\n\
+                 export type P\n    float v = 1.0\n"
+                    .to_owned()
+            })
+        }
+    }
+    // `lib` is a local of two functions, so both are renamed.
+    let source = "//@version=6\nindicator(\"T\")\nimport user/Twice/1 as lib\n\
+                  f() =>\n    lib = 1.0\n    lib.twice(lib) + lib.P.new().v\n\
+                  g() =>\n    lib = 2.0\n    lib\n\
+                  r = f() + g()\n";
+    let program = compiler::compile(source, Limits::default(), &Lib);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(3)).expect("runs");
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(5.0));
+}
+
+#[test]
+fn a_parameter_named_like_a_type_leaves_its_constructor_alone() {
+    let session = run(
+        "type level\n    float p = 2.0\n\
+         f(level) =>\n    x = level.new()\n    x.p + level\n\
+         g(level) =>\n    level\n\
+         r = f(1.0) + g(2.0)",
+        2,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(5.0));
 }

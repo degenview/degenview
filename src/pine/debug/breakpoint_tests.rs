@@ -250,6 +250,39 @@ fn a_logpoint_inside_a_function_logs_every_call() {
     assert_eq!(messages(&mut session), vec!["x=101", "x=100"]);
 }
 
+/// A function whose local `math` hides the global of its name; line 6 is `x = …`, inside it.
+const HIDING_MATH: &str = "math = 1.0
+f() =>
+    math = -2.0
+    x = math * 1
+    x
+r = f()
+";
+
+#[test]
+fn a_condition_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
+    // A condition that cannot be evaluated stops the script and says so, so the false one is the
+    // proof: `math.abs(math)` is 2, the condition is `== 3`, and nothing stops.
+    let stops_for = |condition: &str| {
+        let mut spec = BreakpointSpec::line(1, 6);
+        spec.condition = Some(condition.to_owned());
+        run(HIDING_MATH, 2, vec![spec], DebugControl::default(), None)
+            .0
+            .len()
+    };
+    assert_eq!(stops_for("math.abs(math) == 3"), 0);
+    assert_eq!(stops_for("math.abs(math) == 2"), 2);
+}
+
+#[test]
+fn a_logpoint_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
+    let mut spec = BreakpointSpec::line(1, 6);
+    spec.log_message = Some("{math.abs(math)}".to_owned());
+    let (seen, mut session) = run(HIDING_MATH, 2, vec![spec], DebugControl::default(), None);
+    assert!(seen.is_empty());
+    assert_eq!(messages(&mut session), vec!["2", "2"]);
+}
+
 #[test]
 fn the_logs_stay_bounded_however_often_a_logpoint_fires() {
     let spec = at_call(|spec| spec.log_message = Some("tick".to_owned()));

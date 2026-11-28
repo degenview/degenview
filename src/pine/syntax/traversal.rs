@@ -212,6 +212,66 @@ pub fn for_each_statement_mut(
     }
 }
 
+/// Calls `visit` on every expression of `statements`, at any depth: the ones each statement owns
+/// (`expressions`) and everything inside them, outer first, including the statements an expression
+/// holds (`x = if …`).
+pub fn for_each_expression_mut(
+    statements: &mut [Statement],
+    visit: &mut impl FnMut(&mut Expression),
+) {
+    for_each_statement_mut(statements, &mut |statement| {
+        for expression in expressions_mut(statement) {
+            walk_expression_mut(expression, visit);
+        }
+    });
+}
+
+/// Calls `visit` on `expression` and every expression inside it, outer first. The statements an
+/// expression holds are not entered.
+pub fn walk_expression_mut(expression: &mut Expression, visit: &mut impl FnMut(&mut Expression)) {
+    visit(expression);
+    for child in children_mut(expression) {
+        walk_expression_mut(child, visit);
+    }
+}
+
+/// `expressions`, mutably.
+fn expressions_mut(statement: &mut Statement) -> Vec<&mut Expression> {
+    match statement {
+        Statement::Declaration { value, .. }
+        | Statement::Assignment { value, .. }
+        | Statement::TupleDeclaration { value, .. } => vec![value],
+        Statement::FieldAssignment { target, value, .. } => vec![target, value],
+        Statement::Expression(expression) => vec![expression],
+        Statement::Conditional { condition, .. } | Statement::WhileLoop { condition, .. } => {
+            vec![condition]
+        }
+        Statement::Once { condition, .. } => condition.iter_mut().collect(),
+        Statement::ForRange { from, to, step, .. } => {
+            let mut out = vec![from, to];
+            if let Some(step) = step {
+                out.push(step);
+            }
+            out
+        }
+        Statement::ForIn { collection, .. } => vec![collection],
+        Statement::Switch { subject, arms, .. } => {
+            let mut out = Vec::new();
+            if let Some(subject) = subject {
+                out.push(subject);
+            }
+            out.extend(arms.iter_mut().filter_map(|arm| arm.condition.as_mut()));
+            out
+        }
+        Statement::LoopControl(_, _) | Statement::Function { .. } => Vec::new(),
+        Statement::TypeDeclaration { fields, .. } => fields
+            .iter_mut()
+            .filter_map(|f| f.default_value.as_mut())
+            .collect(),
+        Statement::EnumDeclaration { .. } => Vec::new(),
+    }
+}
+
 fn held_statements(expression: &mut Expression, visit: &mut impl FnMut(&mut Statement)) {
     if let Expression::Statement(statement, _) = expression {
         for_each_statement_mut(std::slice::from_mut(statement.as_mut()), visit);

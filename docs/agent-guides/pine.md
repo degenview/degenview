@@ -65,32 +65,40 @@
 - Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
-- Function locals (`Session::invoke_with`): the variable table is flat. An ordinary local hides an
-  outer variable of its name only from its declaration on: a block's to the end of that execution of
-  the block, a top-level one to the end of the call (the call's `saved`). Which block declarations
-  hide something is decided statically: `scopes::mark_shadowing` (at session build, for the script
-  and its libraries) flags an ordinary declaration in a block whose name was a global, local,
-  parameter or builtin variable just before it (`Declaration::shadows`, an id into
-  `Session::shadow_names`); a name that only a slot left by an earlier iteration or bar holds is not
-  an outer binding. Only a flagged declaration saves the outer value, onto `Session::shadow_stack`,
-  after its initializer ran (so a `:=` in the initializer is the outer variable's and stays) and
-  before the local is set; `run_block` puts back down to its mark, in reverse, however the block
-  ends (each branch, arm and loop iteration is its own execution). A `:=` above the declaration or
-  in another branch stays too. A loop's counters work the same way (`ForRange::shadows`,
-  `ForIn::shadows` for the index and the value): a counter that hides a visible name saves the outer
-  value after the bounds or the collection were evaluated and puts it back when the loop ends; one
-  that hides nothing stays in the table, so `i[1]` reads the previous bar's last count. Only
-  `var`/`varip` locals are set at entry (stash value, else unset so the
-  declaration initialises them), so one hides a global of its name for the whole call. Scopes are
-  lexical: a nested call first sets each name its calling function's locals hide back to the global
-  (`uncover_caller_globals`, from the caller's `saved` on `Session::call_frames`; by induction each
-  call starts on the globals) and gives the caller its values back after
-  (`cover_caller_globals`). Only locals named like a script global (top-level declarations,
-  `scopes::top_level_declarations`; first in `RuntimeFunction::saved_order`, `global_locals` of
-  them) are looked at:
-  a call from the script's top level, or from a function whose locals share no global's name,
-  costs nothing. The debugger's frame gets the caller's values first, then `saved`.
-  `call_frames` is kept inside `request.security`: a function there reads the chart's global.
+- Locals share the flat variable table, so none may share a name with something else alive at once.
+  `syntax::rename` makes that true when the session is built (first, before `hoist::lazy_history` and
+  `call_binding::bind`, so those judge variables and not written names; for the script
+  and each imported library): a local or parameter whose name is also a global, a builtin variable
+  (`low`), a parameter or another local becomes `name#<site>` (`name#L<n>_<site>` in the nth library,
+  where every local is renamed), and every read `scopes::resolve` bound to it follows (the head of a
+  dotted name too; a call that reads no variable keeps its name). A name nothing else uses stays as written; a
+  global always does. `Parameter::name` is the label named arguments use, `Parameter::slot` the
+  variable. Nothing saves or restores values around blocks, loops or calls to hide a global, and a
+  function reads the global whatever its caller declared. A call still parks its locals' previous
+  values (`invoke_with`'s `saved`, `restore_saved`) so none outlives it. A loop counter or block local
+  that nothing shares stays in the table, so `i[1]` reads the previous bar's last count. `var`/`varip`
+  locals are set at entry (stash value, else unset so the declaration initialises them).
+  - **A call that reads no variable keeps its written name; a variable is held under its slot.**
+    `call_binding::is_declared_call` says which, mirroring the chain's order: a builtin
+    (`is_builtin_call`: `route_of`, plus the by-value names in `is_by_value`: `request.*`, `log.*`,
+    `ticker.*`, `str.split`, …), `Type.new` of a declared type, and a function or constructor of an
+    imported library (`lib.f`, `lib.Type.new`). So `log.info(...)` and `lib.f()` work in a function
+    that has a local `log` or `lib`, and the post-rename passes
+    (`security_slice`, `replays_chart_bars`, `looks_ahead`) still see `request.security`. A call on a
+    variable (`levels.push(x)`) is renamed with its receiver. `resolve_identifier` finds variables and
+    fields by the held name and every builtin table (`market`, `flags`, `builtins::color`/`constant`,
+    libraries, named constants, enums, `ta.*` variables, `line.all`) by `rename::display_text`, so
+    `color.red` is the constant where `color` is a local without that field. The debugger applies the
+    builtin part of that rule to a watch, condition or logpoint (`DebugExpression::in_scope`); it
+    refuses constructors and the script's functions. A new builtin family
+    must be a `Route` or listed in `is_by_value`; `every_registered_function_is_a_builtin_call` fails
+    otherwise.
+  - Anything that shows a name uses `rename::display_name` (`level#42` → `level`). The debugger builds
+    its `SourceMap` from a renamed copy (`ScopeEntry::name` is the interpreter's name, `display()` the
+    script's) and `DebugExpression::in_scope` rewrites a watch's names through the scope at the frame,
+    so `u` in a block that hides a global `u` is the block's.
+  - New code that reads or writes a variable by name does so after the rename; a pass that runs before
+    it (the compiler, the type checker) sees the names as written.
 - `varip` (`Session::intrabar`): globals kept by name, user-function locals by call-site stash key
   (`invoke_with`'s `stash_key`, via `intrabar_key`). After an unconfirmed tick
   `capture_intrabar_objects` keeps what each `varip` variable and `varip` UDT field points at plus
@@ -700,8 +708,8 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     workloads both ways; user methods/types/aliases that must stay on the chain) and
     `PINE_CORPUS_DUAL=1` (every community script both ways). Bench with `tools/pine-bench.sh`:
     `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
-- **A `[]` on a call in a lazy operand runs the call on every bar** (`call_binding::hoist`, before
-  `bind` and `mark_shadowing`, libraries included). `cond ? ta.sma(close, 3)[1] : na`, the right side of
+- **A `[]` on a call in a lazy operand runs the call on every bar** (`call_binding::hoist`, after
+  `syntax::rename` and before `bind`, libraries included). `cond ? ta.sma(close, 3)[1] : na`, the right side of
   `and`/`or`, the arms of an `if`/`switch` used for a value and a `switch` condition after the first read
   the value the call has when it runs on every bar (TradingView: P09 S3, P10 C1-C3), while the call
   without `[]` keeps its own state. The call moves, unchanged and with its `site`, into a synthetic
@@ -729,7 +737,8 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     counted: how often a function that holds a moved call is itself called. Counting a cost walks each function body once; calls resolved by name (a library's) can make a cycle that is not a recursion, so past `MAX_WALKS` bodies a function costs everything and its calls stay where they are. A script close to the
     budget can be pushed over it by what does move. A
     history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
-    guard may keep out). A call that reads a name its statement declares stays.
+    guard may keep out). A call that reads a variable its statement declares or assigns stays; another
+    variable of the same name does not count.
   - Nothing moves out of a loop inside an arm or a `while` condition.
   - **Scope**: the script's own statements and the libraries it imports. A lazy `call[]` written
     directly inside a `request.*` expression is not moved (that expression runs on the requested

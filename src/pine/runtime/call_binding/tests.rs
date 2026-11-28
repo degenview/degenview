@@ -133,26 +133,27 @@ fn every_registered_function_without_a_route_is_known_to_be_one() {
         .map(String::as_str)
         .filter(|name| route_of(name).is_none())
         .collect();
-    let allowed = |name: &str| {
-        name.starts_with("request.")
-            || name.starts_with("log.")
-            || name.starts_with("ticker.")
-            || name.starts_with("footprint.")
-            || name.starts_with("volume_row.")
-            || name.starts_with("chart.point")
-            || matches!(
-                name,
-                "str.split"
-                    | "max_bars_back"
-                    | "strategy.convert_to_account"
-                    | "strategy.convert_to_symbol"
-            )
-    };
-    let surprising: Vec<&&str> = unrouted.iter().filter(|name| !allowed(name)).collect();
+    let surprising: Vec<&&str> = unrouted
+        .iter()
+        .filter(|name| !super::is_by_value(name))
+        .collect();
     assert!(
         surprising.is_empty(),
         "registered, runs, but has no route: {surprising:?}"
     );
+}
+
+#[test]
+fn every_registered_function_is_a_builtin_call() {
+    // The rename leaves a call alone when its written name is a builtin, so a function the registry
+    // exposes that this does not know would be renamed after a local of the same head.
+    let unknown: Vec<&String> = crate::pine::compiler::registry::all_functions()
+        .iter()
+        .filter(|name| !super::is_builtin_call(name))
+        .collect();
+    assert!(unknown.is_empty(), "{unknown:?}");
+    assert!(!super::is_builtin_call("levels.push"));
+    assert!(!super::is_builtin_call("p.area"));
 }
 
 #[test]

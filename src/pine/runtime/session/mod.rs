@@ -104,11 +104,6 @@ pub struct Session {
     varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
     pub security_globals: Option<FastMap<String, RuntimeValue>>,
-    /// For each user function call running now, innermost last: what its locals' names held when
-    /// it began (`invoke_with`'s `saved`). A nested call reads the global values off its caller's
-    /// entry. Empty outside a call. Kept while a `request.security` expression runs: a function it
-    /// calls reads the chart's global, as the expression does for a name the request does not compute.
-    pub(crate) call_frames: Vec<CallFrame>,
     /// For each `request.security` expression, the statements that compute the script variables it
     /// reads, run on the requested series before it (`security_slice`).
     pub(crate) security_slices: super::security_slice::Slices,
@@ -117,11 +112,6 @@ pub struct Session {
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
     /// a read before the declaration still means the builtin.
     shadowing_builtins: Vec<String>,
-    /// The names a block's declaration may hide (`Declaration::shadows` indexes them).
-    shadow_names: Vec<String>,
-    /// The outer values the running blocks' shadowing declarations saved, innermost last: each
-    /// block puts back the ones above the mark it began at (`run_block`).
-    shadow_stack: Vec<(crate::pine::syntax::ast::ShadowId, Option<RuntimeValue>)>,
     /// Builtin variables the program reads a history of (`hlcc4[1]`, `ta.tr[1]`,
     /// `strategy.closedtrades[1]`) that `commit_histories` does not record on its own. Each is read at
     /// the end of every confirmed bar and kept like a variable. Empty for most scripts.
@@ -197,14 +187,6 @@ pub struct Session {
 /// Each of a function's locals with what the variable of that name held when its call began (None:
 /// no such variable), in `RuntimeFunction::saved_order`.
 pub(crate) type SavedNames = Vec<(String, Option<RuntimeValue>)>;
-
-/// A user function call that is running.
-pub(crate) struct CallFrame {
-    pub saved: SavedNames,
-    /// How many of `saved`'s names, from the start, are those of script globals: the names the call
-    /// may hide a global under (`RuntimeFunction::global_locals`).
-    pub global_locals: usize,
-}
 
 struct Step {
     flow: Flow,

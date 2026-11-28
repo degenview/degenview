@@ -250,6 +250,7 @@ pub(crate) fn variables(
     let mut groups: [Vec<Variable>; 4] = Default::default();
     // Declaration order, oldest first, reads like the source.
     for entry in entries.into_iter().rev() {
+        let display = entry.display();
         let value = env.frame_value(frame, &entry.name);
         let assigned = match entry.kind {
             DeclarationKind::Parameter | DeclarationKind::Loop => true,
@@ -271,14 +272,15 @@ pub(crate) fn variables(
             Group::Local
         };
         let mut variable = match (&value, assigned) {
-            (Some(value), true) => describe(env, frame, &entry.name, value),
-            _ => unassigned(&entry.name),
+            (Some(value), true) => {
+                let mut variable = describe(env, frame, &entry.name, value);
+                display.clone_into(&mut variable.name);
+                variable
+            }
+            _ => unassigned(display),
         };
         variable.declaration = Some(entry.kind);
-        variable.changed = assigned
-            && previous
-                .get(&entry.name)
-                .is_some_and(|p| *p != variable.full);
+        variable.changed = assigned && previous.get(display).is_some_and(|p| *p != variable.full);
         groups[group_index(group)].push(variable);
     }
     let shadowed: std::collections::HashSet<&str> = groups
@@ -570,6 +572,7 @@ fn resolve(env: &mut Env<'_>, reference: &ValueRef) -> Result<Node, InspectError
             Node::Value(
                 evaluate::evaluate(
                     env.session,
+                    env.map,
                     env.frames,
                     reference.frame,
                     env.context,
@@ -910,7 +913,14 @@ pub enum Watched {
 
 /// Evaluates `expression` in `frame` without changing the script.
 pub(crate) fn watch(env: &mut Env<'_>, frame: usize, expression: &DebugExpression) -> Watched {
-    match evaluate::evaluate(env.session, env.frames, frame, env.context, expression) {
+    match evaluate::evaluate(
+        env.session,
+        env.map,
+        env.frames,
+        frame,
+        env.context,
+        expression,
+    ) {
         Ok(value) => {
             let (full, type_name) = summarize(env, &value);
             let expand = is_compound(&value).then(|| ValueRef {

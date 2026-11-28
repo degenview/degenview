@@ -3,6 +3,7 @@
 pub mod ast;
 pub mod lexer;
 pub mod parser;
+pub mod rename;
 pub mod scopes;
 pub mod token;
 pub mod traversal;

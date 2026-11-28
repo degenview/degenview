@@ -94,7 +94,7 @@ impl<'a> Functions<'a> {
                     let (parameters, body) = self.bodies[id];
                     // Inside a function, a collection is known by being handed in.
                     let references: HashSet<&str> =
-                        parameters.iter().map(|p| p.name.as_str()).collect();
+                        parameters.iter().map(|p| p.slot.as_str()).collect();
                     let mut walker = Walker::new(bindings, &references, self);
                     for statement in body {
                         walker.statement(statement);

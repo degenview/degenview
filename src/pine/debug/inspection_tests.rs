@@ -693,6 +693,91 @@ plot(y)
 }
 
 #[test]
+fn a_watch_and_the_variables_name_a_local_that_hides_a_global_by_its_own_name() {
+    // The block's `u` is a variable of its own in the interpreter (`u#…`); the script and the
+    // debugger call it `u`, and inside the block `u` is that one.
+    let body = "u = -99.0
+if bar_index > 0
+    u = bar_index * 10.0
+    plot(u)
+";
+    let results = watches(body, 3, 6, 0, &["u", "u * 2", "u[1]"]);
+    assert_eq!(results[0], "u => 20 (float)");
+    assert_eq!(results[1], "u * 2 => 40 (float)");
+    assert_eq!(results[2], "u[1] => 10 (float)");
+
+    let (probe, captured) = capture_all();
+    at_lines(body, 3, &[6], probe);
+    let captured = captured.lock().unwrap();
+    let rows = &captured.last().expect("a stop").frames[0].1;
+    let named_u: Vec<_> = rows.iter().filter(|(_, name, _)| name == "u").collect();
+    assert_eq!(named_u.len(), 1, "{rows:?}");
+    assert_eq!(named_u[0].2, "20");
+    assert!(
+        rows.iter().all(|(_, name, _)| !name.contains('#')),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn a_frame_names_a_method_called_on_a_renamed_local_as_written() {
+    // `b` in `f` hides the global `b`; the stack says `b.area()`, not the interpreter's `b#…`.
+    let body = "type B
+    float v = 1.0
+method area(B self) =>
+    self.v
+b = B.new()
+f() =>
+    b = B.new()
+    b.area()
+r = f()
+";
+    let (probe, captured) = capture_all();
+    // Line 6 is `self.v`, inside the method.
+    at_lines(body, 1, &[6], probe);
+    let captured = captured.lock().unwrap();
+    let labels: Vec<&String> = captured
+        .iter()
+        .flat_map(|stop| stop.frames.iter().map(|(label, _)| label))
+        .collect();
+    assert!(
+        labels.iter().any(|label| *label == "b.area()"),
+        "{labels:?}"
+    );
+    assert!(
+        labels.iter().all(|label| !label.contains('#')),
+        "{labels:?}"
+    );
+}
+
+/// A function whose locals hide the globals of their names; line 9 is `x`, inside it.
+const HIDING_NAMESPACE: &str = "math = 1.0
+levels = array.new_float(2)
+f() =>
+    math = -2.0
+    levels = array.new_float(3)
+    x = math * 1
+    x
+r = f()
+";
+
+#[test]
+fn a_watch_calls_a_builtin_by_its_written_name_on_a_renamed_local() {
+    // `math` is the local -2 here (held as `math#…`): `math.abs(math)` is the builtin applied to it,
+    // and `levels.size()` is the local array's own method.
+    let results = watches(
+        HIDING_NAMESPACE,
+        1,
+        9,
+        0,
+        &["math.abs(math)", "levels.size()", "math * 3"],
+    );
+    assert_eq!(results[0], "math.abs(math) => 2 (float)");
+    assert_eq!(results[1], "levels.size() => 3 (int)");
+    assert_eq!(results[2], "math * 3 => -6 (float)");
+}
+
+#[test]
 fn a_watch_that_returns_a_collection_can_be_expanded() {
     let body = "var arr = array.new_float(0)
 array.push(arr, close)
@@ -856,7 +941,14 @@ fn evaluating_a_watch_leaves_the_interpreters_state_exactly_as_it_was() {
         "undefined + 1",
     ] {
         let expression = parse_expression(text).unwrap();
-        let _ = super::evaluate::evaluate(&mut session, &[], 0, &context, &expression);
+        let _ = super::evaluate::evaluate(
+            &mut session,
+            &super::SourceMap::default(),
+            &[],
+            0,
+            &context,
+            &expression,
+        );
     }
     assert_eq!(format!("{:?}", session.working), before);
 }

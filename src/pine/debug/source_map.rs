@@ -10,7 +10,10 @@
 //! The interpreter's variable table is flat and keeps names after their block ends, so what a
 //! stopped script may show is decided here, from the syntax, never from what the table holds.
 
+use std::collections::HashSet;
+
 use crate::pine::syntax::ast::{DeclarationMode, Expression, Statement};
+use crate::pine::syntax::rename;
 use crate::pine::syntax::traversal;
 
 /// A statement the interpreter runs, in source order.
@@ -54,6 +57,7 @@ impl DeclarationKind {
 /// names are not reachable from after it, because the chain after the block is the one from before.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScopeEntry {
+    /// The name of the variable in the interpreter's table (`syntax::rename`).
     pub name: String,
     pub kind: DeclarationKind,
     /// The statement that gives the name a value: its declaration, the `for` it counts, or the
@@ -103,12 +107,37 @@ pub struct SourceMap {
     scope: Vec<ScopeEntry>,
     /// Lines that declare something that never runs, to say why a breakpoint there is refused.
     declarations: Vec<(usize, NotExecutable)>,
+    /// The script's names that some variable in `scope` is held under another name for.
+    renamed: HashSet<String>,
+}
+
+impl ScopeEntry {
+    /// The name the script gives the variable.
+    pub fn display(&self) -> &str {
+        rename::display_name(&self.name)
+    }
 }
 
 impl SourceMap {
+    /// Whether a variable the script calls `name` is held under another name anywhere.
+    pub(crate) fn is_renamed(&self, name: &str) -> bool {
+        self.renamed.contains(name)
+    }
+
+    /// The names in the map are the ones the interpreter's variables carry: a declaration that
+    /// shares a name with something else is renamed (`syntax::rename`), and `ScopeEntry::display`
+    /// is what the script calls it.
     pub fn build(statements: &[Statement]) -> Self {
+        let mut renamed = statements.to_vec();
+        rename::plan(
+            &renamed,
+            &crate::pine::compiler::symbol_catalog::is_variable,
+            &crate::pine::runtime::call_binding::is_builtin_call,
+            rename::Program::Script,
+        )
+        .apply(&mut renamed);
         let mut map = Self::default();
-        map.block(statements, None, None, true);
+        map.block(&renamed, None, None, true);
         map.executables.sort_by_key(|executable| executable.offset);
         map.executables.dedup_by_key(|executable| executable.offset);
         map
@@ -122,6 +151,10 @@ impl SourceMap {
         offset: usize,
         global: bool,
     ) {
+        let shown = rename::display_name(name);
+        if shown != name {
+            self.renamed.insert(shown.to_owned());
+        }
         self.scope.push(ScopeEntry {
             name: name.to_owned(),
             kind,
@@ -169,7 +202,7 @@ impl SourceMap {
                 for parameter in parameters {
                     self.declare(
                         &mut inner,
-                        &parameter.name,
+                        &parameter.slot,
                         DeclarationKind::Parameter,
                         offset,
                         false,
@@ -264,7 +297,7 @@ impl SourceMap {
         let mut next = self.at(offset).and_then(|executable| executable.scope);
         while let Some(index) = next {
             let entry = &self.scope[index as usize];
-            if seen.insert(entry.name.as_str()) {
+            if seen.insert(entry.display()) {
                 visible.push(entry);
             }
             next = entry.parent;
