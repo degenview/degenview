@@ -33,7 +33,7 @@ mod tests {
     const NO_WAIT: [Duration; 2] = [Duration::ZERO; 2];
 
     fn busy() -> ProviderError {
-        ProviderError::from(http::Error::Status(503))
+        ProviderError::http(DataSource::Binance, http::Error::Status(503))
     }
 
     #[test]

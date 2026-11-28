@@ -5,6 +5,7 @@ use super::candles::plan;
 use super::search_rank::normalize;
 use crate::model::market::binance::split_market;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
@@ -18,6 +19,16 @@ pub(in crate::service) use endpoints::{Endpoints, endpoints};
 pub struct Binance;
 
 pub const BINANCE: Binance = Binance;
+
+/// What Binance's HTTP statuses mean beyond a rate limit: a 400 names a market it does not list.
+pub(in crate::service::market) const STATUSES: &[(u16, ErrorKind)] =
+    &[(400, ErrorKind::UnknownSymbol)];
+
+/// A request for `listing`'s market data.
+fn get(listing: Listing, url: &str) -> Result<String, ProviderError> {
+    crate::service::net::http::get_text(url, &[], crate::service::net::http::Retry::Transient)
+        .map_err(|error| ProviderError::http(listing, error))
+}
 
 /// The most klines one Binance request returns.
 const MAX_PER_REQUEST: usize = 1_000;
@@ -65,11 +76,7 @@ impl MarketSource for Binance {
             request.pair,
             plan.base().interval()
         );
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-        )?;
+        let body = get(request.listing, &url)?;
         Ok(plan.shape(parse_klines(&body)?, requested, limit as usize))
     }
 
@@ -109,18 +116,16 @@ impl MarketSource for Binance {
                                 request.endpoints.klines_url,
                                 request.pair
                             );
-                            let body =
-                                crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)?;
-                            parse_klines(&body)
+                            parse_klines(&get(request.listing, &url)?)
                         })
                     })
                     .collect();
                 handles
                     .into_iter()
                     .map(|handle| {
-                        handle.join().unwrap_or_else(|_| {
-                            Err(ProviderError::other("The candle download stopped."))
-                        })
+                        handle
+                            .join()
+                            .unwrap_or_else(|_| Err(ProviderError::interrupted(request.listing)))
                     })
                     .collect()
             });
@@ -147,10 +152,11 @@ impl MarketSource for Binance {
 }
 
 fn parse_klines(body: &str) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Binance, error))?;
     let rows = value
         .as_array()
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Binance, "expected a candle array"))?;
     rows.iter().map(parse_row).collect()
 }
 
@@ -159,12 +165,14 @@ fn parse_row(row: &Value) -> Result<Kline, ProviderError> {
         row.get(index)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
+            .ok_or_else(|| {
+                ProviderError::malformed(DataSource::Binance, format!("invalid field {index}"))
+            })
     };
     let time = |index: usize| -> Result<i64, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_i64)
-            .ok_or_else(|| ProviderError::data(format!("invalid timestamp {index}")))
+        row.get(index).and_then(Value::as_i64).ok_or_else(|| {
+            ProviderError::malformed(DataSource::Binance, format!("invalid timestamp {index}"))
+        })
     };
 
     Ok(Kline {
@@ -265,6 +273,9 @@ mod tests {
     fn rejects_error_objects() {
         let error = parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#)
             .expect_err("object must fail");
-        assert_eq!(error, ProviderError::data("expected a candle array"));
+        assert_eq!(
+            error,
+            ProviderError::malformed(DataSource::Binance, "expected a candle array")
+        );
     }
 }

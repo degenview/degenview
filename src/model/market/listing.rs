@@ -27,6 +27,11 @@ impl Listing {
         Self { source, market }
     }
 
+    /// The source's spot markets, as a constant.
+    pub const fn spot(source: DataSource) -> Self {
+        Self::new(source, Market::Spot)
+    }
+
     /// The listings whose candles a socket follows.
     pub fn candle_streams() -> impl Iterator<Item = Self> {
         DataSource::CANDLE_STREAMS

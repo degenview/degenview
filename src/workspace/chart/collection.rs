@@ -12,6 +12,7 @@ use crate::model::{
     ChartType, DataSource, Drawing, IndicatorConfig, InstrumentId, Kline, Timeframe,
 };
 use crate::service::SearchResult;
+use crate::service::provider_message;
 use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::sync::Arc;
@@ -92,7 +93,7 @@ impl ChartWorkspace {
                 is_line_chart: chart.source.is_line_chart(),
                 chart_type: chart.chart.effective_chart_type(chart.source),
                 loading: chart.loading,
-                error: chart.error.as_ref().map(ToString::to_string),
+                error: chart.error.as_ref().map(provider_message::message),
                 focused: focused == Some(chart.id),
                 indicators: chart.indicators,
                 pine_instances: chart

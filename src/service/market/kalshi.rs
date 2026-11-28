@@ -1,5 +1,6 @@
 use crate::model::market::line;
-use crate::model::{Kline, Timeframe};
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
     replace_last_price, whole_dollars,
@@ -67,8 +68,10 @@ fn series_list() -> Result<Vec<Series>, ProviderError> {
         &[],
         crate::service::net::http::Retry::Transient,
         32 * 1024 * 1024,
-    )?;
-    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+    )
+    .map_err(|error| ProviderError::http(DataSource::Kalshi, error))?;
+    let value: Value = serde_json::from_str(&body)
+        .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
 
     let list: Vec<Series> = value
         .get("series")
@@ -172,12 +175,9 @@ impl MarketSource for Kalshi {
     ) -> Result<Vec<Kline>, ProviderError> {
         let (series, market) = symbol
             .split_once('/')
-            .ok_or_else(|| ProviderError::other("Unrecognized Kalshi market id"))?;
+            .ok_or_else(|| ProviderError::new(DataSource::Kalshi, ErrorKind::UnknownSymbol))?;
         let (period, span) = kalshi_window(timeframe);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| ProviderError::other("System clock is before the epoch"))?
-            .as_secs() as i64;
+        let now = crate::clock::now_ms() / 1_000;
         let url = format!(
             "{BASE_URL}/series/{series}/markets/{market}/candlesticks?start_ts={}&end_ts={now}&period_interval={period}",
             now - span
@@ -186,8 +186,10 @@ impl MarketSource for Kalshi {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )?;
-        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+        )
+        .map_err(|error| ProviderError::http(DataSource::Kalshi, error))?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
 
         let mut rows: Vec<(i64, &Value)> = value
             .get("candlesticks")
@@ -225,9 +227,7 @@ impl MarketSource for Kalshi {
             });
         }
         if candles.is_empty() {
-            return Err(ProviderError::other(
-                "No price history for this market in this range",
-            ));
+            return Err(ProviderError::new(DataSource::Kalshi, ErrorKind::NoData));
         }
 
         let thinned = downsample(&candles, limit as usize);
@@ -235,6 +235,20 @@ impl MarketSource for Kalshi {
             Some(price) => replace_last_price(thinned, price),
             None => thinned,
         })
+    }
+
+    fn fetch_klines_range(
+        &self,
+        _symbol: &str,
+        _timeframe: Timeframe,
+        _start_ms: i64,
+        _end_ms: i64,
+        _max: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        Err(ProviderError::new(
+            DataSource::Kalshi,
+            ErrorKind::NoTimeRange,
+        ))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -344,12 +358,11 @@ fn open_events(series: &str) -> Result<Vec<Value>, ProviderError> {
     let url = format!(
         "{BASE_URL}/events?series_ticker={series}&status=open&with_nested_markets=true&limit=20"
     );
-    let body = crate::service::net::http::get_text(
-        &url,
-        &[],
-        crate::service::net::http::Retry::Transient,
-    )?;
-    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+    let body =
+        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
+            .map_err(|error| ProviderError::http(DataSource::Kalshi, error))?;
+    let value: Value = serde_json::from_str(&body)
+        .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
     Ok(value
         .get("events")
         .and_then(Value::as_array)

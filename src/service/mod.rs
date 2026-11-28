@@ -10,6 +10,7 @@ pub mod llm;
 pub mod market;
 pub mod net;
 pub mod portfolio;
+pub mod provider_message;
 pub mod snapshot;
 pub mod sound;
 pub mod stream;
@@ -185,7 +186,7 @@ pub trait MarketSource {
     ) -> Result<Vec<Kline>, ProviderError>;
 
     /// Candles that open in `[start_ms, end_ms)`, oldest first, at most `max` of them (the newest if
-    /// there are more). Only sources with a time-range endpoint implement it.
+    /// there are more). A source with no time-range endpoint answers `ErrorKind::NoTimeRange`.
     fn fetch_klines_range(
         &self,
         symbol: &str,
@@ -193,12 +194,7 @@ pub trait MarketSource {
         start_ms: i64,
         end_ms: i64,
         max: usize,
-    ) -> Result<Vec<Kline>, ProviderError> {
-        let _ = (symbol, timeframe, start_ms, end_ms, max);
-        Err(ProviderError::other(
-            "This source cannot serve a time range of candles.",
-        ))
-    }
+    ) -> Result<Vec<Kline>, ProviderError>;
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let _ = query;

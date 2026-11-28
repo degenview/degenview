@@ -3,6 +3,7 @@ use crate::model::portfolio::card::CardKind;
 use crate::model::watchlist::quote::Freshness;
 use crate::model::{Kline, Timeframe};
 use crate::service::market::coin_index::CoinIndex;
+use crate::service::market::error::ErrorKind;
 use crate::service::market::names::Listed;
 use crate::service::net::http;
 use crate::service::{EventInfo, ProviderError};
@@ -48,9 +49,9 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
             pair(Binance, "ETHBTC", "ETH", "BTC"),
         ]),
         (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
-        (Alpaca, _) => Err(ProviderError::MissingKey(Alpaca)),
+        (Alpaca, _) => Err(ProviderError::new(Alpaca, ErrorKind::MissingKey)),
         (DataSource::Oanda, "eurusd") => Ok(vec![pair(DataSource::Oanda, "EUR_USD", "EUR", "USD")]),
-        (DataSource::Oanda, _) => Err(ProviderError::MissingKey(DataSource::Oanda)),
+        (DataSource::Oanda, _) => Err(ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey)),
         (DataSource::Polymarket, "fed") => Ok(vec![
             chance(DataSource::Polymarket, "Fed decision", "Cut", Some(0.2)),
             chance(DataSource::Polymarket, "Fed decision", "Hold", Some(0.7)),
@@ -61,7 +62,10 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
             chance(DataSource::Kalshi, "Fed rate", "Above 5%", Some(0.6)),
             chance(DataSource::Kalshi, "Fed rate", "Below 5%", Some(0.3)),
         ]),
-        (DataSource::Kalshi, "boom") => Err(ProviderError::other("Kalshi is down")),
+        (DataSource::Kalshi, "boom") => Err(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "Kalshi is down",
+        )),
         _ => Ok(Vec::new()),
     }
 }
@@ -138,7 +142,10 @@ fn stub_candles(
     limit: u32,
 ) -> Result<Vec<Kline>, ProviderError> {
     if symbol.contains("NOHISTORY") {
-        return Err(ProviderError::other("no history"));
+        return Err(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "no history",
+        ));
     }
     let level = if symbol.starts_with("BTC") {
         75_400.0
@@ -585,7 +592,10 @@ fn a_missing_alpaca_key_is_a_card_with_a_settings_button_not_a_hint() {
     let mut listing = rig.picker.listing(&ctx);
     listing.errors = vec![(
         DataSource::Alpaca,
-        ProviderError::from(http::Error::Network("timed out".to_owned())),
+        ProviderError::http(
+            DataSource::Alpaca,
+            http::Error::Network("timed out".to_owned()),
+        ),
     )];
     let notice = rig.picker.notice(&listing, &lookup).expect("a failure");
     assert_eq!(notice.title, "Stocks could not be searched");

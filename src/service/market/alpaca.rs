@@ -3,7 +3,8 @@ use super::catalog::Catalog;
 use super::catalog::search::WIDE_HITS;
 use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
-use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
+use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,9 +20,19 @@ pub struct Alpaca;
 
 pub const ALPACA: Alpaca = Alpaca;
 
+/// What Alpaca's HTTP statuses mean beyond a rate limit: a 400 names a symbol it does not know, a
+/// 401 or 403 refuses the keys.
+pub(super) const STATUSES: &[(u16, ErrorKind)] = &[
+    (400, ErrorKind::UnknownSymbol),
+    (401, ErrorKind::Unauthorized),
+    (403, ErrorKind::Unauthorized),
+];
+
 fn credentials() -> Result<(String, String), ProviderError> {
-    crate::service::keychain::api_keys::alpaca_credentials()
-        .ok_or(ProviderError::MissingKey(DataSource::Alpaca))
+    crate::service::keychain::api_keys::alpaca_credentials().ok_or(ProviderError::new(
+        DataSource::Alpaca,
+        ErrorKind::MissingKey,
+    ))
 }
 
 /// Settings ▸ Alpaca ▸ Test Connection: one bar of one stock, asked for with the given keys (the
@@ -37,7 +48,7 @@ pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderErr
         crate::service::net::http::Retry::Never,
     )
     .map(|_| ())
-    .map_err(ProviderError::Alpaca)
+    .map_err(|error| ProviderError::http(DataSource::Alpaca, error))
 }
 
 /// The most bars one request returns.
@@ -172,7 +183,7 @@ struct Asset {
 }
 
 /// Every tradable asset (the response is tens of megabytes), downloaded at most once a day.
-static CATALOG: Catalog<Asset> = Catalog::new("catalog_alpaca");
+static CATALOG: Catalog<Asset> = Catalog::new(Listing::spot(DataSource::Alpaca), "catalog_alpaca");
 
 fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError> {
     let url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity";
@@ -182,12 +193,13 @@ fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError>
         crate::service::net::http::Retry::Transient,
         32 * 1024 * 1024,
     )
-    .map_err(ProviderError::Alpaca)?;
+    .map_err(|error| ProviderError::http(DataSource::Alpaca, error))?;
     parse_assets(&body)
 }
 
 fn parse_assets(body: &str) -> Result<Vec<Asset>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Alpaca, error))?;
     Ok(value
         .as_array()
         .map(Vec::as_slice)
@@ -268,16 +280,18 @@ fn fetch_bars(
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
         crate::service::net::http::Retry::Transient,
     )
-    .map_err(ProviderError::Alpaca)?;
+    .map_err(|error| ProviderError::http(DataSource::Alpaca, error))?;
     let mut bars = parse_bars(&body, bar)?;
     // The newest page of a market with no bars at all is an error; an older page with none is
     // the start of its history.
     if bars.is_empty() && end_ms.is_none() {
-        return Err(ProviderError::Other(format!(
-            "No data is available for {} on Alpaca's free {} feed.",
-            symbol.to_uppercase(),
-            feed.query().to_uppercase()
-        )));
+        return Err(ProviderError::new(
+            DataSource::Alpaca,
+            ErrorKind::NotOnFeed {
+                symbol: symbol.to_uppercase(),
+                feed: feed.query().to_uppercase(),
+            },
+        ));
     }
     bars.sort_by_key(|candle| candle.open_time);
     Ok(bars)
@@ -285,7 +299,8 @@ fn fetch_bars(
 
 /// `{"bars": [{"t": ISO, "o", "h", "l", "c", "v", "vw"}]}` newest first.
 fn parse_bars(body: &str, length: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Alpaca, error))?;
     let bars = value
         .get("bars")
         .and_then(Value::as_array)

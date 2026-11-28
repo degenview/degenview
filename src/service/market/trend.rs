@@ -263,7 +263,14 @@ mod tests {
         assert_eq!(loader.claim(std::slice::from_ref(&btc), later).len(), 1);
         // The old closes stay on screen while the new ones are read, and survive a failed read.
         assert!(loader.snapshot().contains_key(&btc.key()));
-        loader.finish(&btc.key(), Err(ProviderError::other("offline")), later);
+        loader.finish(
+            &btc.key(),
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            )),
+            later,
+        );
         assert_eq!(
             loader.snapshot().get(&btc.key()),
             Some(&Trend::Ready(vec![1.0, 2.0, 3.0]))
@@ -278,7 +285,10 @@ mod tests {
         loader.claim(std::slice::from_ref(&market), now);
         loader.finish(
             &market.key(),
-            Err(ProviderError::other("unknown market")),
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "unknown market",
+            )),
             now,
         );
         assert_eq!(
@@ -302,7 +312,14 @@ mod tests {
         loader.claim(std::slice::from_ref(&btc), now);
         loader.release(&btc.key());
         assert_eq!(loader.claim(std::slice::from_ref(&btc), now).len(), 1);
-        loader.finish(&btc.key(), Err(ProviderError::other("no key")), now);
+        loader.finish(
+            &btc.key(),
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "no key",
+            )),
+            now,
+        );
         assert_eq!(loader.get(&btc.key()), Some(Trend::Unavailable));
         loader.forget_unavailable();
         assert_eq!(loader.get(&btc.key()), None);

@@ -134,7 +134,10 @@ mod tests {
         _: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         ASKED.lock().expect("asked").push(symbol.to_owned());
-        Err(ProviderError::other("no history"))
+        Err(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "no history",
+        ))
     }
 
     #[test]

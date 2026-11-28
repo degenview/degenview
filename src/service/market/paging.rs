@@ -146,8 +146,19 @@ mod tests {
 
     #[test]
     fn a_failed_page_is_the_answer() {
-        let error = PAGING.back(0, 600, 10, |_, _| Err(ProviderError::other("down")));
-        assert_eq!(error, Err(ProviderError::other("down")));
+        let error = PAGING.back(0, 600, 10, |_, _| {
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "down",
+            ))
+        });
+        assert_eq!(
+            error,
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "down"
+            ))
+        );
     }
 
     fn okx_plan(text: &str) -> FoldPlan {

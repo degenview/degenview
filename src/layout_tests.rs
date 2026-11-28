@@ -121,6 +121,9 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
         "service",
         &["app", "host", "mcp", "sync", "ui", "workspace"],
     ),
+    // The venues report what failed as a kind of failure; the words are written at the edge
+    // (`service::provider_message`), so the market code can move out of the app.
+    ("service/market", &["i18n"]),
     (
         "store",
         &["app", "host", "pine_studio", "service", "ui", "workspace"],

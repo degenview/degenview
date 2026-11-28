@@ -751,7 +751,10 @@ fn a_compared_chart_draws_in_the_pseudo_locale() {
             ("SOLUSDT", market(300, |n| 90.0 + n as f64 / 4.0)),
         ]);
         chart.replay_active = true;
-        chart.error = Some(ProviderError::other("down"));
+        chart.error = Some(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "down",
+        ));
         chart.crosshair = Some(crosshair_at(&chart, 0.85));
         let mut screen = Screen::new(SIZE);
         crate::ui::theme::apply(&screen.ctx, app_theme);
@@ -812,7 +815,8 @@ fn a_compared_chart_draws_in_the_pseudo_locale() {
         assert!(
             texts
                 .iter()
-                .any(|text| text.starts_with("[Çöûļðñ'ţ ŕéfŕéšĥ") && text.contains("(down)")),
+                .any(|text| text.starts_with("[Çöûļðñ'ţ ŕéfŕéšĥ")
+                    && text.contains("Binance éŕŕöŕ: down")),
             "the refresh warning: {texts:#?}"
         );
         assert!(

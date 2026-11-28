@@ -18,8 +18,9 @@ use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::market::oanda::OandaEnvironment;
-use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
+use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
 use crate::service::keychain::api_keys::{CredentialPair, OandaCredentials};
+use crate::service::market::error::ErrorKind;
 use crate::service::net::http::{self, Retry};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -41,9 +42,17 @@ const PAGING: Paging = Paging {
     pause: Duration::ZERO,
 };
 
+/// What Oanda's HTTP statuses mean beyond a rate limit: a 400 names an instrument it does not know,
+/// a 401 or 403 refuses the access token.
+pub(super) const STATUSES: &[(u16, ErrorKind)] = &[
+    (400, ErrorKind::UnknownSymbol),
+    (401, ErrorKind::Unauthorized),
+    (403, ErrorKind::Unauthorized),
+];
+
 fn credentials() -> Result<OandaCredentials, ProviderError> {
     crate::service::keychain::api_keys::oanda_credentials()
-        .ok_or(ProviderError::MissingKey(DataSource::Oanda))
+        .ok_or(ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey))
 }
 
 /// The v3 API of an environment.
@@ -75,7 +84,7 @@ fn send(request: &ApiRequest, retry: Retry) -> Result<String, ProviderError> {
         &[("Authorization", request.authorization.as_str())],
         retry,
     )
-    .map_err(ProviderError::Oanda)
+    .map_err(|error| ProviderError::http(DataSource::Oanda, error))
 }
 
 fn get(login: &OandaCredentials, path: &str, retry: Retry) -> Result<String, ProviderError> {
@@ -237,11 +246,12 @@ fn candle_page(
 /// `{"candles": [{"time": ISO, "volume": n, "complete": bool, "mid": {"o","h","l","c"}}]}`, oldest
 /// first. The forming (incomplete) last candle is kept, as Binance's is.
 fn parse_candles(body: &str, bar: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Oanda, error))?;
     let rows = value
         .get("candles")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a candles object"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "expected a candles object"))?;
     rows.iter().map(|row| parse_candle(row, bar)).collect()
 }
 
@@ -250,15 +260,17 @@ fn parse_candle(row: &Value, bar: Timeframe) -> Result<Kline, ProviderError> {
         .get("time")
         .and_then(Value::as_str)
         .and_then(crate::format::parse_iso8601)
-        .ok_or_else(|| ProviderError::data("invalid candle time"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "invalid candle time"))?;
     let mid = row
         .get("mid")
-        .ok_or_else(|| ProviderError::data("expected mid prices"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "expected mid prices"))?;
     let price = |key: &str| -> Result<f64, ProviderError> {
         mid.get(key)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid price {key}")))
+            .ok_or_else(|| {
+                ProviderError::malformed(DataSource::Oanda, format!("invalid price {key}"))
+            })
     };
     let volume = row.get("volume").and_then(Value::as_f64).unwrap_or(0.0);
     Ok(Kline {
@@ -312,7 +324,8 @@ impl ListedMarket for Instrument {
 }
 
 /// The instrument list belongs to the account whose credentials downloaded it.
-static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda_v2");
+static CATALOG: Catalog<Instrument> =
+    Catalog::new(Listing::spot(DataSource::Oanda), "catalog_oanda_v2");
 
 fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, ProviderError> {
     let body = get(
@@ -324,7 +337,8 @@ fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, Pro
 }
 
 fn parse_instruments(body: &str) -> Result<Vec<Instrument>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Oanda, error))?;
     Ok(value
         .get("instruments")
         .and_then(Value::as_array)
@@ -389,7 +403,10 @@ mod tests {
             Timeframe::HOUR_1,
         )
         .expect_err("object must fail");
-        assert_eq!(error, ProviderError::data("expected a candles object"));
+        assert_eq!(
+            error,
+            ProviderError::malformed(DataSource::Oanda, "expected a candles object")
+        );
         assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
     }
 

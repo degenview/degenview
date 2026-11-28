@@ -4,7 +4,8 @@ use super::lookup::Lookup;
 use super::search::{Listing, Scope};
 use crate::i18n::tr;
 use crate::model::DataSource;
-use crate::service::{self, ProviderError};
+use crate::service;
+use crate::service::provider_message;
 use crate::ui::chart::picker_kit::widgets;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, REGULAR, SEMIBOLD};
@@ -28,12 +29,10 @@ pub(super) fn notice_for(
 ) -> Option<Notice> {
     let missing = |targeted: bool| {
         listing.errors.iter().find_map(|(_, error)| {
-            let ProviderError::MissingKey(source) = error else {
-                return None;
-            };
-            let page = SettingsPage::for_source(*source)?;
+            let source = error.missing_key()?;
+            let page = SettingsPage::for_source(source)?;
             let visible = if targeted {
-                targets(*source, lookup, scope)
+                targets(source, lookup, scope)
             } else {
                 page.advertises_on_broad_search()
             };
@@ -46,13 +45,13 @@ pub(super) fn notice_for(
         .or_else(|| missing(false))
         .or_else(|| {
             listing.errors.iter().find_map(|(source, error)| {
-                if matches!(error, ProviderError::MissingKey(_)) {
+                if error.missing_key().is_some() {
                     return None;
                 }
                 let title = SettingsPage::for_source(*source)?.search_failure_title()?;
                 Some(Notice {
                     title,
-                    detail: error.to_string(),
+                    detail: provider_message::message(error),
                     settings: None,
                 })
             })

@@ -49,7 +49,9 @@ column; word for word is wrong in one of them.
   table of text (`tr_noop!` and `.text()` where it is drawn), a sentence stored when something happened
   (store what happened and write the sentence when it is shown, as the paper journal's `PaperNote` does;
   the stored English stays for exports and MCP), and an error type's `#[error(...)]` (a helper function
-  that calls `tr!`, because `thiserror` takes a call and the extractor wants plain expressions).
+  that calls `tr!`, because `thiserror` takes a call and the extractor wants plain expressions). A
+  market provider's failure is a kind with no text; its words are one `match` in
+  `service::provider_message`, so a new kind is a new message there.
 - **Terms of the trade** that people in that language use in English stay English (Long, Short, Stop
   loss, Take profit, Bid/Ask, Webhook, Footprint, VWAP…). Decide the list per language, in the glossary.
 - **Platform wording follows the platform's own language**: for the macOS menu bar use the system's

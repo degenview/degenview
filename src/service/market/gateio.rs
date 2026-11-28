@@ -9,7 +9,8 @@ use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::next_bucket_start_ms;
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -158,28 +159,26 @@ fn fetch_page(
     parse_candles(&get(&url)?, base)
 }
 
-/// A request, with Gate.io's refusals told apart from a network failure: a 400 names a market it
-/// does not list, a 403 a country it does not serve (or a client that asks too often).
+/// What Gate.io's HTTP statuses mean beyond a rate limit: a 400 names a market it does not list, a
+/// 403 a country it does not serve (or a client that asks too often).
+pub(super) const STATUSES: &[(u16, ErrorKind)] = &[
+    (400, ErrorKind::UnknownSymbol),
+    (403, ErrorKind::RegionBlocked),
+];
+
+/// A request, with Gate.io's refusals told apart from a network failure.
 pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
-    match http::get_text(url, &[], http::Retry::Transient) {
-        Ok(body) => Ok(body),
-        Err(http::Error::Status(400)) => Err(ProviderError::other(
-            "Gate.io refused the request (HTTP 400): it does not list this market",
-        )),
-        Err(http::Error::Status(403)) => Err(ProviderError::other(
-            "Gate.io refused the request (HTTP 403): it is not available in every country, and \
-             refuses a client that asks too often",
-        )),
-        Err(error) => Err(error.into()),
-    }
+    http::get_text(url, &[], http::Retry::Transient)
+        .map_err(|error| ProviderError::http(DataSource::Gate, error))
 }
 
 /// Candles of length `base`, oldest first.
 fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Gate, error))?;
     let mut candles = value
         .as_array()
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Gate, "expected a candle array"))?
         .iter()
         .map(|row| parse_row(row, base))
         .collect::<Result<Vec<_>, _>>()?;
@@ -189,18 +188,18 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
 
 fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     let text = |index: usize| -> Result<&str, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
+        row.get(index).and_then(Value::as_str).ok_or_else(|| {
+            ProviderError::malformed(DataSource::Gate, format!("invalid field {index}"))
+        })
     };
     let number = |index: usize| -> Result<f64, ProviderError> {
-        text(index)?
-            .parse()
-            .map_err(|_| ProviderError::data(format!("invalid field {index}")))
+        text(index)?.parse().map_err(|_| {
+            ProviderError::malformed(DataSource::Gate, format!("invalid field {index}"))
+        })
     };
     let seconds: i64 = text(0)?
         .parse()
-        .map_err(|_| ProviderError::data("invalid timestamp"))?;
+        .map_err(|_| ProviderError::malformed(DataSource::Gate, "invalid timestamp"))?;
     let open_time = seconds * 1_000;
     Ok(Kline {
         open_time,
@@ -242,17 +241,18 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is tradable, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_gateio_v2");
+static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Gate), "catalog_gateio_v2");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     parse_pairs(&get(&format!("{BASE_URL}/currency_pairs"))?)
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Gate, error))?;
     Ok(value
         .as_array()
-        .ok_or_else(|| ProviderError::data("expected a market list"))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Gate, "expected a market list"))?
         .iter()
         .filter(|row| row.get("trade_status").and_then(Value::as_str) == Some("tradable"))
         .filter_map(|row| {
@@ -653,9 +653,6 @@ mod tests {
         let error = GATE
             .fetch_klines("NOPE_USDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "Gate.io refused the request (HTTP 400): it does not list this market"
-        );
+        assert_eq!(error.kind, ErrorKind::UnknownSymbol);
     }
 }

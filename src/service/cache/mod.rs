@@ -125,7 +125,7 @@ pub fn fetch(
     let flight = {
         let mut held = held()
             .lock()
-            .map_err(|_| ProviderError::other("The candle cache stopped"))?;
+            .map_err(|_| ProviderError::interrupted(source))?;
         // Series nobody waits on are forgotten, so the table follows the entries.
         if held.flights.len() > MAX_ENTRIES * 4 {
             held.flights
@@ -135,12 +135,12 @@ pub fn fetch(
     };
     let _turn = flight
         .lock()
-        .map_err(|_| ProviderError::other("The candle cache stopped"))?;
+        .map_err(|_| ProviderError::interrupted(source))?;
 
     let current = {
         let held = held()
             .lock()
-            .map_err(|_| ProviderError::other("The candle cache stopped"))?;
+            .map_err(|_| ProviderError::interrupted(source))?;
         held.entries
             .get(&key)
             .filter(|entry| entry.requested >= limit)
@@ -337,7 +337,10 @@ mod tests {
         let provider = |limit: u32| {
             asked.lock().unwrap().push(limit);
             if limit == TAIL_LIMIT {
-                Err(ProviderError::other("No data in that window"))
+                Err(ProviderError::refused(
+                    crate::model::DataSource::Binance,
+                    "No data in that window",
+                ))
             } else {
                 Ok(series(0..10))
             }
@@ -369,7 +372,10 @@ mod tests {
         let provider = |limit: u32| {
             asked.lock().unwrap().push(limit);
             if limit == TAIL_LIMIT {
-                Err(ProviderError::from(http::Error::Status(429)))
+                Err(ProviderError::http(
+                    DataSource::Coinbase,
+                    http::Error::Status(429),
+                ))
             } else {
                 Ok(series(0..10))
             }
@@ -407,7 +413,12 @@ mod tests {
             ok,
         )
         .unwrap();
-        let broken = |_: u32| Err(ProviderError::from(http::Error::Network("down".to_owned())));
+        let broken = |_: u32| {
+            Err(ProviderError::http(
+                DataSource::Coinbase,
+                http::Error::Network("down".to_owned()),
+            ))
+        };
         assert!(
             fetch(
                 DataSource::Coinbase,

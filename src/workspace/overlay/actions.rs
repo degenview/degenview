@@ -496,7 +496,10 @@ mod tests {
             _: u32,
         ) -> Result<LiveCandles, ProviderError> {
             if symbol == "BADUSDT" {
-                return Err(ProviderError::other("no such market"));
+                return Err(ProviderError::refused(
+                    crate::model::DataSource::Binance,
+                    "no such market",
+                ));
             }
             Ok((0..5)
                 .map(|n| candle(n * 60_000, 2.0 + n as f64))

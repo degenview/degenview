@@ -13,6 +13,13 @@
    market, how one page is asked for (`before` `None` is the newest, `Some(ms)` the candles opening
    before it) and, if its history is limited, `reach`. The plan, the cap before the fold, the
    pages and the shape of the answer are written once there.
+   Its failures are kinds of `service::market::error::ErrorKind`, never text: a request that fails
+   goes through `ProviderError::http(venue, error)`, which reads 429 as a rate limit and the other
+   statuses from the venue's own `STATUSES` table (`400 → UnknownSymbol`, `403 → RegionBlocked`,
+   `401|403 → Unauthorized`; list it in `service::market::statuses`), and a body's own envelope
+   (Bybit `retCode`, Kraken `error`, OKX `code`, MEXC `code`) is read in one function of the venue
+   into `RateLimited`, `UnknownSymbol` or `Refused(message)`; what it cannot read is `Malformed`.
+   The watchlist's quote requests use the same tables and envelope readers.
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
@@ -108,8 +115,8 @@ watchlists.
   base candles can be all pre or post market.
 - **Every source serves any timeframe, or says it cannot.** `MarketSource::fetch_klines` and
   `fetch_klines_range` take a `Timeframe` (never a token string) and answer
-  `ProviderError::UnsupportedInterval { provider, timeframe }`, "Polymarket has no 1m history"
-  (`is_unsupported_interval()`; decide on the variant, never the text). The timeframe picker offers the
+  `ErrorKind::Unsupported { timeframe }` (`ProviderError::unsupported(venue, timeframe)`), "Polymarket
+  has no 1m history" (`is_unsupported_interval()`; decide on the kind, never the text). The timeframe picker offers the
   presets and any timeframe typed or pinned (`1m`, `22m`, `3h`, `2D`, `2W`, `6M`), and warns before a
   chart whose source `serves` says no.
 - **Natives live in `model::market::natives`**, one list per candle source
@@ -282,7 +289,7 @@ watchlists.
   (`live::merge_fetched`) only if the socket delivered after that request began
   (`LiveMark::guard_for`, carrying the bucket's open time): when it goes quiet, REST refreshes update
   the forming bar again.
-- A chart whose last answer was `UnsupportedInterval` shows it in the usual error slot and is not
+- A chart whose last answer was `ErrorKind::Unsupported` shows it in the usual error slot and is not
   refreshed again (`Chart::refresh_due`) until its market or the timeframe changes, which fetch at
   once. An overlay market becomes `OverlayStatus::Blocked(text)` and is not retried either.
 - `service::cache::patched` merges a tail into a held series by open time: the tail's copy of a candle
@@ -318,11 +325,15 @@ watchlists.
   lapses 3 s after the last, so background tabs and hidden/covered windows stop polling. Closing the
   sidebar suspends it at once. The coordinator requests a repaint at half lease so an idle visible
   sidebar renews. Other owners (alerts, portfolio cards) use `set_demand`, which never lapses.
-- `provider::classify_status`: only a documented symbol-level answer (Binance/Alpaca 400, Coinbase
-  404) is `Rejected`, making the engine bisect for the bad symbol within `ISOLATION_BUDGET` requests
-  per round; credential, region, endpoint and ban statuses back off the whole source. A rate limit
-  stops the round's remaining requests. Providers return an `Outcome` (quotes, rejected, failed
-  requests with symbols), so a failed page or product marks only its rows stale.
+- Quote failures are `ProviderError`s, the same kinds as candles'. `ErrorKind::scope()` decides what
+  the engine does: only a documented symbol-level answer (`UnknownSymbol`: Binance/Alpaca/Oanda 400,
+  Coinbase 404, Kraken `EQuery:`) is `Scope::Symbol`, making the engine bisect for the bad symbol
+  within `ISOLATION_BUDGET` requests per round; credential, region, endpoint and ban answers are
+  `Scope::Source` and back off the whole source (a page it cannot isolate, or one whose every symbol
+  was refused alone, is `Unisolated`). A rate limit stops the round's remaining requests. Providers
+  return an `Outcome` (quotes, rejected, failed requests with symbols), so a failed page or product
+  marks only its rows stale. The engine words a failure for the row's note and the source's health
+  with `service::provider_message::message`.
 - Unrequested for `Config::idle_grace_ms` (10 min), a market is forgotten: quote, confirmation time,
   refusal, Coinbase bookkeeping, book entry. Resolved DEX networks (`chains`) stay. A returning market
   shows no old price until fetched.

@@ -27,11 +27,18 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
   polled each frame; the job repaints when it ends, and a panicked job ends without an answer
   (`poll_or`). Views hold the `Pending` a host or service returned; they never spawn threads or build
   channels (`layout_tests.rs` checks `ui/` and `pine_studio/`).
-- **Errors.** Each layer has its own `thiserror` enums, and the message a user sees is the variant's
-  `#[error(...)]`. Market providers return `service::ProviderError` (`is_rate_limited()`,
-  `MissingKey`, …), the sync engine `sync::engine::SyncError`, the updater's download `DownloadError`.
-  Decide on the variant, never on the text: no `message.contains("429")`. A `String` error is for
-  text only shown, at the edge where it is shown.
+- **Errors.** Each layer has its own error enums, and code decides on the variant (the kind), never
+  on the text: no `message.contains("429")`. Most are `thiserror` enums whose `#[error(...)]` is the
+  message a user sees (the sync engine's `sync::engine::SyncError`, the updater's `DownloadError`).
+  Market providers are the exception: `service::ProviderError` is `{ venue, kind }`, a venue and an
+  `ErrorKind` (`RateLimited`, `RegionBlocked`, `Unauthorized`, `MissingKey`, `UnknownSymbol`, …) with
+  `is_rate_limited()`, `is_transient()` and `ErrorKind::scope()` (what a quote round does about it).
+  `service::market` imports no `i18n` and its errors have no `Display`: every place that shows one to
+  a person (chart, symbol picker, watchlist, Settings, MCP) calls
+  `service::provider_message::message`, which writes the kind in the language in use. A venue
+  classifies its own answers once, where it reads them, into a kind; never as free text and never
+  as another status (no 429 for a rate-limit code). A `String` error is for text only shown, at the
+  edge where it is shown.
 - **Locks.** Take a `Mutex`/`RwLock` through `crate::lock::{lock, read, write}`, which recover from a
   poisoning panic; no `.expect("… poisoned")` and no hand-rolled `unwrap_or_else(PoisonError::into_inner)`.
   Code that treats a poisoned store as unavailable (`if let Ok(store) = store.lock()`) does so on

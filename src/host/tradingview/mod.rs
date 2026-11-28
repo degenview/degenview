@@ -76,10 +76,11 @@ impl Matching {
     /// got its match.
     fn poll(&mut self, wanted: &[TvSymbol], mappings: &mut Mappings, ctx: &egui::Context) -> bool {
         for (symbol, answer) in self.requests.take_ended() {
-            let answer = answer
-                .unwrap_or_else(|| Err(ProviderError::Other("the search stopped".to_owned())));
             if let Some(resolution) = self.open.get_mut(&symbol) {
-                resolution.answer(answer);
+                match answer {
+                    Some(answer) => resolution.answer(answer),
+                    None => resolution.abandoned(),
+                }
             }
         }
         let mut matched = false;

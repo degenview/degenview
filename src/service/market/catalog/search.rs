@@ -181,10 +181,16 @@ mod tests {
     #[test]
     fn a_list_that_cannot_be_had_is_the_search_error() {
         let error = find("btc", || {
-            Err::<Arc<Vec<Listed>>, _>(ProviderError::other("offline"))
+            Err::<Arc<Vec<Listed>>, _>(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            ))
         })
         .unwrap_err();
-        assert_eq!(error, ProviderError::other("offline"));
+        assert_eq!(
+            error,
+            ProviderError::refused(crate::model::DataSource::Binance, "offline")
+        );
     }
 
     #[test]
@@ -282,7 +288,12 @@ mod tests {
 
     #[test]
     fn asset_names_are_none_when_the_list_cannot_be_had() {
-        let names = asset_names(|| Err::<Arc<Vec<Listed>>, _>(ProviderError::other("offline")));
+        let names = asset_names(|| {
+            Err::<Arc<Vec<Listed>>, _>(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            ))
+        });
         assert!(names.is_empty());
     }
 }

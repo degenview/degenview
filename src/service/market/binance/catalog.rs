@@ -84,7 +84,8 @@ fn download_pairs_with(
     endpoints: &Endpoints,
     get: impl FnOnce(&str, u64) -> Result<String, crate::service::net::http::Error>,
 ) -> Result<Vec<Pair>, ProviderError> {
-    let body = get(endpoints.exchange_info_url, EXCHANGE_INFO_MAX_BYTES)?;
+    let body = get(endpoints.exchange_info_url, EXCHANGE_INFO_MAX_BYTES)
+        .map_err(|error| ProviderError::http(endpoints.listing, error))?;
     parse_pairs(&body, endpoints.lists)
 }
 
@@ -145,7 +146,8 @@ pub(super) fn is_trading_perpetual(entry: &Value) -> bool {
 }
 
 fn parse_pairs(body: &str, lists: fn(&Value) -> bool) -> Result<Vec<Pair>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Binance, error))?;
     Ok(value
         .get("symbols")
         .and_then(Value::as_array)
@@ -194,6 +196,7 @@ mod tests {
 
     #[test]
     fn the_market_list_asks_for_trading_pairs_only_under_its_own_limit() {
+        use crate::model::{DataSource, Listing};
         use crate::service::net::http::Error;
         let body = r#"{"symbols":[
             {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"}
@@ -220,7 +223,10 @@ mod tests {
         });
         assert_eq!(
             too_big.expect_err("fails"),
-            ProviderError::from(Error::BodyTooLarge(EXCHANGE_INFO_MAX_BYTES))
+            ProviderError::http(
+                Listing::spot(DataSource::Binance),
+                Error::BodyTooLarge(EXCHANGE_INFO_MAX_BYTES)
+            )
         );
     }
 
@@ -296,7 +302,12 @@ mod tests {
     #[test]
     fn a_failed_spot_list_fails_the_search_and_a_failed_perpetual_list_does_not() {
         let hit = SearchResult::new(DataSource::Binance, "BTCUSDT", "BTCUSDT").pair("BTC", "USDT");
-        let down = || Err(ProviderError::other("down"));
+        let down = || {
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "down",
+            ))
+        };
         let found = || Ok(vec![hit.clone()]);
         let alone = std::slice::from_ref(&hit);
         assert_eq!(merge("btc", found(), down()).expect("hits"), alone);

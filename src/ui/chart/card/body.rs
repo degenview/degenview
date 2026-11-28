@@ -7,6 +7,7 @@ use super::*;
 use crate::i18n::tr;
 use crate::model::chart::sync::TimeAxis;
 use crate::pine::time::bucket::seconds_of;
+use crate::service::provider_message;
 use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 
 /// What one call to [`ChartCard::body`] draws and reports on.
@@ -88,7 +89,7 @@ impl ChartCard {
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                error.to_string(),
+                provider_message::message(error),
                 FontId::proportional(13.0),
                 theme::DOWN,
             );

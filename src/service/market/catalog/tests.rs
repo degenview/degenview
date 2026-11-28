@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::DataSource;
 use crate::service::cache::disk::{DiskCache, testing::TempCache};
 use serde::Deserialize;
 use std::panic::AssertUnwindSafe;
@@ -37,7 +38,13 @@ impl Fixture {
         let disk: &'static DiskCache = Box::leak(Box::new(DiskCache::at(self.temp.path())));
         let clock = Arc::clone(&self.clock);
         let cache = LookupCache::for_tests(disk, Box::new(move || clock.load(Ordering::Relaxed)));
-        (cache, Box::leak(Box::new(Catalog::new("catalog_test"))))
+        (
+            cache,
+            Box::leak(Box::new(Catalog::new(
+                Listing::spot(DataSource::Bybit),
+                "catalog_test",
+            ))),
+        )
     }
 
     fn download(
@@ -86,7 +93,10 @@ fn a_relaunch_starts_from_the_persisted_list() {
         .get_from(
             &cache,
             EVERYONE,
-            fixture.download(Err(ProviderError::other("must not be asked"))),
+            fixture.download(Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "must not be asked",
+            ))),
         )
         .unwrap();
     assert_eq!(*items, pairs(&["BTCUSDT"]));
@@ -127,7 +137,10 @@ fn a_failed_refresh_serves_the_stale_list_and_backs_off() {
             .get_from(
                 &cache,
                 EVERYONE,
-                fixture.download(Err(ProviderError::other("offline"))),
+                fixture.download(Err(ProviderError::refused(
+                    crate::model::DataSource::Binance,
+                    "offline",
+                ))),
             )
             .unwrap();
         assert_eq!(*items, pairs(&["OLD"]));
@@ -147,10 +160,16 @@ fn with_nothing_cached_a_failure_is_an_error_and_is_retried() {
         .get_from(
             &cache,
             EVERYONE,
-            fixture.download(Err(ProviderError::other("offline"))),
+            fixture.download(Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            ))),
         )
         .unwrap_err();
-    assert_eq!(error, ProviderError::other("offline"));
+    assert_eq!(
+        error,
+        ProviderError::refused(crate::model::DataSource::Binance, "offline")
+    );
     let items = catalog
         .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
         .unwrap();
@@ -188,7 +207,10 @@ fn clearing_memory_makes_the_next_search_reload() {
         .get_from(
             &cache,
             EVERYONE,
-            fixture.download(Err(ProviderError::other("not asked"))),
+            fixture.download(Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "not asked",
+            ))),
         )
         .unwrap();
     assert_eq!(fixture.downloads(), 1);
@@ -237,7 +259,10 @@ fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
         .unwrap();
     let offline = || {
         fixture.downloads.fetch_add(1, Ordering::SeqCst);
-        Err(ProviderError::other("offline"))
+        Err(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "offline",
+        ))
     };
     let ask =
         |wanted: &str| catalog.get_listing_from(&cache, |pair: &Pair| pair.0 == wanted, offline);
@@ -250,7 +275,10 @@ fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
         .recheck_after = Instant::now();
     // The same answer until it may be asked again, from one download.
     for _ in 0..3 {
-        assert_eq!(ask("NEW").unwrap_err(), ProviderError::other("offline"));
+        assert_eq!(
+            ask("NEW").unwrap_err(),
+            ProviderError::refused(crate::model::DataSource::Binance, "offline")
+        );
     }
     assert_eq!(fixture.downloads(), 2);
     // What the list does hold is still answered, and it is as fresh as before.
@@ -273,9 +301,17 @@ fn a_stale_list_that_cannot_be_refreshed_does_not_say_a_market_is_unlisted() {
     let answer = catalog.get_listing_from(
         &cache,
         |pair: &Pair| pair.0 == "NEW",
-        || Err(ProviderError::other("offline")),
+        || {
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            ))
+        },
     );
-    assert_eq!(answer.unwrap_err(), ProviderError::other("offline"));
+    assert_eq!(
+        answer.unwrap_err(),
+        ProviderError::refused(crate::model::DataSource::Binance, "offline")
+    );
 }
 
 /// The lists `owner` is answered with, asking the provider for `names` if it has to.
@@ -328,9 +364,17 @@ fn a_failed_download_never_answers_with_another_owners_list() {
     let (cache, catalog) = fixture.launch();
     ask(catalog, &cache, "a", &["EUR_USD"]);
     let error = catalog
-        .get_from(&cache, "b", || Err(ProviderError::other("offline")))
+        .get_from(&cache, "b", || {
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            ))
+        })
         .unwrap_err();
-    assert_eq!(error, ProviderError::other("offline"));
+    assert_eq!(
+        error,
+        ProviderError::refused(crate::model::DataSource::Binance, "offline")
+    );
 }
 
 #[test]
@@ -403,7 +447,10 @@ fn a_download_that_panics_counts_as_a_failed_attempt() {
             .get_from(
                 &cache,
                 EVERYONE,
-                fixture.download(Err(ProviderError::other("must not be asked"))),
+                fixture.download(Err(ProviderError::refused(
+                    crate::model::DataSource::Binance,
+                    "must not be asked",
+                ))),
             )
             .unwrap();
         assert_eq!(*items, pairs(&["OLD"]));

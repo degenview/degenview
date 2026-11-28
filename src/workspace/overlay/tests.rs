@@ -245,14 +245,20 @@ fn hidden_overlays_are_not_fetched_until_shown() {
 fn one_failing_market_does_not_touch_the_others_and_is_retried_later() {
     let (mut hub, fake) = hub();
     let now = Instant::now();
-    fake.answer("BADUSDT", Err(ProviderError::other("no such market")));
+    fake.answer(
+        "BADUSDT",
+        Err(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "no such market",
+        )),
+    );
     let list = overlays(&["BADUSDT", "ETHUSDT"]);
     frame(&mut hub, 1, &list, now);
     fake.run_jobs();
     hub.poll(Timeframe::HOUR_1, &egui::Context::default(), now);
     assert_eq!(
         hub.feed(&market("BADUSDT")).unwrap().status,
-        OverlayStatus::Error("no such market".into())
+        OverlayStatus::Error("Binance error: no such market".into())
     );
     assert_eq!(
         hub.feed(&market("ETHUSDT")).unwrap().status,

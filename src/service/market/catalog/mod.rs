@@ -19,6 +19,7 @@ pub(in crate::service) mod registry;
 pub(in crate::service) mod search;
 
 use crate::lock::lock;
+use crate::model::Listing;
 use crate::service::ProviderError;
 use crate::service::cache::lookup::{self, LookupCache};
 use serde::Serialize;
@@ -48,6 +49,8 @@ struct Loaded<T> {
 }
 
 pub struct Catalog<T> {
+    /// Whose list it is, which is who is named when it comes back empty.
+    venue: Listing,
     namespace: &'static str,
     memory: Mutex<Option<Loaded<T>>>,
     /// Held while downloading, so concurrent searches share one request.
@@ -57,8 +60,9 @@ pub struct Catalog<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Send + Sync> Catalog<T> {
-    pub const fn new(namespace: &'static str) -> Self {
+    pub const fn new(venue: Listing, namespace: &'static str) -> Self {
         Self {
+            venue,
             namespace,
             memory: Mutex::new(None),
             refresh: Mutex::new(()),
@@ -168,7 +172,7 @@ impl<T: Serialize + DeserializeOwned + Send + Sync> Catalog<T> {
             Ok(downloaded) => downloaded,
             Err(panic) => {
                 if let Some(items) = &stale {
-                    self.keep_stale(owner, items, ProviderError::other("the download panicked"));
+                    self.keep_stale(owner, items, ProviderError::interrupted(self.venue));
                 }
                 resume_unwind(panic);
             }
@@ -184,7 +188,7 @@ impl<T: Serialize + DeserializeOwned + Send + Sync> Catalog<T> {
             Ok(_) => self.fall_back(
                 owner,
                 stale,
-                ProviderError::other("the provider returned no symbols"),
+                ProviderError::malformed(self.venue, "the provider returned no symbols"),
             ),
             Err(error) => self.fall_back(owner, stale, error),
         }

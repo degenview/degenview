@@ -1,6 +1,7 @@
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::samples;
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
@@ -23,11 +24,9 @@ impl MarketSource for CoinGecko {
             .ok_or_else(|| ProviderError::unsupported(DataSource::CoinGecko, timeframe))?;
         crate::service::net::rate_limit::coingecko().wait_for_slot();
         let url = format!("{BASE_URL}/coins/{coin_id}/market_chart?vs_currency=usd&days={days}");
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Never,
-        )?;
+        let body =
+            crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
+                .map_err(|error| ProviderError::http(DataSource::CoinGecko, error))?;
         let prices = parse_prices(&body)?;
         Ok(newest_candles(
             &prices,
@@ -37,18 +36,31 @@ impl MarketSource for CoinGecko {
         ))
     }
 
+    fn fetch_klines_range(
+        &self,
+        _symbol: &str,
+        _timeframe: Timeframe,
+        _start_ms: i64,
+        _end_ms: i64,
+        _max: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        Err(ProviderError::new(
+            DataSource::CoinGecko,
+            ErrorKind::NoTimeRange,
+        ))
+    }
+
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         let q = query.trim().to_lowercase();
         if q.is_empty() {
             return Ok(Vec::new());
         }
         let url = search_url(&q);
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Never,
-        )?;
-        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+        let body =
+            crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
+                .map_err(|error| ProviderError::http(DataSource::CoinGecko, error))?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::CoinGecko, error))?;
         let mut results = Vec::new();
         for coin in value
             .get("coins")
@@ -78,11 +90,14 @@ fn search_url(query: &str) -> String {
 }
 
 fn parse_prices(body: &str) -> Result<Vec<(i64, f64)>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::CoinGecko, error))?;
     let rows = value
         .get("prices")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a prices array"))?;
+        .ok_or_else(|| {
+            ProviderError::malformed(DataSource::CoinGecko, "expected a prices array")
+        })?;
     let mut prices = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {

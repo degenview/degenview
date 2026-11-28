@@ -10,7 +10,8 @@ use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::next_bucket_start_ms;
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -118,26 +119,40 @@ fn fetch_page(
     if let Some(before) = before {
         url.push_str(&format!("&after={before}"));
     }
-    let body = http::get_text(&url, &[], http::Retry::Transient)?;
-    parse_candles(&body, base)
+    parse_candles(&get(&url)?, base)
 }
 
-/// The `data` rows of an answer, or OKX's own message when its `code` says it failed.
-fn data_rows(body: &str) -> Result<Vec<Value>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    if value.get("code").and_then(Value::as_str) != Some("0") {
-        let message = value
-            .get("msg")
-            .and_then(Value::as_str)
-            .filter(|message| !message.is_empty())
-            .unwrap_or("The request failed");
-        return Err(ProviderError::other(format!("OKX: {message}")));
+fn get(url: &str) -> Result<String, ProviderError> {
+    http::get_text(url, &[], http::Retry::Transient)
+        .map_err(|error| ProviderError::http(DataSource::Okx, error))
+}
+
+/// The `data` rows of an answer, or what its `code` says when it failed: OKX's `50011` is "too many
+/// requests" and `51001` "instrument does not exist".
+pub(crate) fn data_rows(body: &str) -> Result<Vec<Value>, ProviderError> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Okx, error))?;
+    let code = value.get("code").and_then(Value::as_str);
+    if code != Some("0") {
+        let kind = match code {
+            Some("50011") => ErrorKind::RateLimited,
+            Some("51001") => ErrorKind::UnknownSymbol,
+            _ => ErrorKind::Refused(
+                value
+                    .get("msg")
+                    .and_then(Value::as_str)
+                    .filter(|message| !message.is_empty())
+                    .unwrap_or("The request failed")
+                    .to_owned(),
+            ),
+        };
+        return Err(ProviderError::new(DataSource::Okx, kind));
     }
     value
         .get("data")
         .and_then(Value::as_array)
         .cloned()
-        .ok_or_else(|| ProviderError::data("expected a data array"))
+        .ok_or_else(|| ProviderError::malformed(DataSource::Okx, "expected a data array"))
 }
 
 /// Candles of length `base`, oldest first.
@@ -152,18 +167,18 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
 
 pub(crate) fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     let text = |index: usize| -> Result<&str, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
+        row.get(index).and_then(Value::as_str).ok_or_else(|| {
+            ProviderError::malformed(DataSource::Okx, format!("invalid field {index}"))
+        })
     };
     let number = |index: usize| -> Result<f64, ProviderError> {
-        text(index)?
-            .parse()
-            .map_err(|_| ProviderError::data(format!("invalid field {index}")))
+        text(index)?.parse().map_err(|_| {
+            ProviderError::malformed(DataSource::Okx, format!("invalid field {index}"))
+        })
     };
     let open_time: i64 = text(0)?
         .parse()
-        .map_err(|_| ProviderError::data("invalid timestamp"))?;
+        .map_err(|_| ProviderError::malformed(DataSource::Okx, "invalid timestamp"))?;
     Ok(Kline {
         open_time,
         close_time: next_bucket_start_ms(base, open_time) - 1,
@@ -196,15 +211,12 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is live, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_okx");
+static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Okx), "catalog_okx");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    let body = http::get_text(
-        &format!("{BASE_URL}/public/instruments?instType=SPOT"),
-        &[],
-        http::Retry::Transient,
-    )?;
-    parse_pairs(&body)
+    parse_pairs(&get(&format!(
+        "{BASE_URL}/public/instruments?instType=SPOT"
+    ))?)
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
@@ -305,11 +317,24 @@ mod tests {
     }
 
     #[test]
-    fn an_error_answer_is_okxs_message() {
+    fn an_error_answer_is_a_kind_or_okxs_message() {
         let body = r#"{"code":"51001","msg":"Instrument ID doesn't exist.","data":[]}"#;
         assert_eq!(
             parse_candles(body, Timeframe::HOUR_1),
-            Err(ProviderError::other("OKX: Instrument ID doesn't exist."))
+            Err(ProviderError::new(
+                DataSource::Okx,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        let limited = r#"{"code":"50011","msg":"Too many requests","data":[]}"#;
+        assert_eq!(
+            parse_candles(limited, Timeframe::HOUR_1),
+            Err(ProviderError::new(DataSource::Okx, ErrorKind::RateLimited))
+        );
+        let refused = r#"{"code":"50013","msg":"System is busy","data":[]}"#;
+        assert_eq!(
+            parse_candles(refused, Timeframe::HOUR_1),
+            Err(ProviderError::refused(DataSource::Okx, "System is busy"))
         );
         assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
         assert!(parse_candles(r#"{"code":"0"}"#, Timeframe::HOUR_1).is_err());
@@ -347,10 +372,7 @@ mod tests {
         let error = OKX
             .fetch_klines("NOPE-USDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "OKX: Instrument ID, Instrument ID code, or Spread ID doesn't exist."
-        );
+        assert_eq!(error.kind, ErrorKind::UnknownSymbol);
     }
 
     #[test]

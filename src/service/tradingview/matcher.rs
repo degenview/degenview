@@ -109,6 +109,14 @@ impl Resolution {
         }
     }
 
+    /// Takes in that the search [`Self::step`] asked for ended without an answer.
+    pub fn abandoned(&mut self) {
+        if let Some(request) = self.requests.front() {
+            let error = ProviderError::interrupted(request.source);
+            self.answer(Err(error));
+        }
+    }
+
     /// Takes in what the request [`Self::step`] asked for came back with.
     pub fn answer(&mut self, results: Result<Vec<SearchResult>, ProviderError>) {
         if self.found.is_some() {
@@ -132,7 +140,7 @@ impl Resolution {
                     }
                 });
             }
-            Err(ProviderError::MissingKey(DataSource::Alpaca)) if request.own => {
+            Err(error) if error.missing_key() == Some(DataSource::Alpaca) && request.own => {
                 self.found = Some(Match::Unmatched(Unmatched::NeedsKey));
             }
             // Not knowing is not a reason to take another exchange's market: search again.
@@ -161,6 +169,7 @@ impl Resolution {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::error::ErrorKind;
 
     /// A whole resolution, its requests answered one after another.
     fn resolve(tv: &TvSymbol, search: &Search) -> Match {
@@ -247,7 +256,10 @@ mod tests {
     #[test]
     fn an_exchange_that_does_not_answer_is_not_replaced() {
         let binance_down = |source: DataSource, query: &str| match source {
-            DataSource::Binance => Err(ProviderError::Other("timeout".into())),
+            DataSource::Binance => Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "timeout",
+            )),
             _ => Ok(vec![hit(source, query)]),
         };
         assert_eq!(
@@ -258,12 +270,18 @@ mod tests {
 
     #[test]
     fn a_missing_key_and_a_dead_network_are_said() {
-        let no_key = |source: DataSource, _: &str| Err(ProviderError::MissingKey(source));
+        let no_key =
+            |source: DataSource, _: &str| Err(ProviderError::new(source, ErrorKind::MissingKey));
         assert_eq!(
             resolve(&TvSymbol::read("NASDAQ:AAPL").unwrap(), &no_key),
             Match::Unmatched(Unmatched::NeedsKey)
         );
-        let down = |_: DataSource, _: &str| Err(ProviderError::Other("timeout".into()));
+        let down = |_: DataSource, _: &str| {
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "timeout",
+            ))
+        };
         assert_eq!(
             resolve(&TvSymbol::read("BINANCE:BTCUSDT").unwrap(), &down),
             Match::Unmatched(Unmatched::Unreachable)

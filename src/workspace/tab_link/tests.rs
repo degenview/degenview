@@ -174,7 +174,10 @@ fn a_symbol_that_fails_to_load_is_put_back_and_the_tab_says_so() {
     let index = workspace.chart_index(chart).unwrap();
     workspace.charts[index].inbox = None;
     workspace.charts[index].loading = false;
-    workspace.charts[index].error = Some(ProviderError::other("Unknown symbol"));
+    workspace.charts[index].error = Some(ProviderError::refused(
+        crate::model::DataSource::Binance,
+        "Unknown symbol",
+    ));
     workspace.tick_link_probation(&ctx);
 
     assert_eq!(shown(&workspace, chart), "BTCUSDT");
@@ -202,7 +205,10 @@ fn a_symbol_that_loads_is_accepted_and_one_the_user_left_is_forgotten() {
 
     workspace.apply_link(2, &market("SOLUSDT"), &ctx);
     workspace.charts[index].symbol = "ADAUSDT".into(); // the user chose another meanwhile
-    workspace.charts[index].error = Some(ProviderError::other("x"));
+    workspace.charts[index].error = Some(ProviderError::refused(
+        crate::model::DataSource::Binance,
+        "x",
+    ));
     workspace.charts[index].loading = false;
     workspace.tick_link_probation(&ctx);
     assert_eq!(
@@ -465,7 +471,10 @@ fn a_symbol_the_user_chose_over_a_pending_link_is_not_reverted_when_it_fails() {
     // The user's choice fails to load.
     workspace.charts[index].inbox = None;
     workspace.charts[index].loading = false;
-    workspace.charts[index].error = Some(ProviderError::other("Unknown symbol"));
+    workspace.charts[index].error = Some(ProviderError::refused(
+        crate::model::DataSource::Binance,
+        "Unknown symbol",
+    ));
     workspace.tick_link_probation(&ctx);
 
     assert_eq!(workspace.charts[index].source, DataSource::Binance);

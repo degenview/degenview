@@ -3,6 +3,7 @@ use crate::model::market::bucket::{self, FoldPlan};
 use crate::model::market::natives::{GECKOTERMINAL_HISTORY_DAYS, GECKOTERMINAL_PAGE};
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::ProviderError;
+use crate::service::market::error::ErrorKind;
 use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
@@ -55,7 +56,10 @@ pub fn fetch_klines(
     let side = side_for(&network, pair_address);
     let raw = fetch_ohlcv(&network, pair_address, side, &window, None)?;
     if raw.is_empty() {
-        return Err(ProviderError::other("No chart data for this pool"));
+        return Err(ProviderError::new(
+            DataSource::DexScreener,
+            ErrorKind::NoData,
+        ));
     }
     let now = crate::clock::now_ms();
     let mut candles = shape(raw, &window, reach_ms(now), now);
@@ -95,7 +99,7 @@ impl From<Fetch> for ProviderError {
     fn from(fetch: Fetch) -> Self {
         match fetch {
             Fetch::BeyondHistory => {
-                ProviderError::other("GeckoTerminal has no older candles for this pool")
+                ProviderError::new(DataSource::DexScreener, ErrorKind::NoOlderData)
             }
             Fetch::Failed(error) => error,
         }
@@ -130,7 +134,12 @@ fn fetch_ohlcv(
         Err(crate::service::net::http::Error::Status(401)) if before.is_some() => {
             return Err(Fetch::BeyondHistory);
         }
-        Err(error) => return Err(Fetch::Failed(error.into())),
+        Err(error) => {
+            return Err(Fetch::Failed(ProviderError::http(
+                DataSource::DexScreener,
+                error,
+            )));
+        }
     };
     parse_ohlcv(&body, window.bucket_ms()).map_err(Fetch::Failed)
 }
@@ -163,11 +172,12 @@ pub fn fetch_klines_range(
 /// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first. A bucket closes a
 /// millisecond before the next opens, as on an exchange.
 fn parse_ohlcv(body: &str, bucket_ms: i64) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::DexScreener, error))?;
     let rows = value
         .pointer("/data/attributes/ohlcv_list")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::other("No chart data for this pool"))?;
+        .ok_or_else(|| ProviderError::new(DataSource::DexScreener, ErrorKind::NoData))?;
     let mut candles = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {
@@ -314,8 +324,10 @@ fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
     let url = format!("{BASE_URL}/search/pools?query={pair_address}");
     crate::service::net::rate_limit::geckoterminal().wait_for_slot();
     let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)?;
-    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
+            .map_err(|error| ProviderError::http(DataSource::DexScreener, error))?;
+    let value: Value = serde_json::from_str(&body)
+        .map_err(|error| ProviderError::malformed(DataSource::DexScreener, error))?;
     let suffix = format!("_{key}");
     for pool in value
         .get("data")
@@ -341,7 +353,10 @@ fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
             }
         }
     }
-    Err(ProviderError::other("Pool not indexed by GeckoTerminal"))
+    Err(ProviderError::new(
+        DataSource::DexScreener,
+        ErrorKind::UnknownSymbol,
+    ))
 }
 
 #[cfg(test)]

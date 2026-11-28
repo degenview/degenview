@@ -26,6 +26,7 @@ use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::outputs::style_overrides::StyleRow;
 use crate::pine::syntax::token::Diagnostic;
 use crate::service::ProviderError;
+use crate::service::provider_message;
 use crate::ui::alert::lines;
 use crate::ui::chart::buttons::{self, PaneAction};
 use crate::ui::chart::canvas::{self, CanvasStyle};
@@ -180,7 +181,7 @@ fn refresh_warning_text(error: &ProviderError, source: DataSource, detailed: boo
     } else if detailed {
         tr!(
             "Couldn't refresh · showing the last result ({error})",
-            error = error
+            error = provider_message::message(error)
         )
     } else {
         tr!("Couldn't refresh · showing the last result").to_owned()

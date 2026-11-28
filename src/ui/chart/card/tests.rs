@@ -16,13 +16,13 @@ fn the_refresh_warning_names_rate_limits() {
     use super::{DataSource, ProviderError, refresh_warning_text};
     use crate::service::net::http;
     let source = DataSource::CoinMarketCap;
-    let limited = ProviderError::CoinMarketCap(http::Error::Status(429));
+    let limited = ProviderError::http(source, http::Error::Status(429));
     assert_eq!(
         refresh_warning_text(&limited, source, true),
         "CoinMarketCap rate limit reached · showing the last result"
     );
-    let timeout = ProviderError::other("timeout");
-    assert!(refresh_warning_text(&timeout, source, true).ends_with("(timeout)"));
+    let timeout = ProviderError::http(source, http::Error::Network("timeout".to_owned()));
+    assert!(refresh_warning_text(&timeout, source, true).ends_with("(Network error: timeout)"));
     assert!(!refresh_warning_text(&timeout, source, false).contains("timeout"));
 }
 

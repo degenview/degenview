@@ -7,6 +7,7 @@ use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::model::exchange::Market;
 use crate::model::market::well_known;
+use crate::service::provider_message;
 use crate::service::work_queue::{self, PendingAll};
 use crate::service::{ProviderError, SearchResult};
 use crate::store::SharedStore;
@@ -615,7 +616,7 @@ impl AssetPickerState {
     fn first_error(&self) -> Option<String> {
         self.results
             .iter()
-            .find_map(|(_, result)| result.as_ref().err().map(ToString::to_string))
+            .find_map(|(_, result)| result.as_ref().err().map(provider_message::message))
     }
 }
 
@@ -655,7 +656,10 @@ mod tests {
                 | DataSource::Bybit
                 | DataSource::Gate
                 | DataSource::Mexc => Ok(vec![]),
-                DataSource::CoinGecko => Err(ProviderError::other("rate limited")),
+                DataSource::CoinGecko => Err(ProviderError::refused(
+                    crate::model::DataSource::Binance,
+                    "rate limited",
+                )),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
         });
@@ -737,7 +741,10 @@ mod tests {
         assert!(state.results()[6].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
             state.results()[7].1.as_ref().err(),
-            Some(&ProviderError::other("rate limited"))
+            Some(&ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "rate limited"
+            ))
         );
     }
 

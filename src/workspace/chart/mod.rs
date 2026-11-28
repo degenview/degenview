@@ -10,7 +10,6 @@ pub(in crate::workspace) mod symbol_picker;
 
 use super::PersistedChart;
 use crate::host::portfolio::card::CardRuntime;
-use crate::i18n::tr;
 use crate::model::chart::countdown::{Countdown, CountdownInput};
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::drawings::market::MarketDrawings;
@@ -22,6 +21,7 @@ use crate::model::pine::bundled;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, Drawing, IndicatorConfig, Kline, PmSeries, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::{self, ProviderError};
 use crate::ui::{ChartCard, SeriesLine};
 use eframe::egui;
@@ -107,12 +107,15 @@ pub(super) struct Fetched {
 
 impl Fetched {
     /// The candles come from the first choice that has any; the rest only draw their lines.
-    fn from_choices(histories: Vec<(String, Vec<Kline>)>) -> Result<Self, ProviderError> {
+    fn from_choices(
+        source: DataSource,
+        histories: Vec<(String, Vec<Kline>)>,
+    ) -> Result<Self, ProviderError> {
         let candles = histories
             .iter()
             .find(|(_, history)| !history.is_empty())
             .map(|(_, history)| history.clone())
-            .ok_or_else(|| ProviderError::other(tr!("No price history for these choices")))?;
+            .ok_or_else(|| ProviderError::new(source, ErrorKind::NoData))?;
         Ok(Self {
             candles,
             bars: Vec::new(),
@@ -373,12 +376,10 @@ impl Chart {
                     }
                 })
             } else {
-                Fetched::from_choices(service::fetch_choices(
+                Fetched::from_choices(
                     source,
-                    &choices,
-                    timeframe,
-                    CANDLE_LIMIT,
-                ))
+                    service::fetch_choices(source, &choices, timeframe, CANDLE_LIMIT),
+                )
             };
             let _ = sender.send(result);
             repaint.request_repaint();
@@ -523,7 +524,7 @@ impl Chart {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
-                Err(ProviderError::other(tr!("Older candles stopped loading")))
+                Err(ProviderError::interrupted(request.source))
             }
         };
         let current = request.source == self.source
@@ -550,9 +551,7 @@ impl Chart {
         let result = match receiver.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(tr!(
-                "Chart fetch stopped before returning data"
-            ))),
+            Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::interrupted(self.source)),
         };
 
         self.loading = false;
@@ -679,7 +678,10 @@ mod tests {
     #[test]
     fn a_failed_refresh_alone_does_not_hide_a_countdown_but_silence_does() {
         let mut chart = live_chart();
-        chart.error = Some(ProviderError::other("down"));
+        chart.error = Some(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "down",
+        ));
         assert!(seconds_left(&chart, Timeframe::MINUTE_5, false).is_some());
         chart.last_data_ms = Some(NOW - 16_000);
         assert_eq!(
@@ -702,8 +704,12 @@ mod tests {
         let mut dex = Chart::blank(2, "0xpool", DataSource::DexScreener);
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
         assert_eq!(dex.refresh_after(), SLOW_REFRESH_INTERVAL);
-        binance.error = Some(ProviderError::other("down"));
-        dex.error = Some(ProviderError::Network(
+        binance.error = Some(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "down",
+        ));
+        dex.error = Some(ProviderError::http(
+            DataSource::DexScreener,
             crate::service::net::http::Error::Status(429),
         ));
         assert_eq!(binance.refresh_after(), REFRESH_INTERVAL);
@@ -714,7 +720,8 @@ mod tests {
     fn kraken_charts_refresh_slowly_because_the_socket_keeps_them_live() {
         let mut kraken = Chart::blank(1, "BTC/USD", DataSource::Kraken);
         assert_eq!(kraken.refresh_after(), SLOW_REFRESH_INTERVAL);
-        kraken.error = Some(ProviderError::Network(
+        kraken.error = Some(ProviderError::http(
+            DataSource::Kraken,
             crate::service::net::http::Error::Status(429),
         ));
         assert_eq!(kraken.refresh_after(), SLOW_RETRY_INTERVAL);
@@ -734,7 +741,11 @@ mod tests {
         // The chart says why, in the slot every error uses.
         assert_eq!(chart.error, Some(unsupported));
         assert_eq!(
-            chart.error.as_ref().map(ToString::to_string).as_deref(),
+            chart
+                .error
+                .as_ref()
+                .map(crate::service::provider_message::message)
+                .as_deref(),
             Some("CoinGecko has no 1m history")
         );
         chart.last_fetch = Instant::now() - Duration::from_secs(3_600);
@@ -745,7 +756,10 @@ mod tests {
 
         // Any other failure is retried as before, and a fetch for another timeframe or market
         // (which does not wait for this check) replaces the error with its own answer.
-        chart.error = Some(ProviderError::other("down"));
+        chart.error = Some(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "down",
+        ));
         assert!(chart.refresh_due());
     }
 
@@ -890,7 +904,13 @@ mod tests {
 
     #[test]
     fn a_failed_older_page_is_not_retried_at_once() {
-        let mut chart = chart_awaiting_older(&[10, 11], Err(ProviderError::other("offline")));
+        let mut chart = chart_awaiting_older(
+            &[10, 11],
+            Err(ProviderError::refused(
+                crate::model::DataSource::Binance,
+                "offline",
+            )),
+        );
         chart.receive_older(Timeframe::HOUR_1);
         assert_eq!(open_times(&chart), vec![10, 11]);
         assert!(
@@ -956,16 +976,25 @@ mod tests {
             close: 0.5,
             volume: 0.0,
         };
-        let fetched = Fetched::from_choices(vec![
-            ("a".into(), Vec::new()),
-            ("b".into(), vec![bar(1), bar(2)]),
-            ("c".into(), vec![bar(3)]),
-        ])
+        let fetched = Fetched::from_choices(
+            DataSource::Polymarket,
+            vec![
+                ("a".into(), Vec::new()),
+                ("b".into(), vec![bar(1), bar(2)]),
+                ("c".into(), vec![bar(3)]),
+            ],
+        )
         .expect("some history");
         assert_eq!(fetched.candles.len(), 2);
         assert_eq!(fetched.series.len(), 3);
-        let none = Fetched::from_choices(vec![("a".into(), Vec::new())]);
-        assert!(none.is_err());
+        let none = Fetched::from_choices(DataSource::Polymarket, vec![("a".into(), Vec::new())]);
+        assert_eq!(
+            none.err(),
+            Some(ProviderError::new(
+                DataSource::Polymarket,
+                ErrorKind::NoData
+            ))
+        );
     }
 
     #[test]

@@ -3,7 +3,8 @@ use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
 use crate::clock::now_ms;
 use crate::model::market::bucket::FoldPlan;
-use crate::model::{DataSource, Kline, Timeframe};
+use crate::model::{DataSource, Kline, Listing, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -96,19 +97,25 @@ impl ListedMarket for Product {
 }
 
 /// Every product that is online, downloaded at most once a day.
-static CATALOG: Catalog<Product> = Catalog::new("catalog_coinbase");
+static CATALOG: Catalog<Product> =
+    Catalog::new(Listing::spot(DataSource::Coinbase), "catalog_coinbase");
+
+/// What Coinbase's HTTP statuses mean beyond a rate limit: a 404 names a product it does not list.
+pub(super) const STATUSES: &[(u16, ErrorKind)] = &[(404, ErrorKind::UnknownSymbol)];
 
 fn download_products() -> Result<Vec<Product>, ProviderError> {
     let body = crate::service::net::http::get_text(
         "https://api.exchange.coinbase.com/products",
         &[],
         crate::service::net::http::Retry::Transient,
-    )?;
+    )
+    .map_err(|error| ProviderError::http(DataSource::Coinbase, error))?;
     parse_products(&body)
 }
 
 fn parse_products(body: &str) -> Result<Vec<Product>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Coinbase, error))?;
     Ok(value
         .as_array()
         .map(Vec::as_slice)
@@ -223,7 +230,8 @@ impl Coinbase {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )?;
+        )
+        .map_err(|error| ProviderError::http(DataSource::Coinbase, error))?;
         parse_page(&body, granularity)
     }
 }
@@ -254,10 +262,11 @@ fn first_upper(end_ms: i64, now_ms: i64, granularity: i64) -> i64 {
 
 /// `[time s, low, high, open, close, volume]`, newest first.
 fn parse_page(body: &str, granularity: i64) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Coinbase, error))?;
     let rows = value
         .as_array()
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Coinbase, "expected a candle array"))?;
     let mut candles = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {
