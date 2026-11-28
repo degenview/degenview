@@ -6,6 +6,7 @@
 //! [`Pending`] it returns; the job asks for a repaint when it ends, so the answer is drawn at once.
 
 use crate::lock::lock;
+use crate::model::DataSource;
 use eframe::egui;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -256,7 +257,6 @@ impl<T> Pending<T> {
     }
 }
 
-static QUEUE: WorkQueue = WorkQueue::new(4);
 /// Image downloads get their own workers, so a screenful of new logos never queues in front of a
 /// chart's candles.
 pub static IMAGES: WorkQueue = WorkQueue::new(4);
@@ -277,19 +277,61 @@ pub static UPDATES: WorkQueue = WorkQueue::new(1);
 /// borrow a general worker.
 pub static SNAPSHOTS: WorkQueue = WorkQueue::new(2);
 
-/// Rate-limited providers get a worker each: a request sleeping until its slot comes (seconds, for
-/// CoinGecko, GeckoTerminal and Kraken) must not hold one of the general workers that fetch other charts'
-/// candles. One worker matches the limiter, which lets one request through at a time anyway.
-static COINGECKO_LANE: WorkQueue = WorkQueue::new(1);
+/// The workers that requests to market providers run on, and everything else without a pool of its
+/// own. The app has one set, [`LANES`]; a test that has to hold workers busy builds its own, so it
+/// never delays the tests that run beside it.
+struct Lanes {
+    /// Candle fetches, and any job with no more particular home.
+    general: WorkQueue,
+    /// Searches the user is typing into run apart from candle fetches, so a picker never waits
+    /// behind a busy chart; a rate-limited provider's search still takes that provider's lane.
+    searches: WorkQueue,
+    /// Rate-limited providers get a worker each: a request sleeping until its slot comes (seconds,
+    /// for CoinGecko, GeckoTerminal and Kraken) must not hold one of the general workers that
+    /// fetch other charts' candles. One worker matches the limiter, which lets one request through
+    /// at a time anyway.
+    coingecko: WorkQueue,
+    geckoterminal: WorkQueue,
+    kraken: WorkQueue,
+}
 
-/// Searches the user is typing into run apart from candle fetches, so a picker never waits behind
-/// a busy chart; a rate-limited provider's search still takes that provider's lane.
-static SEARCHES: WorkQueue = WorkQueue::new(4);
-static GECKOTERMINAL_LANE: WorkQueue = WorkQueue::new(1);
-static KRAKEN_LANE: WorkQueue = WorkQueue::new(1);
+impl Lanes {
+    const fn new() -> Self {
+        Self {
+            general: WorkQueue::new(4),
+            searches: WorkQueue::new(4),
+            coingecko: WorkQueue::new(1),
+            geckoterminal: WorkQueue::new(1),
+            kraken: WorkQueue::new(1),
+        }
+    }
+
+    /// The workers that suit requests to `source`'s provider.
+    fn of(&self, source: DataSource) -> &WorkQueue {
+        match source {
+            DataSource::CoinGecko => &self.coingecko,
+            DataSource::DexScreener => &self.geckoterminal,
+            DataSource::Kraken => &self.kraken,
+            _ => &self.general,
+        }
+    }
+
+    /// The workers that suit a search of `source`'s provider: its lane when it has one, otherwise
+    /// the search workers.
+    fn of_search(&self, source: DataSource) -> &WorkQueue {
+        let queue = self.of(source);
+        if std::ptr::eq(queue, &self.general) {
+            &self.searches
+        } else {
+            queue
+        }
+    }
+}
+
+static LANES: Lanes = Lanes::new();
 
 pub fn submit(job: impl FnOnce() + Send + 'static) {
-    QUEUE.submit(job);
+    LANES.general.submit(job);
 }
 
 /// Runs `job` on the general workers; see [`WorkQueue::start`].
@@ -297,46 +339,31 @@ pub fn start<T: Send + 'static>(
     repaint: Option<&egui::Context>,
     job: impl FnOnce() -> T + Send + 'static,
 ) -> Pending<T> {
-    QUEUE.start(repaint, job)
-}
-
-/// The workers that suit requests to `source`'s provider.
-fn lane(source: crate::model::DataSource) -> &'static WorkQueue {
-    use crate::model::DataSource;
-    match source {
-        DataSource::CoinGecko => &COINGECKO_LANE,
-        DataSource::DexScreener => &GECKOTERMINAL_LANE,
-        DataSource::Kraken => &KRAKEN_LANE,
-        _ => &QUEUE,
-    }
+    LANES.general.start(repaint, job)
 }
 
 /// Runs a request to `source`'s provider on the workers that suit it.
-pub fn submit_for(source: crate::model::DataSource, job: impl FnOnce() + Send + 'static) {
-    lane(source).submit(job);
+pub fn submit_for(source: DataSource, job: impl FnOnce() + Send + 'static) {
+    LANES.of(source).submit(job);
 }
 
 /// Runs a request to `source`'s provider on the workers that suit it, as [`WorkQueue::start`].
 pub fn start_for<T: Send + 'static>(
-    source: crate::model::DataSource,
+    source: DataSource,
     repaint: Option<&egui::Context>,
     job: impl FnOnce() -> T + Send + 'static,
 ) -> Pending<T> {
-    lane(source).start(repaint, job)
+    LANES.of(source).start(repaint, job)
 }
 
 /// Runs a search of `source`'s provider for a picker, as [`WorkQueue::start`]: on that provider's
 /// lane when it has one, otherwise on the search workers.
 pub fn start_search<T: Send + 'static>(
-    source: crate::model::DataSource,
+    source: DataSource,
     repaint: Option<&egui::Context>,
     job: impl FnOnce() -> T + Send + 'static,
 ) -> Pending<T> {
-    let queue = match lane(source) {
-        queue if std::ptr::eq(queue, &QUEUE) => &SEARCHES,
-        queue => queue,
-    };
-    queue.start(repaint, job)
+    LANES.of_search(source).start(repaint, job)
 }
 
 #[cfg(test)]
@@ -501,56 +528,59 @@ mod tests {
 
     #[test]
     fn every_rate_limited_provider_has_a_lane_of_its_own() {
-        use crate::model::DataSource;
-        let lanes: Vec<*const WorkQueue> = [
+        let lanes = Lanes::new();
+        let limited = [
             DataSource::CoinGecko,
             DataSource::DexScreener,
             DataSource::Kraken,
         ]
-        .map(|source| lane(source) as *const WorkQueue)
-        .to_vec();
-        for (index, queue) in lanes.iter().enumerate() {
+        .map(|source| (lanes.of(source), lanes.of_search(source)));
+        for (index, (queue, search)) in limited.iter().enumerate() {
             assert!(
-                !std::ptr::eq(*queue, &QUEUE),
+                !std::ptr::eq(*queue, &lanes.general),
                 "lane {index} is the general one"
             );
             assert!(
-                !std::ptr::eq(*queue, &SEARCHES),
+                !std::ptr::eq(*queue, &lanes.searches),
                 "lane {index} is the search one"
             );
             assert!(
-                lanes
+                std::ptr::eq(*queue, *search),
+                "lane {index} is left by searches"
+            );
+            assert_eq!(
+                limited
                     .iter()
-                    .filter(|other| std::ptr::eq(**other, *queue))
-                    .count()
-                    == 1,
+                    .filter(|(other, _)| std::ptr::eq(*other, *queue))
+                    .count(),
+                1,
                 "lane {index} is shared"
             );
         }
         // An unlimited provider keeps the general workers, and its searches the search ones.
-        assert!(std::ptr::eq(lane(DataSource::Binance), &QUEUE));
+        assert!(std::ptr::eq(lanes.of(DataSource::Binance), &lanes.general));
+        assert!(std::ptr::eq(
+            lanes.of_search(DataSource::Binance),
+            &lanes.searches
+        ));
     }
 
     #[test]
     fn a_throttled_kraken_does_not_hold_the_workers_that_fetch_other_charts() {
-        // Five requests asleep on Kraken's limiter, as many as the general workers and one more.
-        for _ in 0..5 {
-            submit_for(crate::model::DataSource::Kraken, || {
-                std::thread::sleep(Duration::from_millis(600));
+        let lanes = Lanes::new();
+        // More requests stuck on Kraken's limiter than there are general workers.
+        let (release, released) = mpsc::channel::<()>();
+        let released = Arc::new(Mutex::new(released));
+        for _ in 0..=lanes.general.workers {
+            let released = Arc::clone(&released);
+            lanes.of(DataSource::Kraken).submit(move || {
+                let _ = lock(&released).recv();
             });
         }
-        let (done, finished) = mpsc::channel::<()>();
-        let started = Instant::now();
-        submit(move || {
-            let _ = done.send(());
-        });
-        finished
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the unrelated job ran");
-        assert!(
-            started.elapsed() < Duration::from_millis(300),
-            "an unrelated job waited {:?} behind Kraken's requests",
-            started.elapsed()
-        );
+        let candles = lanes.of(DataSource::Binance).start(None, || 1);
+        let search = lanes.of_search(DataSource::Binance).start(None, || 2);
+        assert_eq!(candles.wait(), Some(1));
+        assert_eq!(search.wait(), Some(2));
+        drop(release);
     }
 }
