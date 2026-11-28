@@ -35,11 +35,7 @@ impl Mexc {
         Self {
             http: context.http.clone(),
             clock: context.clock.clone(),
-            catalog: Catalog::new(
-                Listing::spot(DataSource::Mexc),
-                "catalog_mexc_v2",
-                context.cache.clone(),
-            ),
+            catalog: Catalog::new(Listing::spot(DataSource::Mexc), "catalog_mexc_v2", context),
         }
     }
 }

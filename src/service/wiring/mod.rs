@@ -13,24 +13,47 @@ mod clock;
 mod credentials;
 mod http;
 
+use crate::service::market::catalog::registry::Registry;
 use crate::service::market::ports::context::MarketContext;
 use crate::service::market::venues::Venues;
 use std::sync::{Arc, OnceLock};
 
-/// The ports of the running app.
+/// The ports of the running app, and the registry its catalogs are added to.
 fn context() -> MarketContext {
     MarketContext {
         http: Arc::new(http::NetHttp),
         clock: Arc::new(clock::SystemClock),
         credentials: Arc::new(credentials::KeychainCredentials::app()),
         cache: Arc::new(cache::SharedLookups),
+        catalogs: Arc::default(),
     }
+}
+
+/// The app's venues and the registry of the catalogs they were built with.
+struct App {
+    venues: Venues,
+    catalogs: Arc<Registry>,
+}
+
+fn app() -> &'static App {
+    static APP: OnceLock<App> = OnceLock::new();
+    APP.get_or_init(|| {
+        let context = context();
+        App {
+            venues: Venues::new(&context),
+            catalogs: context.catalogs,
+        }
+    })
 }
 
 /// The app's venues.
 pub fn venues() -> &'static Venues {
-    static VENUES: OnceLock<Venues> = OnceLock::new();
-    VENUES.get_or_init(|| Venues::new(&context()))
+    &app().venues
+}
+
+/// The catalogs of the app's venues, for the cache clearing to empty.
+pub fn catalogs() -> &'static Registry {
+    &app().catalogs
 }
 
 #[cfg(test)]

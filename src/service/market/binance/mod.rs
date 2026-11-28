@@ -39,12 +39,12 @@ impl Binance {
             spot_catalog: Catalog::new(
                 Listing::spot(DataSource::Binance),
                 "catalog_binance",
-                context.cache.clone(),
+                context,
             ),
             perpetual_catalog: Catalog::new(
                 Listing::BINANCE_PERPETUAL,
                 "catalog_binance_futures",
-                context.cache.clone(),
+                context,
             ),
         }
     }

@@ -4,7 +4,6 @@ use super::disk::{self, CacheStats, ClearOutcome, Limits};
 use super::lookup;
 use crate::service::{
     image::{icon, loader},
-    market::catalog::registry,
     wiring, work_queue,
 };
 use eframe::egui;
@@ -49,7 +48,7 @@ fn clear_memory() {
     super::clear();
     icon::clear_memory();
     lookup::shared().clear_memory();
-    registry::clear_memory(wiring::venues());
+    wiring::catalogs().clear_memory();
     loader::clear_memory();
 }
 

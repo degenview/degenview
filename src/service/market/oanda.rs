@@ -48,7 +48,7 @@ impl Oanda {
             catalog: Catalog::new(
                 Listing::spot(DataSource::Oanda),
                 "catalog_oanda_v2",
-                context.cache.clone(),
+                context,
             ),
         }
     }

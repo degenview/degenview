@@ -1,144 +1,105 @@
-//! Every venue's [`Catalog`], so the lists held in memory can be forgotten together when the cache
-//! is cleared. The one list of them: a venue that declares a catalog is added here, and a test reads
-//! the sources and fails for a catalog this list lacks.
+//! The catalogs built from one [`MarketContext`](crate::service::market::ports::context::MarketContext),
+//! so the lists they hold in memory can be forgotten together when the cache is cleared. A
+//! catalog adds its memory here when it is built, so no venue lists its catalogs and none can be
+//! left out; the registry belongs to the context, so a second context (a test's) has its own and
+//! clearing one reaches only what was built from it.
 
-use super::Catalog;
-use crate::service::market::venues::Venues;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use super::Loaded;
+use crate::lock::lock;
+use std::sync::{Arc, Mutex, Weak};
 
-/// A catalog, whatever it lists.
-trait Held: Sync {
-    /// Where the catalog keeps its list in the lookup cache.
-    #[cfg(test)]
-    fn namespace(&self) -> &'static str;
-
+/// The memory of a catalog, whatever it lists.
+pub(super) trait Held: Send + Sync {
     fn clear_memory(&self);
 }
 
-impl<T: Serialize + DeserializeOwned + Send + Sync> Held for Catalog<T> {
-    #[cfg(test)]
-    fn namespace(&self) -> &'static str {
-        self.namespace
-    }
-
+impl<T: Send + Sync + 'static> Held for Mutex<Option<Loaded<T>>> {
     fn clear_memory(&self) {
-        Catalog::clear_memory(self);
+        *lock(self) = None;
     }
 }
 
-/// The catalogs of `venues`.
-fn catalogs(venues: &Venues) -> [&dyn Held; 10] {
-    [
-        &venues.binance.spot_catalog,
-        &venues.binance.perpetual_catalog,
-        &venues.coinbase.catalog,
-        &venues.okx.catalog,
-        &venues.kraken.catalog,
-        &venues.bybit.catalog,
-        &venues.gate.catalog,
-        &venues.mexc.catalog,
-        &venues.alpaca.catalog,
-        &venues.oanda.catalog,
-    ]
+/// What the catalogs of one context hold in memory. A catalog that is gone drops out.
+#[derive(Default)]
+pub struct Registry {
+    held: Mutex<Vec<Weak<dyn Held>>>,
 }
 
-/// Forgets every list `venues` hold in memory (after the disk cache was cleared), so the next
-/// search downloads it again.
-pub(in crate::service) fn clear_memory(venues: &Venues) {
-    clear(&catalogs(venues));
-}
+impl Registry {
+    pub(super) fn register(&self, memory: &Arc<dyn Held>) {
+        let mut held = lock(&self.held);
+        held.retain(|entry| entry.strong_count() > 0);
+        held.push(Arc::downgrade(memory));
+    }
 
-fn clear(catalogs: &[&dyn Held]) {
-    for catalog in catalogs {
-        catalog.clear_memory();
+    /// Forgets every list held in memory (after the disk cache was cleared), so the next search
+    /// downloads it again.
+    pub(in crate::service) fn clear_memory(&self) {
+        for entry in lock(&self.held).iter() {
+            if let Some(memory) = entry.upgrade() {
+                memory.clear_memory();
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::Catalog;
     use super::*;
     use crate::model::{DataSource, Listing};
     use crate::service::market::ports::fakes::Rig;
-    use std::collections::BTreeSet;
-    use std::fs;
-    use std::path::Path;
 
-    /// The namespace of every `Catalog::new("…")` in the venues' code (tests and comments left out).
-    fn declared_namespaces() -> BTreeSet<String> {
-        const DECLARATION: &str = "Catalog::new(";
-        let mut namespaces = BTreeSet::new();
-        let mut pending = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src/service/market")];
-        while let Some(dir) = pending.pop() {
-            for entry in fs::read_dir(&dir).expect("directory readable").flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    pending.push(path);
-                } else if path.extension().is_some_and(|extension| extension == "rs")
-                    && path.file_name().is_some_and(|name| name != "tests.rs")
-                {
-                    let source = fs::read_to_string(&path).expect("source readable");
-                    let code: String = source
-                        .split("#[cfg(test)]")
-                        .next()
-                        .unwrap_or_default()
-                        .lines()
-                        .filter(|line| !line.trim_start().starts_with("//"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let mut rest = code.as_str();
-                    while let Some((_, after)) = rest.split_once(DECLARATION) {
-                        let (_, named) = after.split_once('"').expect("a name");
-                        let (namespace, tail) = named.split_once('"').expect("a closed name");
-                        namespaces.insert(namespace.to_owned());
-                        rest = tail;
-                    }
-                }
-            }
-        }
-        namespaces
+    fn catalog(rig: &Rig, namespace: &'static str) -> Catalog<String> {
+        Catalog::new(Listing::spot(DataSource::Bybit), namespace, &rig.context())
+    }
+
+    fn keep(catalog: &Catalog<String>) {
+        catalog
+            .get_for("all", || Ok(vec!["BTC".to_owned()]))
+            .expect("a list");
+        assert!(catalog.held("all").is_some());
     }
 
     #[test]
-    fn every_catalog_a_venue_declares_is_registered() {
-        let venues = Venues::new(&Rig::new().context());
-        let registered: Vec<&str> = catalogs(&venues)
-            .iter()
-            .map(|catalog| catalog.namespace())
-            .collect();
-        let distinct: BTreeSet<&str> = registered.iter().copied().collect();
-        assert_eq!(distinct.len(), registered.len(), "a catalog listed twice");
-        let declared = declared_namespaces();
-        assert!(
-            !declared.is_empty(),
-            "no declaration found: has the scan gone stale?"
-        );
-        assert_eq!(
-            distinct,
-            declared.iter().map(String::as_str).collect(),
-            "a Catalog::new in market/ and the registry differ"
-        );
-    }
-
-    #[test]
-    fn clearing_reaches_every_catalog_it_is_given() {
+    fn clearing_a_contexts_registry_empties_every_catalog_built_from_it() {
         let rig = Rig::new();
-        let catalogs = ["catalog_a", "catalog_b", "catalog_c"].map(|namespace| {
-            Catalog::<String>::new(
-                Listing::spot(DataSource::Bybit),
-                namespace,
-                rig.cache.clone(),
-            )
-        });
-        for catalog in &catalogs {
-            catalog
-                .get_for("all", || Ok(vec!["BTC".to_owned()]))
-                .expect("a list");
-            assert!(catalog.held("all").is_some());
-        }
-        clear(&catalogs.each_ref().map(|catalog| catalog as &dyn Held));
-        for catalog in &catalogs {
-            assert!(catalog.held("all").is_none(), "{}", catalog.namespace);
-        }
+        let (first, second, never_asked) = (
+            catalog(&rig, "catalog_a"),
+            catalog(&rig, "catalog_b"),
+            catalog(&rig, "catalog_c"),
+        );
+        keep(&first);
+        keep(&second);
+
+        rig.catalogs.clear_memory();
+
+        assert!(first.held("all").is_none());
+        assert!(second.held("all").is_none());
+        assert!(never_asked.held("all").is_none());
+    }
+
+    #[test]
+    fn a_catalog_of_another_context_is_untouched() {
+        let (ours, theirs) = (Rig::new(), Rig::new());
+        let (mine, other) = (catalog(&ours, "catalog_a"), catalog(&theirs, "catalog_a"));
+        keep(&mine);
+        keep(&other);
+
+        ours.catalogs.clear_memory();
+
+        assert!(mine.held("all").is_none());
+        assert!(other.held("all").is_some());
+    }
+
+    #[test]
+    fn a_catalog_that_is_gone_is_forgotten_by_the_registry() {
+        let rig = Rig::new();
+        drop(catalog(&rig, "catalog_a"));
+        let kept = catalog(&rig, "catalog_b");
+        keep(&kept);
+        assert_eq!(lock(&rig.catalogs.held).len(), 1, "the dropped one left");
+        rig.catalogs.clear_memory();
+        assert!(kept.held("all").is_none());
     }
 }

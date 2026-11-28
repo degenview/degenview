@@ -37,7 +37,7 @@ impl Gate {
             catalog: Catalog::new(
                 Listing::spot(DataSource::Gate),
                 "catalog_gateio_v2",
-                context.cache.clone(),
+                context,
             ),
         }
     }

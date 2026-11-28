@@ -36,11 +36,7 @@ impl Alpaca {
             http: context.http.clone(),
             clock: context.clock.clone(),
             credentials: context.credentials.clone(),
-            catalog: Catalog::new(
-                Listing::spot(DataSource::Alpaca),
-                "catalog_alpaca",
-                context.cache.clone(),
-            ),
+            catalog: Catalog::new(Listing::spot(DataSource::Alpaca), "catalog_alpaca", context),
         }
     }
 

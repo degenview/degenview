@@ -47,7 +47,7 @@ impl Coinbase {
             catalog: Catalog::new(
                 Listing::spot(DataSource::Coinbase),
                 "catalog_coinbase",
-                context.cache.clone(),
+                context,
             ),
         }
     }

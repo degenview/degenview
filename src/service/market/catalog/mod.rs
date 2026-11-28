@@ -23,6 +23,8 @@ use crate::lock::lock;
 use crate::model::Listing;
 use crate::service::ProviderError;
 use crate::service::market::ports::cache::CacheStore;
+use crate::service::market::ports::context::MarketContext;
+use registry::Held;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -54,18 +56,24 @@ pub struct Catalog<T> {
     venue: Listing,
     namespace: &'static str,
     cache: Arc<dyn CacheStore>,
-    memory: Mutex<Option<Loaded<T>>>,
+    /// Also held by the context's `registry`, which clears it with the cache.
+    memory: Arc<Mutex<Option<Loaded<T>>>>,
     /// Held while downloading, so concurrent searches share one request.
     refresh: Mutex<()>,
 }
 
-impl<T: Serialize + DeserializeOwned> Catalog<T> {
-    pub fn new(venue: Listing, namespace: &'static str, cache: Arc<dyn CacheStore>) -> Self {
+impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> Catalog<T> {
+    /// A catalog of `venue`'s list kept under `namespace` in the context's cache, and registered
+    /// with the context, which clears what it holds in memory when the cache is cleared.
+    pub fn new(venue: Listing, namespace: &'static str, context: &MarketContext) -> Self {
+        let memory = Arc::new(Mutex::new(None));
+        let held: Arc<dyn Held> = memory.clone();
+        context.catalogs.register(&held);
         Self {
             venue,
             namespace,
-            cache,
-            memory: Mutex::new(None),
+            cache: context.cache.clone(),
+            memory,
             refresh: Mutex::new(()),
         }
     }
@@ -246,10 +254,6 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             recheck_after: Instant::now() + recheck_in,
             failed,
         });
-    }
-
-    fn clear_memory(&self) {
-        *lock(&self.memory) = None;
     }
 }
 

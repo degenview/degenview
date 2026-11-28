@@ -35,11 +35,7 @@ impl Okx {
         Self {
             http: context.http.clone(),
             clock: context.clock.clone(),
-            catalog: Catalog::new(
-                Listing::spot(DataSource::Okx),
-                "catalog_okx",
-                context.cache.clone(),
-            ),
+            catalog: Catalog::new(Listing::spot(DataSource::Okx), "catalog_okx", context),
         }
     }
 }

@@ -8,6 +8,7 @@ use super::credentials::Credentials;
 use super::http::{Error, Http, Pace, Request, Retry};
 use crate::lock::lock;
 use crate::model::market::oanda::OandaCredentials;
+use crate::service::market::catalog::registry::Registry;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
@@ -218,6 +219,7 @@ pub struct Rig {
     pub clock: Arc<FixedClock>,
     pub credentials: Arc<FakeCredentials>,
     pub cache: Arc<MemoryCache>,
+    pub catalogs: Arc<Registry>,
 }
 
 impl Rig {
@@ -231,6 +233,7 @@ impl Rig {
             cache: Arc::new(MemoryCache::new(Arc::clone(&clock))),
             clock,
             credentials: Arc::default(),
+            catalogs: Arc::default(),
         }
     }
 
@@ -240,6 +243,7 @@ impl Rig {
             clock: self.clock.clone(),
             credentials: self.credentials.clone(),
             cache: self.cache.clone(),
+            catalogs: self.catalogs.clone(),
         }
     }
 }

@@ -34,11 +34,7 @@ impl Kraken {
         Self {
             http: context.http.clone(),
             clock: context.clock.clone(),
-            catalog: Catalog::new(
-                Listing::spot(DataSource::Kraken),
-                "catalog_kraken",
-                context.cache.clone(),
-            ),
+            catalog: Catalog::new(Listing::spot(DataSource::Kraken), "catalog_kraken", context),
         }
     }
 }

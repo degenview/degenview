@@ -35,11 +35,7 @@ impl Bybit {
         Self {
             http: context.http.clone(),
             clock: context.clock.clone(),
-            catalog: Catalog::new(
-                Listing::spot(DataSource::Bybit),
-                "catalog_bybit",
-                context.cache.clone(),
-            ),
+            catalog: Catalog::new(Listing::spot(DataSource::Bybit), "catalog_bybit", context),
         }
     }
 }

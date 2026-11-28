@@ -93,9 +93,10 @@ watchlists.
   (`HITS`; `WIDE_HITS` where the venue keeps more), its id, the two sides and the names the venue
   gives them. `search_tickers` is one call to `catalog::search::find(query, list)` (`asset_names`:
   `catalog::search::asset_names`), where a query is normalised (`BTC-USDT`, `btc/usdt` and
-  `BTCUSDT` are one), matched, ranked and cut. Add the catalog to `catalog::registry`: Settings ▸
-  Storage clears every list in memory through it, and a test fails for a `Catalog::new` the
-  registry lacks. A download that panics counts as a failed attempt (the held list is served, the
+  `BTCUSDT` are one), matched, ranked and cut. `Catalog::new(listing, namespace, context)` joins
+  the context's `catalog::registry::Registry` itself: Settings ▸ Storage clears every list in
+  memory through it (`wiring::catalogs()`), with nothing to list and nothing to forget, and a
+  catalog built from another context (a test's) is untouched. A download that panics counts as a failed attempt (the held list is served, the
   provider left alone for the back-off). A search that does not fit (Binance's two lists, Alpaca's
   company names) matches on its own and still ranks through `rank_results`.
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`

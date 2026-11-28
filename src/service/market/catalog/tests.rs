@@ -30,7 +30,7 @@ impl Fixture {
         Catalog::new(
             Listing::spot(DataSource::Bybit),
             "catalog_test",
-            self.rig.cache.clone(),
+            &self.rig.context(),
         )
     }
 
@@ -184,7 +184,7 @@ fn clearing_memory_makes_the_next_search_reload() {
     catalog
         .get_for(EVERYONE, fixture.download(Ok(pairs(&["A"]))))
         .unwrap();
-    catalog.clear_memory();
+    registry::Held::clear_memory(&*catalog.memory);
     // Still in the lookup cache, so no download.
     catalog
         .get_for(
@@ -363,7 +363,7 @@ fn a_panic_while_the_list_is_locked_does_not_make_search_unavailable() {
     // What is held is served, another owner's list is downloaded, and memory can be cleared.
     assert_eq!(*ask(&catalog, "a", &["asked"]), pairs(&["EUR_USD"]));
     assert_eq!(*ask(&catalog, "b", &["USD_JPY"]), pairs(&["USD_JPY"]));
-    catalog.clear_memory();
+    registry::Held::clear_memory(&*catalog.memory);
     assert!(catalog.held("b").is_none());
 }
 
