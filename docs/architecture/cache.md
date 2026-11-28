@@ -16,7 +16,7 @@ files are misses.
   minutes.
 - `icon` caches resolved artwork for 30 days, clean misses for one day, and never caches failures.
   CoinGecko's top 250 and names last one day.
-- Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Alpaca and Oanda catalogs refresh daily, search locally, and serve stale on error. `market::catalog::registry` lists them, so clearing the cache empties every list held in memory.
+- Binance, Coinbase, OKX, Kraken, Bybit, Gate.io, MEXC, Alpaca and Oanda catalogs refresh daily, search locally, and serve stale on error. Each registers itself in `market::catalog::registry` when it first keeps a list, so clearing the cache empties every list held in memory.
 - Ten seconds after launch, `cache::disk::prune` removes images older than 90 days, then oldest files
   until below 75% of 128 MB. Lookup entries expire after 90 days.
 - Settings ▸ Storage clears only these cache areas, increments the write generation, drops all

@@ -1,6 +1,8 @@
 use super::*;
 use crate::service::cache::disk::{DiskCache, testing::TempCache};
 use serde::Deserialize;
+use std::panic::AssertUnwindSafe;
+use std::sync::MutexGuard;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -10,7 +12,11 @@ fn pairs(names: &[&str]) -> Vec<Pair> {
     names.iter().map(|name| Pair((*name).to_owned())).collect()
 }
 
+/// Clearing the registry reaches every catalog a test has used, so tests that hold one at a time.
+static REGISTRY: Mutex<()> = Mutex::new(());
+
 struct Fixture {
+    _registry: MutexGuard<'static, ()>,
     temp: TempCache,
     clock: Arc<AtomicI64>,
     downloads: AtomicUsize,
@@ -19,6 +25,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         Self {
+            _registry: lock(&REGISTRY),
             temp: TempCache::new(),
             clock: Arc::new(AtomicI64::new(1_000 * 86_400_000)),
             downloads: AtomicUsize::new(0),
@@ -26,11 +33,11 @@ impl Fixture {
     }
 
     /// A lookup cache over the shared directory, and a `Catalog` with empty memory: a launch.
-    fn launch(&self) -> (LookupCache, Catalog<Pair>) {
+    fn launch(&self) -> (LookupCache, &'static Catalog<Pair>) {
         let disk: &'static DiskCache = Box::leak(Box::new(DiskCache::at(self.temp.path())));
         let clock = Arc::clone(&self.clock);
         let cache = LookupCache::for_tests(disk, Box::new(move || clock.load(Ordering::Relaxed)));
-        (cache, Catalog::new("catalog_test"))
+        (cache, Box::leak(Box::new(Catalog::new("catalog_test"))))
     }
 
     fn download(
@@ -273,7 +280,7 @@ fn a_stale_list_that_cannot_be_refreshed_does_not_say_a_market_is_unlisted() {
 
 /// The lists `owner` is answered with, asking the provider for `names` if it has to.
 fn ask(
-    catalog: &Catalog<Pair>,
+    catalog: &'static Catalog<Pair>,
     cache: &LookupCache,
     owner: &str,
     names: &[&str],
@@ -288,30 +295,30 @@ fn each_owner_has_its_own_list_across_relaunches() {
     let fixture = Fixture::new();
     let (cache, catalog) = fixture.launch();
     assert_eq!(
-        *ask(&catalog, &cache, "a", &["EUR_USD"]),
+        *ask(catalog, &cache, "a", &["EUR_USD"]),
         pairs(&["EUR_USD"])
     );
     assert_eq!(
-        *ask(&catalog, &cache, "b", &["USD_JPY"]),
+        *ask(catalog, &cache, "b", &["USD_JPY"]),
         pairs(&["USD_JPY"])
     );
     cache.flush("catalog_test");
 
     let (cache, catalog) = fixture.launch();
-    assert_eq!(*ask(&catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
-    assert_eq!(*ask(&catalog, &cache, "b", &["asked"]), pairs(&["USD_JPY"]));
+    assert_eq!(*ask(catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
+    assert_eq!(*ask(catalog, &cache, "b", &["asked"]), pairs(&["USD_JPY"]));
 }
 
 #[test]
 fn memory_releases_the_previous_owners_list() {
     let fixture = Fixture::new();
     let (cache, catalog) = fixture.launch();
-    let first = Arc::downgrade(&ask(&catalog, &cache, "a", &["EUR_USD"]));
+    let first = Arc::downgrade(&ask(catalog, &cache, "a", &["EUR_USD"]));
     assert!(
         first.upgrade().is_some(),
         "held while it is the last asked for"
     );
-    ask(&catalog, &cache, "b", &["USD_JPY"]);
+    ask(catalog, &cache, "b", &["USD_JPY"]);
     assert!(first.upgrade().is_none());
 }
 
@@ -319,7 +326,7 @@ fn memory_releases_the_previous_owners_list() {
 fn a_failed_download_never_answers_with_another_owners_list() {
     let fixture = Fixture::new();
     let (cache, catalog) = fixture.launch();
-    ask(&catalog, &cache, "a", &["EUR_USD"]);
+    ask(catalog, &cache, "a", &["EUR_USD"]);
     let error = catalog
         .get_from(&cache, "b", || Err(ProviderError::other("offline")))
         .unwrap_err();
@@ -330,7 +337,7 @@ fn a_failed_download_never_answers_with_another_owners_list() {
 fn a_panic_while_the_list_is_locked_does_not_make_search_unavailable() {
     let fixture = Fixture::new();
     let (cache, catalog) = fixture.launch();
-    ask(&catalog, &cache, "a", &["EUR_USD"]);
+    ask(catalog, &cache, "a", &["EUR_USD"]);
     std::thread::scope(|scope| {
         let _ = scope
             .spawn(|| {
@@ -345,11 +352,61 @@ fn a_panic_while_the_list_is_locked_does_not_make_search_unavailable() {
     assert!(catalog.memory.is_poisoned() && catalog.refresh.is_poisoned());
 
     // What is held is served, another owner's list is downloaded, and memory can be cleared.
-    assert_eq!(*ask(&catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
+    assert_eq!(*ask(catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
     assert_eq!(
-        *ask(&catalog, &cache, "b", &["USD_JPY"]),
+        *ask(catalog, &cache, "b", &["USD_JPY"]),
         pairs(&["USD_JPY"])
     );
     catalog.clear_memory();
     assert!(catalog.held("b").is_none());
+}
+
+#[test]
+fn clearing_the_registry_empties_every_catalog_that_kept_a_list() {
+    let fixture = Fixture::new();
+    let (cache, kept) = fixture.launch();
+    let (_, other) = fixture.launch();
+    let (_, never_asked) = fixture.launch();
+    ask(kept, &cache, "a", &["EUR_USD"]);
+    ask(other, &cache, "b", &["USD_JPY"]);
+    assert!(kept.held("a").is_some() && other.held("b").is_some());
+
+    registry::clear_memory();
+
+    assert!(kept.held("a").is_none());
+    assert!(other.held("b").is_none());
+    assert!(never_asked.held("a").is_none());
+}
+
+#[test]
+fn a_download_that_panics_counts_as_a_failed_attempt() {
+    let fixture = Fixture::new();
+    let (cache, catalog) = fixture.launch();
+    catalog
+        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+        .unwrap();
+    cache.flush("catalog_test");
+    fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
+
+    let (cache, catalog) = fixture.launch();
+    let panicked = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let _ = catalog.get_from(&cache, EVERYONE, || -> Result<Vec<Pair>, _> {
+            fixture.downloads.fetch_add(1, Ordering::SeqCst);
+            panic!("the provider's answer was not what the parser expected");
+        });
+    }));
+    assert!(panicked.is_err(), "the panic is not swallowed");
+
+    // Not asked again at every search, and what is held is still served.
+    for _ in 0..4 {
+        let items = catalog
+            .get_from(
+                &cache,
+                EVERYONE,
+                fixture.download(Err(ProviderError::other("must not be asked"))),
+            )
+            .unwrap();
+        assert_eq!(*items, pairs(&["OLD"]));
+    }
+    assert_eq!(fixture.downloads(), 1 + 1, "the first list, then the panic");
 }

@@ -22,9 +22,8 @@ pub(in crate::service) struct Endpoints {
     pub ticker_batch: Option<usize>,
 }
 
-pub(in crate::service::market) static SPOT_CATALOG: Catalog<Pair> = Catalog::new("catalog_binance");
-pub(in crate::service::market) static PERPETUAL_CATALOG: Catalog<Pair> =
-    Catalog::new("catalog_binance_futures");
+static SPOT_CATALOG: Catalog<Pair> = Catalog::new("catalog_binance");
+static PERPETUAL_CATALOG: Catalog<Pair> = Catalog::new("catalog_binance_futures");
 
 /// Plain spot `exchangeInfo` is 18 MB (every market ever listed, each with its filters and its
 /// permission sets); the `TRADING` ones without permission sets are 2.6 MB.

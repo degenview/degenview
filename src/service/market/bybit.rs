@@ -106,9 +106,7 @@ impl MarketSource for Bybit {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(DataSource::Bybit, query, search::HITS, || {
-            CATALOG.get(download_pairs)
-        })
+        search::find(query, || CATALOG.get(download_pairs))
     }
 }
 
@@ -211,13 +209,15 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable spot market from `instruments-info`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Pair {
+struct Pair {
     id: String,
     base: String,
     quote: String,
 }
 
 impl ListedMarket for Pair {
+    const SOURCE: DataSource = DataSource::Bybit;
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -228,7 +228,7 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is trading, downloaded at most once a day.
-pub(super) static CATALOG: Catalog<Pair> = Catalog::new("catalog_bybit");
+static CATALOG: Catalog<Pair> = Catalog::new("catalog_bybit");
 
 /// The most pages of the market list followed: 509 markets fit one page of 1,000.
 const CATALOG_PAGES: usize = 10;
@@ -413,15 +413,11 @@ mod tests {
             },
         ];
         let pairs = Arc::new(pairs);
-        let ask = |query: &str| {
-            search::find(DataSource::Bybit, query, search::HITS, || {
-                Ok(Arc::clone(&pairs))
-            })
-            .unwrap()
-        };
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&pairs))).unwrap();
         for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
             let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Bybit);
             assert_eq!(found[0].symbol, "BTCUSDT");
             assert_eq!(found[0].base.as_deref(), Some("BTC"));
             assert_eq!(found[0].quote.as_deref(), Some("USDT"));

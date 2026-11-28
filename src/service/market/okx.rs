@@ -96,9 +96,7 @@ impl MarketSource for Okx {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(DataSource::Okx, query, search::HITS, || {
-            CATALOG.get(download_pairs)
-        })
+        search::find(query, || CATALOG.get(download_pairs))
     }
 }
 
@@ -179,13 +177,15 @@ pub(crate) fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderE
 
 /// One tradable spot market from `/public/instruments`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Pair {
+struct Pair {
     id: String,
     base: String,
     quote: String,
 }
 
 impl ListedMarket for Pair {
+    const SOURCE: DataSource = DataSource::Okx;
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -196,7 +196,7 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is live, downloaded at most once a day.
-pub(super) static CATALOG: Catalog<Pair> = Catalog::new("catalog_okx");
+static CATALOG: Catalog<Pair> = Catalog::new("catalog_okx");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     let body = http::get_text(
@@ -389,19 +389,14 @@ mod tests {
         ];
         let pairs = Arc::new(pairs);
         for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
-            let found = search::find(DataSource::Okx, query, search::HITS, || {
-                Ok(Arc::clone(&pairs))
-            })
-            .unwrap();
+            let found = search::find(query, || Ok(Arc::clone(&pairs))).unwrap();
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Okx);
             assert_eq!(found[0].symbol, "BTC-USDT");
             assert_eq!(found[0].base.as_deref(), Some("BTC"));
             assert_eq!(found[0].quote.as_deref(), Some("USDT"));
         }
-        let all = search::find(DataSource::Okx, "BTC", search::HITS, || {
-            Ok(Arc::clone(&pairs))
-        })
-        .unwrap();
+        let all = search::find("BTC", || Ok(Arc::clone(&pairs))).unwrap();
         assert_eq!(all.len(), 2);
     }
 }

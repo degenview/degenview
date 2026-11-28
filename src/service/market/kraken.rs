@@ -15,6 +15,7 @@ use crate::service::net::{http, rate_limit};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) const BASE_URL: &str = "https://api.kraken.com/0/public";
 
@@ -63,12 +64,17 @@ impl MarketSource for Kraken {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        // `BTC/USD`, `btc-usd`, `BTCUSD` and the legacy `XBTUSD` are one query.
-        let query = alias(&normalize(query));
-        search::find(DataSource::Kraken, &query, search::HITS, || {
-            CATALOG.get(download_pairs)
-        })
+        search_pairs(query, || CATALOG.get(download_pairs))
     }
+}
+
+/// The hits for `query` among the pairs `list` brings. `BTC/USD`, `btc-usd`, `BTCUSD` and the
+/// legacy `XBTUSD` are one query.
+fn search_pairs(
+    query: &str,
+    list: impl FnOnce() -> Result<Arc<Vec<Pair>>, ProviderError>,
+) -> Result<Vec<SearchResult>, ProviderError> {
+    search::find(&alias(&normalize(query)), list)
 }
 
 /// The candles of `plan`'s target that open in `[start_ms, end_ms)` out of everything Kraken holds
@@ -208,13 +214,15 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable market from `AssetPairs`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Pair {
+struct Pair {
     id: String,
     base: String,
     quote: String,
 }
 
 impl ListedMarket for Pair {
+    const SOURCE: DataSource = DataSource::Kraken;
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -225,7 +233,7 @@ impl ListedMarket for Pair {
 }
 
 /// Every market that is online, downloaded at most once a day.
-pub(super) static CATALOG: Catalog<Pair> = Catalog::new("catalog_kraken");
+static CATALOG: Catalog<Pair> = Catalog::new("catalog_kraken");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     parse_pairs(&get(&format!("{BASE_URL}/AssetPairs"))?)
@@ -256,7 +264,6 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
 
     #[test]
     fn every_native_has_its_interval_in_minutes_and_nothing_else_does() {
@@ -456,15 +463,11 @@ mod tests {
             },
         ];
         let pairs = Arc::new(pairs);
-        let ask = |query: &str| {
-            search::find(DataSource::Kraken, query, search::HITS, || {
-                Ok(Arc::clone(&pairs))
-            })
-            .unwrap()
-        };
+        let ask = |query: &str| search_pairs(query, || Ok(Arc::clone(&pairs))).unwrap();
         for query in ["btcusd", "BTC/USD", "btc-usd", "BTC USD", "xbtusd"] {
-            let found = ask(&alias(&normalize(query)));
+            let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Kraken);
             assert_eq!(found[0].symbol, "BTC/USD");
             assert_eq!(found[0].base.as_deref(), Some("BTC"));
             assert_eq!(found[0].quote.as_deref(), Some("USD"));

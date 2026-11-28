@@ -13,7 +13,7 @@
 //! from days rather than asked for.
 
 use super::catalog::Catalog;
-use super::catalog::search::{self, ListedMarket};
+use super::catalog::search::{self, ListedMarket, WIDE_HITS};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
@@ -199,7 +199,7 @@ impl MarketSource for Oanda {
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
         let login = credentials()?;
-        search::find(DataSource::Oanda, query, HITS, || {
+        search::find(query, || {
             CATALOG.get_for(&login.account_id, || download_instruments(&login))
         })
     }
@@ -274,12 +274,9 @@ fn parse_candle(row: &Value, bar: Timeframe) -> Result<Kline, ProviderError> {
     })
 }
 
-/// How many hits a search keeps, where the crypto venues keep `search::HITS`: Alpaca's number.
-const HITS: usize = 30;
-
 /// One instrument of the account from `/accounts/{id}/instruments`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Instrument {
+struct Instrument {
     name: String,
     /// How Oanda writes it for people: `Germany 30`, `Gold`, or just the pair (`EUR/USD`).
     #[serde(default)]
@@ -295,6 +292,9 @@ impl Instrument {
 }
 
 impl ListedMarket for Instrument {
+    const SOURCE: DataSource = DataSource::Oanda;
+    const HITS: usize = WIDE_HITS;
+
     fn id(&self) -> &str {
         &self.name
     }
@@ -312,7 +312,7 @@ impl ListedMarket for Instrument {
 }
 
 /// The instrument list belongs to the account whose credentials downloaded it.
-pub(super) static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda_v2");
+static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda_v2");
 
 fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, ProviderError> {
     let body = get(
@@ -614,15 +614,11 @@ mod tests {
             },
         ];
         let instruments = Arc::new(instruments);
-        let ask = |query: &str| {
-            search::find(DataSource::Oanda, query, HITS, || {
-                Ok(Arc::clone(&instruments))
-            })
-            .unwrap()
-        };
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&instruments))).unwrap();
         for query in ["eurusd", "EUR/USD", "eur_usd", "EUR USD"] {
             let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Oanda);
             assert_eq!(found[0].symbol, "EUR_USD");
             assert_eq!(found[0].base.as_deref(), Some("EUR"));
             assert_eq!(found[0].quote.as_deref(), Some("USD"));

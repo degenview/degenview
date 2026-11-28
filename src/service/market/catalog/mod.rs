@@ -12,7 +12,8 @@
 //! another's. Memory holds the list of the last owner asked for, the lookup cache each owner's.
 //!
 //! [`search`] is how a venue answers a query from its list, and [`registry`] forgets every list held
-//! in memory when the cache is cleared.
+//! in memory when the cache is cleared: a catalog registers itself when it first keeps one, so a
+//! catalog is a `static`.
 
 pub(in crate::service) mod registry;
 pub(in crate::service) mod search;
@@ -22,7 +23,8 @@ use crate::service::ProviderError;
 use crate::service::cache::lookup::{self, LookupCache};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::sync::{Arc, Mutex};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 
 /// How long a downloaded list is used without asking again.
@@ -50,20 +52,23 @@ pub struct Catalog<T> {
     memory: Mutex<Option<Loaded<T>>>,
     /// Held while downloading, so concurrent searches share one request.
     refresh: Mutex<()>,
+    /// Adds the catalog to the `registry` with the first list it keeps.
+    registered: Once,
 }
 
-impl<T: Serialize + DeserializeOwned> Catalog<T> {
+impl<T: Serialize + DeserializeOwned + Send + Sync> Catalog<T> {
     pub const fn new(namespace: &'static str) -> Self {
         Self {
             namespace,
             memory: Mutex::new(None),
             refresh: Mutex::new(()),
+            registered: Once::new(),
         }
     }
 
     /// The provider's public list: `get_for` for everybody.
     pub fn get(
-        &self,
+        &'static self,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
         self.get_for(EVERYONE, download)
@@ -74,7 +79,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     /// a market that does not exist must not cost a download at every retry. A list that could
     /// not be brought up to date says nothing of what it lacks: that is the download's error.
     pub fn get_listing(
-        &self,
+        &'static self,
         listed: impl Fn(&T) -> bool,
         download: impl Fn() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
@@ -82,7 +87,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     }
 
     fn get_listing_from(
-        &self,
+        &'static self,
         cache: &LookupCache,
         listed: impl Fn(&T) -> bool,
         download: impl Fn() -> Result<Vec<T>, ProviderError>,
@@ -106,7 +111,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     /// `owner`'s list, from memory, the lookup cache or — only when neither is fresh —
     /// `download`.
     pub fn get_for(
-        &self,
+        &'static self,
         owner: &str,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
@@ -114,7 +119,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     }
 
     fn get_from(
-        &self,
+        &'static self,
         cache: &LookupCache,
         owner: &str,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
@@ -151,13 +156,24 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     /// Downloads `owner`'s list and keeps it, or `stale` when that fails. The caller holds
     /// `refresh`.
     fn refresh_from(
-        &self,
+        &'static self,
         cache: &LookupCache,
         owner: &str,
         stale: Option<Arc<Vec<T>>>,
         download: impl FnOnce() -> Result<Vec<T>, ProviderError>,
     ) -> Result<Arc<Vec<T>>, ProviderError> {
-        match download() {
+        // A download that panics has failed like one that errs: asked again at every search it
+        // would never stop (Alpaca's list is tens of megabytes).
+        let downloaded = match catch_unwind(AssertUnwindSafe(download)) {
+            Ok(downloaded) => downloaded,
+            Err(panic) => {
+                if let Some(items) = &stale {
+                    self.keep_stale(owner, items, ProviderError::other("the download panicked"));
+                }
+                resume_unwind(panic);
+            }
+        };
+        match downloaded {
             Ok(items) if !items.is_empty() => {
                 cache.put(self.namespace, owner, &items);
                 let items = Arc::new(items);
@@ -175,7 +191,7 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     }
 
     fn fall_back(
-        &self,
+        &'static self,
         owner: &str,
         stale: Option<Arc<Vec<T>>>,
         error: ProviderError,
@@ -183,18 +199,23 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
         let Some(items) = stale else {
             return Err(error);
         };
+        self.keep_stale(owner, &items, error);
+        Ok(items)
+    }
+
+    /// Keeps `items` after a failed download and leaves the provider alone for `FAILURE_BACKOFF`.
+    fn keep_stale(&'static self, owner: &str, items: &Arc<Vec<T>>, error: ProviderError) {
         // A list still within its day stays so: one failed look does not age it.
         let still_fresh = self.held(owner).map_or(Duration::ZERO, |(_, until, _)| {
             until.saturating_duration_since(Instant::now())
         });
         self.keep(
             owner,
-            &items,
+            items,
             still_fresh.max(FAILURE_BACKOFF),
             FAILURE_BACKOFF,
             Some(error),
         );
-        Ok(items)
     }
 
     /// `owner`'s list if memory holds it, until when it is used as it is, and from when it may
@@ -226,13 +247,14 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
     }
 
     fn keep(
-        &self,
+        &'static self,
         owner: &str,
         items: &Arc<Vec<T>>,
         fresh_for: Duration,
         recheck_in: Duration,
         failed: Option<ProviderError>,
     ) {
+        self.registered.call_once(|| registry::register(self));
         *lock(&self.memory) = Some(Loaded {
             owner: owner.to_owned(),
             items: Arc::clone(items),
@@ -241,7 +263,9 @@ impl<T: Serialize + DeserializeOwned> Catalog<T> {
             failed,
         });
     }
+}
 
+impl<T> Catalog<T> {
     fn clear_memory(&self) {
         *lock(&self.memory) = None;
     }

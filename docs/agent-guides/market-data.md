@@ -43,15 +43,17 @@ watchlists.
   `SearchResult::base_asset`; pair: `SearchResult::base`/`quote_asset()`.
 - Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
 - A venue with no search endpoint hands over its whole list of markets and the app searches it.
-  The list is a `catalog::Catalog` (a `static` with its own disk namespace, never renamed: that
-  would discard users' cached lists); its item implements `catalog::search::ListedMarket` (id, the
-  two sides, the names the venue gives them), and `search_tickers` is one call to
-  `catalog::search::find` (`asset_names`: `catalog::search::asset_names`). That is where a query is
-  normalised (`BTC-USDT`, `btc/usdt` and `BTCUSDT` are one), matched, ranked and cut to
-  `search::HITS`. Add the static to `catalog::registry`: Settings ▸ Storage clears every list in
-  memory through it, and a test fails for a `Catalog::new` the registry lacks. A search that does
-  not fit (Binance's two lists, Alpaca's company names) matches on its own and still ranks through
-  `rank_results`.
+  The list is a private `catalog::Catalog` `static` with its own disk namespace, never renamed: that
+  would discard users' cached lists. Its item implements `catalog::search::ListedMarket`: the
+  `SOURCE` every hit names, how many hits it keeps (`HITS`; `WIDE_HITS` where the venue keeps
+  more), its id, the two sides and the names the venue gives them. `search_tickers` is one call to
+  `catalog::search::find(query, list)` (`asset_names`: `catalog::search::asset_names`), where a query
+  is normalised (`BTC-USDT`, `btc/usdt` and `BTCUSDT` are one), matched, ranked and cut. Nothing
+  else is registered: a catalog adds itself to `catalog::registry` when it first keeps a list, and
+  Settings ▸ Storage clears every list in memory through that, so a catalog is always a `static`. A
+  download that panics counts as a failed attempt (the held list is served, the provider left alone
+  for the back-off). A search that does not fit (Binance's two lists, Alpaca's company names)
+  matches on its own and still ranks through `rank_results`.
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
   (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use
   it. A new provider's slug is `DataSource::watchlist_slug`; do not add a second prefix table.

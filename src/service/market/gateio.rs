@@ -138,9 +138,7 @@ impl MarketSource for Gate {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(DataSource::Gate, query, search::HITS, || {
-            CATALOG.get(download_pairs)
-        })
+        search::find(query, || CATALOG.get(download_pairs))
     }
 }
 
@@ -217,7 +215,7 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable spot market from `currency_pairs`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Pair {
+struct Pair {
     id: String,
     base: String,
     quote: String,
@@ -228,6 +226,8 @@ pub(super) struct Pair {
 }
 
 impl ListedMarket for Pair {
+    const SOURCE: DataSource = DataSource::Gate;
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -242,7 +242,7 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is tradable, downloaded at most once a day.
-pub(super) static CATALOG: Catalog<Pair> = Catalog::new("catalog_gateio_v2");
+static CATALOG: Catalog<Pair> = Catalog::new("catalog_gateio_v2");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     parse_pairs(&get(&format!("{BASE_URL}/currency_pairs"))?)
@@ -586,15 +586,11 @@ mod tests {
             },
         ];
         let pairs = Arc::new(pairs);
-        let ask = |query: &str| {
-            search::find(DataSource::Gate, query, search::HITS, || {
-                Ok(Arc::clone(&pairs))
-            })
-            .unwrap()
-        };
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&pairs))).unwrap();
         for query in ["btcusdt", "BTC_USDT", "btc/usdt", "BTC USDT", "btc-usdt"] {
             let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Gate);
             assert_eq!(found[0].symbol, "BTC_USDT");
             assert_eq!(found[0].base.as_deref(), Some("BTC"));
             assert_eq!(found[0].quote.as_deref(), Some("USDT"));

@@ -71,21 +71,21 @@ impl MarketSource for Coinbase {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(DataSource::Coinbase, query, search::HITS, || {
-            CATALOG.get(download_products)
-        })
+        search::find(query, || CATALOG.get(download_products))
     }
 }
 
 /// One tradable product from `/products`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Product {
+struct Product {
     id: String,
     base: String,
     quote: String,
 }
 
 impl ListedMarket for Product {
+    const SOURCE: DataSource = DataSource::Coinbase;
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -96,7 +96,7 @@ impl ListedMarket for Product {
 }
 
 /// Every product that is online, downloaded at most once a day.
-pub(super) static CATALOG: Catalog<Product> = Catalog::new("catalog_coinbase");
+static CATALOG: Catalog<Product> = Catalog::new("catalog_coinbase");
 
 fn download_products() -> Result<Vec<Product>, ProviderError> {
     let body = crate::service::net::http::get_text(
@@ -336,15 +336,11 @@ mod tests {
             },
         ];
         let products = Arc::new(products);
-        let ask = |query: &str| {
-            search::find(DataSource::Coinbase, query, search::HITS, || {
-                Ok(Arc::clone(&products))
-            })
-            .unwrap()
-        };
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&products))).unwrap();
         for query in ["btc-usdt", "BTCUSDT", "btc/usdt", "BTC USDT"] {
             let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Coinbase);
             assert_eq!(found[0].symbol, "BTC-USDT");
             assert_eq!(found[0].base.as_deref(), Some("BTC"));
             assert_eq!(found[0].quote.as_deref(), Some("USDT"));
