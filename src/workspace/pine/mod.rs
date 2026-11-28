@@ -13,7 +13,6 @@ use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Timefram
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
 use eframe::egui;
-use std::collections::HashMap;
 
 /// The focused chart's identity, read by the Pine integration (alert subscription + tick loop).
 pub struct PineChartTarget {
@@ -477,6 +476,7 @@ mod tests {
     use super::*;
     use crate::model::DataSource;
     use crate::workspace::test_support::empty_workspace;
+    use std::collections::HashMap;
 
     #[test]
     fn agent_script_changes_are_undoable_and_only_real_changes_take_a_step() {
