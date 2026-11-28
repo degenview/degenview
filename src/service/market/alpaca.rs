@@ -1,13 +1,19 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::catalog::search::WIDE_HITS;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::credentials::Credentials;
+use super::ports::http::{Http, Request};
 use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
+use crate::service::net::http::Retry;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 const BARS_URL: &str = "https://data.alpaca.markets/v2/stocks";
 const DAY_MS: i64 = 86_400_000;
@@ -16,9 +22,36 @@ const DAY_MS: i64 = 86_400_000;
 /// Alpaca's 15.
 const SIP_DELAY_MS: i64 = 16 * 60_000;
 
-pub struct Alpaca;
+pub struct Alpaca {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    credentials: Arc<dyn Credentials>,
+    /// Every tradable asset (the response is tens of megabytes), downloaded at most once a day.
+    pub(super) catalog: Catalog<Asset>,
+}
 
-pub const ALPACA: Alpaca = Alpaca;
+impl Alpaca {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            credentials: context.credentials.clone(),
+            catalog: Catalog::new(
+                Listing::spot(DataSource::Alpaca),
+                "catalog_alpaca",
+                context.cache.clone(),
+            ),
+        }
+    }
+
+    /// The saved key id and secret.
+    fn keys(&self) -> Result<(String, String), ProviderError> {
+        self.credentials.alpaca().ok_or(ProviderError::new(
+            DataSource::Alpaca,
+            ErrorKind::MissingKey,
+        ))
+    }
+}
 
 /// What the statuses of a request that names symbols mean at Alpaca (IEX bars, snapshots): a 400
 /// names a symbol it does not know, a 401 or 403 refuses the keys.
@@ -51,27 +84,24 @@ const ACCOUNT_STATUSES: Statuses = &[
     (403, ErrorKind::Unauthorized),
 ];
 
-fn credentials() -> Result<(String, String), ProviderError> {
-    crate::service::keychain::api_keys::alpaca_credentials().ok_or(ProviderError::new(
-        DataSource::Alpaca,
-        ErrorKind::MissingKey,
-    ))
-}
-
-/// Settings ▸ Alpaca ▸ Test Connection: one bar of one stock, asked for with the given keys (the
-/// ones typed in the fields, saved or not), which is what stock charts need the keys for.
-pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderError> {
-    let url = format!("{BARS_URL}/AAPL/bars?timeframe=1Day&limit=1&feed=iex");
-    crate::service::net::http::get_text(
-        &url,
-        &[
-            ("APCA-API-KEY-ID", key_id.trim()),
-            ("APCA-API-SECRET-KEY", secret_key.trim()),
-        ],
-        crate::service::net::http::Retry::Never,
-    )
-    .map(|_| ())
-    .map_err(|error| ProviderError::http_with(DataSource::Alpaca, ACCOUNT_STATUSES, error))
+impl Alpaca {
+    /// Settings ▸ Alpaca ▸ Test Connection: one bar of one stock, asked for with the given keys
+    /// (the ones typed in the fields, saved or not), which is what stock charts need the keys for.
+    pub fn test_connection(&self, key_id: &str, secret_key: &str) -> Result<(), ProviderError> {
+        let url = format!("{BARS_URL}/AAPL/bars?timeframe=1Day&limit=1&feed=iex");
+        self.http
+            .fetch(
+                DataSource::Alpaca,
+                &Request::get(&url)
+                    .headers(&[
+                        ("APCA-API-KEY-ID", key_id.trim()),
+                        ("APCA-API-SECRET-KEY", secret_key.trim()),
+                    ])
+                    .retry(Retry::Never)
+                    .statuses(ACCOUNT_STATUSES),
+            )
+            .map(|_| ())
+    }
 }
 
 /// The most bars one request returns.
@@ -142,8 +172,8 @@ impl MarketSource for Alpaca {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Alpaca, timeframe)?;
         let requested = plan.base_count(limit as usize).min(MAX_BARS);
-        let since = lookback_start_ms(plan.base(), requested as i64, crate::clock::now_ms());
-        let bars = fetch_bars(symbol, plan.base(), since, None, requested)?;
+        let since = lookback_start_ms(plan.base(), requested as i64, self.clock.now_ms());
+        let bars = self.fetch_bars(symbol, plan.base(), since, None, requested)?;
         Ok(plan.shape_since(bars, requested, since, limit as usize))
     }
 
@@ -159,7 +189,8 @@ impl MarketSource for Alpaca {
         // Alpaca's data starts in the 2010s; an earlier start only costs it a refusal.
         let start = start_ms.max(EARLIEST_MS);
         let requested = plan.base_count(max).min(MAX_BARS);
-        let bars: Vec<Kline> = fetch_bars(symbol, plan.base(), start, Some(end_ms), requested)?
+        let bars: Vec<Kline> = self
+            .fetch_bars(symbol, plan.base(), start, Some(end_ms), requested)?
             .into_iter()
             .filter(|bar| bar.open_time < end_ms)
             .collect();
@@ -168,8 +199,8 @@ impl MarketSource for Alpaca {
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
-        let (key, secret) = credentials()?;
-        let assets = CATALOG.get(|| download_assets(&key, &secret))?;
+        let (key, secret) = self.keys()?;
+        let assets = self.catalog.get(|| self.download_assets(&key, &secret))?;
 
         let needle = query.trim().to_uppercase();
         let results: Vec<SearchResult> = assets
@@ -200,24 +231,23 @@ impl MarketSource for Alpaca {
 
 /// One tradable US equity from `/v2/assets`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Asset {
+pub(super) struct Asset {
     symbol: String,
     name: String,
 }
 
-/// Every tradable asset (the response is tens of megabytes), downloaded at most once a day.
-static CATALOG: Catalog<Asset> = Catalog::new(Listing::spot(DataSource::Alpaca), "catalog_alpaca");
-
-fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError> {
-    let url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity";
-    let body = crate::service::net::http::get_text_with_limit(
-        url,
-        &[("APCA-API-KEY-ID", key), ("APCA-API-SECRET-KEY", secret)],
-        crate::service::net::http::Retry::Transient,
-        32 * 1024 * 1024,
-    )
-    .map_err(|error| ProviderError::http_with(DataSource::Alpaca, ACCOUNT_STATUSES, error))?;
-    parse_assets(&body)
+impl Alpaca {
+    fn download_assets(&self, key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError> {
+        let url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity";
+        let body = self.http.fetch(
+            DataSource::Alpaca,
+            &Request::get(url)
+                .headers(&[("APCA-API-KEY-ID", key), ("APCA-API-SECRET-KEY", secret)])
+                .max_body_bytes(32 * 1024 * 1024)
+                .statuses(ACCOUNT_STATUSES),
+        )?;
+        parse_assets(&body)
+    }
 }
 
 fn parse_assets(body: &str) -> Result<Vec<Asset>, ProviderError> {
@@ -273,51 +303,54 @@ fn bars_window(
     Some((start_ms, end))
 }
 
-/// The newest `limit` bars of `bar` that open from `start_ms` to `end_ms` (or now), oldest
-/// first.
-fn fetch_bars(
-    symbol: &str,
-    bar: Timeframe,
-    start_ms: i64,
-    end_ms: Option<i64>,
-    limit: usize,
-) -> Result<Vec<Kline>, ProviderError> {
-    let (key, secret) = credentials()?;
-    let feed = AlpacaFeed::for_bars(bar);
-    let Some((start, end)) = bars_window(feed, start_ms, end_ms, crate::clock::now_ms()) else {
-        return Ok(Vec::new());
-    };
-    let mut url = format!(
-        "{BARS_URL}/{}/bars?timeframe={}&start={}&limit={}&adjustment=all&feed={}&sort=desc",
-        symbol.to_uppercase(),
-        token(bar),
-        crate::format::iso8601(start),
-        limit.clamp(1, MAX_BARS),
-        feed.query()
-    );
-    if let Some(end) = end {
-        url.push_str(&format!("&end={}", crate::format::iso8601(end)));
-    }
-    let body = crate::service::net::http::get_text(
-        &url,
-        &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
-        crate::service::net::http::Retry::Transient,
-    )
-    .map_err(|error| ProviderError::http_with(DataSource::Alpaca, bars_statuses(feed), error))?;
-    let mut bars = parse_bars(&body, bar)?;
-    // The newest page of a market with no bars at all is an error; an older page with none is
-    // the start of its history.
-    if bars.is_empty() && end_ms.is_none() {
-        return Err(ProviderError::new(
+impl Alpaca {
+    /// The newest `limit` bars of `bar` that open from `start_ms` to `end_ms` (or now), oldest
+    /// first.
+    fn fetch_bars(
+        &self,
+        symbol: &str,
+        bar: Timeframe,
+        start_ms: i64,
+        end_ms: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let (key, secret) = self.keys()?;
+        let feed = AlpacaFeed::for_bars(bar);
+        let Some((start, end)) = bars_window(feed, start_ms, end_ms, self.clock.now_ms()) else {
+            return Ok(Vec::new());
+        };
+        let mut url = format!(
+            "{BARS_URL}/{}/bars?timeframe={}&start={}&limit={}&adjustment=all&feed={}&sort=desc",
+            symbol.to_uppercase(),
+            token(bar),
+            crate::format::iso8601(start),
+            limit.clamp(1, MAX_BARS),
+            feed.query()
+        );
+        if let Some(end) = end {
+            url.push_str(&format!("&end={}", crate::format::iso8601(end)));
+        }
+        let body = self.http.fetch(
             DataSource::Alpaca,
-            ErrorKind::NotOnFeed {
-                symbol: symbol.to_uppercase(),
-                feed: feed.query().to_uppercase(),
-            },
-        ));
+            &Request::get(&url)
+                .headers(&[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)])
+                .statuses(bars_statuses(feed)),
+        )?;
+        let mut bars = parse_bars(&body, bar)?;
+        // The newest page of a market with no bars at all is an error; an older page with none is
+        // the start of its history.
+        if bars.is_empty() && end_ms.is_none() {
+            return Err(ProviderError::new(
+                DataSource::Alpaca,
+                ErrorKind::NotOnFeed {
+                    symbol: symbol.to_uppercase(),
+                    feed: feed.query().to_uppercase(),
+                },
+            ));
+        }
+        bars.sort_by_key(|candle| candle.open_time);
+        Ok(bars)
     }
-    bars.sort_by_key(|candle| candle.open_time);
-    Ok(bars)
 }
 
 /// `{"bars": [{"t": ISO, "o", "h", "l", "c", "v", "vw"}]}` newest first.
@@ -373,6 +406,190 @@ fn parse_iso8601(text: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::net::http;
+
+    fn venue(rig: &Rig) -> Alpaca {
+        rig.credentials.save_alpaca("key-id", "secret");
+        Alpaca::new(&rig.context())
+    }
+
+    const KEY_HEADERS: [(&str, &str); 2] = [
+        ("APCA-API-KEY-ID", "key-id"),
+        ("APCA-API-SECRET-KEY", "secret"),
+    ];
+
+    fn headers_of(sent: &crate::service::market::ports::fakes::Sent) -> Vec<(&str, &str)> {
+        sent.headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect()
+    }
+
+    /// Three daily bars, newest first, as Alpaca answers `sort=desc`.
+    const DAYS: &str = r#"{"bars":[
+        {"t":"2026-11-13T05:00:00Z","o":3,"h":4,"l":2.5,"c":3.5,"v":30},
+        {"t":"2026-11-12T05:00:00Z","o":2,"h":3,"l":1.5,"c":2.5,"v":20},
+        {"t":"2026-11-11T05:00:00Z","o":1,"h":2,"l":0.5,"c":1.5,"v":10}
+    ],"next_page_token":null}"#;
+
+    #[test]
+    fn without_saved_keys_nothing_is_asked_and_the_key_is_what_is_missing() {
+        let rig = Rig::new();
+        let alpaca = Alpaca::new(&rig.context());
+        assert_eq!(
+            alpaca
+                .fetch_klines("AAPL", Timeframe::DAY_1, 3)
+                .unwrap_err()
+                .kind,
+            ErrorKind::MissingKey
+        );
+        assert_eq!(
+            alpaca.search_tickers("apple").unwrap_err().kind,
+            ErrorKind::MissingKey
+        );
+        assert!(rig.http.urls().is_empty());
+    }
+
+    #[test]
+    fn the_newest_bars_are_one_request_signed_with_the_saved_keys_and_come_back_oldest_first() {
+        let rig = Rig::new();
+        rig.http.on("/AAPL/bars?", DAYS);
+        let bars = venue(&rig)
+            .fetch_klines("aapl", Timeframe::DAY_1, 3)
+            .expect("bars");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert!(
+            sent[0].url.starts_with(
+                "https://data.alpaca.markets/v2/stocks/AAPL/bars?timeframe=1Day&start="
+            ),
+            "{}",
+            sent[0].url
+        );
+        assert!(
+            sent[0]
+                .url
+                .ends_with("&limit=3&adjustment=all&feed=sip&sort=desc"),
+            "{}",
+            sent[0].url
+        );
+        assert_eq!(headers_of(&sent[0]), KEY_HEADERS);
+        assert_eq!(sent[0].retry, http::Retry::Transient);
+        assert_eq!(bars.len(), 3);
+        assert!(
+            bars.windows(2)
+                .all(|pair| pair[0].open_time < pair[1].open_time)
+        );
+        assert_eq!(rig.credentials.alpaca_lookups(), 1);
+    }
+
+    #[test]
+    fn a_range_names_both_ends_and_keeps_what_opens_inside_it() {
+        let rig = Rig::new();
+        rig.http.on("/AAPL/bars?", DAYS);
+        let (start, end) = (day_ms(2026, 11, 10), day_ms(2026, 11, 13));
+        let bars = venue(&rig)
+            .fetch_klines_range("AAPL", Timeframe::DAY_1, start, end, 10)
+            .expect("bars");
+        let url = rig.http.urls().remove(0);
+        assert!(
+            url.contains(&format!("&start={}", crate::format::iso8601(start))),
+            "{url}"
+        );
+        assert!(
+            url.ends_with(&format!("&end={}", crate::format::iso8601(end))),
+            "{url}"
+        );
+        // The bar that opens at 05:00 on the 13th is after the range's end.
+        assert_eq!(bars.len(), 2);
+    }
+
+    #[test]
+    fn a_market_with_no_bars_is_an_error_for_the_newest_page_and_the_start_for_an_older_one() {
+        let rig = Rig::new();
+        rig.http.on("/ZZZZ/bars?", r#"{"bars":null}"#);
+        let alpaca = venue(&rig);
+        assert_eq!(
+            alpaca
+                .fetch_klines("zzzz", Timeframe::DAY_1, 3)
+                .unwrap_err()
+                .kind,
+            ErrorKind::NotOnFeed {
+                symbol: "ZZZZ".to_owned(),
+                feed: "SIP".to_owned()
+            }
+        );
+        rig.http.on("/ZZZZ/bars?", r#"{"bars":null}"#);
+        let older = alpaca
+            .fetch_klines_range(
+                "ZZZZ",
+                Timeframe::DAY_1,
+                day_ms(2026, 1, 1),
+                day_ms(2026, 2, 1),
+                10,
+            )
+            .expect("an older page");
+        assert!(older.is_empty());
+    }
+
+    #[test]
+    fn what_alpaca_refuses_is_told_by_kind() {
+        let kind_of = |status| {
+            let rig = Rig::new();
+            rig.http.fail("/bars?", http::Error::Status(status));
+            venue(&rig)
+                .fetch_klines("AAPL", Timeframe::DAY_1, 3)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(kind_of(400), ErrorKind::UnknownSymbol);
+        assert_eq!(kind_of(401), ErrorKind::Unauthorized);
+        // Daily bars come from the SIP feed, where Basic refuses data that recent with a key that
+        // is fine.
+        assert_eq!(kind_of(403), ErrorKind::NotInPlan);
+        assert_eq!(kind_of(429), ErrorKind::RateLimited);
+    }
+
+    #[test]
+    fn the_asset_list_is_downloaded_once_a_day_with_the_keys_and_a_limit_of_its_own() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/v2/assets?",
+            r#"[{"symbol":"AAPL","name":"Apple Inc. Common Stock","tradable":true},
+                {"symbol":"HALT","name":"Halted Corp","tradable":false}]"#,
+        );
+        let found = venue(&rig).search_tickers("apple").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].full_symbol, "AAPL");
+        venue(&rig).search_tickers("aapl").expect("hits");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity"
+        );
+        assert_eq!(headers_of(&sent[0]), KEY_HEADERS);
+        assert_eq!(sent[0].max_body_bytes, Some(32 * 1024 * 1024));
+    }
+
+    #[test]
+    fn a_connection_test_sends_the_keys_it_is_given_trimmed_and_asks_once() {
+        let rig = Rig::new();
+        rig.http.on("/AAPL/bars?", DAYS);
+        Alpaca::new(&rig.context())
+            .test_connection(" key-id ", " secret\n")
+            .expect("a connection");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://data.alpaca.markets/v2/stocks/AAPL/bars?timeframe=1Day&limit=1&feed=iex"
+        );
+        assert_eq!(headers_of(&sent[0]), KEY_HEADERS);
+        assert_eq!(sent[0].retry, http::Retry::Never);
+        assert_eq!(rig.credentials.alpaca_lookups(), 0);
+    }
 
     #[test]
     fn the_catalog_keeps_only_tradable_named_assets() {

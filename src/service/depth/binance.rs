@@ -13,11 +13,11 @@ use crate::model::depth::{
 };
 use crate::model::exchange::Market;
 use crate::model::taker_flow::Taker;
-use crate::service::market::binance as markets;
 use crate::service::net::http::{self, Retry};
 use crate::service::net::url::encode_component;
 use crate::service::net::ws::{Keepalive, Session};
 use crate::service::taker_flow::trade_socket;
+use crate::service::wiring;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -153,7 +153,9 @@ impl DepthVenue for BinanceFutures {
     }
 
     fn tick_size(&self, symbol: &str) -> Result<Price, DepthError> {
-        let tick = markets::tick_size(Market::Perpetual, symbol)
+        let tick = wiring::venues()
+            .binance
+            .tick_size(Market::Perpetual, symbol)
             .map_err(|_| DepthError::Parse("exchange info"))?
             .ok_or_else(|| DepthError::UnknownSymbol(symbol.to_owned()))?;
         Price::parse(&tick)

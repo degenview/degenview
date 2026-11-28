@@ -1,13 +1,16 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
-use crate::clock::now_ms;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 const BASE_URL: &str = "https://api.exchange.coinbase.com";
@@ -16,9 +19,12 @@ const PAGE_BUCKETS: i64 = 290;
 /// Cap on backwards pages so a slow fold cannot loop forever.
 const MAX_PAGES: usize = 60;
 
-pub struct Coinbase;
-
-pub const COINBASE: Coinbase = Coinbase;
+pub struct Coinbase {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every product that is online, downloaded at most once a day.
+    pub(super) catalog: Catalog<Product>,
+}
 
 /// Coinbase ids are `BASE-QUOTE`. Accept `BASE/QUOTE` and a bare `BASE` (USD).
 pub(crate) fn product_id(symbol: &str) -> String {
@@ -34,6 +40,18 @@ pub(crate) fn product_id(symbol: &str) -> String {
 const MAX_CANDLES: usize = PAGE_BUCKETS as usize * MAX_PAGES;
 
 impl Coinbase {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            catalog: Catalog::new(
+                Listing::spot(DataSource::Coinbase),
+                "catalog_coinbase",
+                context.cache.clone(),
+            ),
+        }
+    }
+
     /// The candles to ask for to end with `limit` of `plan`'s target, and how many seconds each
     /// lasts. A request is capped at what the paging can reach: a longer one gives fewer candles
     /// (a 5-minute chart of a year reaches back about two months), never other ones.
@@ -72,13 +90,13 @@ impl MarketSource for Coinbase {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(query, || CATALOG.get(download_products))
+        search::find(query, || self.catalog.get(|| self.download_products()))
     }
 }
 
 /// One tradable product from `/products`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Product {
+pub(super) struct Product {
     id: String,
     base: String,
     quote: String,
@@ -96,22 +114,18 @@ impl ListedMarket for Product {
     }
 }
 
-/// Every product that is online, downloaded at most once a day.
-static CATALOG: Catalog<Product> =
-    Catalog::new(Listing::spot(DataSource::Coinbase), "catalog_coinbase");
-
 /// What the statuses of a request for one product mean at Coinbase (candles, stats): a 404 names a
 /// product it does not list. The product list has no table: a 404 there is a changed endpoint.
 pub(in crate::service) const PRODUCT_STATUSES: Statuses = &[(404, ErrorKind::UnknownSymbol)];
 
-fn download_products() -> Result<Vec<Product>, ProviderError> {
-    let body = crate::service::net::http::get_text(
-        "https://api.exchange.coinbase.com/products",
-        &[],
-        crate::service::net::http::Retry::Transient,
-    )
-    .map_err(|error| ProviderError::http(DataSource::Coinbase, error))?;
-    parse_products(&body)
+impl Coinbase {
+    fn download_products(&self) -> Result<Vec<Product>, ProviderError> {
+        let body = self.http.fetch(
+            DataSource::Coinbase,
+            &Request::get(&format!("{BASE_URL}/products")),
+        )?;
+        parse_products(&body)
+    }
 }
 
 fn parse_products(body: &str) -> Result<Vec<Product>, ProviderError> {
@@ -195,7 +209,7 @@ impl Coinbase {
         let span = granularity * PAGE_BUCKETS * 1_000;
         let mut candles: Vec<Kline> = Vec::new();
         let mut window_start = None;
-        let mut upper = first_upper(end_ms, now_ms(), granularity);
+        let mut upper = first_upper(end_ms, self.clock.now_ms(), granularity);
         for page in 0..MAX_PAGES {
             if candles.len() >= needed || upper <= start_ms {
                 break;
@@ -226,13 +240,11 @@ impl Coinbase {
         start: Option<i64>,
         end: Option<i64>,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let url = page_url(id, granularity, start.zip(end), now_ms());
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| ProviderError::http_with(DataSource::Coinbase, PRODUCT_STATUSES, error))?;
+        let url = page_url(id, granularity, start.zip(end), self.clock.now_ms());
+        let body = self.http.fetch(
+            DataSource::Coinbase,
+            &Request::get(&url).statuses(PRODUCT_STATUSES),
+        )?;
         parse_page(&body, granularity)
     }
 }
@@ -309,6 +321,163 @@ fn parse_page(body: &str, granularity: i64) -> Result<Vec<Kline>, ProviderError>
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::net::http::{self, Retry};
+
+    const HOUR: i64 = 3_600_000;
+    const NOON: i64 = Rig::NOON;
+
+    fn venue(rig: &Rig) -> Coinbase {
+        Coinbase::new(&rig.context())
+    }
+
+    /// An answer of the `count` hourly rows ending with the one that opens at `newest`, newest
+    /// first, as `[time s, low, high, open, close, volume]`.
+    fn hour_rows(newest: i64, count: usize) -> String {
+        let rows: Vec<String> = (0..count as i64)
+            .map(|back| {
+                format!(
+                    "[{},9.0,12.0,10.0,11.0,42.5]",
+                    (newest - back * HOUR) / 1_000
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    #[test]
+    fn the_newest_candles_are_asked_for_at_an_address_that_names_the_clock() {
+        let rig = Rig::new();
+        rig.http.on("/candles?", &hour_rows(NOON - HOUR, 2));
+        let candles = venue(&rig)
+            .fetch_klines("btc", Timeframe::HOUR_1, 2)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            format!(
+                "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600&end={}",
+                crate::format::iso8601(NOON)
+            )
+        );
+        assert_eq!(sent[0].retry, Retry::Transient);
+        let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+        assert_eq!(opens, [NOON - 2 * HOUR, NOON - HOUR]);
+    }
+
+    #[test]
+    fn a_longer_request_pages_back_a_window_at_a_time_from_the_oldest_candle_held() {
+        let rig = Rig::new();
+        let page = PAGE_BUCKETS as usize;
+        let oldest = NOON - page as i64 * HOUR;
+        rig.http
+            .on("granularity=3600&end=", &hour_rows(NOON - HOUR, page));
+        rig.http.on("&start=", &hour_rows(oldest - HOUR, 20));
+        let candles = venue(&rig)
+            .fetch_klines("BTC-USD", Timeframe::HOUR_1, 300)
+            .expect("candles");
+        let urls = rig.http.urls();
+        let base = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600";
+        assert_eq!(
+            urls,
+            [
+                format!("{base}&end={}", crate::format::iso8601(NOON)),
+                format!(
+                    "{base}&start={}&end={}",
+                    crate::format::iso8601(oldest - PAGE_BUCKETS * HOUR),
+                    crate::format::iso8601(oldest)
+                ),
+            ]
+        );
+        assert_eq!(candles.len(), 300);
+        assert_eq!(candles[299].open_time, NOON - HOUR);
+    }
+
+    #[test]
+    fn a_range_is_asked_for_as_the_window_that_ends_with_it_and_never_in_the_future() {
+        let rig = Rig::new();
+        let (start, end) = (NOON - 10 * HOUR, NOON - 7 * HOUR);
+        rig.http.on("&start=", &hour_rows(end - HOUR, 3));
+        let candles = venue(&rig)
+            .fetch_klines_range("BTC-USD", Timeframe::HOUR_1, start, end, 3)
+            .expect("candles");
+        assert_eq!(
+            rig.http.urls(),
+            [format!(
+                "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600&start={}&end={}",
+                crate::format::iso8601(start),
+                crate::format::iso8601(end)
+            )]
+        );
+        assert_eq!(candles.len(), 3);
+        assert_eq!(candles[0].open_time, end - 3 * HOUR);
+
+        // A range that ends after the next candle opens is asked up to it, no further.
+        let rig = Rig::new();
+        rig.http.on("&start=", &hour_rows(NOON, 1));
+        venue(&rig)
+            .fetch_klines_range(
+                "BTC-USD",
+                Timeframe::HOUR_1,
+                NOON - HOUR,
+                NOON + 5 * HOUR,
+                1,
+            )
+            .expect("candles");
+        let url = rig.http.urls().remove(0);
+        assert!(
+            url.ends_with(&format!("&end={}", crate::format::iso8601(NOON + HOUR))),
+            "{url}"
+        );
+    }
+
+    #[test]
+    fn what_coinbase_refuses_is_told_by_kind() {
+        let kind_of = |answer: Result<&str, http::Error>| {
+            let rig = Rig::new();
+            match answer {
+                Ok(body) => rig.http.on("/candles?", body),
+                Err(error) => rig.http.fail("/candles?", error),
+            };
+            venue(&rig)
+                .fetch_klines("NOPE-USD", Timeframe::HOUR_1, 5)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(
+            kind_of(Err(http::Error::Status(404))),
+            ErrorKind::UnknownSymbol
+        );
+        assert_eq!(
+            kind_of(Err(http::Error::Status(429))),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            kind_of(Ok(r#"{"message":"NotFound"}"#)),
+            ErrorKind::Malformed("expected a candle array".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_product_list_is_downloaded_once_a_day_and_searched_locally() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/products",
+            r#"[{"id":"BTC-USD","base_currency":"BTC","quote_currency":"USD","status":"online"},
+                {"id":"OLD-USD","base_currency":"OLD","quote_currency":"USD","status":"delisted"}]"#,
+        );
+        let found = venue(&rig).search_tickers("btc usd").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "BTC-USD");
+        venue(&rig).search_tickers("btc").expect("hits");
+        assert_eq!(
+            rig.http.urls(),
+            ["https://api.exchange.coinbase.com/products"]
+        );
+    }
+
     #[test]
     fn the_catalog_keeps_only_online_enabled_products() {
         let body = r#"[
@@ -327,7 +496,6 @@ mod tests {
         assert!(parse_products("{").is_err());
     }
 
-    use super::*;
     use crate::model::market::bucket;
     use std::sync::Arc;
 

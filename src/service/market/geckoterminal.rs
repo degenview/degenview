@@ -1,10 +1,16 @@
 use super::candles::plan;
+use super::ports::cache::CacheStore;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Pace, Request};
 use crate::model::market::bucket::{self, FoldPlan};
 use crate::model::market::natives::{GECKOTERMINAL_HISTORY_DAYS, GECKOTERMINAL_PAGE};
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::ProviderError;
 use crate::service::market::error::ErrorKind;
+use crate::service::net::http::{Error, Retry};
 use serde_json::Value;
+use std::sync::Arc;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
 
@@ -14,6 +20,23 @@ const SERVICE: &str = "GeckoTerminal";
 
 fn failed(kind: ErrorKind) -> ProviderError {
     ProviderError::new(DataSource::DexScreener, kind).through(SERVICE)
+}
+
+/// GeckoTerminal's candles of an on-chain DEX pool, which DEXScreener's markets are charted from.
+pub struct GeckoTerminal {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    cache: Arc<dyn CacheStore>,
+}
+
+impl GeckoTerminal {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            cache: context.cache.clone(),
+        }
+    }
 }
 
 /// What one OHLCV request asks for: the native bucket a timeframe is made from and how many of
@@ -48,29 +71,61 @@ impl Window {
     }
 }
 
-/// OHLCV for an on-chain DEX pool. `pair_address` is a contract address; the
-/// network is resolved through GeckoTerminal's pool search.
-///
-/// GeckoTerminal only lists intervals that traded and tops out at daily bars, so empty buckets
-/// are filled flat and coarser bars are folded on the calendar, which makes the series
-/// line up with an exchange's.
-pub fn fetch_klines(
-    pair_address: &str,
-    timeframe: Timeframe,
-    limit: u32,
-) -> Result<Vec<Kline>, ProviderError> {
-    let window = Window::new(plan(DataSource::DexScreener, timeframe)?, limit as usize);
-    let network = network_for(pair_address)?;
-    let side = side_for(&network, pair_address);
-    let raw = fetch_ohlcv(&network, pair_address, side, &window, None)?;
-    if raw.is_empty() {
-        return Err(failed(ErrorKind::NoData));
+impl GeckoTerminal {
+    /// OHLCV for an on-chain DEX pool. `pair_address` is a contract address; the
+    /// network is resolved through GeckoTerminal's pool search.
+    ///
+    /// GeckoTerminal only lists intervals that traded and tops out at daily bars, so empty
+    /// buckets are filled flat and coarser bars are folded on the calendar, which makes the
+    /// series line up with an exchange's.
+    pub fn fetch_klines(
+        &self,
+        pair_address: &str,
+        timeframe: Timeframe,
+        limit: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let window = Window::new(plan(DataSource::DexScreener, timeframe)?, limit as usize);
+        let network = self.network_for(pair_address)?;
+        let side = self.side_for(&network, pair_address);
+        let raw = self.fetch_ohlcv(&network, pair_address, side, &window, None)?;
+        if raw.is_empty() {
+            return Err(failed(ErrorKind::NoData));
+        }
+        let now = self.clock.now_ms();
+        let mut candles = shape(raw, &window, reach_ms(now), now);
+        let skip = candles.len().saturating_sub(limit as usize);
+        candles.drain(..skip);
+        Ok(candles)
     }
-    let now = crate::clock::now_ms();
-    let mut candles = shape(raw, &window, reach_ms(now), now);
-    let skip = candles.len().saturating_sub(limit as usize);
-    candles.drain(..skip);
-    Ok(candles)
+
+    /// An older page: the candles of `timeframe` opening in `[start_ms, end_ms)`, at most `max`
+    /// (the newest), oldest first, folded from one page of the native candles before `end_ms`.
+    /// Nothing older than 180 days exists on the free API, which ends the history with an empty
+    /// page.
+    pub fn fetch_klines_range(
+        &self,
+        pair_address: &str,
+        timeframe: Timeframe,
+        start_ms: i64,
+        end_ms: i64,
+        max: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let window = Window::new(plan(DataSource::DexScreener, timeframe)?, max);
+        let network = self.network_for(pair_address)?;
+        let side = self.side_for(&network, pair_address);
+        let raw =
+            match self.fetch_ohlcv(&network, pair_address, side, &window, Some(end_ms / 1_000)) {
+                Ok(raw) => raw,
+                Err(Fetch::BeyondHistory) => return Ok(Vec::new()),
+                Err(Fetch::Failed(error)) => return Err(error),
+            };
+        // Filled up to the slot before `end_ms`, so no gap opens between this page and what is
+        // held.
+        let mut candles = shape(raw, &window, reach_ms(self.clock.now_ms()), end_ms - 1);
+        candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
+        let skip = candles.len().saturating_sub(max);
+        Ok(candles.split_off(skip))
+    }
 }
 
 /// The oldest instant the free API serves candles of, as of `now_ms`.
@@ -109,66 +164,49 @@ impl From<Fetch> for ProviderError {
     }
 }
 
-/// Candles of one pool, newest first as served. `before` (seconds) asks for those opening before it.
-fn fetch_ohlcv(
-    network: &str,
-    pool: &str,
-    side: Side,
-    window: &Window,
-    before: Option<i64>,
-) -> Result<Vec<Kline>, Fetch> {
-    let mut url = format!(
-        "{BASE_URL}/networks/{network}/pools/{pool}/ohlcv/{}?aggregate={}&limit={}&currency=usd",
-        window.timeframe, window.aggregate, window.fetch_limit
-    );
-    if side == Side::Quote {
-        url.push_str("&token=quote");
-    }
-    if let Some(before) = before {
-        url.push_str(&format!("&before_timestamp={before}"));
-    }
-    crate::service::net::rate_limit::geckoterminal().wait_for_slot();
-    let body = match crate::service::net::http::get_text(
-        &url,
-        &[],
-        crate::service::net::http::Retry::Never,
-    ) {
-        Ok(body) => body,
-        Err(crate::service::net::http::Error::Status(401)) if before.is_some() => {
-            return Err(Fetch::BeyondHistory);
+impl GeckoTerminal {
+    /// Candles of one pool, newest first as served. `before` (seconds) asks for those opening
+    /// before it.
+    fn fetch_ohlcv(
+        &self,
+        network: &str,
+        pool: &str,
+        side: Side,
+        window: &Window,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, Fetch> {
+        let mut url = format!(
+            "{BASE_URL}/networks/{network}/pools/{pool}/ohlcv/{}?aggregate={}&limit={}&currency=usd",
+            window.timeframe, window.aggregate, window.fetch_limit
+        );
+        if side == Side::Quote {
+            url.push_str("&token=quote");
         }
-        Err(error) => {
-            return Err(Fetch::Failed(
-                ProviderError::http(DataSource::DexScreener, error).through(SERVICE),
-            ));
+        if let Some(before) = before {
+            url.push_str(&format!("&before_timestamp={before}"));
         }
-    };
-    parse_ohlcv(&body, window.bucket_ms()).map_err(Fetch::Failed)
-}
+        let body = match self.get(&url) {
+            Ok(body) => body,
+            Err(Error::Status(401)) if before.is_some() => {
+                return Err(Fetch::BeyondHistory);
+            }
+            Err(error) => {
+                return Err(Fetch::Failed(
+                    ProviderError::http(DataSource::DexScreener, error).through(SERVICE),
+                ));
+            }
+        };
+        parse_ohlcv(&body, window.bucket_ms()).map_err(Fetch::Failed)
+    }
 
-/// An older page: the candles of `timeframe` opening in `[start_ms, end_ms)`, at most `max` (the
-/// newest), oldest first, folded from one page of the native candles before `end_ms`. Nothing
-/// older than 180 days exists on the free API, which ends the history with an empty page.
-pub fn fetch_klines_range(
-    pair_address: &str,
-    timeframe: Timeframe,
-    start_ms: i64,
-    end_ms: i64,
-    max: usize,
-) -> Result<Vec<Kline>, ProviderError> {
-    let window = Window::new(plan(DataSource::DexScreener, timeframe)?, max);
-    let network = network_for(pair_address)?;
-    let side = side_for(&network, pair_address);
-    let raw = match fetch_ohlcv(&network, pair_address, side, &window, Some(end_ms / 1_000)) {
-        Ok(raw) => raw,
-        Err(Fetch::BeyondHistory) => return Ok(Vec::new()),
-        Err(Fetch::Failed(error)) => return Err(error),
-    };
-    // Filled up to the slot before `end_ms`, so no gap opens between this page and what is held.
-    let mut candles = shape(raw, &window, reach_ms(crate::clock::now_ms()), end_ms - 1);
-    candles.retain(|candle| candle.open_time >= start_ms && candle.open_time < end_ms);
-    let skip = candles.len().saturating_sub(max);
-    Ok(candles.split_off(skip))
+    /// A request on GeckoTerminal's schedule, asked once.
+    fn get(&self, url: &str) -> Result<String, Error> {
+        self.http.get(
+            &Request::get(url)
+                .retry(Retry::Never)
+                .paced(Pace::GeckoTerminal),
+        )
+    }
 }
 
 /// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first. A bucket closes a
@@ -269,36 +307,37 @@ fn parse_pool_symbols(body: &str) -> Option<(String, String)> {
 const SIDE_NAMESPACE: &str = "geckoterminal_sides";
 const SIDE_TTL: std::time::Duration = std::time::Duration::from_secs(90 * 86_400);
 
-/// Which token of `pool` to chart. When the pool's tokens cannot be read the base is used, as
-/// before, and the answer is not remembered, so the next request asks again.
-fn side_for(network: &str, pool: &str) -> Side {
-    let key = format!("{network}:{}", pool.to_lowercase());
-    let cache = crate::service::cache::lookup::shared();
-    if let Some(hit) = cache.get::<String>(SIDE_NAMESPACE, &key, SIDE_TTL)
-        && hit.fresh
-    {
-        return if hit.value == "quote" {
-            Side::Quote
-        } else {
-            Side::Base
-        };
-    }
-    let url = format!("{BASE_URL}/networks/{network}/pools/{pool}?include=base_token,quote_token");
-    crate::service::net::rate_limit::geckoterminal().wait_for_slot();
-    let Some((base, quote)) =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
+impl GeckoTerminal {
+    /// Which token of `pool` to chart. When the pool's tokens cannot be read the base is used,
+    /// as before, and the answer is not remembered, so the next request asks again.
+    fn side_for(&self, network: &str, pool: &str) -> Side {
+        let key = format!("{network}:{}", pool.to_lowercase());
+        if let Some(hit) = self.cache.get::<String>(SIDE_NAMESPACE, &key, SIDE_TTL)
+            && hit.fresh
+        {
+            return if hit.value == "quote" {
+                Side::Quote
+            } else {
+                Side::Base
+            };
+        }
+        let url =
+            format!("{BASE_URL}/networks/{network}/pools/{pool}?include=base_token,quote_token");
+        let Some((base, quote)) = self
+            .get(&url)
             .ok()
             .and_then(|body| parse_pool_symbols(&body))
-    else {
-        return Side::Base;
-    };
-    let side = traded_side(&base, &quote);
-    cache.put(
-        SIDE_NAMESPACE,
-        &key,
-        &if side == Side::Quote { "quote" } else { "base" },
-    );
-    side
+        else {
+            return Side::Base;
+        };
+        let side = traded_side(&base, &quote);
+        self.cache.put(
+            SIDE_NAMESPACE,
+            &key,
+            &if side == Side::Quote { "quote" } else { "base" },
+        );
+        side
+    }
 }
 
 /// Where a pool's network is remembered: a pool never changes chain, and finding it costs a
@@ -306,32 +345,37 @@ fn side_for(network: &str, pool: &str) -> Side {
 const NETWORK_NAMESPACE: &str = "geckoterminal_networks";
 const NETWORK_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 86_400);
 
-/// Which chain a pool address sits on, from memory or disk when it was found before.
-fn network_for(pair_address: &str) -> Result<String, ProviderError> {
-    let key = pair_address.to_lowercase();
-    let cache = crate::service::cache::lookup::shared();
-    if let Some(hit) = cache.get::<String>(NETWORK_NAMESPACE, &key, NETWORK_TTL)
-        && hit.fresh
-    {
-        return Ok(hit.value);
+impl GeckoTerminal {
+    /// Which chain a pool address sits on, from memory or disk when it was found before.
+    fn network_for(&self, pair_address: &str) -> Result<String, ProviderError> {
+        let key = pair_address.to_lowercase();
+        if let Some(hit) = self
+            .cache
+            .get::<String>(NETWORK_NAMESPACE, &key, NETWORK_TTL)
+            && hit.fresh
+        {
+            return Ok(hit.value);
+        }
+        let network = self.lookup_network(pair_address)?;
+        self.cache.put(NETWORK_NAMESPACE, &key, &network);
+        Ok(network)
     }
-    let network = lookup_network(pair_address)?;
-    cache.put(NETWORK_NAMESPACE, &key, &network);
-    Ok(network)
+
+    /// Asks GeckoTerminal which chain a pool address sits on. The per-pool endpoints are
+    /// namespaced by network, and DEXScreener's chain names don't match GeckoTerminal's ids.
+    fn lookup_network(&self, pair_address: &str) -> Result<String, ProviderError> {
+        let key = pair_address.to_lowercase();
+        let url = format!("{BASE_URL}/search/pools?query={pair_address}");
+        let body = self.get(&url).map_err(|error| {
+            ProviderError::http(DataSource::DexScreener, error).through(SERVICE)
+        })?;
+        pool_network(&body, &key)
+    }
 }
 
-/// Asks GeckoTerminal which chain a pool address sits on. The per-pool endpoints are namespaced by
-/// network, and DEXScreener's chain names don't match GeckoTerminal's ids.
-fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
-    let key = pair_address.to_lowercase();
-    let url = format!("{BASE_URL}/search/pools?query={pair_address}");
-    crate::service::net::rate_limit::geckoterminal().wait_for_slot();
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-            .map_err(|error| {
-                ProviderError::http(DataSource::DexScreener, error).through(SERVICE)
-            })?;
-    let value: Value = serde_json::from_str(&body).map_err(|error| {
+/// The chain `key` (a pool address, lower-cased) sits on, from a pool search's answer.
+fn pool_network(body: &str, key: &str) -> Result<String, ProviderError> {
+    let value: Value = serde_json::from_str(body).map_err(|error| {
         ProviderError::malformed(DataSource::DexScreener, error).through(SERVICE)
     })?;
     let suffix = format!("_{key}");
@@ -365,6 +409,139 @@ fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+
+    const HOUR: i64 = 3_600_000;
+    const POOL: &str = "0xAbC";
+
+    fn venue(rig: &Rig) -> GeckoTerminal {
+        GeckoTerminal::new(&rig.context())
+    }
+
+    /// The answers that name a pool's chain and its tokens: PEPE traded for WETH, on Ethereum.
+    fn known_pool(rig: &Rig) {
+        rig.http.on(
+            "/search/pools?query=0xAbC",
+            r#"{"data":[{"id":"eth_0xabc","attributes":{"address":"0xabc"}}]}"#,
+        );
+        rig.http.on(
+            "/networks/eth/pools/0xAbC?include=base_token,quote_token",
+            r#"{"data":{"relationships":{
+                "base_token":{"data":{"id":"eth_1"}},"quote_token":{"data":{"id":"eth_2"}}}},
+              "included":[{"id":"eth_1","attributes":{"symbol":"PEPE"}},
+                          {"id":"eth_2","attributes":{"symbol":"WETH"}}]}"#,
+        );
+    }
+
+    /// An answer of the `count` hourly candles ending with the one that opens at `newest`, newest
+    /// first.
+    fn hour_rows(newest: i64, count: i64) -> String {
+        let rows: Vec<String> = (0..count)
+            .map(|back| format!("[{},1.0,2.0,0.5,1.5,100.0]", (newest - back * HOUR) / 1_000))
+            .collect();
+        format!(
+            r#"{{"data":{{"attributes":{{"ohlcv_list":[{}]}}}}}}"#,
+            rows.join(",")
+        )
+    }
+
+    #[test]
+    fn a_pools_chain_and_traded_side_are_asked_once_and_remembered() {
+        let rig = Rig::new();
+        known_pool(&rig);
+        let window = Window::new(plan(DataSource::DexScreener, Timeframe::HOUR_1).unwrap(), 3);
+        let ohlcv = format!(
+            "/networks/eth/pools/0xAbC/ohlcv/hour?aggregate=1&limit={}&currency=usd",
+            window.fetch_limit
+        );
+        rig.http.on(&ohlcv, &hour_rows(Rig::NOON - HOUR, 3));
+        rig.http.on(&ohlcv, &hour_rows(Rig::NOON - HOUR, 3));
+        let gecko = venue(&rig);
+        let candles = gecko
+            .fetch_klines(POOL, Timeframe::HOUR_1, 3)
+            .expect("candles");
+        assert_eq!(candles.len(), 3);
+        assert!(
+            candles
+                .windows(2)
+                .all(|pair| pair[0].open_time < pair[1].open_time)
+        );
+        let sent = rig.http.sent();
+        assert_eq!(
+            sent.iter().map(|sent| sent.url.as_str()).collect::<Vec<_>>(),
+            [
+                "https://api.geckoterminal.com/api/v2/search/pools?query=0xAbC".to_owned(),
+                "https://api.geckoterminal.com/api/v2/networks/eth/pools/0xAbC?include=base_token,quote_token".to_owned(),
+                format!("https://api.geckoterminal.com/api/v2{ohlcv}"),
+            ]
+        );
+        // The host keeps a schedule, and a failed request is not asked again.
+        assert!(
+            sent.iter()
+                .all(|sent| sent.pace == Some(Pace::GeckoTerminal))
+        );
+        assert!(sent.iter().all(|sent| sent.retry == Retry::Never));
+
+        // Asked again, or after a relaunch: only the candles.
+        gecko
+            .fetch_klines(POOL, Timeframe::HOUR_1, 3)
+            .expect("candles");
+        assert_eq!(rig.http.urls().len(), 4);
+        assert!(rig.http.urls()[3].contains("/ohlcv/hour"));
+    }
+
+    #[test]
+    fn a_pool_that_search_does_not_find_is_an_unknown_market() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/search/pools?",
+            r#"{"data":[{"id":"eth_0xdef","attributes":{"address":"0xdef"}}]}"#,
+        );
+        assert_eq!(
+            venue(&rig)
+                .fetch_klines(POOL, Timeframe::HOUR_1, 3)
+                .unwrap_err()
+                .kind,
+            ErrorKind::UnknownSymbol
+        );
+    }
+
+    #[test]
+    fn an_older_page_asks_before_its_end_and_a_refusal_past_the_free_history_ends_it() {
+        let rig = Rig::new();
+        known_pool(&rig);
+        let end = Rig::NOON - 10 * HOUR;
+        rig.http.on(
+            &format!("before_timestamp={}", end / 1_000),
+            &hour_rows(end - HOUR, 5),
+        );
+        let gecko = venue(&rig);
+        let page = gecko
+            .fetch_klines_range(POOL, Timeframe::HOUR_1, 0, end, 5)
+            .expect("an older page");
+        assert_eq!(page.len(), 5);
+        assert_eq!(page[4].open_time, end - HOUR);
+
+        rig.http.fail(
+            "before_timestamp=",
+            crate::service::net::http::Error::Status(401),
+        );
+        let past = gecko
+            .fetch_klines_range(POOL, Timeframe::HOUR_1, 0, end - 24 * HOUR, 5)
+            .expect("the end of the history");
+        assert!(past.is_empty());
+
+        // A refusal of the newest page is a failure like any other.
+        rig.http
+            .fail("/ohlcv/", crate::service::net::http::Error::Status(401));
+        assert_eq!(
+            gecko
+                .fetch_klines(POOL, Timeframe::HOUR_1, 3)
+                .unwrap_err()
+                .kind,
+            ErrorKind::Transport(crate::service::net::http::Error::Status(401))
+        );
+    }
 
     fn window(timeframe: &str, limit: usize) -> Window {
         let timeframe = Timeframe::parse(timeframe).unwrap();
@@ -503,12 +680,9 @@ mod tests {
             ProviderError::from(Fetch::BeyondHistory),
             parse_ohlcv("{}", 3_600_000).unwrap_err(),
             parse_ohlcv("not json", 3_600_000).unwrap_err(),
-            failed(ErrorKind::UnknownSymbol),
-            ProviderError::http(
-                DataSource::DexScreener,
-                crate::service::net::http::Error::Status(500),
-            )
-            .through(SERVICE),
+            pool_network("not json", "0xabc").unwrap_err(),
+            pool_network(r#"{"data":[]}"#, "0xabc").unwrap_err(),
+            ProviderError::http(DataSource::DexScreener, Error::Status(500)).through(SERVICE),
         ];
         for failure in failures {
             assert_eq!(failure.via, Some("GeckoTerminal"), "{failure:?}");

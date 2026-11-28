@@ -122,8 +122,9 @@ const FORBIDDEN_IMPORTS: &[(&str, &[&str])] = &[
         &["app", "host", "mcp", "sync", "ui", "workspace"],
     ),
     // The venues report what failed as a kind of failure; the words are written at the edge
-    // (`service::provider_message`), so the market code can move out of the app.
-    ("service/market", &["i18n"]),
+    // (`service::provider_message`), so the market code can move out of the app. They ask the time
+    // of their `Clock` port (`venues_reach_the_world_only_through_their_ports` holds the rest).
+    ("service/market", &["clock", "i18n"]),
     (
         "store",
         &["app", "host", "pine_studio", "service", "ui", "workspace"],
@@ -363,6 +364,60 @@ fn no_layer_imports_a_layer_above_it() {
     assert!(
         settled.is_empty(),
         "these no longer break the layering; remove them from KNOWN_LAYERING_DEBT:\n{}",
+        settled.join("\n")
+    );
+}
+
+/// What `service/market` may not reach for, with the port a venue has instead
+/// (`service::market::ports`): each is text that names a global the ports stand in front of. The
+/// implementations the app runs on are in `service::wiring`, which is where they are named.
+const PORTED_GLOBALS: &[(&str, &str)] = &[
+    ("keychain", "Credentials"),
+    ("lookup::shared", "CacheStore"),
+    ("http::get_", "Http"),
+    ("http::head_", "Http"),
+    ("rate_limit::", "a Pace of Http"),
+];
+
+/// Uses of [`PORTED_GLOBALS`] that are not behind a port yet, as `(file under src/, text)`. The
+/// coin index is no venue but an application service with a global of its own, so it is not given
+/// ports with them; the list only shrinks, and an entry that no longer matches fails the test too.
+const KNOWN_UNPORTED: &[(&str, &str)] = &[
+    ("service/market/coin_index.rs", "lookup::shared"),
+    ("service/market/coin_index.rs", "http::get_"),
+    ("service/market/coin_index.rs", "rate_limit::"),
+];
+
+#[test]
+fn venues_reach_the_world_only_through_their_ports() {
+    let mut offenders = Vec::new();
+    let mut found_debt = BTreeSet::new();
+    for (file, text) in module_sources("service/market") {
+        let code = production_code(&text);
+        for (global, port) in PORTED_GLOBALS {
+            if !code.contains(global) {
+                continue;
+            }
+            if KNOWN_UNPORTED.contains(&(file.as_str(), *global)) {
+                found_debt.insert((file.clone(), *global));
+            } else {
+                offenders.push(format!("{file} uses `{global}`: ask the {port} port"));
+            }
+        }
+    }
+    let settled: Vec<String> = KNOWN_UNPORTED
+        .iter()
+        .filter(|(file, global)| !found_debt.contains(&((*file).to_owned(), *global)))
+        .map(|(file, global)| format!("(\"{file}\", \"{global}\")"))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "a venue is given its ports (docs/agent-guides/market-data.md):\n{}",
+        offenders.join("\n")
+    );
+    assert!(
+        settled.is_empty(),
+        "these are behind a port now; remove them from KNOWN_UNPORTED:\n{}",
         settled.join("\n")
     );
 }

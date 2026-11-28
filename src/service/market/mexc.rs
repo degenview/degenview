@@ -9,20 +9,40 @@ use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::error::{Asked, ErrorKind, Statuses};
-use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub(crate) const BASE_URL: &str = "https://api.mexc.com/api/v3";
 
-pub struct Mexc;
+pub struct Mexc {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every spot market that is enabled, downloaded at most once a day.
+    pub(super) catalog: Catalog<Pair>,
+}
 
-pub const MEXC: Mexc = Mexc;
+impl Mexc {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            catalog: Catalog::new(
+                Listing::spot(DataSource::Mexc),
+                "catalog_mexc_v2",
+                context.cache.clone(),
+            ),
+        }
+    }
+}
 
 /// 500 rows a request and 20,000 base candles (a 22-minute chart of 500 candles is 22 pages, and
 /// that is two years of hours). Its one-minute candles reach back about a month. Nothing limits
@@ -74,9 +94,7 @@ pub(crate) fn symbol_id(symbol: &str) -> String {
 }
 
 /// MEXC's `/klines` endpoint.
-struct Klines;
-
-impl KlineEndpoint for Klines {
+impl KlineEndpoint for Mexc {
     const SOURCE: DataSource = DataSource::Mexc;
     const PAGING: Paging = PAGING;
 
@@ -92,13 +110,13 @@ impl KlineEndpoint for Klines {
         before: Option<i64>,
     ) -> Result<Vec<Kline>, ProviderError> {
         let Some(before) = before else {
-            return fetch_page(id, base, limit, None);
+            return self.fetch_page(id, base, limit, None);
         };
         let window = window_before(before, limit, base);
         if window.0 >= window.1 {
             return Ok(Vec::new());
         }
-        fetch_page(id, base, limit, Some(window))
+        self.fetch_page(id, base, limit, Some(window))
     }
 }
 
@@ -109,7 +127,7 @@ impl MarketSource for Mexc {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::latest(&Klines, symbol, timeframe, limit as usize)
+        kline_endpoint::latest(self, self.clock.now_ms(), symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -120,15 +138,15 @@ impl MarketSource for Mexc {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::range(&Klines, symbol, timeframe, start_ms, end_ms, max)
+        kline_endpoint::range(self, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn asset_names(&self) -> Vec<(String, String)> {
-        search::asset_names(|| CATALOG.get(download_pairs))
+        search::asset_names(|| self.catalog.get(|| self.download_pairs()))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(query, || CATALOG.get(download_pairs))
+        search::find(query, || self.catalog.get(|| self.download_pairs()))
     }
 }
 
@@ -146,19 +164,29 @@ fn window_before(after_ms: i64, wanted: usize, base: Timeframe) -> (i64, i64) {
     (start, end)
 }
 
-fn fetch_page(
-    id: &str,
-    base: Timeframe,
-    limit: usize,
-    window: Option<(i64, i64)>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let interval =
-        interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Mexc, base))?;
-    let mut url = format!("{BASE_URL}/klines?symbol={id}&interval={interval}&limit={limit}");
-    if let Some((start, end)) = window {
-        url.push_str(&format!("&startTime={start}&endTime={end}"));
+impl Mexc {
+    fn fetch_page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        window: Option<(i64, i64)>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let interval =
+            interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Mexc, base))?;
+        let mut url = format!("{BASE_URL}/klines?symbol={id}&interval={interval}&limit={limit}");
+        if let Some((start, end)) = window {
+            url.push_str(&format!("&startTime={start}&endTime={end}"));
+        }
+        parse_candles(&self.get(&url, MARKET_STATUSES)?, base)
     }
-    parse_candles(&get(&url, MARKET_STATUSES)?, base)
+
+    /// A request, with MEXC's refusals told apart from a network failure: its statuses mean what
+    /// `statuses` says.
+    fn get(&self, url: &str, statuses: Statuses) -> Result<String, ProviderError> {
+        self.http
+            .fetch(DataSource::Mexc, &Request::get(url).statuses(statuses))
+    }
 }
 
 /// What the statuses of a request that names a market mean at MEXC (klines): a 400 names a market
@@ -169,13 +197,6 @@ pub(in crate::service) const MARKET_STATUSES: Statuses =
 /// The same for a request that names none (the market list, every ticker): a 400 there says
 /// nothing about any market.
 pub(in crate::service) const LIST_STATUSES: Statuses = &[(403, ErrorKind::Blocked)];
-
-/// A request, with MEXC's refusals told apart from a network failure: its statuses mean what
-/// `statuses` says.
-fn get(url: &str, statuses: Statuses) -> Result<String, ProviderError> {
-    http::get_text(url, &[], http::Retry::Transient)
-        .map_err(|error| ProviderError::http_with(DataSource::Mexc, statuses, error))
-}
 
 /// Candles of length `base`, oldest first. The days, weeks and months MEXC cut at UTC+8 midnight
 /// (its oldest history) are not on this app's grid and are left out.
@@ -237,7 +258,7 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable spot market from `exchangeInfo`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
+pub(super) struct Pair {
     id: String,
     base: String,
     quote: String,
@@ -262,11 +283,10 @@ impl ListedMarket for Pair {
     }
 }
 
-/// Every spot market that is enabled, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Mexc), "catalog_mexc_v2");
-
-fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    parse_pairs(&get(&format!("{BASE_URL}/exchangeInfo"), LIST_STATUSES)?)
+impl Mexc {
+    fn download_pairs(&self) -> Result<Vec<Pair>, ProviderError> {
+        parse_pairs(&self.get(&format!("{BASE_URL}/exchangeInfo"), LIST_STATUSES)?)
+    }
 }
 
 /// The enabled spot markets. Its tokenised stocks and commodities (`GOLD(XAUT)USDC`) are not
@@ -303,7 +323,30 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::net::http::{self, Retry};
     use std::sync::Arc;
+
+    const MINUTE: i64 = 60_000;
+    const NOON: i64 = Rig::NOON;
+
+    fn venue(rig: &Rig) -> Mexc {
+        Mexc::new(&rig.context())
+    }
+
+    /// An answer of the `count` one-minute rows that open from `first`, oldest first.
+    fn minute_rows(first: i64, count: usize) -> String {
+        let rows: Vec<String> = (0..count as i64)
+            .map(|index| {
+                let open = first + index * MINUTE;
+                format!(
+                    r#"[{open},"10","12","9","11","1.5",{},"15"]"#,
+                    open + MINUTE
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
 
     #[test]
     fn every_native_has_its_interval_and_socket_name_and_nothing_else_does() {
@@ -480,6 +523,101 @@ mod tests {
     }
 
     #[test]
+    fn the_newest_candles_are_one_request_and_come_back_oldest_first() {
+        let rig = Rig::new();
+        rig.http.on("/klines?", ROWS);
+        let candles = venue(&rig)
+            .fetch_klines("btc/usdt", Timeframe::HOUR_1, 2)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://api.mexc.com/api/v3/klines?symbol=BTCUSDT&interval=60m&limit=2"
+        );
+        assert_eq!(sent[0].retry, Retry::Transient);
+        let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+        assert_eq!(opens, [1_699_999_200_000, 1_700_002_800_000]);
+    }
+
+    #[test]
+    fn a_range_is_paged_back_as_windows_because_an_end_alone_is_ignored() {
+        let rig = Rig::new();
+        let end = NOON;
+        let (first, second) = (end - 500 * MINUTE, end - 700 * MINUTE);
+        rig.http
+            .on("&limit=500&startTime=", &minute_rows(first, 500));
+        rig.http
+            .on("&limit=200&startTime=", &minute_rows(second, 200));
+        let candles = venue(&rig)
+            .fetch_klines_range("BTCUSDT", Timeframe::MINUTE_1, 0, end, 700)
+            .expect("candles");
+        let base = "https://api.mexc.com/api/v3/klines?symbol=BTCUSDT&interval=1m";
+        assert_eq!(
+            rig.http.urls(),
+            [
+                format!("{base}&limit=500&startTime={first}&endTime={}", end - 1),
+                format!("{base}&limit=200&startTime={second}&endTime={}", first - 1),
+            ]
+        );
+        assert_eq!(candles.len(), 700);
+        assert_eq!(candles[0].open_time, second);
+        assert_eq!(candles[699].open_time, end - MINUTE);
+    }
+
+    #[test]
+    fn what_mexc_refuses_is_told_by_kind() {
+        let kind_of = |answer: Result<&str, http::Error>| {
+            let rig = Rig::new();
+            match answer {
+                Ok(body) => rig.http.on("/klines?", body),
+                Err(error) => rig.http.fail("/klines?", error),
+            };
+            venue(&rig)
+                .fetch_klines("BTCUSDT", Timeframe::HOUR_1, 5)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(
+            kind_of(Ok(r#"{"code":-1121,"msg":"Invalid symbol."}"#)),
+            ErrorKind::UnknownSymbol
+        );
+        assert_eq!(
+            kind_of(Ok(r#"{"code":-1003,"msg":"Too many requests"}"#)),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            kind_of(Err(http::Error::Status(400))),
+            ErrorKind::UnknownSymbol
+        );
+        assert_eq!(kind_of(Err(http::Error::Status(403))), ErrorKind::Blocked);
+        assert_eq!(
+            kind_of(Err(http::Error::Status(429))),
+            ErrorKind::RateLimited
+        );
+    }
+
+    #[test]
+    fn the_market_list_is_downloaded_once_a_day_and_names_the_assets() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/exchangeInfo",
+            r#"{"symbols":[
+                {"symbol":"BTCUSDT","status":"1","baseAsset":"BTC","quoteAsset":"USDT","isSpotTradingAllowed":true,"fullName":"Bitcoin"},
+                {"symbol":"OLDUSDT","status":"2","baseAsset":"OLD","quoteAsset":"USDT","isSpotTradingAllowed":true}]}"#,
+        );
+        let mexc = venue(&rig);
+        let found = mexc.search_tickers("btc-usdt").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "BTCUSDT");
+        assert_eq!(
+            venue(&rig).asset_names(),
+            [("BTC".to_owned(), "Bitcoin".to_owned())]
+        );
+        assert_eq!(rig.http.urls().len(), 1);
+    }
+
+    #[test]
     fn the_catalog_keeps_only_enabled_spot_markets_with_a_plain_name() {
         let body = r#"{"symbols":[
             {"symbol":"BTCUSDT","status":"1","baseAsset":"BTC","quoteAsset":"USDT","isSpotTradingAllowed":true},
@@ -534,7 +672,8 @@ mod tests {
     #[test]
     #[ignore = "needs the network"]
     fn live_mexc_serves_candles_pairs_and_every_native() {
-        let hits = MEXC.search_tickers("btc-usdt").expect("search");
+        let mexc = &crate::service::wiring::venues().mexc;
+        let hits = mexc.search_tickers("btc-usdt").expect("search");
         assert_eq!(hits[0].symbol, "BTCUSDT");
         assert_eq!(hits[0].quote.as_deref(), Some("USDT"));
         for native in DataSource::Mexc.natives() {
@@ -544,7 +683,7 @@ mod tests {
             } else {
                 350
             };
-            let candles = MEXC
+            let candles = mexc
                 .fetch_klines("BTCUSDT", *native, wanted)
                 .expect("candles");
             // Weeks and months reach back only as far as the grid does.
@@ -561,17 +700,17 @@ mod tests {
             );
         }
         // A 22-minute chart of 500 candles is eleven thousand one-minute ones: 22 pages.
-        let folded = MEXC
+        let folded = mexc
             .fetch_klines("BTCUSDT", Timeframe::parse("22m").unwrap(), 500)
             .expect("folded candles");
         assert_eq!(folded.len(), 500);
         // Daily history is on the grid all the way: no candle cut at UTC+8 midnight remains.
-        let mut days = MEXC
+        let mut days = mexc
             .fetch_klines("BTCUSDT", Timeframe::DAY_1, 500)
             .expect("days");
         loop {
             let end = days[0].open_time;
-            let page = MEXC
+            let page = mexc
                 .fetch_klines_range("BTCUSDT", Timeframe::DAY_1, 0, end, 1_000)
                 .expect("an older page");
             if page.is_empty() {
@@ -581,7 +720,7 @@ mod tests {
         }
         assert!(days.len() > 2_500, "{}", days.len());
         assert!(days.iter().all(|day| day.open_time % 86_400_000 == 0));
-        let error = MEXC
+        let error = mexc
             .fetch_klines("NOPEUSDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
         assert_eq!(error.kind, ErrorKind::UnknownSymbol);

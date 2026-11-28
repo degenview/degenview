@@ -8,7 +8,7 @@
 //! the Keychain: keys live in memory for the session.
 
 use crate::lock::lock;
-use crate::model::market::oanda::OandaEnvironment;
+use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::service::keychain::webhook_secrets::{Scope, is_disabled, platform};
 use crate::service::webhook::delivery::SecretStoreError;
 use serde::{Deserialize, Serialize};
@@ -144,18 +144,6 @@ impl AlpacaCredentialsStore {
 }
 
 // MARK: Oanda
-
-/// The Oanda account id, personal access token and the environment they belong to, as one item.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OandaCredentials {
-    #[serde(rename = "accountId")]
-    pub account_id: String,
-    #[serde(rename = "accessToken")]
-    pub access_token: String,
-    /// Items saved before the choice existed were all sent to the live API.
-    #[serde(default)]
-    pub environment: OandaEnvironment,
-}
 
 impl CredentialPair for OandaCredentials {
     fn fields(&self) -> (&str, &str) {

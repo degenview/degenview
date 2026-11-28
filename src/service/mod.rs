@@ -20,15 +20,16 @@ pub mod tradingview;
 pub mod update;
 pub mod watchlist_quotes;
 pub mod webhook;
+pub mod wiring;
 pub mod work_queue;
 
-pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
-pub use market::oanda::test_connection as oanda_test_connection;
 
 use crate::model::exchange::Market;
 use crate::model::market::asset_name::AssetNames;
+use crate::model::market::oanda::OandaCredentials;
 use crate::model::{DataSource, InstrumentId, Kline, PmSeries, Timeframe};
+use keychain::api_keys::CredentialPair;
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
 
@@ -209,22 +210,17 @@ pub trait MarketSource {
 }
 
 pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
-    match source {
-        DataSource::Binance => &market::binance::BINANCE,
-        DataSource::Coinbase => &market::coinbase::COINBASE,
-        DataSource::Okx => &market::okx::OKX,
-        DataSource::Kraken => &market::kraken::KRAKEN,
-        DataSource::Bybit => &market::bybit::BYBIT,
-        DataSource::Gate => &market::gateio::GATE,
-        DataSource::Mexc => &market::mexc::MEXC,
-        DataSource::CoinGecko => &market::coingecko::COINGECKO,
-        DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
-        DataSource::Alpaca => &market::alpaca::ALPACA,
-        DataSource::Oanda => &market::oanda::OANDA,
-        DataSource::Polymarket => &market::polymarket::POLYMARKET,
-        DataSource::Kalshi => &market::kalshi::KALSHI,
-        DataSource::CoinMarketCap => &market::cmc::COIN_MARKET_CAP,
-    }
+    wiring::venues().source(source)
+}
+
+/// Settings ▸ Alpaca ▸ Test Connection, with the keys typed on the page.
+pub fn alpaca_test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderError> {
+    wiring::venues().alpaca.test_connection(key_id, secret_key)
+}
+
+/// Settings ▸ Oanda ▸ Test Connection, with the login typed on the page.
+pub fn oanda_test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
+    wiring::venues().oanda.test_connection(&login.trimmed())
 }
 
 /// Fetch candles of `timeframe` from the provider behind `source`, oldest first. A source folds
@@ -348,7 +344,7 @@ pub fn supports_trending(source: DataSource) -> bool {
 /// The provider's busiest markets, or an empty list when it cannot say.
 pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
     match source {
-        DataSource::Polymarket => market::polymarket::trending(limit),
+        DataSource::Polymarket => wiring::venues().polymarket.trending(limit),
         _ => Ok(Vec::new()),
     }
 }

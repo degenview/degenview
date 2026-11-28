@@ -16,20 +16,43 @@ use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket, WIDE_HITS};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::credentials::Credentials;
+use super::ports::http::{Http, Request};
 use super::search_rank::normalize;
-use crate::model::market::oanda::OandaEnvironment;
+use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
-use crate::service::keychain::api_keys::{CredentialPair, OandaCredentials};
 use crate::service::market::error::{ErrorKind, Statuses};
-use crate::service::net::http::{self, Retry};
+use crate::service::net::http::Retry;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
-pub struct Oanda;
+pub struct Oanda {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    credentials: Arc<dyn Credentials>,
+    /// The instrument list belongs to the account whose credentials downloaded it.
+    pub(super) catalog: Catalog<Instrument>,
+}
 
-pub const OANDA: Oanda = Oanda;
+impl Oanda {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            credentials: context.credentials.clone(),
+            catalog: Catalog::new(
+                Listing::spot(DataSource::Oanda),
+                "catalog_oanda_v2",
+                context.cache.clone(),
+            ),
+        }
+    }
+}
 
 /// The most candles one Oanda request returns.
 const MAX_PER_REQUEST: usize = 5_000;
@@ -57,9 +80,13 @@ const ACCOUNT_STATUSES: Statuses = &[
     (403, ErrorKind::Unauthorized),
 ];
 
-fn credentials() -> Result<OandaCredentials, ProviderError> {
-    crate::service::keychain::api_keys::oanda_credentials()
-        .ok_or(ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey))
+impl Oanda {
+    /// The saved login, once per answer: what is fetched next is fetched with it.
+    fn login(&self) -> Result<OandaCredentials, ProviderError> {
+        self.credentials
+            .oanda()
+            .ok_or(ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey))
+    }
 }
 
 /// The v3 API of an environment.
@@ -85,22 +112,31 @@ pub(in crate::service) fn api_request(login: &OandaCredentials, path: &str) -> A
     }
 }
 
-fn send(request: &ApiRequest, statuses: Statuses, retry: Retry) -> Result<String, ProviderError> {
-    http::get_text(
-        &request.url,
-        &[("Authorization", request.authorization.as_str())],
-        retry,
-    )
-    .map_err(|error| ProviderError::http_with(DataSource::Oanda, statuses, error))
-}
+impl Oanda {
+    fn send(
+        &self,
+        request: &ApiRequest,
+        statuses: Statuses,
+        retry: Retry,
+    ) -> Result<String, ProviderError> {
+        self.http.fetch(
+            DataSource::Oanda,
+            &Request::get(&request.url)
+                .headers(&[("Authorization", request.authorization.as_str())])
+                .retry(retry)
+                .statuses(statuses),
+        )
+    }
 
-/// A request about the account: its instrument list.
-fn get_account(
-    login: &OandaCredentials,
-    path: &str,
-    retry: Retry,
-) -> Result<String, ProviderError> {
-    send(&api_request(login, path), ACCOUNT_STATUSES, retry)
+    /// A request about the account: its instrument list.
+    fn get_account(
+        &self,
+        login: &OandaCredentials,
+        path: &str,
+        retry: Retry,
+    ) -> Result<String, ProviderError> {
+        self.send(&api_request(login, path), ACCOUNT_STATUSES, retry)
+    }
 }
 
 /// The `granularity` value Oanda takes for a native length: `S5`, `M1`, `H4`, `D`, `W`, `M`.
@@ -121,30 +157,47 @@ fn instruments_path(account_id: &str) -> String {
     format!("/accounts/{account_id}/instruments")
 }
 
-/// Settings ▸ Oanda ▸ Test Connection: the account's instrument list, asked for with the given
-/// login (the one typed on the page, saved or not), which is what Oanda charts need it for.
-pub fn test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
-    let login = login.trimmed();
-    get_account(&login, &instruments_path(&login.account_id), Retry::Never).map(|_| ())
-}
+impl Oanda {
+    /// Settings ▸ Oanda ▸ Test Connection: the account's instrument list, asked for with the given
+    /// login (the one typed on the page, saved or not), which is what Oanda charts need it for.
+    pub fn test_connection(&self, login: &OandaCredentials) -> Result<(), ProviderError> {
+        self.get_account(login, &instruments_path(&login.account_id), Retry::Never)
+            .map(|_| ())
+    }
 
-/// Oanda's candles endpoint, asked as one login over `transport`.
-struct Klines<'a, T> {
-    login: &'a OandaCredentials,
-    transport: T,
-}
+    /// The candles of one login that open in `[start_ms, end_ms)`, at most `max` of them, paged
+    /// back from the end.
+    pub(in crate::service) fn klines_range(
+        &self,
+        login: &OandaCredentials,
+        symbol: &str,
+        timeframe: Timeframe,
+        start_ms: i64,
+        end_ms: i64,
+        max: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        kline_endpoint::range(
+            &self.klines(login),
+            symbol,
+            timeframe,
+            start_ms,
+            end_ms,
+            max,
+        )
+    }
 
-impl<'a> Klines<'a, fn(&ApiRequest) -> Result<String, ProviderError>> {
-    /// The endpoint of `login` over the network.
-    fn over_http(login: &'a OandaCredentials) -> Self {
-        Self {
-            login,
-            transport: |request| send(request, MARKET_STATUSES, Retry::Transient),
-        }
+    /// Oanda's candles endpoint, asked as one login.
+    fn klines<'a>(&'a self, login: &'a OandaCredentials) -> Klines<'a> {
+        Klines { oanda: self, login }
     }
 }
 
-impl<T: Fn(&ApiRequest) -> Result<String, ProviderError>> KlineEndpoint for Klines<'_, T> {
+struct Klines<'a> {
+    oanda: &'a Oanda,
+    login: &'a OandaCredentials,
+}
+
+impl KlineEndpoint for Klines<'_> {
     const SOURCE: DataSource = DataSource::Oanda;
     const PAGING: Paging = PAGING;
 
@@ -161,7 +214,11 @@ impl<T: Fn(&ApiRequest) -> Result<String, ProviderError>> KlineEndpoint for Klin
     ) -> Result<Vec<Kline>, ProviderError> {
         let fetch = |count| {
             let path = candles_path(id, base, before, count);
-            let body = (self.transport)(&api_request(self.login, &path))?;
+            let body = self.oanda.send(
+                &api_request(self.login, &path),
+                MARKET_STATUSES,
+                Retry::Transient,
+            )?;
             parse_candles(&body, base)
         };
         match before {
@@ -171,26 +228,6 @@ impl<T: Fn(&ApiRequest) -> Result<String, ProviderError>> KlineEndpoint for Klin
     }
 }
 
-/// The candles of one login that open in `[start_ms, end_ms)`, at most `max` of them, paged back
-/// from the end.
-pub(in crate::service) fn klines_range(
-    login: &OandaCredentials,
-    symbol: &str,
-    timeframe: Timeframe,
-    start_ms: i64,
-    end_ms: i64,
-    max: usize,
-) -> Result<Vec<Kline>, ProviderError> {
-    kline_endpoint::range(
-        &Klines::over_http(login),
-        symbol,
-        timeframe,
-        start_ms,
-        end_ms,
-        max,
-    )
-}
-
 impl MarketSource for Oanda {
     fn fetch_klines(
         &self,
@@ -198,8 +235,10 @@ impl MarketSource for Oanda {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
+        let login = self.login()?;
         kline_endpoint::latest(
-            &Klines::over_http(&credentials()?),
+            &self.klines(&login),
+            self.clock.now_ms(),
             symbol,
             timeframe,
             limit as usize,
@@ -214,14 +253,15 @@ impl MarketSource for Oanda {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        klines_range(&credentials()?, symbol, timeframe, start_ms, end_ms, max)
+        self.klines_range(&self.login()?, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
-        let login = credentials()?;
+        let login = self.login()?;
         search::find(query, || {
-            CATALOG.get_for(&login.account_id, || download_instruments(&login))
+            self.catalog
+                .get_for(&login.account_id, || self.download_instruments(&login))
         })
     }
 }
@@ -300,7 +340,7 @@ fn parse_candle(row: &Value, bar: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One instrument of the account from `/accounts/{id}/instruments`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Instrument {
+pub(super) struct Instrument {
     name: String,
     /// How Oanda writes it for people: `Germany 30`, `Gold`, or just the pair (`EUR/USD`).
     #[serde(default)]
@@ -335,17 +375,18 @@ impl ListedMarket for Instrument {
     }
 }
 
-/// The instrument list belongs to the account whose credentials downloaded it.
-static CATALOG: Catalog<Instrument> =
-    Catalog::new(Listing::spot(DataSource::Oanda), "catalog_oanda_v2");
-
-fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, ProviderError> {
-    let body = get_account(
-        login,
-        &instruments_path(&login.account_id),
-        Retry::Transient,
-    )?;
-    parse_instruments(&body)
+impl Oanda {
+    fn download_instruments(
+        &self,
+        login: &OandaCredentials,
+    ) -> Result<Vec<Instrument>, ProviderError> {
+        let body = self.get_account(
+            login,
+            &instruments_path(&login.account_id),
+            Retry::Transient,
+        )?;
+        parse_instruments(&body)
+    }
 }
 
 fn parse_instruments(body: &str) -> Result<Vec<Instrument>, ProviderError> {
@@ -373,6 +414,8 @@ fn parse_instruments(body: &str) -> Result<Vec<Instrument>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::net::http;
     use std::sync::Arc;
 
     const DAY_MS: i64 = 86_400_000;
@@ -445,58 +488,171 @@ mod tests {
         }
     }
 
-    #[test]
-    fn every_page_of_a_history_is_asked_with_the_login_it_was_given() {
-        let login = OandaCredentials {
+    fn practice_login() -> OandaCredentials {
+        OandaCredentials {
             account_id: "101-001".into(),
             access_token: "tok".into(),
             environment: OandaEnvironment::Practice,
-        };
-        let end_ms = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
-        let asked = std::cell::RefCell::new(Vec::new());
-        // Every page is full, so the pager goes back for a second one.
-        let endpoint = Klines {
-            login: &login,
-            transport: |request: &ApiRequest| {
-                asked
-                    .borrow_mut()
-                    .push((request.url.clone(), request.authorization.clone()));
-                let to = request.url.rsplit_once("&to=").expect("an end cursor").1;
-                let to = crate::format::parse_iso8601(to).expect("a time");
-                let count = request.url.split_once("&count=").expect("a count").1;
-                let count: i64 = count.split('&').next().unwrap().parse().unwrap();
-                let rows: Vec<String> = (1..=count)
-                    .rev()
-                    .map(|back| {
-                        format!(
-                            r#"{{"time":"{}","volume":1,"mid":{{"o":"1","h":"1","l":"1","c":"1"}}}}"#,
-                            crate::format::iso8601(to - back * 60_000)
-                        )
-                    })
-                    .collect();
-                Ok(format!(r#"{{"candles":[{}]}}"#, rows.join(",")))
-            },
-        };
-        let candles = kline_endpoint::range(
-            &endpoint,
-            "EUR_USD",
-            Timeframe::MINUTE_1,
-            0,
-            end_ms,
-            MAX_PER_REQUEST + 100,
+        }
+    }
+
+    fn venue(rig: &Rig) -> Oanda {
+        Oanda::new(&rig.context())
+    }
+
+    /// An answer of the `count` one-minute candles that open before `to`, oldest first.
+    fn minute_candles(to: i64, count: i64) -> String {
+        let rows: Vec<String> = (1..=count)
+            .rev()
+            .map(|back| {
+                format!(
+                    r#"{{"time":"{}","volume":1,"complete":true,"mid":{{"o":"1","h":"1","l":"1","c":"1"}}}}"#,
+                    crate::format::iso8601(to - back * 60_000)
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"instrument":"EUR_USD","candles":[{}]}}"#,
+            rows.join(",")
         )
-        .expect("history");
+    }
+
+    #[test]
+    fn every_page_of_a_history_is_asked_with_the_login_it_was_given_and_it_is_looked_up_once() {
+        let rig = Rig::new();
+        rig.credentials.save_oanda(practice_login());
+        let end_ms = crate::format::days_from_civil(2026, 10, 9) * DAY_MS;
+        // Every page is full (one row more than wanted, for the cursor), so the pager goes back
+        // for a second one.
+        let first_page = MAX_PER_REQUEST as i64;
+        rig.http
+            .on("&count=5000&", &minute_candles(end_ms, first_page));
+        rig.http.on(
+            "&count=102&",
+            &minute_candles(end_ms - (first_page - 1) * 60_000, 102),
+        );
+        let candles = venue(&rig)
+            .fetch_klines_range(
+                "EUR_USD",
+                Timeframe::MINUTE_1,
+                0,
+                end_ms,
+                MAX_PER_REQUEST + 100,
+            )
+            .expect("history");
 
         assert_eq!(candles.len(), MAX_PER_REQUEST + 100);
-        let asked = asked.into_inner();
-        assert_eq!(asked.len(), 2);
-        for (url, authorization) in asked {
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 2);
+        for request in &sent {
             assert!(
-                url.starts_with(base_url(OandaEnvironment::Practice)),
-                "{url}"
+                request
+                    .url
+                    .starts_with("https://api-fxpractice.oanda.com/v3/instruments/EUR_USD/candles"),
+                "{}",
+                request.url
             );
-            assert_eq!(authorization, "Bearer tok");
+            assert_eq!(
+                request.headers,
+                [("Authorization".to_owned(), "Bearer tok".to_owned())]
+            );
+            assert_eq!(request.retry, Retry::Transient);
         }
+        assert!(
+            sent[0]
+                .url
+                .ends_with(&format!("&to={}", crate::format::iso8601(end_ms)))
+        );
+        assert_eq!(rig.credentials.oanda_lookups(), 1);
+    }
+
+    #[test]
+    fn the_newest_candles_are_one_request_signed_with_the_saved_login() {
+        let rig = Rig::new();
+        rig.credentials.save_oanda(practice_login());
+        rig.http.on("/candles?", &minute_candles(Rig::NOON, 3));
+        let candles = venue(&rig)
+            .fetch_klines("EUR_USD", Timeframe::MINUTE_1, 3)
+            .expect("candles");
+        assert_eq!(
+            rig.http.urls(),
+            [
+                "https://api-fxpractice.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=M1&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday&count=3"
+            ]
+        );
+        assert_eq!(candles.len(), 3);
+        assert_eq!(candles[2].open_time, Rig::NOON - 60_000);
+        assert_eq!(rig.credentials.oanda_lookups(), 1);
+    }
+
+    #[test]
+    fn without_a_saved_login_nothing_is_asked_and_the_key_is_what_is_missing() {
+        let rig = Rig::new();
+        let oanda = venue(&rig);
+        let error = oanda
+            .fetch_klines("EUR_USD", Timeframe::MINUTE_1, 3)
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::MissingKey);
+        assert_eq!(
+            oanda.search_tickers("eur").unwrap_err().kind,
+            ErrorKind::MissingKey
+        );
+        assert!(rig.http.urls().is_empty());
+    }
+
+    #[test]
+    fn what_oanda_refuses_is_told_by_kind() {
+        let kind_of = |status| {
+            let rig = Rig::new();
+            rig.credentials.save_oanda(practice_login());
+            rig.http.fail("/candles?", http::Error::Status(status));
+            venue(&rig)
+                .fetch_klines("EUR_USD", Timeframe::MINUTE_1, 3)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(kind_of(400), ErrorKind::UnknownSymbol);
+        assert_eq!(kind_of(401), ErrorKind::Unauthorized);
+        assert_eq!(kind_of(403), ErrorKind::Unauthorized);
+        assert_eq!(kind_of(429), ErrorKind::RateLimited);
+    }
+
+    #[test]
+    fn each_account_has_its_own_instrument_list_downloaded_once() {
+        let rig = Rig::new();
+        rig.credentials.save_oanda(practice_login());
+        rig.http.on(
+            "/accounts/101-001/instruments",
+            r#"{"instruments":[{"name":"EUR_USD","displayName":"EUR/USD"},{"name":"XAU_USD","displayName":"Gold"}]}"#,
+        );
+        let oanda = venue(&rig);
+        let found = oanda.search_tickers("xau").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "XAU_USD");
+        assert_eq!(found[0].names.base.as_deref(), Some("Gold"));
+        oanda.search_tickers("eur").expect("hits");
+        assert_eq!(
+            rig.http
+                .sent()
+                .iter()
+                .map(|sent| sent.url.as_str())
+                .collect::<Vec<_>>(),
+            ["https://api-fxpractice.oanda.com/v3/accounts/101-001/instruments"]
+        );
+    }
+
+    #[test]
+    fn a_connection_test_uses_the_login_it_is_given_and_asks_once() {
+        let rig = Rig::new();
+        rig.http
+            .on("/accounts/101-001/instruments", r#"{"instruments":[]}"#);
+        venue(&rig)
+            .test_connection(&practice_login())
+            .expect("a connection");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].retry, Retry::Never);
+        assert_eq!(rig.credentials.oanda_lookups(), 0);
     }
 
     #[test]

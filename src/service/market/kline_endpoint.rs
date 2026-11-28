@@ -39,9 +39,11 @@ pub(in crate::service) trait KlineEndpoint {
     }
 }
 
-/// The newest `limit` candles of `timeframe`.
+/// The newest `limit` candles of `timeframe`, as of `now_ms`: a request for more than one page
+/// pages back from just after it.
 pub(in crate::service) fn latest<E: KlineEndpoint>(
     endpoint: &E,
+    now_ms: i64,
     symbol: &str,
     timeframe: Timeframe,
     limit: usize,
@@ -51,7 +53,7 @@ pub(in crate::service) fn latest<E: KlineEndpoint>(
     let requested = E::PAGING.requested(plan, limit);
     if requested > E::PAGING.page {
         // More base candles than one request holds: page back from now.
-        return page_back(endpoint, &id, plan, 0, crate::clock::now_ms() + 1, limit);
+        return page_back(endpoint, &id, plan, 0, now_ms + 1, limit);
     }
     let rows = endpoint.page(&id, plan.base(), requested, None)?;
     Ok(plan.shape(rows, requested, limit))
@@ -186,7 +188,7 @@ mod tests {
 
     fn latest_of(venue: &Venue, timeframe: &str, limit: usize) -> Vec<Kline> {
         let timeframe = Timeframe::parse(timeframe).unwrap();
-        latest(venue, "btc", timeframe, limit).expect("candles")
+        latest(venue, NOON, "btc", timeframe, limit).expect("candles")
     }
 
     #[test]
@@ -204,18 +206,16 @@ mod tests {
     #[test]
     fn a_longer_request_pages_back_from_now_a_page_at_a_time() {
         let venue = Venue::listed(NOON - 5_000 * MINUTE);
-        let before = crate::clock::now_ms();
         let shown = latest_of(&venue, "1m", 250);
-        let after = crate::clock::now_ms();
-        let asked = venue.asked();
-        let [(first, Some(from_now)), second, third] = asked[..] else {
-            panic!("three pages expected: {asked:?}");
-        };
         // The newest page is asked for from just after now, the exclusive end of the history.
-        assert_eq!(first, 100);
-        assert!((before + 1..=after + 1).contains(&from_now), "{from_now}");
-        assert_eq!(second, (100, Some(NOON - 100 * MINUTE)));
-        assert_eq!(third, (50, Some(NOON - 200 * MINUTE)));
+        assert_eq!(
+            venue.asked(),
+            [
+                (100, Some(NOON + 1)),
+                (100, Some(NOON - 100 * MINUTE)),
+                (50, Some(NOON - 200 * MINUTE)),
+            ]
+        );
         assert_eq!(shown.len(), 250);
         assert_eq!(shown[0].open_time, NOON - 250 * MINUTE);
         assert!(

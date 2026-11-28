@@ -42,6 +42,13 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
   HTTP status means depends on the request (one that names a market, a list, an account), so the
   tables are per kind of request, not per venue ([Market data](market-data.md#adding-a-provider)). A `String` error is for text only shown, at the
   edge where it is shown.
+- **Ports.** A market venue (`service::market`) is a value built with the ports it uses
+  (`service::market::ports`: `Http`, `Clock`, `Credentials`, `CacheStore`) and calls no global: not
+  `service::net::http::get_text`, `crate::clock::now_ms`, `service::keychain` nor
+  `cache::lookup::shared`. The app's implementations are in `service::wiring`, which builds the one
+  set of venues (`wiring::venues()`, what `service::for_source` answers from); a test builds a venue
+  from `ports::fakes::Rig` and checks the requests it makes and the errors it maps without a
+  network. `layout_tests.rs` fails for a venue that reaches past its ports.
 - **Locks.** Take a `Mutex`/`RwLock` through `crate::lock::{lock, read, write}`, which recover from a
   poisoning panic; no `.expect("… poisoned")` and no hand-rolled `unwrap_or_else(PoisonError::into_inner)`.
   Code that treats a poisoned store as unavailable (`if let Ok(store) = store.lock()`) does so on

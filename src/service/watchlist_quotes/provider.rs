@@ -6,11 +6,10 @@ use super::engine::Outcome;
 use crate::lock::lock;
 use crate::model::exchange::Market;
 use crate::model::market::binance::split_market;
-use crate::model::market::oanda::OandaEnvironment;
+use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
-use crate::service::keychain::api_keys::OandaCredentials;
 use crate::service::market::error::{Asked, ErrorKind, Scope, Statuses};
 use crate::service::market::{alpaca, binance, bybit, coinbase, gateio, kraken, mexc, oanda, okx};
 use crate::service::net::url::encode_component;
@@ -591,15 +590,10 @@ fn oanda_day_ago_price(
     now: i64,
 ) -> Result<DayAgoReference, ProviderError> {
     day_ago_reference(now, |start, end| {
-        crate::service::market::oanda::klines_range(
-            login,
-            instrument,
-            Timeframe::HOUR_1,
-            start,
-            end,
-            1,
-        )
-        .map(crate::service::normalize)
+        crate::service::wiring::venues()
+            .oanda
+            .klines_range(login, instrument, Timeframe::HOUR_1, start, end, 1)
+            .map(crate::service::normalize)
     })
 }
 

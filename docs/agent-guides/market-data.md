@@ -4,7 +4,17 @@
 
 1. `model::market::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
    volume support, line/candle mode.
-2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape.
+2. Implement `service::MarketSource` on a value built with its ports: `new(&MarketContext)` keeps
+   the ones it uses (`Http` for every request, `Clock` for the time it plans by, `Credentials` for
+   a key, `CacheStore` for a `Catalog`'s lookups; `service::market::ports`) and nothing under
+   `service::market` calls a global (`net::http::get_text`, `crate::clock::now_ms`,
+   `service::keychain`, `lookup::shared`: `layout_tests.rs` fails for it). A request is
+   `Request::get(url)` and, where the venue needs it, `.headers(..)`, `.retry(Retry::Never)`,
+   `.max_body_bytes(..)`, `.paced(Pace::..)` (a host's own schedule) or `.statuses(..)` (what its
+   HTTP statuses mean, below), sent through
+   `http.fetch(venue, &request)`, which turns a failure into the venue's `ProviderError`. State a
+   venue keeps (a catalog, a response cache) is a field, so each test has its own. `search_tickers`
+   if supported; a parser for a new kline shape.
    Declare its candle lengths in `model::market::natives` and plan every request through
    `DataSource::plan` (see Timeframes), so `serves` and the fetch agree. A REST venue whose kline
    request answers a fixed number of rows older than a cursor (OKX, Bybit, MEXC, Gate.io, Oanda)
@@ -14,10 +24,9 @@
    before it) and, if its history is limited, `reach`. The plan, the cap before the fold, the
    pages and the shape of the answer are written once there.
    Its failures are kinds of `service::market::error::ErrorKind`, never text. A request that fails
-   goes through `ProviderError::http(venue, error)` (429 is a rate limit, any other status stays a
-   `Transport` failure) or, when the venue gives other statuses a meaning,
-   `ProviderError::http_with(venue, statuses, error)`. **A status means what the endpoint makes of
-   it**, so a venue declares one `Statuses` table per kind of request it makes, never one per venue:
+   goes through `http.fetch(venue, &request)`, which reads 429 as a rate limit and any other status
+   from the request's own `.statuses(table)` (none: it stays a `Transport` failure). **A status
+   means what the endpoint makes of it**, so a venue declares one `Statuses` table per kind of request it makes, never one per venue:
    a 400 from a request that names a market (candles, a ticker asked for by name) says that market
    is unknown (`UnknownSymbol`), from one that names none (the market list, a whole-ticker answer, an
    account request) it says nothing about any market, and `UnknownSymbol` is what makes the
@@ -34,12 +43,20 @@
    know an "unknown market" code (Kraken `EQuery:`, OKX `51001`, MEXC `-1121`) take
    `error::Asked::{Markets, List}` and read it as `UnknownSymbol` only for a request that named
    markets; for the market list or a whole ticker it is the venue's `Refused`, which backs the
-   source off instead of making the watchlist bisect a list that names no market. The watchlist's quote requests use the same tables and envelope readers
-   (`watchlist_quotes::provider::quote_statuses` picks the table of each quote request). A service
+   source off instead of making the watchlist bisect a list that names no market. The watchlist's
+   quote requests use the same tables and envelope readers (`watchlist_quotes::provider::quote_statuses`
+   picks the table of each quote request). A service
    that answers in a venue's place (GeckoTerminal draws DEXScreener pools' candles) is named by
    `ProviderError::through`, so the message blames the one that failed.
-3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
+3. Add the venue to `service::market::venues::Venues` (its field and its arm of `source`), which
+   `service::for_source` answers from. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
+   Test it offline with `ports::fakes::Rig`: record the bodies (`rig.http.on(url fragment, body)`,
+   `.fail(fragment, error)`), build the venue from `rig.context()` and assert the exact URLs, headers
+   and retry policy it asked (`rig.http.sent()`), the candles it made and the kind of each failure;
+   `rig.clock` stands still and `rig.credentials` holds the keys the test saves. Keep a live test
+   (`#[ignore]`, through `service::wiring::venues()`) for what only the exchange can say.
+   `fx_rates` is no venue and keeps its own transport and retry schedule.
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
    Pass the provider's asset names with `SearchResult::named` when its search lists them, return
    them from `MarketSource::asset_names` when they describe assets other venues leave unnamed, and decide
@@ -68,17 +85,17 @@ watchlists.
   `SearchResult::base_asset`; pair: `SearchResult::base`/`quote_asset()`.
 - Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
 - A venue with no search endpoint hands over its whole list of markets and the app searches it.
-  The list is a private `catalog::Catalog` `static` with its own disk namespace, never renamed: that
-  would discard users' cached lists. Its item implements `catalog::search::ListedMarket`: the
-  `SOURCE` every hit names, how many hits it keeps (`HITS`; `WIDE_HITS` where the venue keeps
-  more), its id, the two sides and the names the venue gives them. `search_tickers` is one call to
-  `catalog::search::find(query, list)` (`asset_names`: `catalog::search::asset_names`), where a query
-  is normalised (`BTC-USDT`, `btc/usdt` and `BTCUSDT` are one), matched, ranked and cut. Nothing
-  else is registered: a catalog adds itself to `catalog::registry` when it first keeps a list, and
-  Settings ▸ Storage clears every list in memory through that, so a catalog is always a `static`. A
-  download that panics counts as a failed attempt (the held list is served, the provider left alone
-  for the back-off). A search that does not fit (Binance's two lists, Alpaca's company names)
-  matches on its own and still ranks through `rank_results`.
+  The list is a `catalog::Catalog` (a field of the venue, built with the `CacheStore` port, with
+  its own disk namespace, never renamed: that would discard users' cached lists). Its item
+  implements `catalog::search::ListedMarket`: the `SOURCE` every hit names, how many hits it keeps
+  (`HITS`; `WIDE_HITS` where the venue keeps more), its id, the two sides and the names the venue
+  gives them. `search_tickers` is one call to `catalog::search::find(query, list)` (`asset_names`:
+  `catalog::search::asset_names`), where a query is normalised (`BTC-USDT`, `btc/usdt` and
+  `BTCUSDT` are one), matched, ranked and cut. Add the catalog to `catalog::registry`: Settings ▸
+  Storage clears every list in memory through it, and a test fails for a `Catalog::new` the
+  registry lacks. A download that panics counts as a failed attempt (the held list is served, the
+  provider left alone for the back-off). A search that does not fit (Binance's two lists, Alpaca's
+  company names) matches on its own and still ranks through `rank_results`.
 - `VENUE:SYMBOL` text (`BINANCE:BTCUSDT`, `NASDAQ:AAPL`) is read only by `model::market::venue`
   (watchlist slugs plus `US_EXCHANGES`, which are Alpaca); the watchlist import and the picker both use
   it. A new provider's slug is `DataSource::watchlist_slug`; do not add a second prefix table.

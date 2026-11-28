@@ -1,4 +1,4 @@
-//! Oanda's two environments.
+//! Oanda's two environments and the login that belongs to one.
 
 use crate::i18n::tr_c;
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,18 @@ impl OandaEnvironment {
             _ => None,
         }
     }
+}
+
+/// The Oanda account id, personal access token and the environment they belong to, as one item.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OandaCredentials {
+    #[serde(rename = "accountId")]
+    pub account_id: String,
+    #[serde(rename = "accessToken")]
+    pub access_token: String,
+    /// Items saved before the choice existed were all sent to the live API.
+    #[serde(default)]
+    pub environment: OandaEnvironment,
 }
 
 #[cfg(test)]

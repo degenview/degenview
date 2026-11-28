@@ -1,10 +1,9 @@
 use super::*;
 use crate::model::DataSource;
-use crate::service::cache::disk::{DiskCache, testing::TempCache};
+use crate::service::market::ports::fakes::Rig;
 use serde::Deserialize;
 use std::panic::AssertUnwindSafe;
-use std::sync::MutexGuard;
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct Pair(String);
@@ -13,38 +12,30 @@ fn pairs(names: &[&str]) -> Vec<Pair> {
     names.iter().map(|name| Pair((*name).to_owned())).collect()
 }
 
-/// Clearing the registry reaches every catalog a test has used, so tests that hold one at a time.
-static REGISTRY: Mutex<()> = Mutex::new(());
-
 struct Fixture {
-    _registry: MutexGuard<'static, ()>,
-    temp: TempCache,
-    clock: Arc<AtomicI64>,
+    rig: Rig,
     downloads: AtomicUsize,
 }
 
 impl Fixture {
     fn new() -> Self {
         Self {
-            _registry: lock(&REGISTRY),
-            temp: TempCache::new(),
-            clock: Arc::new(AtomicI64::new(1_000 * 86_400_000)),
+            rig: Rig::new(),
             downloads: AtomicUsize::new(0),
         }
     }
 
-    /// A lookup cache over the shared directory, and a `Catalog` with empty memory: a launch.
-    fn launch(&self) -> (LookupCache, &'static Catalog<Pair>) {
-        let disk: &'static DiskCache = Box::leak(Box::new(DiskCache::at(self.temp.path())));
-        let clock = Arc::clone(&self.clock);
-        let cache = LookupCache::for_tests(disk, Box::new(move || clock.load(Ordering::Relaxed)));
-        (
-            cache,
-            Box::leak(Box::new(Catalog::new(
-                Listing::spot(DataSource::Bybit),
-                "catalog_test",
-            ))),
+    /// A `Catalog` with empty memory over the lookup cache the fixture keeps: a launch.
+    fn launch(&self) -> Catalog<Pair> {
+        Catalog::new(
+            Listing::spot(DataSource::Bybit),
+            "catalog_test",
+            self.rig.cache.clone(),
         )
+    }
+
+    fn pass(&self, time: Duration) {
+        self.rig.clock.advance(time);
     }
 
     fn download(
@@ -65,11 +56,10 @@ impl Fixture {
 #[test]
 fn the_list_is_downloaded_once_however_often_it_is_searched() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     for _ in 0..5 {
         let items = catalog
-            .get_from(
-                &cache,
+            .get_for(
                 EVERYONE,
                 fixture.download(Ok(pairs(&["BTCUSDT", "ETHUSDT"]))),
             )
@@ -82,16 +72,14 @@ fn the_list_is_downloaded_once_however_often_it_is_searched() {
 #[test]
 fn a_relaunch_starts_from_the_persisted_list() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
         .unwrap();
-    cache.flush("catalog_test");
 
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     let items = catalog
-        .get_from(
-            &cache,
+        .get_for(
             EVERYONE,
             fixture.download(Err(ProviderError::refused(
                 crate::model::DataSource::Bybit,
@@ -106,16 +94,15 @@ fn a_relaunch_starts_from_the_persisted_list() {
 #[test]
 fn a_list_past_its_ttl_is_downloaded_again() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
         .unwrap();
-    cache.flush("catalog_test");
-    fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
+    fixture.pass(Duration::from_secs(25 * 3_600));
 
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     let items = catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["NEW"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["NEW"]))))
         .unwrap();
     assert_eq!(*items, pairs(&["NEW"]));
     assert_eq!(fixture.downloads(), 2);
@@ -124,18 +111,16 @@ fn a_list_past_its_ttl_is_downloaded_again() {
 #[test]
 fn a_failed_refresh_serves_the_stale_list_and_backs_off() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
         .unwrap();
-    cache.flush("catalog_test");
-    fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
+    fixture.pass(Duration::from_secs(25 * 3_600));
 
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     for _ in 0..4 {
         let items = catalog
-            .get_from(
-                &cache,
+            .get_for(
                 EVERYONE,
                 fixture.download(Err(ProviderError::refused(
                     crate::model::DataSource::Bybit,
@@ -155,10 +140,9 @@ fn a_failed_refresh_serves_the_stale_list_and_backs_off() {
 #[test]
 fn with_nothing_cached_a_failure_is_an_error_and_is_retried() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     let error = catalog
-        .get_from(
-            &cache,
+        .get_for(
             EVERYONE,
             fixture.download(Err(ProviderError::refused(
                 crate::model::DataSource::Bybit,
@@ -171,7 +155,7 @@ fn with_nothing_cached_a_failure_is_an_error_and_is_retried() {
         ProviderError::refused(crate::model::DataSource::Bybit, "offline")
     );
     let items = catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
         .unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(fixture.downloads(), 2);
@@ -180,16 +164,15 @@ fn with_nothing_cached_a_failure_is_an_error_and_is_retried() {
 #[test]
 fn an_empty_list_is_neither_trusted_nor_persisted() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     assert!(
         catalog
-            .get_from(&cache, EVERYONE, fixture.download(Ok(Vec::new())))
+            .get_for(EVERYONE, fixture.download(Ok(Vec::new())))
             .is_err()
     );
-    cache.flush("catalog_test");
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     let items = catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["A"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["A"]))))
         .unwrap();
     assert_eq!(items.len(), 1);
 }
@@ -197,15 +180,14 @@ fn an_empty_list_is_neither_trusted_nor_persisted() {
 #[test]
 fn clearing_memory_makes_the_next_search_reload() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["A"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["A"]))))
         .unwrap();
     catalog.clear_memory();
     // Still in the lookup cache, so no download.
     catalog
-        .get_from(
-            &cache,
+        .get_for(
             EVERYONE,
             fixture.download(Err(ProviderError::refused(
                 crate::model::DataSource::Bybit,
@@ -219,11 +201,11 @@ fn clearing_memory_makes_the_next_search_reload() {
 #[test]
 fn a_market_the_list_lacks_is_looked_for_again_but_not_at_every_ask() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     let new = |pair: &Pair| pair.0 == "NEW";
     let look = |names: &[&str]| {
         catalog
-            .get_listing_from(&cache, new, || {
+            .get_listing(new, || {
                 fixture.downloads.fetch_add(1, Ordering::SeqCst);
                 Ok(pairs(names))
             })
@@ -253,9 +235,9 @@ fn a_market_the_list_lacks_is_looked_for_again_but_not_at_every_ask() {
 #[test]
 fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
         .unwrap();
     let offline = || {
         fixture.downloads.fetch_add(1, Ordering::SeqCst);
@@ -264,8 +246,7 @@ fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
             "offline",
         ))
     };
-    let ask =
-        |wanted: &str| catalog.get_listing_from(&cache, |pair: &Pair| pair.0 == wanted, offline);
+    let ask = |wanted: &str| catalog.get_listing(|pair: &Pair| pair.0 == wanted, offline);
     catalog
         .memory
         .lock()
@@ -290,16 +271,14 @@ fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
 #[test]
 fn a_stale_list_that_cannot_be_refreshed_does_not_say_a_market_is_unlisted() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
         .unwrap();
-    cache.flush("catalog_test");
-    fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
+    fixture.pass(Duration::from_secs(25 * 3_600));
 
-    let (cache, catalog) = fixture.launch();
-    let answer = catalog.get_listing_from(
-        &cache,
+    let catalog = fixture.launch();
+    let answer = catalog.get_listing(
         |pair: &Pair| pair.0 == "NEW",
         || {
             Err(ProviderError::refused(
@@ -315,56 +294,42 @@ fn a_stale_list_that_cannot_be_refreshed_does_not_say_a_market_is_unlisted() {
 }
 
 /// The lists `owner` is answered with, asking the provider for `names` if it has to.
-fn ask(
-    catalog: &'static Catalog<Pair>,
-    cache: &LookupCache,
-    owner: &str,
-    names: &[&str],
-) -> Arc<Vec<Pair>> {
-    catalog
-        .get_from(cache, owner, || Ok(pairs(names)))
-        .expect("a list")
+fn ask(catalog: &Catalog<Pair>, owner: &str, names: &[&str]) -> Arc<Vec<Pair>> {
+    catalog.get_for(owner, || Ok(pairs(names))).expect("a list")
 }
 
 #[test]
 fn each_owner_has_its_own_list_across_relaunches() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
-    assert_eq!(
-        *ask(catalog, &cache, "a", &["EUR_USD"]),
-        pairs(&["EUR_USD"])
-    );
-    assert_eq!(
-        *ask(catalog, &cache, "b", &["USD_JPY"]),
-        pairs(&["USD_JPY"])
-    );
-    cache.flush("catalog_test");
+    let catalog = fixture.launch();
+    assert_eq!(*ask(&catalog, "a", &["EUR_USD"]), pairs(&["EUR_USD"]));
+    assert_eq!(*ask(&catalog, "b", &["USD_JPY"]), pairs(&["USD_JPY"]));
 
-    let (cache, catalog) = fixture.launch();
-    assert_eq!(*ask(catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
-    assert_eq!(*ask(catalog, &cache, "b", &["asked"]), pairs(&["USD_JPY"]));
+    let catalog = fixture.launch();
+    assert_eq!(*ask(&catalog, "a", &["asked"]), pairs(&["EUR_USD"]));
+    assert_eq!(*ask(&catalog, "b", &["asked"]), pairs(&["USD_JPY"]));
 }
 
 #[test]
 fn memory_releases_the_previous_owners_list() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
-    let first = Arc::downgrade(&ask(catalog, &cache, "a", &["EUR_USD"]));
+    let catalog = fixture.launch();
+    let first = Arc::downgrade(&ask(&catalog, "a", &["EUR_USD"]));
     assert!(
         first.upgrade().is_some(),
         "held while it is the last asked for"
     );
-    ask(catalog, &cache, "b", &["USD_JPY"]);
+    ask(&catalog, "b", &["USD_JPY"]);
     assert!(first.upgrade().is_none());
 }
 
 #[test]
 fn a_failed_download_never_answers_with_another_owners_list() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
-    ask(catalog, &cache, "a", &["EUR_USD"]);
+    let catalog = fixture.launch();
+    ask(&catalog, "a", &["EUR_USD"]);
     let error = catalog
-        .get_from(&cache, "b", || {
+        .get_for("b", || {
             Err(ProviderError::refused(
                 crate::model::DataSource::Bybit,
                 "offline",
@@ -380,8 +345,8 @@ fn a_failed_download_never_answers_with_another_owners_list() {
 #[test]
 fn a_panic_while_the_list_is_locked_does_not_make_search_unavailable() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
-    ask(catalog, &cache, "a", &["EUR_USD"]);
+    let catalog = fixture.launch();
+    ask(&catalog, "a", &["EUR_USD"]);
     std::thread::scope(|scope| {
         let _ = scope
             .spawn(|| {
@@ -396,45 +361,24 @@ fn a_panic_while_the_list_is_locked_does_not_make_search_unavailable() {
     assert!(catalog.memory.is_poisoned() && catalog.refresh.is_poisoned());
 
     // What is held is served, another owner's list is downloaded, and memory can be cleared.
-    assert_eq!(*ask(catalog, &cache, "a", &["asked"]), pairs(&["EUR_USD"]));
-    assert_eq!(
-        *ask(catalog, &cache, "b", &["USD_JPY"]),
-        pairs(&["USD_JPY"])
-    );
+    assert_eq!(*ask(&catalog, "a", &["asked"]), pairs(&["EUR_USD"]));
+    assert_eq!(*ask(&catalog, "b", &["USD_JPY"]), pairs(&["USD_JPY"]));
     catalog.clear_memory();
     assert!(catalog.held("b").is_none());
 }
 
 #[test]
-fn clearing_the_registry_empties_every_catalog_that_kept_a_list() {
-    let fixture = Fixture::new();
-    let (cache, kept) = fixture.launch();
-    let (_, other) = fixture.launch();
-    let (_, never_asked) = fixture.launch();
-    ask(kept, &cache, "a", &["EUR_USD"]);
-    ask(other, &cache, "b", &["USD_JPY"]);
-    assert!(kept.held("a").is_some() && other.held("b").is_some());
-
-    registry::clear_memory();
-
-    assert!(kept.held("a").is_none());
-    assert!(other.held("b").is_none());
-    assert!(never_asked.held("a").is_none());
-}
-
-#[test]
 fn a_download_that_panics_counts_as_a_failed_attempt() {
     let fixture = Fixture::new();
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     catalog
-        .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
+        .get_for(EVERYONE, fixture.download(Ok(pairs(&["OLD"]))))
         .unwrap();
-    cache.flush("catalog_test");
-    fixture.clock.fetch_add(25 * 3_600_000, Ordering::Relaxed);
+    fixture.pass(Duration::from_secs(25 * 3_600));
 
-    let (cache, catalog) = fixture.launch();
+    let catalog = fixture.launch();
     let panicked = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        let _ = catalog.get_from(&cache, EVERYONE, || -> Result<Vec<Pair>, _> {
+        let _ = catalog.get_for(EVERYONE, || -> Result<Vec<Pair>, _> {
             fixture.downloads.fetch_add(1, Ordering::SeqCst);
             panic!("the provider's answer was not what the parser expected");
         });
@@ -444,8 +388,7 @@ fn a_download_that_panics_counts_as_a_failed_attempt() {
     // Not asked again at every search, and what is held is still served.
     for _ in 0..4 {
         let items = catalog
-            .get_from(
-                &cache,
+            .get_for(
                 EVERYONE,
                 fixture.download(Err(ProviderError::refused(
                     crate::model::DataSource::Bybit,

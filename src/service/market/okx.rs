@@ -9,20 +9,40 @@ use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::error::{Asked, ErrorKind};
-use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 const BASE_URL: &str = "https://www.okx.com/api/v5";
 
-pub struct Okx;
+pub struct Okx {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every spot market that is live, downloaded at most once a day.
+    pub(super) catalog: Catalog<Pair>,
+}
 
-pub const OKX: Okx = Okx;
+impl Okx {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            catalog: Catalog::new(
+                Listing::spot(DataSource::Okx),
+                "catalog_okx",
+                context.cache.clone(),
+            ),
+        }
+    }
+}
 
 /// 300 rows a request, 120 pages (a 22-minute chart of 500 candles is 37), and a pause between
 /// them for its 20 requests per 2 seconds per IP.
@@ -54,9 +74,7 @@ pub(crate) fn instrument_id(symbol: &str) -> String {
 }
 
 /// OKX's candle endpoints.
-struct Klines;
-
-impl KlineEndpoint for Klines {
+impl KlineEndpoint for Okx {
     const SOURCE: DataSource = DataSource::Okx;
     const PAGING: Paging = PAGING;
 
@@ -71,7 +89,7 @@ impl KlineEndpoint for Klines {
         limit: usize,
         before: Option<i64>,
     ) -> Result<Vec<Kline>, ProviderError> {
-        fetch_page(id, base, limit, before)
+        self.fetch_page(id, base, limit, before)
     }
 }
 
@@ -82,7 +100,7 @@ impl MarketSource for Okx {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::latest(&Klines, symbol, timeframe, limit as usize)
+        kline_endpoint::latest(self, self.clock.now_ms(), symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -93,38 +111,40 @@ impl MarketSource for Okx {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::range(&Klines, symbol, timeframe, start_ms, end_ms, max)
+        kline_endpoint::range(self, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(query, || CATALOG.get(download_pairs))
+        search::find(query, || self.catalog.get(|| self.download_pairs()))
     }
 }
 
-/// A page of candles: the newest 300 from `/market/candles`, those opening before `before` from
-/// `/market/history-candles`, which takes the `after` cursor.
-fn fetch_page(
-    id: &str,
-    base: Timeframe,
-    limit: usize,
-    before: Option<i64>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let bar = bar(base).ok_or_else(|| ProviderError::unsupported(DataSource::Okx, base))?;
-    let endpoint = if before.is_some() {
-        "history-candles"
-    } else {
-        "candles"
-    };
-    let mut url = format!("{BASE_URL}/market/{endpoint}?instId={id}&bar={bar}&limit={limit}");
-    if let Some(before) = before {
-        url.push_str(&format!("&after={before}"));
+impl Okx {
+    /// A page of candles: the newest 300 from `/market/candles`, those opening before `before`
+    /// from `/market/history-candles`, which takes the `after` cursor.
+    fn fetch_page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let bar = bar(base).ok_or_else(|| ProviderError::unsupported(DataSource::Okx, base))?;
+        let endpoint = if before.is_some() {
+            "history-candles"
+        } else {
+            "candles"
+        };
+        let mut url = format!("{BASE_URL}/market/{endpoint}?instId={id}&bar={bar}&limit={limit}");
+        if let Some(before) = before {
+            url.push_str(&format!("&after={before}"));
+        }
+        parse_candles(&self.get(&url)?, base)
     }
-    parse_candles(&get(&url)?, base)
-}
 
-fn get(url: &str) -> Result<String, ProviderError> {
-    http::get_text(url, &[], http::Retry::Transient)
-        .map_err(|error| ProviderError::http(DataSource::Okx, error))
+    fn get(&self, url: &str) -> Result<String, ProviderError> {
+        self.http.fetch(DataSource::Okx, &Request::get(url))
+    }
 }
 
 /// The `data` rows of an answer to a request that `asked` about markets or a list, or what its
@@ -190,7 +210,7 @@ pub(crate) fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderE
 
 /// One tradable spot market from `/public/instruments`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
+pub(super) struct Pair {
     id: String,
     base: String,
     quote: String,
@@ -208,13 +228,10 @@ impl ListedMarket for Pair {
     }
 }
 
-/// Every spot market that is live, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Okx), "catalog_okx");
-
-fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    parse_pairs(&get(&format!(
-        "{BASE_URL}/public/instruments?instType=SPOT"
-    ))?)
+impl Okx {
+    fn download_pairs(&self) -> Result<Vec<Pair>, ProviderError> {
+        parse_pairs(&self.get(&format!("{BASE_URL}/public/instruments?instType=SPOT"))?)
+    }
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
@@ -236,7 +253,29 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::net::http::{self, Retry};
     use std::sync::Arc;
+
+    const MINUTE: i64 = 60_000;
+    const NOON: i64 = Rig::NOON;
+
+    fn venue(rig: &Rig) -> Okx {
+        Okx::new(&rig.context())
+    }
+
+    /// An answer of `count` one-minute rows, newest first, the newest opening at `newest`.
+    fn minute_rows(newest: i64, count: usize) -> String {
+        let rows: Vec<String> = (0..count as i64)
+            .map(|back| {
+                format!(
+                    r#"["{}","10","12","9","11","1.5","16","16","1"]"#,
+                    newest - back * MINUTE
+                )
+            })
+            .collect();
+        format!(r#"{{"code":"0","msg":"","data":[{}]}}"#, rows.join(","))
+    }
 
     #[test]
     fn every_native_has_its_bar_and_nothing_else_does() {
@@ -344,11 +383,12 @@ mod tests {
     #[test]
     #[ignore = "needs the network"]
     fn live_okx_serves_candles_pairs_and_a_chart_of_every_native() {
-        let hits = OKX.search_tickers("btc-usdt").expect("search");
+        let okx = &crate::service::wiring::venues().okx;
+        let hits = okx.search_tickers("btc-usdt").expect("search");
         assert_eq!(hits[0].symbol, "BTC-USDT");
         assert_eq!(hits[0].quote.as_deref(), Some("USDT"));
         for native in DataSource::Okx.natives() {
-            let candles = OKX.fetch_klines("BTC-USDT", *native, 350).expect("candles");
+            let candles = okx.fetch_klines("BTC-USDT", *native, 350).expect("candles");
             // Months and quarters reach back only to the market's listing.
             if *native >= Timeframe::MONTH_1 {
                 assert!(candles.len() > 30, "{native}");
@@ -363,14 +403,133 @@ mod tests {
             );
         }
         // A 22-minute chart of 500 candles is eleven thousand one-minute ones: 37 pages.
-        let folded = OKX
+        let folded = okx
             .fetch_klines("BTC-USDT", Timeframe::parse("22m").unwrap(), 500)
             .expect("folded candles");
         assert_eq!(folded.len(), 500);
-        let error = OKX
+        let error = okx
             .fetch_klines("NOPE-USDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
         assert_eq!(error.kind, ErrorKind::UnknownSymbol);
+    }
+
+    #[test]
+    fn the_newest_candles_are_one_request_and_come_back_oldest_first() {
+        let rig = Rig::new();
+        rig.http.on("/market/candles?", ROWS);
+        let candles = venue(&rig)
+            .fetch_klines("btc/usdt", Timeframe::HOUR_1, 2)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=1H&limit=2"
+        );
+        assert_eq!(sent[0].retry, Retry::Transient);
+        let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+        assert_eq!(opens, [1_699_999_200_000, 1_700_002_800_000]);
+    }
+
+    #[test]
+    fn a_long_request_for_the_newest_pages_back_from_the_clock_by_the_after_cursor() {
+        let rig = Rig::new();
+        rig.http
+            .on("&limit=300&after=", &minute_rows(NOON - MINUTE, 300));
+        rig.http
+            .on("&limit=100&after=", &minute_rows(NOON - 301 * MINUTE, 100));
+        let candles = venue(&rig)
+            .fetch_klines("BTC-USDT", Timeframe::MINUTE_1, 400)
+            .expect("candles");
+        // History pages, each asked for the candles that open before the oldest one held.
+        let base = "https://www.okx.com/api/v5/market/history-candles?instId=BTC-USDT&bar=1m";
+        assert_eq!(
+            rig.http.urls(),
+            [
+                format!("{base}&limit=300&after={}", NOON + 1),
+                format!("{base}&limit=100&after={}", NOON - 300 * MINUTE),
+            ]
+        );
+        assert_eq!(candles.len(), 400);
+        assert_eq!(candles[0].open_time, NOON - 400 * MINUTE);
+    }
+
+    #[test]
+    fn a_range_asks_only_for_what_lies_before_its_end() {
+        let rig = Rig::new();
+        let (start, end) = (NOON - 500 * MINUTE, NOON - 100 * MINUTE);
+        rig.http
+            .on("&limit=300&after=", &minute_rows(end - MINUTE, 300));
+        rig.http
+            .on("&limit=100&after=", &minute_rows(end - 301 * MINUTE, 100));
+        let candles = venue(&rig)
+            .fetch_klines_range("BTC-USDT", Timeframe::MINUTE_1, start, end, 400)
+            .expect("candles");
+        // The second page is cut to what is left of the 400 candles asked for.
+        let base = "https://www.okx.com/api/v5/market/history-candles?instId=BTC-USDT&bar=1m";
+        assert_eq!(
+            rig.http.urls(),
+            [
+                format!("{base}&limit=300&after={end}"),
+                format!("{base}&limit=100&after={}", end - 300 * MINUTE),
+            ]
+        );
+        assert_eq!(candles.len(), 400);
+        assert_eq!(candles[0].open_time, start);
+        assert_eq!(candles[399].open_time, end - MINUTE);
+    }
+
+    #[test]
+    fn what_okx_refuses_is_told_by_kind() {
+        let kind_of = |answer: Result<&str, http::Error>| {
+            let rig = Rig::new();
+            match answer {
+                Ok(body) => rig.http.on("/market/candles?", body),
+                Err(error) => rig.http.fail("/market/candles?", error),
+            };
+            venue(&rig)
+                .fetch_klines("BTC-USDT", Timeframe::HOUR_1, 5)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(
+            kind_of(Ok(
+                r#"{"code":"51001","msg":"Instrument ID doesn't exist.","data":[]}"#
+            )),
+            ErrorKind::UnknownSymbol
+        );
+        assert_eq!(
+            kind_of(Ok(
+                r#"{"code":"50011","msg":"Too many requests","data":[]}"#
+            )),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            kind_of(Ok(r#"{"code":"50013","msg":"System is busy","data":[]}"#)),
+            ErrorKind::Refused(Some("System is busy".to_owned()))
+        );
+        assert_eq!(
+            kind_of(Err(http::Error::Status(500))),
+            ErrorKind::Transport(http::Error::Status(500))
+        );
+    }
+
+    #[test]
+    fn the_market_list_is_downloaded_once_a_day_and_searched_locally() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/public/instruments?instType=SPOT",
+            r#"{"code":"0","data":[
+                {"instId":"BTC-USDT","state":"live","baseCcy":"BTC","quoteCcy":"USDT"},
+                {"instId":"OLD-USDT","state":"suspend","baseCcy":"OLD","quoteCcy":"USDT"}]}"#,
+        );
+        let okx = venue(&rig);
+        let found = okx.search_tickers("btcusdt").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "BTC-USDT");
+        okx.search_tickers("old").expect("hits");
+        venue(&rig).search_tickers("btc").expect("hits");
+        assert_eq!(rig.http.urls().len(), 1);
     }
 
     #[test]
