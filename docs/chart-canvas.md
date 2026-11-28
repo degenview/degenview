@@ -160,8 +160,8 @@ the margins the hidden scale leaves (we use the chart's) and whether it follows 
 price axis (we keep it linear).
 
 Measured on TradingView: its price axis stretches to an overlay's `location.absolute` markers and
-to the plots a `fill()` spans even when they are `display.none`; hidden plots without a fill leave
-it alone. The price axis here does the same, and so do panes and the hidden scale (inferred for
+to the plots a `fill()` spans even when they are `display.none`, and even when the fill's colour
+is `na` and nothing is painted; hidden plots without a fill leave it alone. The price axis here does the same, and so do panes and the hidden scale (inferred for
 those two).
 
 ### Panes
