@@ -9,17 +9,29 @@ use crate::service::net::http;
 pub struct ProviderError {
     /// The market list the answer came from: Binance spot and Binance perpetuals are two.
     pub venue: Listing,
+    /// A service that answered in place of the venue's own API, when the words should name it:
+    /// GeckoTerminal draws the candles of the pools DEXScreener lists.
+    pub via: Option<&'static str>,
     pub kind: ErrorKind,
 }
+
+/// What the HTTP statuses of one kind of request mean to a venue, beyond a rate limit. A status
+/// means what the endpoint makes of it: a 400 from a request that names a market says the market
+/// is unknown, from one that names none (a list, a catalog, an account) it says nothing about any,
+/// so a venue declares a table for each kind of request it makes.
+pub type Statuses = &'static [(u16, ErrorKind)];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ErrorKind {
     /// The provider said too many requests: HTTP 429 or a code of its own envelope.
     RateLimited,
-    /// The provider refuses this country (or a client that asks too often) with a 403.
-    RegionBlocked,
+    /// The provider refuses this client with a 403: its country is not served, or it asked too
+    /// often.
+    Blocked,
     /// The provider refused the credentials sent with the request.
     Unauthorized,
+    /// The credentials are fine, but the plan they belong to does not include what was asked for.
+    NotInPlan,
     /// No credentials of the provider are saved, so its markets can be neither searched nor
     /// charted.
     MissingKey,
@@ -39,8 +51,8 @@ pub enum ErrorKind {
     Transport(http::Error),
     /// The provider answered with something other than what it documents.
     Malformed(String),
-    /// The provider refused the request in words of its own.
-    Refused(String),
+    /// The provider refused the request, in words of its own when it gave any.
+    Refused(Option<String>),
     /// A page of a quote request was refused and the markets at fault could not be told apart.
     Unisolated,
     /// The work ended without an answer (its worker stopped).
@@ -71,18 +83,31 @@ impl ProviderError {
     pub fn new(venue: impl Into<Listing>, kind: ErrorKind) -> Self {
         Self {
             venue: venue.into(),
+            via: None,
             kind,
         }
     }
 
-    /// A failed request. HTTP 429 is a rate limit at every venue; the others mean what the venue's
-    /// own table says ([`super::statuses`]), and a status it does not list stays a transport
-    /// failure.
+    /// The failure is `service`'s: it answered in place of the venue's own API.
+    pub fn through(self, service: &'static str) -> Self {
+        Self {
+            via: Some(service),
+            ..self
+        }
+    }
+
+    /// A failed request to an endpoint whose statuses mean nothing more than a rate limit: HTTP
+    /// 429 is one at every venue, and any other status stays a transport failure.
     pub fn http(venue: impl Into<Listing>, error: http::Error) -> Self {
-        let venue = venue.into();
+        Self::http_with(venue, &[], error)
+    }
+
+    /// A failed request whose statuses mean what `statuses` says, the table of the kind of
+    /// endpoint it was made to.
+    pub fn http_with(venue: impl Into<Listing>, statuses: Statuses, error: http::Error) -> Self {
         let kind = match error {
             http::Error::Status(429) => ErrorKind::RateLimited,
-            http::Error::Status(code) => super::statuses(venue.source)
+            http::Error::Status(code) => statuses
                 .iter()
                 .find(|(status, _)| *status == code)
                 .map_or(ErrorKind::Transport(error), |(_, kind)| kind.clone()),
@@ -98,7 +123,15 @@ impl ProviderError {
 
     /// The provider refused the request in `message`, its own words.
     pub fn refused(venue: impl Into<Listing>, message: impl Into<String>) -> Self {
-        Self::new(venue, ErrorKind::Refused(message.into()))
+        Self::new(venue, ErrorKind::Refused(Some(message.into())))
+    }
+
+    /// The provider refused the request, saying why in `reason` when its answer held one.
+    pub fn refused_because(venue: impl Into<Listing>, reason: Option<&str>) -> Self {
+        let reason = reason
+            .filter(|reason| !reason.is_empty())
+            .map(str::to_owned);
+        Self::new(venue, ErrorKind::Refused(reason))
     }
 
     /// `venue` cannot chart `timeframe`.
@@ -141,6 +174,7 @@ impl ProviderError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::gateio;
 
     #[test]
     fn a_429_is_a_rate_limit_at_every_venue() {
@@ -152,16 +186,48 @@ mod tests {
     }
 
     #[test]
-    fn a_venue_reads_its_own_statuses_and_leaves_the_rest_a_transport_failure() {
-        let error = ProviderError::http(DataSource::Gate, http::Error::Status(403));
-        assert_eq!(error.kind, ErrorKind::RegionBlocked);
-        assert!(!error.is_transient(), "a refusal is not a passing failure");
-        let other = ProviderError::http(DataSource::Gate, http::Error::Status(500));
-        assert_eq!(other.kind, ErrorKind::Transport(http::Error::Status(500)));
-        let down = ProviderError::http(DataSource::Gate, http::Error::Network("reset".to_owned()));
+    fn a_request_reads_the_statuses_of_its_own_table_and_leaves_the_rest_a_transport_failure() {
+        let ask = |code| {
+            ProviderError::http_with(
+                DataSource::Gate,
+                gateio::MARKET_STATUSES,
+                http::Error::Status(code),
+            )
+        };
+        assert_eq!(ask(403).kind, ErrorKind::Blocked);
+        assert!(
+            !ask(403).is_transient(),
+            "a refusal is not a passing failure"
+        );
+        assert_eq!(ask(400).kind, ErrorKind::UnknownSymbol);
+        assert_eq!(
+            ask(500).kind,
+            ErrorKind::Transport(http::Error::Status(500))
+        );
+        let down = ProviderError::http_with(
+            DataSource::Gate,
+            gateio::MARKET_STATUSES,
+            http::Error::Network("reset".to_owned()),
+        );
         assert_eq!(
             down.kind,
             ErrorKind::Transport(http::Error::Network("reset".to_owned()))
+        );
+    }
+
+    #[test]
+    fn what_a_status_means_depends_on_whether_the_request_names_a_market() {
+        let status = |statuses| {
+            ProviderError::http_with(DataSource::Gate, statuses, http::Error::Status(400)).kind
+        };
+        assert_eq!(status(gateio::MARKET_STATUSES), ErrorKind::UnknownSymbol);
+        assert_eq!(
+            status(gateio::LIST_STATUSES),
+            ErrorKind::Transport(http::Error::Status(400))
+        );
+        assert_eq!(
+            ProviderError::http(DataSource::Gate, http::Error::Status(400)).kind,
+            ErrorKind::Transport(http::Error::Status(400))
         );
     }
 
@@ -184,7 +250,7 @@ mod tests {
             ProviderError::refused(DataSource::Binance, "no market"),
             ProviderError::new(DataSource::Alpaca, ErrorKind::MissingKey),
             ProviderError::new(DataSource::Alpaca, ErrorKind::Unauthorized),
-            ProviderError::new(DataSource::Gate, ErrorKind::RegionBlocked),
+            ProviderError::new(DataSource::Gate, ErrorKind::Blocked),
             ProviderError::unsupported(DataSource::Gate, Timeframe::SECOND_1),
             ProviderError::interrupted(DataSource::Gate),
         ] {
@@ -232,54 +298,19 @@ mod tests {
         assert_eq!(ErrorKind::UnknownSymbol.scope(), Scope::Symbol);
         for kind in [
             ErrorKind::RateLimited,
-            ErrorKind::RegionBlocked,
+            ErrorKind::Blocked,
             ErrorKind::Unauthorized,
+            ErrorKind::NotInPlan,
             ErrorKind::MissingKey,
             ErrorKind::NoData,
             ErrorKind::Transport(http::Error::Status(500)),
             ErrorKind::Malformed("x".to_owned()),
-            ErrorKind::Refused("x".to_owned()),
+            ErrorKind::Refused(Some("x".to_owned())),
+            ErrorKind::Refused(None),
             ErrorKind::Unisolated,
             ErrorKind::Interrupted,
         ] {
             assert_eq!(kind.scope(), Scope::Source, "{kind:?}");
-        }
-    }
-
-    #[test]
-    fn each_venue_declares_the_statuses_it_gives_a_meaning() {
-        use ErrorKind::{RegionBlocked, Unauthorized, UnknownSymbol};
-        let table = |source| super::super::statuses(source).to_vec();
-        assert_eq!(
-            table(DataSource::Alpaca),
-            [
-                (400, UnknownSymbol),
-                (401, Unauthorized),
-                (403, Unauthorized)
-            ]
-        );
-        assert_eq!(table(DataSource::Oanda), table(DataSource::Alpaca));
-        assert_eq!(table(DataSource::Binance), [(400, UnknownSymbol)]);
-        assert_eq!(table(DataSource::Coinbase), [(404, UnknownSymbol)]);
-        assert_eq!(table(DataSource::Bybit), [(403, RegionBlocked)]);
-        assert_eq!(
-            table(DataSource::Gate),
-            [(400, UnknownSymbol), (403, RegionBlocked)]
-        );
-        assert_eq!(table(DataSource::Mexc), table(DataSource::Gate));
-        assert_eq!(
-            table(DataSource::CoinMarketCap),
-            [(401, Unauthorized), (403, Unauthorized)]
-        );
-        for source in [
-            DataSource::CoinGecko,
-            DataSource::DexScreener,
-            DataSource::Kalshi,
-            DataSource::Kraken,
-            DataSource::Okx,
-            DataSource::Polymarket,
-        ] {
-            assert!(table(source).is_empty(), "{source:?}");
         }
     }
 }

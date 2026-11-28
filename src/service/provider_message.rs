@@ -6,12 +6,19 @@ use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::market::error::{ErrorKind, ProviderError};
 
+/// Who failed, as a message names it: the service that answered in the venue's place, or the
+/// venue (`Binance perp` for its perpetuals).
+fn provider(error: &ProviderError) -> String {
+    error.via.map_or_else(|| error.venue.label(), str::to_owned)
+}
+
+/// The failure as the chart, the symbol picker, Settings and MCP word it.
 pub fn message(error: &ProviderError) -> String {
-    let provider = error.venue.label();
+    let provider = provider(error);
     match &error.kind {
         ErrorKind::RateLimited => tr!("Rate limited by the provider").to_owned(),
-        ErrorKind::RegionBlocked => tr!(
-            "{provider} refused the request (HTTP 403): it is not available in every country",
+        ErrorKind::Blocked => tr!(
+            "{provider} refused the request (HTTP 403): it is not available in every country, and it refuses a client that asks too often",
             provider = provider
         ),
         ErrorKind::Unauthorized => match error.venue.source {
@@ -23,6 +30,13 @@ pub fn message(error: &ProviderError) -> String {
             }
             _ => tr!(
                 "{provider} refused your API key. Check it in Settings",
+                provider = provider
+            ),
+        },
+        ErrorKind::NotInPlan => match error.venue.source {
+            DataSource::Alpaca => tr!("Your Alpaca plan does not include this data").to_owned(),
+            _ => tr!(
+                "Your {provider} plan does not include this data",
                 provider = provider
             ),
         },
@@ -63,17 +77,40 @@ pub fn message(error: &ProviderError) -> String {
             feed = feed
         ),
         ErrorKind::Transport(error) => tr!("Network error: {error}", error = error),
-        ErrorKind::Malformed(detail) => tr!("Data error: {error}", error = detail),
-        ErrorKind::Refused(refusal) => tr!(
+        ErrorKind::Malformed(_) => tr!(
+            "{provider} sent an answer DegenView could not read",
+            provider = provider
+        ),
+        ErrorKind::Refused(Some(refusal)) => tr!(
             "{provider} error: {message}",
             provider = provider,
             message = refusal
         ),
+        ErrorKind::Refused(None) => {
+            tr!("{provider} refused the request", provider = provider)
+        }
         ErrorKind::Unisolated => tr!(
             "{provider} refused the request, and the markets at fault could not be singled out",
             provider = provider
         ),
         ErrorKind::Interrupted => tr!("The request stopped before it answered").to_owned(),
+    }
+}
+
+/// The failure as a watchlist row words it: a missing key says what it costs the quotes, where the
+/// chart says what it costs the chart. Everything else is worded as [`message`] does.
+pub fn quote_message(error: &ProviderError) -> String {
+    match (&error.kind, error.venue.source) {
+        (ErrorKind::MissingKey, DataSource::Alpaca) => {
+            tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
+        }
+        (ErrorKind::MissingKey, DataSource::Oanda) => {
+            tr!("Add your Oanda credentials in Settings to see Oanda quotes").to_owned()
+        }
+        (ErrorKind::MissingKey, _) => {
+            tr!("Add this provider's API key in Settings to see its quotes").to_owned()
+        }
+        _ => message(error),
     }
 }
 
@@ -90,8 +127,8 @@ mod tests {
     #[test]
     fn a_kind_is_worded_with_the_venue_that_failed() {
         assert_eq!(
-            said(DataSource::Bybit, ErrorKind::RegionBlocked),
-            "Bybit refused the request (HTTP 403): it is not available in every country"
+            said(DataSource::Bybit, ErrorKind::Blocked),
+            "Bybit refused the request (HTTP 403): it is not available in every country, and it refuses a client that asks too often"
         );
         assert_eq!(
             said(DataSource::Gate, ErrorKind::UnknownSymbol),
@@ -107,16 +144,20 @@ mod tests {
             "Polymarket has no 1m history"
         );
         assert_eq!(
-            said(
+            message(&ProviderError::refused(
                 DataSource::Bybit,
-                ErrorKind::Refused("Not supported symbols".into())
-            ),
+                "Not supported symbols"
+            )),
             "Bybit error: Not supported symbols"
+        );
+        assert_eq!(
+            said(DataSource::Okx, ErrorKind::Refused(None)),
+            "OKX refused the request"
         );
     }
 
     #[test]
-    fn a_missing_or_refused_key_names_what_it_is() {
+    fn a_missing_a_refused_and_a_plan_refused_key_each_name_what_it_is() {
         assert_eq!(
             said(DataSource::Alpaca, ErrorKind::MissingKey),
             "Set up your Alpaca API key before using stock charts."
@@ -137,10 +178,38 @@ mod tests {
             said(DataSource::CoinMarketCap, ErrorKind::Unauthorized),
             "CoinMarketCap refused your API key. Check it in Settings"
         );
+        assert_eq!(
+            said(DataSource::Alpaca, ErrorKind::NotInPlan),
+            "Your Alpaca plan does not include this data"
+        );
+        assert_eq!(
+            said(DataSource::CoinMarketCap, ErrorKind::NotInPlan),
+            "Your CoinMarketCap plan does not include this data"
+        );
     }
 
     #[test]
-    fn a_failure_of_the_transport_and_the_provider_s_data_keep_their_prefix() {
+    fn a_watchlist_says_what_a_missing_key_costs_its_quotes() {
+        let missing = |source| quote_message(&ProviderError::new(source, ErrorKind::MissingKey));
+        assert_eq!(
+            missing(DataSource::Alpaca),
+            "Add your Alpaca API key in Settings to see stock quotes"
+        );
+        assert_eq!(
+            missing(DataSource::Oanda),
+            "Add your Oanda credentials in Settings to see Oanda quotes"
+        );
+        assert_eq!(
+            missing(DataSource::CoinMarketCap),
+            "Add this provider's API key in Settings to see its quotes"
+        );
+        // Everything else is worded as the chart words it.
+        let limited = ProviderError::new(DataSource::Bybit, ErrorKind::RateLimited);
+        assert_eq!(quote_message(&limited), message(&limited));
+    }
+
+    #[test]
+    fn a_network_failure_is_a_transport_one_and_a_bad_answer_names_who_sent_it() {
         assert_eq!(
             said(
                 DataSource::Binance,
@@ -148,12 +217,10 @@ mod tests {
             ),
             "Network error: HTTP 500"
         );
+        let malformed = ProviderError::malformed(DataSource::Binance, "expected a candle array");
         assert_eq!(
-            said(
-                DataSource::Binance,
-                ErrorKind::Malformed("expected a candle array".into())
-            ),
-            "Data error: expected a candle array"
+            message(&malformed),
+            "Binance sent an answer DegenView could not read"
         );
         assert_eq!(
             said(DataSource::Binance, ErrorKind::RateLimited),
@@ -171,12 +238,22 @@ mod tests {
     }
 
     #[test]
+    fn a_service_that_answered_for_the_venue_is_the_one_named() {
+        let error = ProviderError::new(DataSource::DexScreener, ErrorKind::UnknownSymbol)
+            .through("GeckoTerminal");
+        assert_eq!(message(&error), "GeckoTerminal does not list this market");
+    }
+
+    #[test]
     fn a_failure_is_worded_in_the_language_but_the_provider_s_own_words_are_not() {
         use crate::i18n::{Locale, with_locale};
         for error in [
             ProviderError::new(DataSource::Bybit, ErrorKind::RateLimited),
             ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey),
-            ProviderError::new(DataSource::Gate, ErrorKind::RegionBlocked),
+            ProviderError::new(DataSource::Gate, ErrorKind::Blocked),
+            ProviderError::new(DataSource::Alpaca, ErrorKind::NotInPlan),
+            ProviderError::malformed(DataSource::Binance, "expected a ticker list"),
+            ProviderError::new(DataSource::Okx, ErrorKind::Refused(None)),
         ] {
             let english = message(&error);
             assert_ne!(with_locale(Locale::PSEUDO, || message(&error)), english);

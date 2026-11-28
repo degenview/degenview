@@ -11,8 +11,8 @@ use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::OandaCredentials;
-use crate::service::market::error::{ErrorKind, Scope};
-use crate::service::market::{binance, bybit, kraken, okx};
+use crate::service::market::error::{ErrorKind, Scope, Statuses};
+use crate::service::market::{alpaca, binance, bybit, coinbase, gateio, kraken, mexc, oanda, okx};
 use crate::service::net::url::encode_component;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -127,15 +127,27 @@ impl QuoteProvider for LiveProvider {
     }
 }
 
-/// A GET whose failures are the venue's own kinds.
+/// A GET whose failures are the venue's own kinds, its statuses meaning nothing beyond a rate
+/// limit.
 fn get(
     venue: impl Into<Listing>,
     url: &str,
     headers: &[(&str, &str)],
 ) -> Result<String, ProviderError> {
+    get_with(venue, &[], url, headers)
+}
+
+/// A GET whose statuses mean what `statuses` says: the table of the kind of request this is,
+/// which depends on whether it names the markets it asks for.
+fn get_with(
+    venue: impl Into<Listing>,
+    statuses: Statuses,
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<String, ProviderError> {
     let venue = venue.into();
     crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
-        .map_err(|error| ProviderError::http(venue, error))
+        .map_err(|error| ProviderError::http_with(venue, statuses, error))
 }
 
 /// The 24-hour ticker URL of `market` for `requests`. Spot takes a list: `symbols` is a JSON
@@ -170,9 +182,33 @@ fn binance_pair(symbol: &str) -> String {
     split_market(&symbol.to_uppercase()).0.to_owned()
 }
 
+/// What the statuses of `listing`'s quote request mean. They mean what the endpoint makes of them:
+/// a 400 or 404 from a request that names the markets it asks for says one of them is unknown (the
+/// engine then looks for it), from one that names none (a whole ticker list) it says nothing about
+/// any, and backs the source off.
+pub(super) fn quote_statuses(listing: Listing, requests: &[QuoteRequest]) -> Statuses {
+    match listing.source {
+        // Spot names its markets; the futures API only does for one.
+        DataSource::Binance
+            if binance::endpoints(listing.market).ticker_batch.is_some() || requests.len() == 1 =>
+        {
+            binance::MARKET_STATUSES
+        }
+        DataSource::Coinbase => coinbase::PRODUCT_STATUSES,
+        DataSource::Alpaca => alpaca::MARKET_STATUSES,
+        DataSource::Oanda => oanda::MARKET_STATUSES,
+        DataSource::Bybit => bybit::STATUSES,
+        DataSource::Gate => gateio::LIST_STATUSES,
+        DataSource::Mexc => mexc::LIST_STATUSES,
+        _ => &[],
+    }
+}
+
 fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, ProviderError> {
-    match get(
-        Listing::new(DataSource::Binance, market),
+    let listing = Listing::new(DataSource::Binance, market);
+    match get_with(
+        listing,
+        quote_statuses(listing, requests),
         &binance_url(market, requests),
         &[],
     ) {
@@ -233,18 +269,29 @@ pub fn binance_outcome(
 const CONSECUTIVE_FAILURES: usize = 3;
 
 fn mexc(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let body = get(DataSource::Mexc, &format!("{MEXC_URL}/ticker/24hr"), &[])?;
+    let body = get_with(
+        DataSource::Mexc,
+        quote_statuses(DataSource::Mexc.into(), requests),
+        &format!("{MEXC_URL}/ticker/24hr"),
+        &[],
+    )?;
     parse_mexc(&body, requests)
 }
 
 fn gateio(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let body = get(DataSource::Gate, &format!("{GATE_URL}/tickers"), &[])?;
+    let body = get_with(
+        DataSource::Gate,
+        quote_statuses(DataSource::Gate.into(), requests),
+        &format!("{GATE_URL}/tickers"),
+        &[],
+    )?;
     parse_gateio(&body, requests)
 }
 
 fn bybit(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let body = get(
+    let body = get_with(
         DataSource::Bybit,
+        quote_statuses(DataSource::Bybit.into(), requests),
         &format!("{BYBIT_URL}/tickers?category=spot"),
         &[],
     )?;
@@ -288,8 +335,9 @@ fn coinbase(requests: &[QuoteRequest]) -> Outcome {
             std::thread::sleep(Duration::from_millis(125));
         }
         let id = crate::service::market::coinbase::product_id(&request.symbol);
-        match get(
+        match get_with(
             DataSource::Coinbase,
+            quote_statuses(DataSource::Coinbase.into(), requests),
             &format!("{COINBASE_URL}/products/{id}/stats"),
             &[],
         ) {
@@ -398,8 +446,9 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Pro
         .collect::<Vec<_>>()
         .join(",");
     let url = format!("https://data.alpaca.markets/v2/stocks/snapshots?symbols={symbols}&feed=iex");
-    let body = get(
+    let body = get_with(
         DataSource::Alpaca,
+        quote_statuses(DataSource::Alpaca.into(), requests),
         &url,
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
     )?;
@@ -430,8 +479,9 @@ fn oanda(
             login.account_id
         ),
     );
-    let body = get(
+    let body = get_with(
         DataSource::Oanda,
+        quote_statuses(DataSource::Oanda.into(), requests),
         &request.url,
         &[("Authorization", request.authorization.as_str())],
     )?;
@@ -753,10 +803,7 @@ pub fn parse_mexc(
     body: &str,
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let value = json(DataSource::Mexc, body)?;
-    let tickers: HashMap<String, SourceQuote> = value
-        .as_array()
-        .ok_or_else(|| ProviderError::malformed(DataSource::Mexc, "expected a ticker list"))?
+    let tickers: HashMap<String, SourceQuote> = mexc::rows_of(body)?
         .iter()
         .filter_map(|ticker| {
             let id = ticker.get("symbol")?.as_str()?.to_uppercase();
@@ -1184,10 +1231,20 @@ mod tests {
         assert_eq!(super::day_before(&[]), None);
     }
 
+    /// What a quote request of `listing` for `symbols` makes of an HTTP `code`.
+    fn quote_failure(listing: Listing, symbols: &[&str], code: u16) -> ProviderError {
+        let requests: Vec<QuoteRequest> = symbols.iter().map(|symbol| request(symbol)).collect();
+        ProviderError::http_with(
+            listing,
+            quote_statuses(listing, &requests),
+            crate::service::net::http::Error::Status(code),
+        )
+    }
+
     #[test]
     fn only_a_symbol_level_refusal_makes_the_engine_search_for_the_bad_symbol() {
         let kind = |source: DataSource, code: u16| {
-            ProviderError::http(source, crate::service::net::http::Error::Status(code)).kind
+            quote_failure(source.into(), &["AAA", "BBB"], code).kind
         };
         // Documented "unknown symbol in this request" answers.
         for (source, code) in [
@@ -1238,8 +1295,38 @@ mod tests {
         assert_eq!(kind(DataSource::Alpaca, 401), ErrorKind::Unauthorized);
         assert_eq!(kind(DataSource::Oanda, 403), ErrorKind::Unauthorized);
         for source in [DataSource::Bybit, DataSource::Gate, DataSource::Mexc] {
-            assert_eq!(kind(source, 403), ErrorKind::RegionBlocked, "{source:?}");
+            assert_eq!(kind(source, 403), ErrorKind::Blocked, "{source:?}");
         }
+    }
+
+    #[test]
+    fn a_400_to_a_request_that_names_no_market_is_the_sources_and_is_not_bisected() {
+        // Gate.io's `/tickers` and MEXC's `/ticker/24hr` answer every market whatever is asked.
+        for source in [DataSource::Gate, DataSource::Mexc] {
+            let failure = quote_failure(source.into(), &["AAA", "BBB", "CCC"], 400);
+            assert_eq!(
+                failure.kind,
+                ErrorKind::Transport(crate::service::net::http::Error::Status(400)),
+                "{source:?}"
+            );
+            assert_eq!(failure.kind.scope(), Scope::Source, "{source:?}");
+        }
+        // Binance's futures API names a market only when it is asked for one.
+        let perpetual = Listing::BINANCE_PERPETUAL;
+        assert_eq!(
+            quote_failure(perpetual, &["AAA"], 400).kind.scope(),
+            Scope::Symbol
+        );
+        assert_eq!(
+            quote_failure(perpetual, &["AAA", "BBB"], 400).kind.scope(),
+            Scope::Source
+        );
+        assert_eq!(
+            quote_failure(Listing::spot(DataSource::Binance), &["AAA", "BBB"], 400)
+                .kind
+                .scope(),
+            Scope::Symbol
+        );
     }
 
     #[test]
@@ -1331,7 +1418,20 @@ mod tests {
     #[test]
     fn mexc_odd_answers_and_refusals() {
         assert!(parse_mexc("not json", &[]).is_err());
-        assert!(parse_mexc(r#"{"code":-1121,"msg":"Invalid symbol."}"#, &[]).is_err());
+        // The venue's own envelope reader says what the refusal is, as it does for candles.
+        let kind = |body| parse_mexc(body, &[]).unwrap_err().kind;
+        assert_eq!(
+            kind(r#"{"code":-1121,"msg":"Invalid symbol."}"#),
+            ErrorKind::UnknownSymbol
+        );
+        assert_eq!(
+            kind(r#"{"code":-1003,"msg":"Too many requests"}"#),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            kind(r#"{"code":-1100,"msg":"Illegal characters"}"#),
+            ErrorKind::Refused(Some("Illegal characters".to_owned()))
+        );
     }
 
     #[test]
@@ -1479,7 +1579,7 @@ mod tests {
         assert_eq!(kind("EGeneral:Too many requests"), ErrorKind::RateLimited);
         assert_eq!(
             kind("EService:Unavailable"),
-            ErrorKind::Refused("Unavailable".to_owned())
+            ErrorKind::Refused(Some("Unavailable".to_owned()))
         );
         assert!(parse_kraken("not json", &[]).is_err());
         assert!(parse_kraken(r#"{"error":[]}"#, &[]).is_err());
@@ -1499,6 +1599,21 @@ mod tests {
         assert_eq!(
             refused.unwrap_err(),
             ProviderError::refused(DataSource::Okx, "System is busy")
+        );
+        // A refusal that gives no reason has none to word.
+        let silent = parse_okx(r#"{"code":"50013","msg":"","data":[]}"#, &[]);
+        assert_eq!(
+            silent.unwrap_err(),
+            ProviderError::new(DataSource::Okx, ErrorKind::Refused(None))
+        );
+        // "Instrument does not exist" is read by the venue's envelope reader here as for candles.
+        let unknown = parse_okx(
+            r#"{"code":"51001","msg":"Instrument ID does not exist","data":[]}"#,
+            &[],
+        );
+        assert_eq!(
+            unknown.unwrap_err(),
+            ProviderError::new(DataSource::Okx, ErrorKind::UnknownSymbol)
         );
         assert!(parse_okx("not json", &[]).is_err());
         assert!(parse_okx(r#"{"code":"0"}"#, &[]).is_err());

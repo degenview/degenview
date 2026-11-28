@@ -4,7 +4,7 @@ use super::catalog::search::{self, ListedMarket};
 use crate::clock::now_ms;
 use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Listing, Timeframe};
-use crate::service::market::error::ErrorKind;
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,8 +100,9 @@ impl ListedMarket for Product {
 static CATALOG: Catalog<Product> =
     Catalog::new(Listing::spot(DataSource::Coinbase), "catalog_coinbase");
 
-/// What Coinbase's HTTP statuses mean beyond a rate limit: a 404 names a product it does not list.
-pub(super) const STATUSES: &[(u16, ErrorKind)] = &[(404, ErrorKind::UnknownSymbol)];
+/// What the statuses of a request for one product mean at Coinbase (candles, stats): a 404 names a
+/// product it does not list. The product list has no table: a 404 there is a changed endpoint.
+pub(in crate::service) const PRODUCT_STATUSES: Statuses = &[(404, ErrorKind::UnknownSymbol)];
 
 fn download_products() -> Result<Vec<Product>, ProviderError> {
     let body = crate::service::net::http::get_text(
@@ -231,7 +232,7 @@ impl Coinbase {
             &[],
             crate::service::net::http::Retry::Transient,
         )
-        .map_err(|error| ProviderError::http(DataSource::Coinbase, error))?;
+        .map_err(|error| ProviderError::http_with(DataSource::Coinbase, PRODUCT_STATUSES, error))?;
         parse_page(&body, granularity)
     }
 }

@@ -94,7 +94,7 @@ fn a_relaunch_starts_from_the_persisted_list() {
             &cache,
             EVERYONE,
             fixture.download(Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Bybit,
                 "must not be asked",
             ))),
         )
@@ -138,7 +138,7 @@ fn a_failed_refresh_serves_the_stale_list_and_backs_off() {
                 &cache,
                 EVERYONE,
                 fixture.download(Err(ProviderError::refused(
-                    crate::model::DataSource::Binance,
+                    crate::model::DataSource::Bybit,
                     "offline",
                 ))),
             )
@@ -161,14 +161,14 @@ fn with_nothing_cached_a_failure_is_an_error_and_is_retried() {
             &cache,
             EVERYONE,
             fixture.download(Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Bybit,
                 "offline",
             ))),
         )
         .unwrap_err();
     assert_eq!(
         error,
-        ProviderError::refused(crate::model::DataSource::Binance, "offline")
+        ProviderError::refused(crate::model::DataSource::Bybit, "offline")
     );
     let items = catalog
         .get_from(&cache, EVERYONE, fixture.download(Ok(pairs(&["BTCUSDT"]))))
@@ -208,7 +208,7 @@ fn clearing_memory_makes_the_next_search_reload() {
             &cache,
             EVERYONE,
             fixture.download(Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Bybit,
                 "not asked",
             ))),
         )
@@ -260,7 +260,7 @@ fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
     let offline = || {
         fixture.downloads.fetch_add(1, Ordering::SeqCst);
         Err(ProviderError::refused(
-            crate::model::DataSource::Binance,
+            crate::model::DataSource::Bybit,
             "offline",
         ))
     };
@@ -277,7 +277,7 @@ fn a_failed_look_for_a_market_is_an_error_and_leaves_the_list_its_day() {
     for _ in 0..3 {
         assert_eq!(
             ask("NEW").unwrap_err(),
-            ProviderError::refused(crate::model::DataSource::Binance, "offline")
+            ProviderError::refused(crate::model::DataSource::Bybit, "offline")
         );
     }
     assert_eq!(fixture.downloads(), 2);
@@ -303,14 +303,14 @@ fn a_stale_list_that_cannot_be_refreshed_does_not_say_a_market_is_unlisted() {
         |pair: &Pair| pair.0 == "NEW",
         || {
             Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Bybit,
                 "offline",
             ))
         },
     );
     assert_eq!(
         answer.unwrap_err(),
-        ProviderError::refused(crate::model::DataSource::Binance, "offline")
+        ProviderError::refused(crate::model::DataSource::Bybit, "offline")
     );
 }
 
@@ -366,14 +366,14 @@ fn a_failed_download_never_answers_with_another_owners_list() {
     let error = catalog
         .get_from(&cache, "b", || {
             Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Bybit,
                 "offline",
             ))
         })
         .unwrap_err();
     assert_eq!(
         error,
-        ProviderError::refused(crate::model::DataSource::Binance, "offline")
+        ProviderError::refused(crate::model::DataSource::Bybit, "offline")
     );
 }
 
@@ -448,7 +448,7 @@ fn a_download_that_panics_counts_as_a_failed_attempt() {
                 &cache,
                 EVERYONE,
                 fixture.download(Err(ProviderError::refused(
-                    crate::model::DataSource::Binance,
+                    crate::model::DataSource::Bybit,
                     "must not be asked",
                 ))),
             )

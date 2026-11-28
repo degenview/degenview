@@ -63,7 +63,7 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Pro
             chance(DataSource::Kalshi, "Fed rate", "Below 5%", Some(0.3)),
         ]),
         (DataSource::Kalshi, "boom") => Err(ProviderError::refused(
-            crate::model::DataSource::Binance,
+            crate::model::DataSource::Kalshi,
             "Kalshi is down",
         )),
         _ => Ok(Vec::new()),
@@ -136,16 +136,13 @@ const STUB: Backend = Backend {
 
 /// A day that rose, for every market but the ones that have no history.
 fn stub_candles(
-    _source: DataSource,
+    source: DataSource,
     symbol: &str,
     _timeframe: Timeframe,
     limit: u32,
 ) -> Result<Vec<Kline>, ProviderError> {
     if symbol.contains("NOHISTORY") {
-        return Err(ProviderError::refused(
-            crate::model::DataSource::Binance,
-            "no history",
-        ));
+        return Err(ProviderError::new(source, ErrorKind::NoData));
     }
     let level = if symbol.starts_with("BTC") {
         75_400.0

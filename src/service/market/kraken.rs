@@ -173,7 +173,7 @@ fn refusal(code: &str) -> ProviderError {
         ErrorKind::UnknownSymbol
     } else {
         let text = code.split_once(':').map_or(code, |(_, text)| text);
-        ErrorKind::Refused(text.to_owned())
+        return ProviderError::refused(DataSource::Kraken, text);
     };
     ProviderError::new(DataSource::Kraken, kind)
 }

@@ -8,6 +8,14 @@ use serde_json::Value;
 
 const BASE_URL: &str = "https://api.geckoterminal.com/api/v2";
 
+/// The chart is a DEXScreener pool's, but its candles are GeckoTerminal's, and a failure names
+/// the one that answered.
+const SERVICE: &str = "GeckoTerminal";
+
+fn failed(kind: ErrorKind) -> ProviderError {
+    ProviderError::new(DataSource::DexScreener, kind).through(SERVICE)
+}
+
 /// What one OHLCV request asks for: the native bucket a timeframe is made from and how many of
 /// them.
 struct Window {
@@ -56,10 +64,7 @@ pub fn fetch_klines(
     let side = side_for(&network, pair_address);
     let raw = fetch_ohlcv(&network, pair_address, side, &window, None)?;
     if raw.is_empty() {
-        return Err(ProviderError::new(
-            DataSource::DexScreener,
-            ErrorKind::NoData,
-        ));
+        return Err(failed(ErrorKind::NoData));
     }
     let now = crate::clock::now_ms();
     let mut candles = shape(raw, &window, reach_ms(now), now);
@@ -98,9 +103,7 @@ enum Fetch {
 impl From<Fetch> for ProviderError {
     fn from(fetch: Fetch) -> Self {
         match fetch {
-            Fetch::BeyondHistory => {
-                ProviderError::new(DataSource::DexScreener, ErrorKind::NoOlderData)
-            }
+            Fetch::BeyondHistory => failed(ErrorKind::NoOlderData),
             Fetch::Failed(error) => error,
         }
     }
@@ -135,10 +138,9 @@ fn fetch_ohlcv(
             return Err(Fetch::BeyondHistory);
         }
         Err(error) => {
-            return Err(Fetch::Failed(ProviderError::http(
-                DataSource::DexScreener,
-                error,
-            )));
+            return Err(Fetch::Failed(
+                ProviderError::http(DataSource::DexScreener, error).through(SERVICE),
+            ));
         }
     };
     parse_ohlcv(&body, window.bucket_ms()).map_err(Fetch::Failed)
@@ -172,12 +174,13 @@ pub fn fetch_klines_range(
 /// `[timestamp_seconds, open, high, low, close, volumeUSD]`, newest first. A bucket closes a
 /// millisecond before the next opens, as on an exchange.
 fn parse_ohlcv(body: &str, bucket_ms: i64) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body)
-        .map_err(|error| ProviderError::malformed(DataSource::DexScreener, error))?;
+    let value: Value = serde_json::from_str(body).map_err(|error| {
+        ProviderError::malformed(DataSource::DexScreener, error).through(SERVICE)
+    })?;
     let rows = value
         .pointer("/data/attributes/ohlcv_list")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::new(DataSource::DexScreener, ErrorKind::NoData))?;
+        .ok_or_else(|| failed(ErrorKind::NoData))?;
     let mut candles = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(fields) = row.as_array() else {
@@ -325,9 +328,12 @@ fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
     crate::service::net::rate_limit::geckoterminal().wait_for_slot();
     let body =
         crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-            .map_err(|error| ProviderError::http(DataSource::DexScreener, error))?;
-    let value: Value = serde_json::from_str(&body)
-        .map_err(|error| ProviderError::malformed(DataSource::DexScreener, error))?;
+            .map_err(|error| {
+                ProviderError::http(DataSource::DexScreener, error).through(SERVICE)
+            })?;
+    let value: Value = serde_json::from_str(&body).map_err(|error| {
+        ProviderError::malformed(DataSource::DexScreener, error).through(SERVICE)
+    })?;
     let suffix = format!("_{key}");
     for pool in value
         .get("data")
@@ -353,10 +359,7 @@ fn lookup_network(pair_address: &str) -> Result<String, ProviderError> {
             }
         }
     }
-    Err(ProviderError::new(
-        DataSource::DexScreener,
-        ErrorKind::UnknownSymbol,
-    ))
+    Err(failed(ErrorKind::UnknownSymbol))
 }
 
 #[cfg(test)]
@@ -492,5 +495,23 @@ mod tests {
         );
         assert_eq!(parse_pool_symbols(r#"{"data":{}}"#), None);
         assert_eq!(parse_pool_symbols("not json"), None);
+    }
+
+    #[test]
+    fn every_failure_is_geckoterminals_though_dexscreener_listed_the_pool() {
+        let failures = [
+            ProviderError::from(Fetch::BeyondHistory),
+            parse_ohlcv("{}", 3_600_000).unwrap_err(),
+            parse_ohlcv("not json", 3_600_000).unwrap_err(),
+            failed(ErrorKind::UnknownSymbol),
+            ProviderError::http(
+                DataSource::DexScreener,
+                crate::service::net::http::Error::Status(500),
+            )
+            .through(SERVICE),
+        ];
+        for failure in failures {
+            assert_eq!(failure.via, Some("GeckoTerminal"), "{failure:?}");
+        }
     }
 }

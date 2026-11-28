@@ -13,13 +13,27 @@
    market, how one page is asked for (`before` `None` is the newest, `Some(ms)` the candles opening
    before it) and, if its history is limited, `reach`. The plan, the cap before the fold, the
    pages and the shape of the answer are written once there.
-   Its failures are kinds of `service::market::error::ErrorKind`, never text: a request that fails
-   goes through `ProviderError::http(venue, error)`, which reads 429 as a rate limit and the other
-   statuses from the venue's own `STATUSES` table (`400 → UnknownSymbol`, `403 → RegionBlocked`,
-   `401|403 → Unauthorized`; list it in `service::market::statuses`), and a body's own envelope
-   (Bybit `retCode`, Kraken `error`, OKX `code`, MEXC `code`) is read in one function of the venue
-   into `RateLimited`, `UnknownSymbol` or `Refused(message)`; what it cannot read is `Malformed`.
-   The watchlist's quote requests use the same tables and envelope readers.
+   Its failures are kinds of `service::market::error::ErrorKind`, never text. A request that fails
+   goes through `ProviderError::http(venue, error)` (429 is a rate limit, any other status stays a
+   `Transport` failure) or, when the venue gives other statuses a meaning,
+   `ProviderError::http_with(venue, statuses, error)`. **A status means what the endpoint makes of
+   it**, so a venue declares one `Statuses` table per kind of request it makes, never one per venue:
+   a 400 from a request that names a market (candles, a ticker asked for by name) says that market
+   is unknown (`UnknownSymbol`), from one that names none (the market list, a whole-ticker answer, an
+   account request) it says nothing about any market, and `UnknownSymbol` is what makes the
+   watchlist bisect for a bad symbol. So Gate.io and MEXC have `MARKET_STATUSES` (400, 403) and
+   `LIST_STATUSES` (403), Alpaca separates its SIP bars (a 403 there is `NotInPlan`, the Basic
+   plan refusing recent data with a valid key) from IEX bars, snapshots and the account (a 403
+   is `Unauthorized`), Oanda has `MARKET_STATUSES` and `ACCOUNT_STATUSES`, CoinMarketCap reads a
+   keyless 401/403 as `MissingKey` and a keyed one as `Unauthorized` or `NotInPlan`; a 403 that is
+   a country or an address banned for asking too often is `Blocked`. A body's own envelope (Bybit
+   `retCode`, Kraken `error`, OKX `code`, MEXC `code`) is read in one function of the venue
+   (`bybit::result_of`, `kraken::result_of`, `okx::data_rows`, `mexc::rows_of`) into `RateLimited`,
+   `UnknownSymbol` or `Refused` (with the provider's message when it gave one); what it cannot read
+   is `Malformed`. The watchlist's quote requests use the same tables and envelope readers
+   (`watchlist_quotes::provider::quote_statuses` picks the table of each quote request). A service
+   that answers in a venue's place (GeckoTerminal draws DEXScreener pools' candles) is named by
+   `ProviderError::through`, so the message blames the one that failed.
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
 4. Add to the symbol picker (`ui::chart::symbol_picker`, Predictions tab) via `is_prediction_market()`, not provider matching.
@@ -326,14 +340,16 @@ watchlists.
   sidebar suspends it at once. The coordinator requests a repaint at half lease so an idle visible
   sidebar renews. Other owners (alerts, portfolio cards) use `set_demand`, which never lapses.
 - Quote failures are `ProviderError`s, the same kinds as candles'. `ErrorKind::scope()` decides what
-  the engine does: only a documented symbol-level answer (`UnknownSymbol`: Binance/Alpaca/Oanda 400,
-  Coinbase 404, Kraken `EQuery:`) is `Scope::Symbol`, making the engine bisect for the bad symbol
+  the engine does: only a documented symbol-level answer (`UnknownSymbol`: a 400 from Binance, Alpaca or
+  Oanda to a request that names markets, Coinbase 404, Kraken `EQuery:`) is `Scope::Symbol`, making the engine bisect for the bad symbol
   within `ISOLATION_BUDGET` requests per round; credential, region, endpoint and ban answers are
   `Scope::Source` and back off the whole source (a page it cannot isolate, or one whose every symbol
   was refused alone, is `Unisolated`). A rate limit stops the round's remaining requests. Providers
   return an `Outcome` (quotes, rejected, failed requests with symbols), so a failed page or product
   marks only its rows stale. The engine words a failure for the row's note and the source's health
-  with `service::provider_message::message`.
+  with `service::provider_message::quote_message`, which says what a missing key costs the quotes
+  ("Add your Alpaca API key in Settings to see stock quotes") where `message` says what it costs
+  the chart.
 - Unrequested for `Config::idle_grace_ms` (10 min), a market is forgotten: quote, confirmation time,
   refusal, Coinbase bookkeeping, book entry. Resolved DEX networks (`chains`) stay. A returning market
   shows no old price until fetched.

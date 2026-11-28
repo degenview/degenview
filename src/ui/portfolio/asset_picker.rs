@@ -623,6 +623,7 @@ impl AssetPickerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::error::ErrorKind;
     use eframe::egui::Rect;
     use std::sync::Mutex;
 
@@ -656,9 +657,9 @@ mod tests {
                 | DataSource::Bybit
                 | DataSource::Gate
                 | DataSource::Mexc => Ok(vec![]),
-                DataSource::CoinGecko => Err(ProviderError::refused(
-                    crate::model::DataSource::Binance,
-                    "rate limited",
+                DataSource::CoinGecko => Err(ProviderError::new(
+                    DataSource::CoinGecko,
+                    ErrorKind::RateLimited,
                 )),
                 _ => Ok(vec![hit(source, "BTC/WETH", "0xabc")]),
             }
@@ -741,9 +742,9 @@ mod tests {
         assert!(state.results()[6].1.as_ref().is_ok_and(Vec::is_empty));
         assert_eq!(
             state.results()[7].1.as_ref().err(),
-            Some(&ProviderError::refused(
-                crate::model::DataSource::Binance,
-                "rate limited"
+            Some(&ProviderError::new(
+                DataSource::CoinGecko,
+                ErrorKind::RateLimited
             ))
         );
     }

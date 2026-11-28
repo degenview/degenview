@@ -781,6 +781,10 @@ msgstr "Añade el indicador al gráfico."
 msgid "Add the secret value that {token} stands for."
 msgstr "Añade el valor secreto que representa {token}."
 
+#: src/service/provider_message.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "Añade la clave de API de este proveedor en Ajustes para ver sus cotizaciones"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr "Añade este script al gráfico activo antes de crear una alerta."
@@ -840,6 +844,10 @@ msgstr "Añade transacciones o importa un CSV o una exportación de CoinMarketCa
 msgid "Add vertex here"
 msgstr "Añadir vértice aquí"
 
+#: src/service/provider_message.rs
+msgid "Add your Alpaca API key in Settings to see stock quotes"
+msgstr "Añade tu clave de API de Alpaca en Ajustes para ver cotizaciones de acciones"
+
 #: src/pine_studio/preview/market_picker.rs
 msgid "Add your Alpaca API keys in Settings."
 msgstr "Añade tus claves de API de Alpaca en Ajustes."
@@ -847,6 +855,10 @@ msgstr "Añade tus claves de API de Alpaca en Ajustes."
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Añade tu clave de API de ImgBB en Ajustes ▸ Capturas para compartir."
+
+#: src/service/provider_message.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "Añade tus credenciales de Oanda en Ajustes para ver sus cotizaciones"
 
 #: src/ui/chart/symbol_picker/notice.rs
 msgid "Add your Oanda credentials to search forex, metals and index CFDs."
@@ -4380,10 +4392,6 @@ msgstr "Paneles"
 #: src/model/chart/kind.rs src/ui/drawing/properties/fib_pages.rs
 msgid "Dashed"
 msgstr "Discontinua"
-
-#: src/service/provider_message.rs
-msgid "Data error: {error}"
-msgstr "Error de datos: {error}"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -17640,6 +17648,10 @@ msgstr "Tienes la última versión, {version}."
 msgid "You're on version {version}."
 msgstr "Tienes la versión {version}."
 
+#: src/service/provider_message.rs
+msgid "Your Alpaca plan does not include this data"
+msgstr "Tu plan de Alpaca no incluye estos datos"
+
 #: src/pine_studio/library/unsaved.rs
 msgid "Your changes will be lost if you close this tab without saving."
 msgstr "Perderás tus cambios si cierras esta pestaña sin guardar."
@@ -17687,6 +17699,10 @@ msgstr "Tu script se envía al proveedor"
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Your scripts"
 msgstr "Tus scripts"
+
+#: src/service/provider_message.rs
+msgid "Your {provider} plan does not include this data"
+msgstr "Tu plan de {provider} no incluye estos datos"
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Yours"
@@ -19533,8 +19549,12 @@ msgid "{provider} has no {timeframe} history"
 msgstr "{provider} no tiene historial de {timeframe}"
 
 #: src/service/provider_message.rs
-msgid "{provider} refused the request (HTTP 403): it is not available in every country"
-msgstr "{provider} ha rechazado la solicitud (HTTP 403): no está disponible en todos los países"
+msgid "{provider} refused the request"
+msgstr "{provider} ha rechazado la solicitud"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request (HTTP 403): it is not available in every country, and it refuses a client that asks too often"
+msgstr "{provider} ha rechazado la solicitud (HTTP 403): no está disponible en todos los países y rechaza a los clientes que hacen demasiadas solicitudes"
 
 #: src/service/provider_message.rs
 msgid "{provider} refused the request, and the markets at fault could not be singled out"
@@ -19543,6 +19563,10 @@ msgstr "{provider} ha rechazado la solicitud y no se han podido aislar los merca
 #: src/service/provider_message.rs
 msgid "{provider} refused your API key. Check it in Settings"
 msgstr "{provider} ha rechazado tu clave de API. Revísala en Ajustes"
+
+#: src/service/provider_message.rs
+msgid "{provider} sent an answer DegenView could not read"
+msgstr "{provider} envió una respuesta que DegenView no pudo leer"
 
 #: src/ui/portfolio/empty.rs
 msgid "{quantity} at {price}"

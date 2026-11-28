@@ -461,6 +461,7 @@ fn related_markets(asset: &str) -> Vec<SearchResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::error::ErrorKind;
 
     #[test]
     fn the_scopes_cover_their_own_markets() {
@@ -604,9 +605,9 @@ mod tests {
         let mut search = SymbolSearch::default();
         search.answers.insert(
             ("aapl".into(), DataSource::Alpaca),
-            Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
-                "Add your Alpaca API key in Settings",
+            Err(ProviderError::new(
+                DataSource::Alpaca,
+                ErrorKind::MissingKey,
             )),
         );
         let listing = search.listing(&ctx, "aapl", Scope::Stocks, None);

@@ -884,6 +884,10 @@ msgstr "Добавить индикатор на график."
 msgid "Add the secret value that {token} stands for."
 msgstr "Укажите секретное значение, которое заменяет {token}."
 
+#: src/service/provider_message.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "Укажите API-ключ этого провайдера в Настройках, чтобы видеть его котировки"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr ""
@@ -945,6 +949,10 @@ msgstr "Добавляйте сделки или импортируйте CSV / 
 msgid "Add vertex here"
 msgstr "Добавить вершину здесь"
 
+#: src/service/provider_message.rs
+msgid "Add your Alpaca API key in Settings to see stock quotes"
+msgstr "Укажите ваш API-ключ Alpaca в Настройках, чтобы видеть котировки акций"
+
 #: src/pine_studio/preview/market_picker.rs
 msgid "Add your Alpaca API keys in Settings."
 msgstr "Укажите ваши API-ключи Alpaca в Настройках."
@@ -952,6 +960,10 @@ msgstr "Укажите ваши API-ключи Alpaca в Настройках."
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Укажите ваш API-ключ ImgBB в Настройки ▸ Снимки, чтобы делиться ими."
+
+#: src/service/provider_message.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "Укажите учётные данные Oanda в Настройках, чтобы видеть котировки Oanda"
 
 #: src/ui/chart/symbol_picker/notice.rs
 msgid "Add your Oanda credentials to search forex, metals and index CFDs."
@@ -4708,10 +4720,6 @@ msgstr "Дашборды"
 #: src/model/chart/kind.rs src/ui/drawing/properties/fib_pages.rs
 msgid "Dashed"
 msgstr "Штриховая"
-
-#: src/service/provider_message.rs
-msgid "Data error: {error}"
-msgstr "Ошибка данных: {error}"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -19024,6 +19032,10 @@ msgstr "У вас установлена последняя версия, {versi
 msgid "You're on version {version}."
 msgstr "У вас версия {version}."
 
+#: src/service/provider_message.rs
+msgid "Your Alpaca plan does not include this data"
+msgstr "Ваш тариф Alpaca не включает эти данные"
+
 #: src/pine_studio/library/unsaved.rs
 msgid "Your changes will be lost if you close this tab without saving."
 msgstr ""
@@ -19080,6 +19092,10 @@ msgstr "Скрипт отправляется провайдеру"
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Your scripts"
 msgstr "Ваши скрипты"
+
+#: src/service/provider_message.rs
+msgid "Your {provider} plan does not include this data"
+msgstr "Ваш тариф {provider} не включает эти данные"
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Yours"
@@ -21147,8 +21163,12 @@ msgid "{provider} has no {timeframe} history"
 msgstr "У {provider} нет истории для {timeframe}"
 
 #: src/service/provider_message.rs
-msgid "{provider} refused the request (HTTP 403): it is not available in every country"
-msgstr "{provider}: запрос отклонён (HTTP 403), сервис доступен не во всех странах"
+msgid "{provider} refused the request"
+msgstr "Запрос к {provider} отклонён"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request (HTTP 403): it is not available in every country, and it refuses a client that asks too often"
+msgstr "{provider}: запрос отклонён (HTTP 403), сервис доступен не во всех странах и блокирует клиентов, которые обращаются слишком часто"
 
 #: src/service/provider_message.rs
 msgid "{provider} refused the request, and the markets at fault could not be singled out"
@@ -21157,6 +21177,10 @@ msgstr "Запрос к {provider} отклонён, а рынки, из-за к
 #: src/service/provider_message.rs
 msgid "{provider} refused your API key. Check it in Settings"
 msgstr "{provider}: ваш API-ключ отклонён. Проверьте его в Настройках"
+
+#: src/service/provider_message.rs
+msgid "{provider} sent an answer DegenView could not read"
+msgstr "Не удалось прочитать ответ {provider}"
 
 #: src/ui/portfolio/empty.rs
 msgid "{quantity} at {price}"

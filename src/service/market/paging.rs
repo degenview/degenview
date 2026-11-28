@@ -148,14 +148,14 @@ mod tests {
     fn a_failed_page_is_the_answer() {
         let error = PAGING.back(0, 600, 10, |_, _| {
             Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Okx,
                 "down",
             ))
         });
         assert_eq!(
             error,
             Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::Okx,
                 "down"
             ))
         );

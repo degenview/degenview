@@ -134,19 +134,14 @@ pub(crate) fn data_rows(body: &str) -> Result<Vec<Value>, ProviderError> {
         .map_err(|error| ProviderError::malformed(DataSource::Okx, error))?;
     let code = value.get("code").and_then(Value::as_str);
     if code != Some("0") {
-        let kind = match code {
-            Some("50011") => ErrorKind::RateLimited,
-            Some("51001") => ErrorKind::UnknownSymbol,
-            _ => ErrorKind::Refused(
-                value
-                    .get("msg")
-                    .and_then(Value::as_str)
-                    .filter(|message| !message.is_empty())
-                    .unwrap_or("The request failed")
-                    .to_owned(),
+        return Err(match code {
+            Some("50011") => ProviderError::new(DataSource::Okx, ErrorKind::RateLimited),
+            Some("51001") => ProviderError::new(DataSource::Okx, ErrorKind::UnknownSymbol),
+            _ => ProviderError::refused_because(
+                DataSource::Okx,
+                value.get("msg").and_then(Value::as_str),
             ),
-        };
-        return Err(ProviderError::new(DataSource::Okx, kind));
+        });
     }
     value
         .get("data")

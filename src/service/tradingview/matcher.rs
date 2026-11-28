@@ -276,12 +276,7 @@ mod tests {
             resolve(&TvSymbol::read("NASDAQ:AAPL").unwrap(), &no_key),
             Match::Unmatched(Unmatched::NeedsKey)
         );
-        let down = |_: DataSource, _: &str| {
-            Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
-                "timeout",
-            ))
-        };
+        let down = |source: DataSource, _: &str| Err(ProviderError::refused(source, "timeout"));
         assert_eq!(
             resolve(&TvSymbol::read("BINANCE:BTCUSDT").unwrap(), &down),
             Match::Unmatched(Unmatched::Unreachable)

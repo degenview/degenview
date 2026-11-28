@@ -781,6 +781,10 @@ msgstr "Füge den Indikator zum Chart hinzu."
 msgid "Add the secret value that {token} stands for."
 msgstr "Gib den Secret-Wert ein, für den {token} steht."
 
+#: src/service/provider_message.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr "Trage den API-Schlüssel dieses Anbieters in den Einstellungen ein, um seine Kurse zu sehen"
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr "Füge dieses Skript zum fokussierten Chart hinzu, bevor du einen Alarm erstellst."
@@ -840,6 +844,10 @@ msgstr "Füge Transaktionen hinzu oder importiere eine CSV-Datei oder einen Coin
 msgid "Add vertex here"
 msgstr "Hier Eckpunkt hinzufügen"
 
+#: src/service/provider_message.rs
+msgid "Add your Alpaca API key in Settings to see stock quotes"
+msgstr "Hinterlege deinen Alpaca-API-Schlüssel in den Einstellungen, um Aktienkurse zu sehen"
+
 #: src/pine_studio/preview/market_picker.rs
 msgid "Add your Alpaca API keys in Settings."
 msgstr "Hinterlege deine Alpaca-API-Schlüssel in den Einstellungen."
@@ -847,6 +855,10 @@ msgstr "Hinterlege deine Alpaca-API-Schlüssel in den Einstellungen."
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "Hinterlege zum Teilen deinen ImgBB-API-Schlüssel unter Einstellungen ▸ Snapshots."
+
+#: src/service/provider_message.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
+msgstr "Trage deine Oanda-Zugangsdaten in den Einstellungen ein, um Oanda-Kurse zu sehen"
 
 #: src/ui/chart/symbol_picker/notice.rs
 msgid "Add your Oanda credentials to search forex, metals and index CFDs."
@@ -4380,10 +4392,6 @@ msgstr "Dashboards"
 #: src/model/chart/kind.rs src/ui/drawing/properties/fib_pages.rs
 msgid "Dashed"
 msgstr "Gestrichelt"
-
-#: src/service/provider_message.rs
-msgid "Data error: {error}"
-msgstr "Datenfehler: {error}"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -17636,6 +17644,10 @@ msgstr "Du hast die neueste Version, {version}."
 msgid "You're on version {version}."
 msgstr "Du nutzt Version {version}."
 
+#: src/service/provider_message.rs
+msgid "Your Alpaca plan does not include this data"
+msgstr "Dein Alpaca-Tarif enthält diese Daten nicht"
+
 #: src/pine_studio/library/unsaved.rs
 msgid "Your changes will be lost if you close this tab without saving."
 msgstr "Deine Änderungen gehen verloren, wenn du diesen Tab schließt, ohne zu speichern."
@@ -17683,6 +17695,10 @@ msgstr "Dein Skript wird an den Anbieter gesendet"
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Your scripts"
 msgstr "Deine Skripte"
+
+#: src/service/provider_message.rs
+msgid "Your {provider} plan does not include this data"
+msgstr "Dein {provider}-Tarif enthält diese Daten nicht"
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Yours"
@@ -19529,8 +19545,12 @@ msgid "{provider} has no {timeframe} history"
 msgstr "{provider} hat keine Historie für {timeframe}"
 
 #: src/service/provider_message.rs
-msgid "{provider} refused the request (HTTP 403): it is not available in every country"
-msgstr "{provider} hat die Anfrage abgelehnt (HTTP 403): nicht in jedem Land verfügbar"
+msgid "{provider} refused the request"
+msgstr "{provider} hat die Anfrage abgelehnt"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request (HTTP 403): it is not available in every country, and it refuses a client that asks too often"
+msgstr "{provider} hat die Anfrage abgelehnt (HTTP 403): nicht in jedem Land verfügbar, und Clients, die zu oft anfragen, werden abgewiesen"
 
 #: src/service/provider_message.rs
 msgid "{provider} refused the request, and the markets at fault could not be singled out"
@@ -19539,6 +19559,10 @@ msgstr "{provider} hat die Anfrage abgelehnt, und die betroffenen Märkte ließe
 #: src/service/provider_message.rs
 msgid "{provider} refused your API key. Check it in Settings"
 msgstr "{provider} hat deinen API-Schlüssel abgelehnt. Prüfe ihn in den Einstellungen"
+
+#: src/service/provider_message.rs
+msgid "{provider} sent an answer DegenView could not read"
+msgstr "{provider} hat eine Antwort gesendet, die DegenView nicht lesen konnte"
 
 #: src/ui/portfolio/empty.rs
 msgid "{quantity} at {price}"

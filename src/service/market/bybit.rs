@@ -10,7 +10,7 @@ use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
-use crate::service::market::error::ErrorKind;
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::net::http;
 use crate::service::net::ws::Keepalive;
 use crate::service::{MarketSource, ProviderError, SearchResult};
@@ -127,14 +127,14 @@ fn fetch_page(
     parse_candles(&get(&url)?, base)
 }
 
-/// What Bybit's HTTP statuses mean beyond a rate limit: some regions are refused with a 403, as is
-/// a client that asks too often.
-pub(super) const STATUSES: &[(u16, ErrorKind)] = &[(403, ErrorKind::RegionBlocked)];
+/// What Bybit's HTTP statuses mean beyond a rate limit, at every endpoint (none of them names a
+/// market by status): some regions are refused with a 403, as is a client that asks too often.
+pub(in crate::service) const STATUSES: Statuses = &[(403, ErrorKind::Blocked)];
 
 /// A request, with Bybit's regional refusal told apart from a network failure.
 pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
     http::get_text(url, &[], http::Retry::Transient)
-        .map_err(|error| ProviderError::http(DataSource::Bybit, error))
+        .map_err(|error| ProviderError::http_with(DataSource::Bybit, STATUSES, error))
 }
 
 /// Whether a `retCode` says to slow down: 10006 (too many visits) and 10018 (the IP limit).
@@ -158,12 +158,10 @@ pub(crate) fn result_of(body: &str) -> Result<Value, ProviderError> {
                 ErrorKind::RateLimited,
             ));
         }
-        let message = value
-            .get("retMsg")
-            .and_then(Value::as_str)
-            .filter(|message| !message.is_empty())
-            .unwrap_or("The request failed");
-        return Err(ProviderError::refused(DataSource::Bybit, message));
+        return Err(ProviderError::refused_because(
+            DataSource::Bybit,
+            value.get("retMsg").and_then(Value::as_str),
+        ));
     }
     value
         .get_mut("result")
@@ -378,8 +376,9 @@ mod tests {
                 "{code}"
             );
         }
-        let region = ProviderError::http(DataSource::Bybit, http::Error::Status(403));
-        assert_eq!(region.kind, ErrorKind::RegionBlocked);
+        let region =
+            ProviderError::http_with(DataSource::Bybit, STATUSES, http::Error::Status(403));
+        assert_eq!(region.kind, ErrorKind::Blocked);
         assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
         assert!(parse_candles(r#"{"retCode":0,"result":{}}"#, Timeframe::HOUR_1).is_err());
         assert!(parse_candles(r#"{"result":{"list":[]}}"#, Timeframe::HOUR_1).is_err());

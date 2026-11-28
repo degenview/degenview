@@ -338,7 +338,7 @@ mod tests {
             asked.lock().unwrap().push(limit);
             if limit == TAIL_LIMIT {
                 Err(ProviderError::refused(
-                    crate::model::DataSource::Binance,
+                    crate::model::DataSource::Alpaca,
                     "No data in that window",
                 ))
             } else {

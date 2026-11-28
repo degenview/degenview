@@ -5,7 +5,7 @@ use super::candles::plan;
 use super::search_rank::normalize;
 use crate::model::market::binance::split_market;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
-use crate::service::market::error::ErrorKind;
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
@@ -20,14 +20,15 @@ pub struct Binance;
 
 pub const BINANCE: Binance = Binance;
 
-/// What Binance's HTTP statuses mean beyond a rate limit: a 400 names a market it does not list.
-pub(in crate::service::market) const STATUSES: &[(u16, ErrorKind)] =
-    &[(400, ErrorKind::UnknownSymbol)];
+/// What the statuses of a request that names a market mean at Binance (klines, a ticker asked for
+/// by name): a 400 names a market it does not list. A request that names none (the exchange's
+/// market list, the whole ticker) has no table: a 400 there says nothing about any market.
+pub(in crate::service) const MARKET_STATUSES: Statuses = &[(400, ErrorKind::UnknownSymbol)];
 
-/// A request for `listing`'s market data.
+/// A request for the klines of `listing`'s market.
 fn get(listing: Listing, url: &str) -> Result<String, ProviderError> {
     crate::service::net::http::get_text(url, &[], crate::service::net::http::Retry::Transient)
-        .map_err(|error| ProviderError::http(listing, error))
+        .map_err(|error| ProviderError::http_with(listing, MARKET_STATUSES, error))
 }
 
 /// The most klines one Binance request returns.

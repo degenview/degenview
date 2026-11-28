@@ -228,7 +228,7 @@ pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
 }
 
 /// Fetch candles of `timeframe` from the provider behind `source`, oldest first. A source folds
-/// finer candles for a length it lacks and answers `ProviderError::UnsupportedInterval` when it
+/// finer candles for a length it lacks and answers `ErrorKind::Unsupported` when it
 /// cannot reach it, never a nearby one.
 pub fn fetch_klines(
     source: DataSource,

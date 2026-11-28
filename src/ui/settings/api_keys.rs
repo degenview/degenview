@@ -729,7 +729,7 @@ mod tests {
         );
         form.start_test(None, || {
             Err(ProviderError::refused(
-                crate::model::DataSource::Binance,
+                crate::model::DataSource::CoinMarketCap,
                 "ignored: one test at a time",
             ))
         });

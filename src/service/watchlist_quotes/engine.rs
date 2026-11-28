@@ -21,7 +21,7 @@ use crate::model::watchlist::quote::{
 use crate::model::{DataSource, InstrumentId, Listing};
 use crate::service::ProviderError;
 use crate::service::market::error::{ErrorKind, Scope};
-use crate::service::provider_message::message;
+use crate::service::provider_message::quote_message;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -594,7 +594,7 @@ impl Engine {
         match outcome.worst_failure() {
             Some(failure) if failure.kind == ErrorKind::MissingKey => {
                 state.next_allowed_ms = now + 60_000;
-                state.last_error = Some(message(failure));
+                state.last_error = Some(quote_message(failure));
             }
             Some(failure) => {
                 let (low, high) = if failure.is_rate_limited() {
@@ -604,7 +604,7 @@ impl Engine {
                 };
                 state.backoff_secs = (state.backoff_secs * 2.0).max(low).min(high);
                 state.next_allowed_ms = now + (state.backoff_secs * 1_000.0) as i64;
-                state.last_error = Some(message(failure));
+                state.last_error = Some(quote_message(failure));
             }
             None => {
                 state.backoff_secs = 0.0;
@@ -633,9 +633,9 @@ impl Engine {
                     key.clone(),
                     match failure.kind {
                         ErrorKind::MissingKey => {
-                            WatchlistQuote::unsupported(Some(message(failure)))
+                            WatchlistQuote::unsupported(Some(quote_message(failure)))
                         }
-                        _ => self.fallback(key, Some(message(failure))),
+                        _ => self.fallback(key, Some(quote_message(failure))),
                     },
                 );
             } else if source_answered && outcome.rejected.contains(&request.symbol) {
@@ -1212,7 +1212,7 @@ mod tests {
 
         assert_eq!(
             lock(&engine).provider_health()[0].last_error.as_deref(),
-            Some("Data error: expected a ticker list")
+            Some("Binance sent an answer DegenView could not read")
         );
         assert_ne!(
             book.get(&held[0]).and_then(|quote| quote.note).as_deref(),
@@ -1528,10 +1528,10 @@ mod tests {
         use crate::service::net::http;
         for kind in [
             ErrorKind::Unauthorized,
-            ErrorKind::RegionBlocked,
+            ErrorKind::Blocked,
             ErrorKind::Transport(http::Error::Status(500)),
             ErrorKind::Malformed("expected a ticker list".to_owned()),
-            ErrorKind::Refused("System is busy".to_owned()),
+            ErrorKind::Refused(Some("System is busy".to_owned())),
         ] {
             let (engine, book, provider) = setup();
             let failure = ProviderError::new(DataSource::Binance, kind.clone());
@@ -1544,10 +1544,52 @@ mod tests {
                 .iter()
                 .find(|health| health.source == DataSource::Binance)
                 .unwrap();
-            assert_eq!(binance.last_error, Some(message(&failure)), "{kind:?}");
+            assert_eq!(
+                binance.last_error,
+                Some(quote_message(&failure)),
+                "{kind:?}"
+            );
             assert!(binance.retry_at_ms.is_some(), "{kind:?}: backed off");
             assert_eq!(book.get(&markets[0]).unwrap().last, None);
         }
+    }
+
+    #[test]
+    fn a_400_to_a_request_for_the_whole_list_is_one_request_and_a_backoff() {
+        use crate::service::net::http;
+        use crate::service::watchlist_quotes::provider::quote_statuses;
+        // MEXC's `/ticker/24hr` (like Gate.io's `/tickers`: see the provider's tests) names no
+        // market, so its 400 names none either: halving the rows would ask for the same list
+        // over and over. (Gate.io is quoted from its socket first, so it makes no request here.)
+        let source = DataSource::Mexc;
+        let (engine, book, provider) = setup();
+        let listing = Listing::from(source);
+        let failure = ProviderError::http_with(
+            listing,
+            quote_statuses(listing, &[]),
+            http::Error::Status(400),
+        );
+        *provider.failure.lock().unwrap() = Some(failure.clone());
+        let markets: Vec<InstrumentId> = (0..33)
+            .map(|index| id(source, &format!("S{index:02}-USDT")))
+            .collect();
+        lock(&engine).update(1, markets.clone(), true, T0);
+        round(&engine, &provider, T0);
+        assert_eq!(provider.calls().len(), 1, "{source:?}: no halving");
+        let health = lock(&engine).provider_health();
+        let state = health
+            .iter()
+            .find(|health| health.source == source)
+            .unwrap();
+        assert_eq!(
+            state.last_error,
+            Some(quote_message(&failure)),
+            "{source:?}"
+        );
+        assert!(state.retry_at_ms.is_some(), "{source:?}: backed off");
+        assert_eq!(book.get(&markets[0]).unwrap().last, None);
+        round(&engine, &provider, T0 + 1_000);
+        assert_eq!(provider.calls().len(), 1, "{source:?}: the backoff holds");
     }
 
     #[test]
@@ -1800,7 +1842,15 @@ mod tests {
         round(&engine, &provider, T0);
         let quote = book.get(&aapl).unwrap();
         assert_eq!(quote.freshness, Freshness::Unsupported);
-        assert!(quote.note.unwrap().contains("Alpaca"));
+        assert_eq!(
+            quote.note.as_deref(),
+            Some("Add your Alpaca API key in Settings to see stock quotes"),
+            "a row says what the key is for, not what a chart needs"
+        );
+        assert_eq!(
+            lock(&engine).provider_health()[0].last_error.as_deref(),
+            Some("Add your Alpaca API key in Settings to see stock quotes")
+        );
         round(&engine, &provider, T0 + 30_000);
         assert_eq!(provider.calls().len(), 1);
         round(&engine, &provider, T0 + 61_000);

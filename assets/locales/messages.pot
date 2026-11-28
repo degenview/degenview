@@ -845,6 +845,10 @@ msgstr ""
 msgid "Add the secret value that {token} stands for."
 msgstr ""
 
+#: src/service/provider_message.rs
+msgid "Add this provider's API key in Settings to see its quotes"
+msgstr ""
+
 #: src/pine_studio/commands.rs
 msgid "Add this script to the focused chart before creating an alert."
 msgstr ""
@@ -908,12 +912,20 @@ msgstr ""
 msgid "Add vertex here"
 msgstr ""
 
+#: src/service/provider_message.rs
+msgid "Add your Alpaca API key in Settings to see stock quotes"
+msgstr ""
+
 #: src/pine_studio/preview/market_picker.rs
 msgid "Add your Alpaca API keys in Settings."
 msgstr ""
 
 #: src/service/snapshot/providers/imgbb.rs
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr ""
 
 #: src/ui/chart/symbol_picker/notice.rs
@@ -4697,10 +4709,6 @@ msgstr ""
 #: src/model/chart/kind.rs
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Dashed"
-msgstr ""
-
-#: src/service/provider_message.rs
-msgid "Data error: {error}"
 msgstr ""
 
 #: src/ui/portfolio/asset_detail.rs
@@ -19056,6 +19064,10 @@ msgstr ""
 msgid "You're on version {version}."
 msgstr ""
 
+#: src/service/provider_message.rs
+msgid "Your Alpaca plan does not include this data"
+msgstr ""
+
 #: src/pine_studio/library/unsaved.rs
 msgid "Your changes will be lost if you close this tab without saving."
 msgstr ""
@@ -19105,6 +19117,10 @@ msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Your scripts"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "Your {provider} plan does not include this data"
 msgstr ""
 
 #: src/ui/chart/indicator_picker/mod.rs
@@ -21149,9 +21165,13 @@ msgid "{provider} has no {timeframe} history"
 msgstr ""
 
 #: src/service/provider_message.rs
+msgid "{provider} refused the request"
+msgstr ""
+
+#: src/service/provider_message.rs
 msgid ""
 "{provider} refused the request (HTTP 403): it is not available in every "
-"country"
+"country, and it refuses a client that asks too often"
 msgstr ""
 
 #: src/service/provider_message.rs
@@ -21162,6 +21182,10 @@ msgstr ""
 
 #: src/service/provider_message.rs
 msgid "{provider} refused your API key. Check it in Settings"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} sent an answer DegenView could not read"
 msgstr ""
 
 #: src/ui/portfolio/empty.rs

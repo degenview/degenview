@@ -231,6 +231,17 @@ mod tests {
     }
 
     #[test]
+    fn a_400_to_the_market_list_names_no_unknown_market() {
+        use crate::service::market::error::ErrorKind;
+        use crate::service::net::http::Error;
+        let refused = download_pairs_with(endpoints(Market::Spot), |_, _| Err(Error::Status(400)));
+        assert_eq!(
+            refused.expect_err("fails").kind,
+            ErrorKind::Transport(Error::Status(400))
+        );
+    }
+
+    #[test]
     fn the_catalog_keeps_only_trading_markets_with_all_their_fields() {
         let body = r#"{"symbols":[
             {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"},

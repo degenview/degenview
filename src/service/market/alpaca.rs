@@ -4,7 +4,7 @@ use super::catalog::search::WIDE_HITS;
 use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
-use crate::service::market::error::ErrorKind;
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,10 +20,33 @@ pub struct Alpaca;
 
 pub const ALPACA: Alpaca = Alpaca;
 
-/// What Alpaca's HTTP statuses mean beyond a rate limit: a 400 names a symbol it does not know, a
-/// 401 or 403 refuses the keys.
-pub(super) const STATUSES: &[(u16, ErrorKind)] = &[
+/// What the statuses of a request that names symbols mean at Alpaca (IEX bars, snapshots): a 400
+/// names a symbol it does not know, a 401 or 403 refuses the keys.
+pub(in crate::service) const MARKET_STATUSES: Statuses = &[
     (400, ErrorKind::UnknownSymbol),
+    (401, ErrorKind::Unauthorized),
+    (403, ErrorKind::Unauthorized),
+];
+
+/// The same for bars of the SIP feed, where a 403 is not the keys: the keys are fine and the Basic
+/// plan does not include data that recent (see `bars_window`).
+const SIP_STATUSES: Statuses = &[
+    (400, ErrorKind::UnknownSymbol),
+    (401, ErrorKind::Unauthorized),
+    (403, ErrorKind::NotInPlan),
+];
+
+/// What the statuses of a bars request mean: they depend on the feed it asks for.
+fn bars_statuses(feed: AlpacaFeed) -> Statuses {
+    match feed {
+        AlpacaFeed::Sip => SIP_STATUSES,
+        AlpacaFeed::Iex => MARKET_STATUSES,
+    }
+}
+
+/// A request that names no symbol (the asset list, Test Connection): a 401 or 403 refuses the keys
+/// and a 400 says nothing about any market.
+const ACCOUNT_STATUSES: Statuses = &[
     (401, ErrorKind::Unauthorized),
     (403, ErrorKind::Unauthorized),
 ];
@@ -48,7 +71,7 @@ pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderErr
         crate::service::net::http::Retry::Never,
     )
     .map(|_| ())
-    .map_err(|error| ProviderError::http(DataSource::Alpaca, error))
+    .map_err(|error| ProviderError::http_with(DataSource::Alpaca, ACCOUNT_STATUSES, error))
 }
 
 /// The most bars one request returns.
@@ -193,7 +216,7 @@ fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError>
         crate::service::net::http::Retry::Transient,
         32 * 1024 * 1024,
     )
-    .map_err(|error| ProviderError::http(DataSource::Alpaca, error))?;
+    .map_err(|error| ProviderError::http_with(DataSource::Alpaca, ACCOUNT_STATUSES, error))?;
     parse_assets(&body)
 }
 
@@ -280,7 +303,7 @@ fn fetch_bars(
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
         crate::service::net::http::Retry::Transient,
     )
-    .map_err(|error| ProviderError::http(DataSource::Alpaca, error))?;
+    .map_err(|error| ProviderError::http_with(DataSource::Alpaca, bars_statuses(feed), error))?;
     let mut bars = parse_bars(&body, bar)?;
     // The newest page of a market with no bars at all is an error; an older page with none is
     // the start of its history.
@@ -349,6 +372,8 @@ fn parse_iso8601(text: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn the_catalog_keeps_only_tradable_named_assets() {
         let body = r#"[
@@ -362,8 +387,6 @@ mod tests {
         assert_eq!(assets[0].name, "Apple Inc. Common Stock");
         assert!(parse_assets("[").is_err());
     }
-
-    use super::*;
 
     #[test]
     fn parses_iso_timestamps() {
@@ -723,6 +746,51 @@ mod tests {
                 now()
             ),
             None
+        );
+    }
+
+    fn status_means(statuses: Statuses, code: u16) -> ErrorKind {
+        use crate::service::net::http::Error;
+        ProviderError::http_with(DataSource::Alpaca, statuses, Error::Status(code)).kind
+    }
+
+    #[test]
+    fn a_403_is_the_plan_for_sip_bars_and_the_keys_everywhere_else() {
+        // Basic refuses data that recent with a key that is fine.
+        assert_eq!(
+            status_means(super::bars_statuses(AlpacaFeed::Sip), 403),
+            ErrorKind::NotInPlan
+        );
+        for statuses in [
+            super::bars_statuses(AlpacaFeed::Iex),
+            super::MARKET_STATUSES,
+            super::ACCOUNT_STATUSES,
+        ] {
+            assert_eq!(status_means(statuses, 403), ErrorKind::Unauthorized);
+            assert_eq!(status_means(statuses, 401), ErrorKind::Unauthorized);
+        }
+        assert_eq!(
+            status_means(super::bars_statuses(AlpacaFeed::Sip), 401),
+            ErrorKind::Unauthorized
+        );
+    }
+
+    #[test]
+    fn a_400_names_an_unknown_symbol_only_where_one_was_asked_for() {
+        for feed in [AlpacaFeed::Iex, AlpacaFeed::Sip] {
+            assert_eq!(
+                status_means(super::bars_statuses(feed), 400),
+                ErrorKind::UnknownSymbol
+            );
+        }
+        assert_eq!(
+            status_means(super::MARKET_STATUSES, 400),
+            ErrorKind::UnknownSymbol
+        );
+        // The asset list and Test Connection name none.
+        assert_eq!(
+            status_means(super::ACCOUNT_STATUSES, 400),
+            ErrorKind::Transport(crate::service::net::http::Error::Status(400))
         );
     }
 }
