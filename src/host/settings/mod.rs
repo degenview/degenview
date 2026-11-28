@@ -279,6 +279,11 @@ impl SettingsHost {
                     self.language = Some(preference);
                     let _ = crate::host::language::save(store, preference);
                 }
+                SettingsAction::SetChartTimezone(tz) => {
+                    // Applied in memory even when the save fails, like the theme and language.
+                    crate::model::timezone::set_active_timezone(tz);
+                    let _ = store.set_chart_timezone(tz);
+                }
                 SettingsAction::Restart => out.push(SettingsHostAction::Restart),
                 SettingsAction::UpdateNotifications(settings) => {
                     out.push(SettingsHostAction::UpdateNotifications(settings));

@@ -66,6 +66,66 @@ msgstr[1] ""
 msgid "(No reply.)"
 msgstr ""
 
+#: src/model/timezone.rs
+msgid "(UTC+0) London"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+0) UTC"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+1) Frankfurt"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+10) Sydney"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+2) Athens"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+3) Moscow"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+4) Dubai"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+5:30) Mumbai"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+7) Bangkok"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+8) Singapore"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC+9) Tokyo"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC-3) São Paulo"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC-5) New York"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC-6) Chicago"
+msgstr ""
+
+#: src/model/timezone.rs
+msgid "(UTC-8) Los Angeles"
+msgstr ""
+
 #: src/ui/workspace/toolbar.rs
 msgid "(unsaved)"
 msgstr ""
@@ -2991,6 +3051,10 @@ msgstr ""
 
 #: src/model/chart/context/mod.rs
 msgid "Chart template"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Chart time zone"
 msgstr ""
 
 #: src/ui/chart/settings/style.rs
@@ -13731,6 +13795,10 @@ msgstr ""
 msgid "SYMBOL"
 msgstr ""
 
+#: src/model/timezone.rs
+msgid "Same as system"
+msgstr ""
+
 #: src/ui/settings/appearance.rs
 msgid "Same as the system"
 msgstr ""
@@ -17474,6 +17542,14 @@ msgstr ""
 
 #: src/ui/drawing/properties/style.rs
 msgid "Time range"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Time zone"
+msgstr ""
+
+#: src/ui/settings/appearance.rs
+msgid "Time zone shown on chart scales and tooltips."
 msgstr ""
 
 #: src/ui/chart/table_view.rs

@@ -151,6 +151,8 @@ pub enum SettingsAction {
     SetTabTitleStyle(crate::model::tab::title::TabTitleStyle),
     /// A language on the Appearance page was picked; it applies at the next start.
     SetLanguage(crate::i18n::Preference),
+    /// A chart time zone on the Appearance page was picked.
+    SetChartTimezone(crate::model::timezone::ChartTimezone),
     /// The language prompt's Restart Now: quit and open the app again.
     Restart,
     /// A switch on the Notifications page changed: the whole new settings value.
@@ -453,6 +455,12 @@ pub fn show(
                         actions.push(SettingsAction::SetLanguage(language));
                         // Going back to the language in use asks nothing.
                         state.restart_prompt = language != crate::i18n::preference();
+                    }
+                    if let Some(timezone) = crate::ui::settings::appearance::timezone(
+                        ui,
+                        crate::model::timezone::active_timezone(),
+                    ) {
+                        actions.push(SettingsAction::SetChartTimezone(timezone));
                     }
                 },
             );

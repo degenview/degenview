@@ -1,7 +1,7 @@
-//! The viewer's UTC offset, for showing and typing dates in local time. macOS only (through
-//! `localtime_r`); elsewhere, and under test, it is UTC so results are deterministic.
+//! The viewer's UTC offset, for showing and typing dates in local time. Unix platforms use
+//! `localtime_r`; elsewhere, and under test, it is UTC so results are deterministic.
 //!
-//! Tables ask once per cell every frame, so on macOS answers are kept per minute of the instant
+//! Tables ask once per cell every frame, so on Unix answers are kept per minute of the instant
 //! asked about (zones change offset on whole minutes) and all dropped once a minute, so a change
 //! of the system zone shows within a minute.
 
@@ -11,30 +11,30 @@ pub fn local_utc_offset_secs(epoch_ms: i64) -> i64 {
         return 0;
     }
     let epoch_secs = epoch_ms.div_euclid(1_000);
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     {
         static OFFSETS: OffsetCache = OffsetCache::new();
         OFFSETS.offset(epoch_secs, std::time::Instant::now(), platform::offset)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(unix))]
     {
         platform::offset(epoch_secs)
     }
 }
 
 /// Offsets already asked for, by the minute of the instant, since `started`.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(unix, test))]
 struct OffsetCache {
     state: std::sync::Mutex<Option<OffsetCacheState>>,
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(unix, test))]
 struct OffsetCacheState {
     started: std::time::Instant,
     by_minute: std::collections::HashMap<i64, i64>,
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(unix, test))]
 impl OffsetCache {
     /// How long answers are kept: a change of the system zone shows within this.
     const REFRESH: std::time::Duration = std::time::Duration::from_secs(60);
@@ -74,13 +74,13 @@ impl OffsetCache {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(unix, test))]
 /// A sane offset: real zones sit within −12h…+14h.
 pub fn clamp_offset(secs: i64) -> i64 {
     secs.clamp(-12 * 3_600, 14 * 3_600)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 mod platform {
     use std::ffi::{c_char, c_int, c_long};
 
@@ -133,7 +133,7 @@ mod platform {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 mod platform {
     pub fn offset(_: i64) -> i64 {
         0
@@ -195,7 +195,7 @@ mod tests {
     }
 
     /// The real system call returns a plausible offset for any instant.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     #[test]
     fn the_system_zone_gives_a_plausible_offset() {
         for epoch in [0, 1_709_649_000, 1_720_000_000, 4_102_444_800] {

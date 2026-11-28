@@ -33,12 +33,15 @@ pub enum Scrolled {
 /// The label a marked bar carries: the date for a daily or longer bar, the date and time below,
 /// with seconds on a candle shorter than a minute.
 pub fn marker_label(open_time_ms: i64, timeframe: Option<Timeframe>) -> String {
-    let full = format::timestamp(open_time_ms);
+    let offset_secs = crate::model::timezone::effective_offset_secs(open_time_ms);
+    let full = format::timestamp_with_offset(open_time_ms, offset_secs);
     match timeframe {
         Some(timeframe) if !timeframe.is_intraday() => {
             full.split(' ').next().unwrap_or(&full).to_owned()
         }
-        Some(timeframe) if timeframe.is_subminute() => format::timestamp_seconds(open_time_ms),
+        Some(timeframe) if timeframe.is_subminute() => {
+            format::timestamp_seconds_with_offset(open_time_ms, offset_secs)
+        }
         _ => full,
     }
 }
