@@ -1357,6 +1357,19 @@ fn a_block_locals_history_is_not_the_globals_of_the_same_name() {
 }
 
 #[test]
+fn another_variable_of_the_name_does_not_keep_a_call_off_the_bars_its_branch_skips() {
+    // The first arm reads the global `a`, the second declares an `a` of its own. The `[1]` of the
+    // call is the value it has on every bar: bar 3's close on bar 4, not bar 2's, the last bar
+    // that arm ran on.
+    let session = run(
+        "a = close\n\
+         r = switch\n    bar_index % 2 == 0 =>\n        math.abs(a)[1]\n    =>\n        a = 0.0\n        a",
+        5,
+    );
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(104.0));
+}
+
+#[test]
 fn a_function_called_from_a_block_that_hides_a_global_reads_the_global() {
     let session = run(
         "x = 5.0\nf() =>\n    x * 2\nr = 0.0\nif close > 0\n    x = 1.0\n    r := f() + x",

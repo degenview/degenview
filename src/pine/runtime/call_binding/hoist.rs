@@ -15,8 +15,9 @@
 //! ```
 //!
 //! The ordinary history of a variable then does the rest; the interpreter has nothing new to run.
-//! It runs before `bind`, so a moved call is routed like any other, and before the rename and the scope analysis
-//! (`syntax::rename`, the `request.security` slices) so those see the synthetic statements.
+//! It runs after `syntax::rename`, so that a name stands for one variable and an unrelated one of
+//! the same name cannot keep a call where it is; before `bind`, so a moved call is routed like any
+//! other; and before the `request.security` slices, so those see the synthetic statements.
 //!
 //! A *lazy* operand is the right side of `and`/`or`, either arm of `?:`, the arms of an `if` or
 //! `switch` used for its value, and a `switch` arm's condition after the first. Only a *total*

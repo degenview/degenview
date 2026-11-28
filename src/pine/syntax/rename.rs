@@ -24,7 +24,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use super::ast::{Expression, SYNTHETIC, Statement};
+use super::ast::{Expression, Statement};
 use super::scopes::{self, Binding, Slot, Span, span};
 use super::traversal;
 
@@ -108,7 +108,6 @@ pub fn plan(
     let contested = |name: &str| {
         // `_` discards a value: it names no variable, however often it is written.
         name != "_"
-            && !name.starts_with(SYNTHETIC)
             && (program != Program::Script
                 || bindings.globals().contains(name)
                 || is_builtin(name)

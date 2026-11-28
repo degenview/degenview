@@ -66,7 +66,8 @@
   on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
   do not halt the script.
 - Locals share the flat variable table, so none may share a name with something else alive at once.
-  `syntax::rename` makes that true when the session is built (after `call_binding::bind`, for the script
+  `syntax::rename` makes that true when the session is built (first, before `hoist::lazy_history` and
+  `call_binding::bind`, so those judge variables and not written names; for the script
   and each imported library): a local or parameter whose name is also a global, a builtin variable
   (`low`), a parameter or another local becomes `name#<site>` (`name#L<n>_<site>` in the nth library,
   where every local is renamed), and every read `scopes::resolve` bound to it follows (the head of a
@@ -707,8 +708,8 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     workloads both ways; user methods/types/aliases that must stay on the chain) and
     `PINE_CORPUS_DUAL=1` (every community script both ways). Bench with `tools/pine-bench.sh`:
     `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
-- **A `[]` on a call in a lazy operand runs the call on every bar** (`call_binding::hoist`, before
-  `bind` and the rename, libraries included). `cond ? ta.sma(close, 3)[1] : na`, the right side of
+- **A `[]` on a call in a lazy operand runs the call on every bar** (`call_binding::hoist`, after
+  `syntax::rename` and before `bind`, libraries included). `cond ? ta.sma(close, 3)[1] : na`, the right side of
   `and`/`or`, the arms of an `if`/`switch` used for a value and a `switch` condition after the first read
   the value the call has when it runs on every bar (TradingView: P09 S3, P10 C1-C3), while the call
   without `[]` keeps its own state. The call moves, unchanged and with its `site`, into a synthetic
@@ -736,7 +737,8 @@ functions and statements change), `reads.rs`, `locate.rs` (the blocks around a r
     counted: how often a function that holds a moved call is itself called. Counting a cost walks each function body once; calls resolved by name (a library's) can make a cycle that is not a recursion, so past `MAX_WALKS` bodies a function costs everything and its calls stay where they are. A script close to the
     budget can be pushed over it by what does move. A
     history only at a literal non-negative offset (`close[lag]` raises PINE4006 for a negative `lag` a
-    guard may keep out). A call that reads a name its statement declares stays.
+    guard may keep out). A call that reads a variable its statement declares or assigns stays; another
+    variable of the same name does not count.
   - Nothing moves out of a loop inside an arm or a `while` condition.
   - **Scope**: the script's own statements and the libraries it imports. A lazy `call[]` written
     directly inside a `request.*` expression is not moved (that expression runs on the requested

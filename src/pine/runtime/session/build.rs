@@ -29,9 +29,10 @@ impl Session {
         visible_range: Option<(i64, i64)>,
     ) -> Self {
         let mut program = program;
+        // First, so every pass after it judges variables, not the names the script wrote.
+        rename_locals(&mut program, rename::Program::Script, &mut 0);
         crate::pine::runtime::call_binding::hoist::lazy_history(&mut program);
         crate::pine::runtime::call_binding::bind(&mut program);
-        rename_locals(&mut program, rename::Program::Script, &mut 0);
         let supplied_mintick = mintick.filter(|m| *m > 0.0 && m.is_finite());
         let drawing_limits = drawings::DrawingLimits {
             max_lines: program.declaration.max_lines_count,
