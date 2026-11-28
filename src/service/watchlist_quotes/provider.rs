@@ -6,11 +6,10 @@ use super::engine::Outcome;
 use crate::lock::lock;
 use crate::model::exchange::Market;
 use crate::model::market::binance::split_market;
-use crate::model::market::oanda::OandaEnvironment;
+use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
-use crate::service::keychain::api_keys::OandaCredentials;
 use crate::service::market::error::{Asked, ErrorKind, Scope, Statuses};
 use crate::service::market::{alpaca, binance, bybit, coinbase, gateio, kraken, mexc, oanda, okx};
 use crate::service::net::url::encode_component;
@@ -147,7 +146,7 @@ fn get_with(
 ) -> Result<String, ProviderError> {
     let venue = venue.into();
     crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
-        .map_err(|error| ProviderError::http_with(venue, statuses, error))
+        .map_err(|error| ProviderError::http_with(venue, statuses, error.into()))
 }
 
 /// The 24-hour ticker URL of `market` for `requests`. Spot takes a list: `symbols` is a JSON
@@ -591,15 +590,10 @@ fn oanda_day_ago_price(
     now: i64,
 ) -> Result<DayAgoReference, ProviderError> {
     day_ago_reference(now, |start, end| {
-        crate::service::market::oanda::klines_range(
-            login,
-            instrument,
-            Timeframe::HOUR_1,
-            start,
-            end,
-            1,
-        )
-        .map(crate::service::normalize)
+        crate::service::wiring::venues()
+            .oanda
+            .klines_range(login, instrument, Timeframe::HOUR_1, start, end, 1)
+            .map(crate::service::normalize)
     })
 }
 
@@ -1239,7 +1233,7 @@ mod tests {
         ProviderError::http_with(
             listing,
             quote_statuses(listing, &requests),
-            crate::service::net::http::Error::Status(code),
+            crate::service::market::ports::http::Error::Status(code),
         )
     }
 
@@ -1308,7 +1302,7 @@ mod tests {
             let failure = quote_failure(source.into(), &["AAA", "BBB", "CCC"], 400);
             assert_eq!(
                 failure.kind,
-                ErrorKind::Transport(crate::service::net::http::Error::Status(400)),
+                ErrorKind::Transport(crate::service::market::ports::http::Error::Status(400)),
                 "{source:?}"
             );
             assert_eq!(failure.kind.scope(), Scope::Source, "{source:?}");

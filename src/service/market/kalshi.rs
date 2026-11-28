@@ -1,3 +1,6 @@
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::line;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::error::ErrorKind;
@@ -6,14 +9,27 @@ use crate::service::{
     replace_last_price, whole_dollars,
 };
 use serde_json::Value;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const BASE_URL: &str = "https://external-api.kalshi.com/trade-api/v2";
 
-pub struct Kalshi;
+pub struct Kalshi {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// The series list, which is one unpaginated request (~18 MB), held in memory for 12 hours.
+    series: SeriesStore,
+}
 
-pub const KALSHI: Kalshi = Kalshi;
+impl Kalshi {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            series: Mutex::new(None),
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Series {
@@ -49,73 +65,67 @@ fn kalshi_window(timeframe: Timeframe) -> (i64, i64) {
 
 type SeriesStore = Mutex<Option<(Instant, Vec<Series>)>>;
 
-fn series_cache() -> &'static SeriesStore {
-    static CACHE: OnceLock<SeriesStore> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(None))
-}
+impl Kalshi {
+    /// The series list is one unpaginated request (~18 MB), held in memory for 12 hours.
+    fn series_list(&self) -> Result<Vec<Series>, ProviderError> {
+        if let Some((fetched, list)) = self.series.lock().ok().and_then(|guard| guard.clone())
+            && fetched.elapsed() < Duration::from_secs(12 * 3_600)
+        {
+            return Ok(list);
+        }
 
-/// The series list is one unpaginated request (~18 MB), held in memory for 12 hours.
-fn series_list() -> Result<Vec<Series>, ProviderError> {
-    if let Some((fetched, list)) = series_cache().lock().ok().and_then(|guard| guard.clone())
-        && fetched.elapsed() < Duration::from_secs(12 * 3_600)
-    {
-        return Ok(list);
-    }
+        let url = format!("{BASE_URL}/series");
+        let body = self.http.fetch(
+            DataSource::Kalshi,
+            &Request::get(&url).max_body_bytes(32 * 1024 * 1024),
+        )?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
 
-    let url = format!("{BASE_URL}/series");
-    let body = crate::service::net::http::get_text_with_limit(
-        &url,
-        &[],
-        crate::service::net::http::Retry::Transient,
-        32 * 1024 * 1024,
-    )
-    .map_err(|error| ProviderError::http(DataSource::Kalshi, error))?;
-    let value: Value = serde_json::from_str(&body)
-        .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
-
-    let list: Vec<Series> = value
-        .get("series")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|series| {
-            let ticker = series.get("ticker").and_then(Value::as_str)?.to_owned();
-            let title = series
-                .get("title")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            if title.is_empty() {
-                return None;
-            }
-            let category = series
-                .get("category")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            let tags = series
-                .get("tags")
-                .and_then(Value::as_array)
-                .map(Vec::as_slice)
-                .unwrap_or_default()
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect();
-            Some(Series {
-                ticker,
-                title,
-                category,
-                tags,
+        let list: Vec<Series> = value
+            .get("series")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|series| {
+                let ticker = series.get("ticker").and_then(Value::as_str)?.to_owned();
+                let title = series
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                if title.is_empty() {
+                    return None;
+                }
+                let category = series
+                    .get("category")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                let tags = series
+                    .get("tags")
+                    .and_then(Value::as_array)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect();
+                Some(Series {
+                    ticker,
+                    title,
+                    category,
+                    tags,
+                })
             })
-        })
-        .collect();
+            .collect();
 
-    if let Ok(mut guard) = series_cache().lock() {
-        *guard = Some((Instant::now(), list.clone()));
+        if let Ok(mut guard) = self.series.lock() {
+            *guard = Some((Instant::now(), list.clone()));
+        }
+        Ok(list)
     }
-    Ok(list)
 }
 
 fn rank_series(series: &[Series], query: &str, limit: usize) -> Vec<Series> {
@@ -177,17 +187,12 @@ impl MarketSource for Kalshi {
             .split_once('/')
             .ok_or_else(|| ProviderError::new(DataSource::Kalshi, ErrorKind::UnknownSymbol))?;
         let (period, span) = kalshi_window(timeframe);
-        let now = crate::clock::now_ms() / 1_000;
+        let now = self.clock.now_ms() / 1_000;
         let url = format!(
             "{BASE_URL}/series/{series}/markets/{market}/candlesticks?start_ts={}&end_ts={now}&period_interval={period}",
             now - span
         );
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| ProviderError::http(DataSource::Kalshi, error))?;
+        let body = self.http.fetch(DataSource::Kalshi, &Request::get(&url))?;
         let value: Value = serde_json::from_str(&body)
             .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
 
@@ -231,7 +236,7 @@ impl MarketSource for Kalshi {
         }
 
         let thinned = downsample(&candles, limit as usize);
-        Ok(match fetch_current_ask(market) {
+        Ok(match self.fetch_current_ask(market) {
             Some(price) => replace_last_price(thinned, price),
             None => thinned,
         })
@@ -256,12 +261,12 @@ impl MarketSource for Kalshi {
         if q.is_empty() {
             return Ok(Vec::new());
         }
-        let series = series_list()?;
+        let series = self.series_list()?;
         let matches = rank_series(&series, &q, 8);
 
         let mut results = Vec::new();
         for matched in matches {
-            for event in open_events(&matched.ticker)? {
+            for event in self.open_events(&matched.ticker)? {
                 let series_ticker = event
                     .get("series_ticker")
                     .and_then(Value::as_str)
@@ -354,42 +359,156 @@ fn event_stats(event: &Value, markets: &[&Value]) -> EventStats {
     }
 }
 
-fn open_events(series: &str) -> Result<Vec<Value>, ProviderError> {
-    let url = format!(
-        "{BASE_URL}/events?series_ticker={series}&status=open&with_nested_markets=true&limit=20"
-    );
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-            .map_err(|error| ProviderError::http(DataSource::Kalshi, error))?;
-    let value: Value = serde_json::from_str(&body)
-        .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
-    Ok(value
-        .get("events")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .to_vec())
-}
+impl Kalshi {
+    fn open_events(&self, series: &str) -> Result<Vec<Value>, ProviderError> {
+        let url = format!(
+            "{BASE_URL}/events?series_ticker={series}&status=open&with_nested_markets=true&limit=20"
+        );
+        let body = self.http.fetch(DataSource::Kalshi, &Request::get(&url))?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::Kalshi, error))?;
+        Ok(value
+            .get("events")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .to_vec())
+    }
 
-/// The executable YES ask, matching the market page's headline.
-fn fetch_current_ask(market: &str) -> Option<f64> {
-    let url = format!("{BASE_URL}/markets/{market}");
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
+    /// The executable YES ask, matching the market page's headline.
+    fn fetch_current_ask(&self, market: &str) -> Option<f64> {
+        let url = format!("{BASE_URL}/markets/{market}");
+        let body = self
+            .http
+            .fetch(DataSource::Kalshi, &Request::get(&url))
             .ok()?;
-    let value: Value = serde_json::from_str(&body).ok()?;
-    let market = &value["market"];
-    probability(&market["yes_ask_dollars"])
-        .filter(|p| *p > 0.0)
-        .or_else(|| probability(&market["last_price_dollars"]))
+        let value: Value = serde_json::from_str(&body).ok()?;
+        let market = &value["market"];
+        probability(&market["yes_ask_dollars"])
+            .filter(|p| *p > 0.0)
+            .or_else(|| probability(&market["last_price_dollars"]))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http::{self, Retry};
 
     fn window_of(timeframe: &str) -> (i64, i64) {
         kalshi_window(Timeframe::parse(timeframe).unwrap())
+    }
+
+    fn venue(rig: &Rig) -> Kalshi {
+        Kalshi::new(&rig.context())
+    }
+
+    const MARKET: &str = "KXBTC/KXBTC-26NOV16-T100";
+
+    #[test]
+    fn a_line_is_the_candlesticks_since_the_span_ago_ending_on_the_executable_ask() {
+        let rig = Rig::new();
+        let now = Rig::NOON / 1_000;
+        rig.http.on(
+            "/candlesticks?",
+            &format!(
+                r#"{{"candlesticks":[
+                    {{"end_period_ts":{},"price":{{"close_dollars":"0.5600"}}}},
+                    {{"end_period_ts":{},"price":{{"previous_dollars":"0.5400"}}}},
+                    {{"end_period_ts":{},"price":{{"close_dollars":"0.5500"}}}}
+                ]}}"#,
+                now - 600,
+                now - 1_200,
+                now - 1_800
+            ),
+        );
+        rig.http.on(
+            "/markets/KXBTC-26NOV16-T100",
+            r#"{"market":{"yes_ask_dollars":"0.5800"}}"#,
+        );
+        let candles = venue(&rig)
+            .fetch_klines(MARKET, Timeframe::HOUR_1, 10)
+            .expect("a line");
+        let (period, span) = kalshi_window(Timeframe::HOUR_1);
+        let sent = rig.http.sent();
+        assert_eq!(
+            sent.iter()
+                .map(|sent| sent.url.as_str())
+                .collect::<Vec<_>>(),
+            [
+                format!(
+                    "https://external-api.kalshi.com/trade-api/v2/series/KXBTC/markets/KXBTC-26NOV16-T100/candlesticks?start_ts={}&end_ts={now}&period_interval={period}",
+                    now - span
+                ),
+                "https://external-api.kalshi.com/trade-api/v2/markets/KXBTC-26NOV16-T100"
+                    .to_owned(),
+            ]
+        );
+        assert!(sent.iter().all(|sent| sent.retry == Retry::Transient));
+        // Oldest first, a point with no close taking the one before it, the last on the ask.
+        let closes: Vec<f64> = candles.iter().map(|candle| candle.close).collect();
+        assert_eq!(closes, [0.55, 0.54, 0.58]);
+    }
+
+    #[test]
+    fn a_line_without_points_or_a_market_name_is_an_error_before_it_asks_for_more() {
+        let rig = Rig::new();
+        rig.http.on("/candlesticks?", r#"{"candlesticks":[]}"#);
+        let kalshi = venue(&rig);
+        assert_eq!(
+            kalshi
+                .fetch_klines(MARKET, Timeframe::HOUR_1, 10)
+                .unwrap_err()
+                .kind,
+            ErrorKind::NoData
+        );
+        assert_eq!(rig.http.urls().len(), 1, "no ask is looked up for nothing");
+        assert_eq!(
+            kalshi
+                .fetch_klines("KXBTC", Timeframe::HOUR_1, 10)
+                .unwrap_err()
+                .kind,
+            ErrorKind::UnknownSymbol
+        );
+        let rig = Rig::new();
+        rig.http.fail("/candlesticks?", http::Error::Status(429));
+        assert_eq!(
+            venue(&rig)
+                .fetch_klines(MARKET, Timeframe::HOUR_1, 10)
+                .unwrap_err()
+                .kind,
+            ErrorKind::RateLimited
+        );
+    }
+
+    #[test]
+    fn search_reads_the_series_list_once_and_the_open_events_of_each_match() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/series",
+            r#"{"series":[{"ticker":"KXBTC","title":"Bitcoin price","category":"Crypto","tags":["BTC"]},
+                          {"ticker":"KXRAIN","title":"Rain in Paris","category":"Weather"}]}"#,
+        );
+        let events = r#"{"events":[{"series_ticker":"KXBTC","title":"Bitcoin on Nov 16","category":"Crypto","markets":[
+            {"ticker":"KXBTC-26NOV16-T100","status":"active","title":"Above 100k?","yes_sub_title":"100k","yes_ask_dollars":"0.5600"}
+        ]}]}"#;
+        rig.http.on("/events?series_ticker=KXBTC", events);
+        rig.http.on("/events?series_ticker=KXBTC", events);
+        let kalshi = venue(&rig);
+        let found = kalshi.search_tickers("bitcoin").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].full_symbol, MARKET);
+        assert_eq!(found[0].price, Some(0.56));
+        kalshi.search_tickers("btc").expect("hits");
+        let sent = rig.http.sent();
+        let series: Vec<_> = sent
+            .iter()
+            .filter(|sent| sent.url.ends_with("/series"))
+            .collect();
+        assert_eq!(series.len(), 1, "{:?}", rig.http.urls());
+        assert_eq!(series[0].max_body_bytes, Some(32 * 1024 * 1024));
+        assert_eq!(sent.len(), 3);
     }
 
     #[test]

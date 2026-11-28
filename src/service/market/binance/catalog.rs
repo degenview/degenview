@@ -1,26 +1,60 @@
 //! Binance's lists of tradable markets, one per market kind, and the search over them.
 
+use super::Binance;
 use super::endpoints::{Endpoints, endpoints};
 use crate::model::exchange::Market;
 use crate::model::market::binance::join_market;
 use crate::model::{DataSource, InstrumentId, Listing};
 use crate::service::market::catalog::search::HITS;
+use crate::service::market::ports::http::Request;
 use crate::service::market::search_rank::normalize;
 use crate::service::{ProviderError, SearchResult, rank_results};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The hits of both markets, ranked together. The spot list is what a pair's name means, so a
-/// search without it has failed whatever the perpetuals' list says; without the perpetuals' list
-/// the spot hits stand. Each market keeps its best `HITS`.
-pub(super) fn search(query: &str, needle: &str) -> Result<Vec<SearchResult>, ProviderError> {
-    let [spot, perpetual] = [Market::Spot, Market::Perpetual].map(|market| {
+impl Binance {
+    /// The hits of both markets, ranked together. The spot list is what a pair's name means, so a
+    /// search without it has failed whatever the perpetuals' list says; without the perpetuals'
+    /// list the spot hits stand. Each market keeps its best `HITS`.
+    pub(super) fn search(
+        &self,
+        query: &str,
+        needle: &str,
+    ) -> Result<Vec<SearchResult>, ProviderError> {
+        let [spot, perpetual] = [Market::Spot, Market::Perpetual].map(|market| {
+            let endpoints = endpoints(market);
+            let pairs = self
+                .catalog(market)
+                .get(|| self.download_pairs(endpoints))?;
+            let hits = matching_pairs(&pairs, needle, market);
+            Ok(rank_results(hits, query).into_iter().take(HITS).collect())
+        });
+        merge(query, spot, perpetual)
+    }
+
+    /// The price step of `pair` on `market`, from its list of markets; `None` for a pair the list
+    /// does not hold, though it was looked at anew where it could have missed a listing. A list
+    /// that could not be brought up to date is an error for such a pair.
+    pub(in crate::service) fn tick_size(
+        &self,
+        market: Market,
+        pair: &str,
+    ) -> Result<Option<String>, ProviderError> {
         let endpoints = endpoints(market);
-        let pairs = endpoints.catalog.get(|| download_pairs(endpoints))?;
-        let hits = matching_pairs(&pairs, needle, market);
-        Ok(rank_results(hits, query).into_iter().take(HITS).collect())
-    });
-    merge(query, spot, perpetual)
+        let pairs = self.catalog(market).get_listing(
+            |listed| listed.symbol == pair && listed.tick.is_some(),
+            || self.download_pairs(endpoints),
+        )?;
+        Ok(step_of(&pairs, pair))
+    }
+
+    fn download_pairs(&self, endpoints: &Endpoints) -> Result<Vec<Pair>, ProviderError> {
+        let body = self.http.fetch(
+            endpoints.listing,
+            &Request::get(endpoints.exchange_info_url).max_body_bytes(EXCHANGE_INFO_MAX_BYTES),
+        )?;
+        parse_pairs(endpoints.listing, &body, endpoints.lists)
+    }
 }
 
 fn merge(
@@ -67,27 +101,6 @@ pub(in crate::service) struct Pair {
 /// without breaking search. The shared 8 MiB limit stays for every other call.
 const EXCHANGE_INFO_MAX_BYTES: u64 = 16 * 1024 * 1024;
 
-fn download_pairs(endpoints: &Endpoints) -> Result<Vec<Pair>, ProviderError> {
-    download_pairs_with(endpoints, |url, max_bytes| {
-        crate::service::net::http::get_text_with_limit(
-            url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-            max_bytes,
-        )
-    })
-}
-
-/// `download_pairs` with the transport passed in, so a test sees the request without a network.
-fn download_pairs_with(
-    endpoints: &Endpoints,
-    get: impl FnOnce(&str, u64) -> Result<String, crate::service::net::http::Error>,
-) -> Result<Vec<Pair>, ProviderError> {
-    let body = get(endpoints.exchange_info_url, EXCHANGE_INFO_MAX_BYTES)
-        .map_err(|error| ProviderError::http(endpoints.listing, error))?;
-    parse_pairs(endpoints.listing, &body, endpoints.lists)
-}
-
 fn price_step(entry: &Value) -> Option<String> {
     entry
         .get("filters")?
@@ -97,21 +110,6 @@ fn price_step(entry: &Value) -> Option<String> {
         .get("tickSize")?
         .as_str()
         .map(str::to_owned)
-}
-
-/// The price step of `pair` on `market`, from its list of markets; `None` for a pair the list
-/// does not hold, though it was looked at anew where it could have missed a listing. A list that
-/// could not be brought up to date is an error for such a pair.
-pub(in crate::service) fn tick_size(
-    market: Market,
-    pair: &str,
-) -> Result<Option<String>, ProviderError> {
-    let endpoints = endpoints(market);
-    let pairs = endpoints.catalog.get_listing(
-        |listed| listed.symbol == pair && listed.tick.is_some(),
-        || download_pairs(endpoints),
-    )?;
-    Ok(step_of(&pairs, pair))
 }
 
 fn step_of(pairs: &[Pair], symbol: &str) -> Option<String> {
@@ -172,6 +170,10 @@ fn parse_pairs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::MarketSource;
+    use crate::service::market::error::ErrorKind;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http::Error;
 
     #[test]
     fn a_pair_is_found_however_it_is_separated() {
@@ -197,22 +199,27 @@ mod tests {
         assert_eq!(matching_pairs(&pairs, "BTC", Market::Spot).len(), 2);
     }
 
+    fn venue(rig: &Rig) -> Binance {
+        Binance::new(&rig.context())
+    }
+
     #[test]
     fn the_market_list_asks_for_trading_pairs_only_under_its_own_limit() {
-        use crate::model::{DataSource, Listing};
-        use crate::service::net::http::Error;
-        let body = r#"{"symbols":[
-            {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"}
-        ]}"#;
-        let mut asked = None;
-        let pairs = download_pairs_with(endpoints(Market::Spot), |url, max_bytes| {
-            asked = Some((url.to_owned(), max_bytes));
-            Ok(body.to_owned())
-        })
-        .expect("pairs");
+        let rig = Rig::new();
+        rig.http.on(
+            "exchangeInfo",
+            r#"{"symbols":[
+                {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"}
+            ]}"#,
+        );
+        let pairs = venue(&rig)
+            .download_pairs(endpoints(Market::Spot))
+            .expect("pairs");
         assert_eq!(pairs.len(), 1);
 
-        let (url, max_bytes) = asked.expect("one request");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        let (url, max_bytes) = (&sent[0].url, sent[0].max_body_bytes.expect("a limit"));
         assert!(url.starts_with("https://api.binance.com/api/v3/exchangeInfo?"));
         assert!(url.contains("symbolStatus=TRADING"));
         assert!(url.contains("showPermissionSets=false"));
@@ -221,11 +228,13 @@ mod tests {
         assert!(max_bytes <= 32 * 1024 * 1024);
 
         // A too-large answer is still an error and not a partial list.
-        let too_big = download_pairs_with(endpoints(Market::Spot), |_, max_bytes| {
-            Err(Error::BodyTooLarge(max_bytes))
-        });
+        let rig = Rig::new();
+        rig.http
+            .fail("exchangeInfo", Error::BodyTooLarge(EXCHANGE_INFO_MAX_BYTES));
         assert_eq!(
-            too_big.expect_err("fails"),
+            venue(&rig)
+                .download_pairs(endpoints(Market::Spot))
+                .expect_err("fails"),
             ProviderError::http(
                 Listing::spot(DataSource::Binance),
                 Error::BodyTooLarge(EXCHANGE_INFO_MAX_BYTES)
@@ -235,13 +244,55 @@ mod tests {
 
     #[test]
     fn a_400_to_the_market_list_names_no_unknown_market() {
-        use crate::service::market::error::ErrorKind;
-        use crate::service::net::http::Error;
-        let refused = download_pairs_with(endpoints(Market::Spot), |_, _| Err(Error::Status(400)));
+        let rig = Rig::new();
+        rig.http.fail("exchangeInfo", Error::Status(400));
+        let refused = venue(&rig).download_pairs(endpoints(Market::Spot));
         assert_eq!(
             refused.expect_err("fails").kind,
             ErrorKind::Transport(Error::Status(400))
         );
+    }
+
+    #[test]
+    fn both_lists_are_searched_and_each_is_downloaded_once_a_day() {
+        let rig = Rig::new();
+        rig.http.on(
+            "api.binance.com/api/v3/exchangeInfo",
+            r#"{"symbols":[
+                {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT"}]}"#,
+        );
+        rig.http.on(
+            "fapi.binance.com/fapi/v1/exchangeInfo",
+            r#"{"symbols":[
+                {"symbol":"BTCUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"USDT"}]}"#,
+        );
+        let binance = venue(&rig);
+        let found = binance.search_tickers("btc").expect("hits");
+        let mut symbols: Vec<&str> = found.iter().map(|hit| hit.symbol.as_str()).collect();
+        symbols.sort_unstable();
+        assert_eq!(symbols, ["BTCUSDT", "BTCUSDT.P"]);
+        binance.search_tickers("btc-usdt").expect("hits");
+        venue(&rig).search_tickers("btc").expect("hits");
+        assert_eq!(rig.http.urls().len(), 2);
+    }
+
+    #[test]
+    fn a_price_step_comes_from_the_markets_own_list_which_is_not_asked_again_for_a_missing_pair() {
+        let rig = Rig::new();
+        rig.http.on(
+            "fapi.binance.com/fapi/v1/exchangeInfo",
+            r#"{"symbols":[
+                {"symbol":"BTCUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"USDT",
+                 "filters":[{"filterType":"PRICE_FILTER","tickSize":"0.10"}]}]}"#,
+        );
+        let binance = venue(&rig);
+        assert_eq!(
+            binance.tick_size(Market::Perpetual, "BTCUSDT"),
+            Ok(Some("0.10".to_owned()))
+        );
+        // The list was just downloaded: what it lacks does not exist yet, and costs no request.
+        assert_eq!(binance.tick_size(Market::Perpetual, "NEWUSDT"), Ok(None));
+        assert_eq!(rig.http.urls().len(), 1);
     }
 
     #[test]

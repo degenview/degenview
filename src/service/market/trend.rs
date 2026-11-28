@@ -7,7 +7,7 @@ use crate::model::session_stats::MarketHours;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::{self, ProviderError};
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// How long a span of days is shown before it is read again.
@@ -20,14 +20,7 @@ const DAY_CANDLES: u32 = 96;
 /// How long a market that gave no closes is left alone.
 const RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
 /// Calendar days of the watchlist's month.
-const MONTH_DAYS: u32 = 30;
-
-/// The month every watchlist sidebar draws. One for the app, so tabs and windows showing the
-/// same markets share their reads.
-pub fn month() -> &'static TrendLoader {
-    static MONTH: LazyLock<TrendLoader> = LazyLock::new(|| TrendLoader::new(MONTH_DAYS));
-    &MONTH
-}
+pub const MONTH_DAYS: u32 = 30;
 
 struct Slot {
     /// What the last read found; `None` until the first one ends.
@@ -58,9 +51,9 @@ pub struct TrendLoader {
 }
 
 impl TrendLoader {
-    /// A loader of `days` calendar days of daily closes.
-    pub fn new(days: u32) -> Self {
-        Self::reading(Span::Days(days.max(2)), service::fetch_klines)
+    /// A loader of `days` calendar days of daily closes, read through `fetch`.
+    pub fn new(days: u32, fetch: Fetch) -> Self {
+        Self::reading(Span::Days(days.max(2)), fetch)
     }
 
     /// A loader of the last day, for a chart beside a price and its change.
@@ -233,9 +226,19 @@ mod tests {
         InstrumentId::new(DataSource::Binance, symbol)
     }
 
+    /// No read here reaches a provider.
+    fn no_candles(
+        _: DataSource,
+        _: &str,
+        _: Timeframe,
+        _: u32,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        Ok(Vec::new())
+    }
+
     #[test]
     fn a_market_is_read_once_while_it_is_being_read() {
-        let loader = TrendLoader::new(7);
+        let loader = TrendLoader::new(7, no_candles);
         let now = Instant::now();
         let wanted = [market("BTCUSDT"), market("btcusdt"), market("ETHUSDT")];
         let claimed = loader.claim(&wanted, now);
@@ -249,7 +252,7 @@ mod tests {
 
     #[test]
     fn closes_are_shown_then_read_again_when_stale() {
-        let loader = TrendLoader::new(7);
+        let loader = TrendLoader::new(7, no_candles);
         let btc = market("BTCUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&btc), now);
@@ -279,7 +282,7 @@ mod tests {
 
     #[test]
     fn a_market_without_history_is_retried_later() {
-        let loader = TrendLoader::new(7);
+        let loader = TrendLoader::new(7, no_candles);
         let market = market("NOPEUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&market), now);
@@ -306,7 +309,7 @@ mod tests {
 
     #[test]
     fn a_read_given_up_is_made_again_and_a_failed_one_forgotten_on_request() {
-        let loader = TrendLoader::new(7);
+        let loader = TrendLoader::new(7, no_candles);
         let btc = market("BTCUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&btc), now);
@@ -328,7 +331,7 @@ mod tests {
 
     #[test]
     fn one_close_is_not_a_trend() {
-        let loader = TrendLoader::new(7);
+        let loader = TrendLoader::new(7, no_candles);
         let market = market("BTCUSDT");
         let now = Instant::now();
         loader.claim(std::slice::from_ref(&market), now);

@@ -8,20 +8,48 @@ use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
-use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub(crate) const BASE_URL: &str = "https://api.gateio.ws/api/v4/spot";
 
-pub struct Gate;
+pub struct Gate {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every spot market that is tradable, downloaded at most once a day.
+    pub(super) catalog: Catalog<Pair>,
+}
 
-pub const GATE: Gate = Gate;
+impl Gate {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            catalog: Catalog::new(
+                Listing::spot(DataSource::Gate),
+                "catalog_gateio_v2",
+                context,
+            ),
+        }
+    }
+
+    /// The candles endpoint as of now.
+    fn klines(&self) -> Klines<'_> {
+        Klines {
+            gate: self,
+            now_ms: self.clock.now_ms(),
+        }
+    }
+}
 
 /// 1,000 rows a request. Gate.io refuses (HTTP 400, "Candlestick too long ago") a request that
 /// reaches 10,000 points back from now in the interval asked for, and counts the rows the
@@ -43,19 +71,12 @@ fn reach_left(now_ms: i64, after_ms: i64, base: Timeframe) -> usize {
 }
 
 /// Gate.io's `/spot/candlesticks` endpoint, as of `now_ms`: where its reach ends moves with it.
-struct Klines {
+struct Klines<'a> {
+    gate: &'a Gate,
     now_ms: i64,
 }
 
-impl Klines {
-    fn now() -> Self {
-        Self {
-            now_ms: crate::clock::now_ms(),
-        }
-    }
-}
-
-impl KlineEndpoint for Klines {
+impl KlineEndpoint for Klines<'_> {
     const SOURCE: DataSource = DataSource::Gate;
     const PAGING: Paging = PAGING;
 
@@ -70,7 +91,7 @@ impl KlineEndpoint for Klines {
         limit: usize,
         before: Option<i64>,
     ) -> Result<Vec<Kline>, ProviderError> {
-        fetch_page(id, base, limit, before.map(cursor_s))
+        self.gate.fetch_page(id, base, limit, before.map(cursor_s))
     }
 
     fn reach(&self, base: Timeframe, before_ms: i64) -> usize {
@@ -120,7 +141,8 @@ impl MarketSource for Gate {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::latest(&Klines::now(), symbol, timeframe, limit as usize)
+        let klines = self.klines();
+        kline_endpoint::latest(&klines, klines.now_ms, symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -131,32 +153,42 @@ impl MarketSource for Gate {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::range(&Klines::now(), symbol, timeframe, start_ms, end_ms, max)
+        kline_endpoint::range(&self.klines(), symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn asset_names(&self) -> Vec<(String, String)> {
-        search::asset_names(|| CATALOG.get(download_pairs))
+        search::asset_names(|| self.catalog.get(|| self.download_pairs()))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(query, || CATALOG.get(download_pairs))
+        search::find(query, || self.catalog.get(|| self.download_pairs()))
     }
 }
 
-fn fetch_page(
-    id: &str,
-    base: Timeframe,
-    limit: usize,
-    to_s: Option<i64>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let interval =
-        interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Gate, base))?;
-    let mut url =
-        format!("{BASE_URL}/candlesticks?currency_pair={id}&interval={interval}&limit={limit}");
-    if let Some(to_s) = to_s {
-        url.push_str(&format!("&to={to_s}"));
+impl Gate {
+    fn fetch_page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        to_s: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let interval =
+            interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Gate, base))?;
+        let mut url =
+            format!("{BASE_URL}/candlesticks?currency_pair={id}&interval={interval}&limit={limit}");
+        if let Some(to_s) = to_s {
+            url.push_str(&format!("&to={to_s}"));
+        }
+        parse_candles(&self.get(&url, MARKET_STATUSES)?, base)
     }
-    parse_candles(&get(&url, MARKET_STATUSES)?, base)
+
+    /// A request, with Gate.io's refusals told apart from a network failure: its statuses mean
+    /// what `statuses` says.
+    fn get(&self, url: &str, statuses: Statuses) -> Result<String, ProviderError> {
+        self.http
+            .fetch(DataSource::Gate, &Request::get(url).statuses(statuses))
+    }
 }
 
 /// What the statuses of a request that names a market mean at Gate.io (candles): a 400 names a
@@ -168,13 +200,6 @@ pub(in crate::service) const MARKET_STATUSES: Statuses =
 /// The same for a request that names none (the market list, every ticker): a 400 there says
 /// nothing about any market.
 pub(in crate::service) const LIST_STATUSES: Statuses = &[(403, ErrorKind::Blocked)];
-
-/// A request, with Gate.io's refusals told apart from a network failure: its statuses mean what
-/// `statuses` says.
-fn get(url: &str, statuses: Statuses) -> Result<String, ProviderError> {
-    http::get_text(url, &[], http::Retry::Transient)
-        .map_err(|error| ProviderError::http_with(DataSource::Gate, statuses, error))
-}
 
 /// Candles of length `base`, oldest first.
 fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
@@ -218,7 +243,7 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable spot market from `currency_pairs`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
+pub(super) struct Pair {
     id: String,
     base: String,
     quote: String,
@@ -244,11 +269,10 @@ impl ListedMarket for Pair {
     }
 }
 
-/// Every spot market that is tradable, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Gate), "catalog_gateio_v2");
-
-fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    parse_pairs(&get(&format!("{BASE_URL}/currency_pairs"), LIST_STATUSES)?)
+impl Gate {
+    fn download_pairs(&self) -> Result<Vec<Pair>, ProviderError> {
+        parse_pairs(&self.get(&format!("{BASE_URL}/currency_pairs"), LIST_STATUSES)?)
+    }
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
@@ -276,6 +300,8 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http::{self, Retry};
     use std::sync::Arc;
 
     #[test]
@@ -333,12 +359,14 @@ mod tests {
     /// 12:00:30 UTC on 2026-11-16: the forming one-minute candle opened at 12:00:00.
     const NOW_MS: i64 = 1_794_830_430_000;
     const MINUTE: i64 = 60_000;
+    /// Where the fake clock of a [`Rig`] stands.
+    const NOW: i64 = Rig::NOON;
 
     /// A fake Gate.io: a market whose one-minute candles (volume 1) reach back `depth` minutes
     /// from the forming one, answering a page as the API does and refusing, as the real service
     /// does with a 400, a request that reaches 9,000 points back from now.
     struct Fake {
-        gate: Klines,
+        now_ms: i64,
         depth: i64,
         asked: std::cell::Cell<usize>,
     }
@@ -351,7 +379,7 @@ mod tests {
         /// The same market `now` milliseconds into the day: where the reach ends moves with it.
         fn at(depth: i64, now: i64) -> Self {
             Self {
-                gate: Klines { now_ms: now },
+                now_ms: now,
                 depth,
                 asked: std::cell::Cell::new(0),
             }
@@ -359,9 +387,9 @@ mod tests {
 
         fn answer(&self, to_s: i64, limit: usize) -> Result<Vec<Kline>, ProviderError> {
             self.asked.set(self.asked.get() + 1);
-            let newest = self.gate.now_ms / MINUTE * MINUTE;
+            let newest = self.now_ms / MINUTE * MINUTE;
             let oldest = newest - (self.depth - 1) * MINUTE;
-            let points_ago = (self.gate.now_ms - to_s * 1_000) / MINUTE + limit as i64;
+            let points_ago = (self.now_ms - to_s * 1_000) / MINUTE + limit as i64;
             assert!(
                 points_ago <= 9_000,
                 "Gate.io refuses: too long ago ({points_ago})"
@@ -389,7 +417,7 @@ mod tests {
         const PAGING: Paging = PAGING;
 
         fn id(&self, symbol: &str) -> String {
-            self.gate.id(symbol)
+            pair_id(symbol)
         }
 
         fn page(
@@ -400,11 +428,11 @@ mod tests {
             before: Option<i64>,
         ) -> Result<Vec<Kline>, ProviderError> {
             assert_eq!(id, "BTC_USDT");
-            self.answer(before.map_or(self.gate.now_ms / 1_000, cursor_s), limit)
+            self.answer(before.map_or(self.now_ms / 1_000, cursor_s), limit)
         }
 
         fn reach(&self, base: Timeframe, before_ms: i64) -> usize {
-            self.gate.reach(base, before_ms)
+            reach_left(self.now_ms, before_ms, base)
         }
     }
 
@@ -506,6 +534,132 @@ mod tests {
         ["1700002800","60","12","13","10","11","5.5","false"]
     ]"#;
 
+    fn venue(rig: &Rig) -> Gate {
+        Gate::new(&rig.context())
+    }
+
+    /// An answer of the `count` one-minute rows that open from `first`, oldest first.
+    fn minute_rows(first: i64, count: usize) -> String {
+        let rows: Vec<String> = (0..count as i64)
+            .map(|index| {
+                format!(
+                    r#"["{}","15","11","12","9","10","1.5","true"]"#,
+                    (first + index * MINUTE) / 1_000
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    #[test]
+    fn the_newest_candles_are_one_request_and_come_back_oldest_first() {
+        let rig = Rig::new();
+        rig.http.on("/candlesticks?", ROWS);
+        let candles = venue(&rig)
+            .fetch_klines("btc/usdt", Timeframe::HOUR_1, 2)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=BTC_USDT&interval=1h&limit=2"
+        );
+        assert_eq!(sent[0].retry, Retry::Transient);
+        let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+        assert_eq!(opens, [1_699_999_200_000, 1_700_002_800_000]);
+    }
+
+    #[test]
+    fn a_range_is_paged_back_by_the_to_cursor_in_seconds() {
+        let rig = Rig::new();
+        let end = NOW;
+        let (first, second) = (end - 1_000 * MINUTE, end - 1_500 * MINUTE);
+        rig.http.on("&limit=1000&to=", &minute_rows(first, 1_000));
+        rig.http.on("&limit=500&to=", &minute_rows(second, 500));
+        let candles = venue(&rig)
+            .fetch_klines_range("BTC_USDT", Timeframe::MINUTE_1, 0, end, 1_500)
+            .expect("candles");
+        // `to` includes the candle that opens at it: the cursor is the last second before.
+        let base =
+            "https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=BTC_USDT&interval=1m";
+        assert_eq!(
+            rig.http.urls(),
+            [
+                format!("{base}&limit=1000&to={}", (end - 1) / 1_000),
+                format!("{base}&limit=500&to={}", (first - 1) / 1_000),
+            ]
+        );
+        assert_eq!(candles.len(), 1_500);
+        assert_eq!(candles[0].open_time, second);
+        assert_eq!(candles[1_499].open_time, end - MINUTE);
+    }
+
+    #[test]
+    fn nothing_is_asked_for_past_what_gate_reaches_back_to_from_the_clock() {
+        let rig = Rig::new();
+        let gate = venue(&rig);
+        let past = gate
+            .fetch_klines_range(
+                "BTC_USDT",
+                Timeframe::MINUTE_1,
+                0,
+                NOW - 8_950 * MINUTE,
+                100,
+            )
+            .expect("nothing past the reach");
+        assert!(past.is_empty());
+        assert!(rig.http.urls().is_empty());
+
+        // Later in the day the same instant is nearer the reach's end.
+        rig.http
+            .on("/candlesticks?", &minute_rows(NOW - 8_500 * MINUTE, 100));
+        let end = NOW - 8_400 * MINUTE;
+        gate.fetch_klines_range("BTC_USDT", Timeframe::MINUTE_1, 0, end, 100)
+            .expect("candles");
+        assert_eq!(rig.http.urls().len(), 1);
+    }
+
+    #[test]
+    fn what_gate_refuses_is_told_by_kind() {
+        let kind_of = |status| {
+            let rig = Rig::new();
+            rig.http.fail("/candlesticks?", http::Error::Status(status));
+            venue(&rig)
+                .fetch_klines("BTC_USDT", Timeframe::HOUR_1, 5)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(kind_of(400), ErrorKind::UnknownSymbol);
+        assert_eq!(kind_of(403), ErrorKind::Blocked);
+        assert_eq!(kind_of(429), ErrorKind::RateLimited);
+        assert_eq!(kind_of(500), ErrorKind::Transport(http::Error::Status(500)));
+        let rig = Rig::new();
+        rig.http
+            .on("/candlesticks?", r#"{"label":"INVALID_CURRENCY_PAIR"}"#);
+        let error = venue(&rig)
+            .fetch_klines("BTC_USDT", Timeframe::HOUR_1, 5)
+            .unwrap_err();
+        assert!(matches!(error.kind, ErrorKind::Malformed(_)), "{error:?}");
+    }
+
+    #[test]
+    fn the_market_list_is_downloaded_once_a_day_and_names_the_assets() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/currency_pairs",
+            r#"[{"id":"BTC_USDT","base":"BTC","quote":"USDT","base_name":"Bitcoin","trade_status":"tradable"},
+                {"id":"OLD_USDT","base":"OLD","quote":"USDT","trade_status":"untradable"}]"#,
+        );
+        let found = venue(&rig).search_tickers("btc usdt").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "BTC_USDT");
+        assert_eq!(
+            venue(&rig).asset_names(),
+            [("BTC".to_owned(), "Bitcoin".to_owned())]
+        );
+        assert_eq!(rig.http.urls().len(), 1);
+    }
+
     #[test]
     fn rows_are_candles_with_the_close_of_their_bucket() {
         let candles = parse_candles(ROWS, Timeframe::HOUR_1).expect("valid response");
@@ -606,7 +760,8 @@ mod tests {
     #[test]
     #[ignore = "needs the network"]
     fn live_gate_serves_candles_pairs_and_every_native() {
-        let hits = GATE.search_tickers("btc-usdt").expect("search");
+        let gate = &crate::service::wiring::venues().gate;
+        let hits = gate.search_tickers("btc-usdt").expect("search");
         assert_eq!(hits[0].symbol, "BTC_USDT");
         assert_eq!(hits[0].quote.as_deref(), Some("USDT"));
         for native in DataSource::Gate.natives() {
@@ -616,7 +771,7 @@ mod tests {
             } else {
                 350
             };
-            let candles = GATE
+            let candles = gate
                 .fetch_klines("BTC_USDT", *native, wanted)
                 .expect("candles");
             // Months reach back only to the market's listing.
@@ -634,19 +789,19 @@ mod tests {
         }
         // A 22-minute chart wants eleven thousand one-minute candles and Gate.io reaches back to
         // 8,900 of them: about 408 candles (days restart the buckets), none of them a fragment.
-        let folded = GATE
+        let folded = gate
             .fetch_klines("BTC_USDT", Timeframe::parse("22m").unwrap(), 500)
             .expect("folded candles");
         assert!((395..=420).contains(&folded.len()), "{}", folded.len());
         // Paging back from the first 500 reaches the end of what Gate.io holds without an error,
         // and the page after it is empty.
-        let hour = GATE
+        let hour = gate
             .fetch_klines("BTC_USDT", Timeframe::MINUTE_1, 500)
             .expect("minutes");
         let mut end = hour[0].open_time;
         let mut total = hour.len();
         loop {
-            let page = GATE
+            let page = gate
                 .fetch_klines_range("BTC_USDT", Timeframe::MINUTE_1, 0, end, 1_000)
                 .expect("an older page, or an empty one at the end");
             let Some(first) = page.first() else { break };
@@ -654,7 +809,7 @@ mod tests {
             end = first.open_time;
         }
         assert!((8_800..=8_900).contains(&total), "{total}");
-        let error = GATE
+        let error = gate
             .fetch_klines("NOPE_USDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
         assert_eq!(error.kind, ErrorKind::UnknownSymbol);
@@ -662,7 +817,7 @@ mod tests {
 
     #[test]
     fn a_400_names_an_unknown_market_only_where_one_was_asked_for() {
-        use crate::service::net::http::Error;
+        use crate::service::market::ports::http::Error;
         let kind = |statuses, code| {
             ProviderError::http_with(DataSource::Gate, statuses, Error::Status(code)).kind
         };

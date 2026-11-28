@@ -20,14 +20,14 @@ pub mod tradingview;
 pub mod update;
 pub mod watchlist_quotes;
 pub mod webhook;
+pub(in crate::service) mod wiring;
 pub mod work_queue;
 
-pub use market::alpaca::test_connection as alpaca_test_connection;
 pub use market::error::ProviderError;
-pub use market::oanda::test_connection as oanda_test_connection;
 
 use crate::model::exchange::Market;
 use crate::model::market::asset_name::AssetNames;
+use crate::model::market::oanda::OandaCredentials;
 use crate::model::{DataSource, InstrumentId, Kline, PmSeries, Timeframe};
 pub(crate) use market::candles::normalize;
 pub(crate) use market::search_rank::rank_results;
@@ -209,22 +209,48 @@ pub trait MarketSource {
 }
 
 pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
-    match source {
-        DataSource::Binance => &market::binance::BINANCE,
-        DataSource::Coinbase => &market::coinbase::COINBASE,
-        DataSource::Okx => &market::okx::OKX,
-        DataSource::Kraken => &market::kraken::KRAKEN,
-        DataSource::Bybit => &market::bybit::BYBIT,
-        DataSource::Gate => &market::gateio::GATE,
-        DataSource::Mexc => &market::mexc::MEXC,
-        DataSource::CoinGecko => &market::coingecko::COINGECKO,
-        DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
-        DataSource::Alpaca => &market::alpaca::ALPACA,
-        DataSource::Oanda => &market::oanda::OANDA,
-        DataSource::Polymarket => &market::polymarket::POLYMARKET,
-        DataSource::Kalshi => &market::kalshi::KALSHI,
-        DataSource::CoinMarketCap => &market::cmc::COIN_MARKET_CAP,
-    }
+    wiring::venues().source(source)
+}
+
+/// Settings ▸ Alpaca ▸ Test Connection, with the keys typed on the page.
+pub fn alpaca_test_connection(key_id: &str, secret_key: &str) -> Result<(), ProviderError> {
+    wiring::venues().alpaca.test_connection(key_id, secret_key)
+}
+
+/// Settings ▸ Oanda ▸ Test Connection, with the login typed on the page.
+pub fn oanda_test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
+    wiring::venues().oanda.test_connection(login)
+}
+
+/// Settings ▸ CoinMarketCap ▸ Test Connection, with the key saved (or in the environment).
+pub fn cmc_test_connection() -> Result<(), ProviderError> {
+    wiring::venues().cmc.test_connection()
+}
+
+/// The last reading fetched for a CoinMarketCap "Latest" chart, if any. Cheap enough to ask at
+/// every frame: it reads what a fetch kept.
+pub fn cmc_latest_reading(symbol: &str) -> Option<market::cmc::LatestReading> {
+    wiring::venues().cmc.latest_reading(symbol)
+}
+
+/// The names the venues that publish them call the assets they list, from their day-long market
+/// lists. Blocks.
+pub fn listed_asset_names() -> std::sync::Arc<market::names::Listed> {
+    market::names::listed(
+        DataSource::ALL
+            .into_iter()
+            .flat_map(|source| for_source(source).asset_names()),
+    )
+}
+
+/// The month every watchlist sidebar draws. One for the app, so tabs and windows showing the same
+/// markets share their reads.
+pub fn month_trends() -> &'static market::trend::TrendLoader {
+    static MONTH: std::sync::LazyLock<market::trend::TrendLoader> =
+        std::sync::LazyLock::new(|| {
+            market::trend::TrendLoader::new(market::trend::MONTH_DAYS, fetch_klines)
+        });
+    &MONTH
 }
 
 /// Fetch candles of `timeframe` from the provider behind `source`, oldest first. A source folds
@@ -348,7 +374,7 @@ pub fn supports_trending(source: DataSource) -> bool {
 /// The provider's busiest markets, or an empty list when it cannot say.
 pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
     match source {
-        DataSource::Polymarket => market::polymarket::trending(limit),
+        DataSource::Polymarket => wiring::venues().polymarket.trending(limit),
         _ => Ok(Vec::new()),
     }
 }

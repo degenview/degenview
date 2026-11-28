@@ -1,15 +1,29 @@
+use super::geckoterminal::GeckoTerminal;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::asset_name::AssetNames;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 const BASE_URL: &str = "https://api.dexscreener.com/latest/dex";
 
-pub struct DexScreener;
+pub struct DexScreener {
+    http: Arc<dyn Http>,
+    geckoterminal: GeckoTerminal,
+}
 
-pub const DEXSCREENER: DexScreener = DexScreener;
+impl DexScreener {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            geckoterminal: GeckoTerminal::new(context),
+        }
+    }
+}
 
 impl MarketSource for DexScreener {
     /// DEXScreener publishes no candles on its free tier, so charts come from
@@ -20,7 +34,7 @@ impl MarketSource for DexScreener {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        super::geckoterminal::fetch_klines(symbol, timeframe, limit)
+        self.geckoterminal.fetch_klines(symbol, timeframe, limit)
     }
 
     fn fetch_klines_range(
@@ -31,7 +45,8 @@ impl MarketSource for DexScreener {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        super::geckoterminal::fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
+        self.geckoterminal
+            .fetch_klines_range(symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -40,12 +55,9 @@ impl MarketSource for DexScreener {
             return Ok(Vec::new());
         }
         let url = search_url(&q);
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| ProviderError::http(DataSource::DexScreener, error))?;
+        let body = self
+            .http
+            .fetch(DataSource::DexScreener, &Request::get(&url))?;
         parse_search(&body, query)
     }
 }
@@ -116,6 +128,9 @@ fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderEr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::error::ErrorKind;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http;
 
     #[test]
     fn a_query_outside_ascii_is_escaped_in_the_search_address() {
@@ -135,5 +150,28 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].full_symbol, "a2");
         assert_eq!(results[0].price, Some(2.6));
+    }
+
+    #[test]
+    fn search_is_one_request_for_the_trimmed_lower_cased_query_and_a_failure_is_its_kind() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/search?q=wif",
+            r#"{"pairs":[{"baseToken":{"symbol":"WIF","name":"dogwifhat"},"quoteToken":{"symbol":"SOL"},"pairAddress":"a1","priceUsd":"2.5","liquidity":{"usd":1000.0}}]}"#,
+        );
+        let dexscreener = DexScreener::new(&rig.context());
+        let found = dexscreener.search_tickers("  WIF ").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "WIF/SOL");
+        assert_eq!(
+            rig.http.urls(),
+            ["https://api.dexscreener.com/latest/dex/search?q=wif"]
+        );
+
+        rig.http.fail("/search?q=", http::Error::Status(429));
+        assert_eq!(
+            dexscreener.search_tickers("wif").unwrap_err().kind,
+            ErrorKind::RateLimited
+        );
     }
 }

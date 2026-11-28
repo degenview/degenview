@@ -8,7 +8,7 @@
 //! the Keychain: keys live in memory for the session.
 
 use crate::lock::lock;
-use crate::model::market::oanda::OandaEnvironment;
+use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::service::keychain::webhook_secrets::{Scope, is_disabled, platform};
 use crate::service::webhook::delivery::SecretStoreError;
 use serde::{Deserialize, Serialize};
@@ -100,7 +100,9 @@ pub(crate) fn default_backend() -> Box<dyn KeyBackend> {
 
 // MARK: Alpaca
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+/// The Alpaca key id and secret. The stored item is this struct as JSON (`keyID`, `secretKey`),
+/// the shape the Swift app wrote; its `Debug` leaves the secret out.
+#[derive(Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AlpacaCredentials {
     #[serde(rename = "keyID")]
     pub key_id: String,
@@ -108,7 +110,26 @@ pub struct AlpacaCredentials {
     pub secret_key: String,
 }
 
+impl std::fmt::Debug for AlpacaCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlpacaCredentials")
+            .field("key_id", &self.key_id)
+            .field("secret_key", &"<redacted>")
+            .finish()
+    }
+}
+
 impl CredentialPair for AlpacaCredentials {
+    type Record = Self;
+
+    fn record(&self) -> Self {
+        self.clone()
+    }
+
+    fn from_record(record: Self) -> Self {
+        record
+    }
+
     fn fields(&self) -> (&str, &str) {
         (&self.key_id, &self.secret_key)
     }
@@ -145,29 +166,44 @@ impl AlpacaCredentialsStore {
 
 // MARK: Oanda
 
-/// The Oanda account id, personal access token and the environment they belong to, as one item.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OandaCredentials {
+/// The Oanda item as the Keychain holds it: the shape older versions saved, which a login
+/// decodes from and encodes to without the model knowing it.
+#[derive(Deserialize, Serialize)]
+pub struct OandaRecord {
     #[serde(rename = "accountId")]
-    pub account_id: String,
+    account_id: String,
     #[serde(rename = "accessToken")]
-    pub access_token: String,
+    access_token: String,
     /// Items saved before the choice existed were all sent to the live API.
     #[serde(default)]
-    pub environment: OandaEnvironment,
+    environment: OandaEnvironment,
 }
 
 impl CredentialPair for OandaCredentials {
+    type Record = OandaRecord;
+
+    fn record(&self) -> OandaRecord {
+        OandaRecord {
+            account_id: self.account_id.clone(),
+            access_token: self.access_token.clone(),
+            environment: self.environment,
+        }
+    }
+
+    fn from_record(record: OandaRecord) -> Self {
+        Self {
+            account_id: record.account_id,
+            access_token: record.access_token,
+            environment: record.environment,
+        }
+    }
+
     fn fields(&self) -> (&str, &str) {
         (&self.account_id, &self.access_token)
     }
 
     fn trimmed(&self) -> Self {
-        Self {
-            account_id: self.account_id.trim().to_owned(),
-            access_token: self.access_token.trim().to_owned(),
-            environment: self.environment,
-        }
+        OandaCredentials::trimmed(self)
     }
 }
 
@@ -190,7 +226,13 @@ impl OandaCredentialsStore {
 }
 
 /// Two fields saved together as one Keychain item.
-pub trait CredentialPair: Clone + Default + Serialize + serde::de::DeserializeOwned {
+pub trait CredentialPair: Clone + Default {
+    /// The item as stored, JSON in the Keychain: its shape belongs to the keychain, not to the
+    /// type the rest of the app holds.
+    type Record: Serialize + serde::de::DeserializeOwned;
+
+    fn record(&self) -> Self::Record;
+    fn from_record(record: Self::Record) -> Self;
     fn fields(&self) -> (&str, &str);
     fn trimmed(&self) -> Self;
 
@@ -239,7 +281,11 @@ impl<C: CredentialPair> CredentialsStore<C> {
         let credentials = self
             .backend
             .read(self.scope, self.account)
-            .map(|text| serde_json::from_str::<C>(&text).ok())
+            .map(|text| {
+                serde_json::from_str::<C::Record>(&text)
+                    .ok()
+                    .map(C::from_record)
+            })
             .unwrap_or_else(|| self.read_legacy())
             .unwrap_or_default();
         cache.credentials = Some(credentials.clone());
@@ -248,7 +294,7 @@ impl<C: CredentialPair> CredentialsStore<C> {
 
     fn read_legacy(&self) -> Option<C> {
         let text = self.backend.read(self.legacy?, self.account)?;
-        let credentials = serde_json::from_str(&text).ok()?;
+        let credentials = C::from_record(serde_json::from_str(&text).ok()?);
         let _ = self.backend.write(self.scope, self.account, &text);
         Some(credentials)
     }
@@ -272,7 +318,7 @@ impl<C: CredentialPair> CredentialsStore<C> {
         let normalized = credentials.trimmed();
         let mut cache = lock(&self.cache);
         if normalized.is_configured() {
-            let text = serde_json::to_string(&normalized)
+            let text = serde_json::to_string(&normalized.record())
                 .map_err(|error| SecretStoreError(error.to_string()))?;
             self.backend.write(self.scope, self.account, &text)?;
         } else {
@@ -469,12 +515,6 @@ pub fn cmc_api_key_with(
         return Some(key);
     }
     non_empty(env(CMC_API_KEY_ENV))
-}
-
-pub fn cmc_api_key() -> Option<String> {
-    cmc_api_key_with(CoinMarketCapKeyStore::shared(), &|name| {
-        std::env::var(name).ok()
-    })
 }
 
 #[cfg(test)]
@@ -706,6 +746,17 @@ mod tests {
     }
 
     #[test]
+    fn a_login_printed_for_debugging_does_not_hold_its_secret() {
+        let printed = format!(
+            "{:?} {:#?}",
+            credentials("PK123", "alpaca-s3cr3t"),
+            credentials("PK123", "alpaca-s3cr3t")
+        );
+        assert!(!printed.contains("alpaca-s3cr3t"), "{printed}");
+        assert!(printed.contains("PK123"), "the key id is no secret");
+    }
+
+    #[test]
     fn oanda_keeps_its_environment_and_reads_older_items_as_live() {
         let (store, memory) = oanda();
         memory
@@ -724,7 +775,7 @@ mod tests {
         store.save(&practice).unwrap();
         let stored = memory.read(OANDA_SHARED, OANDA_ACCOUNT).unwrap();
         assert_eq!(
-            serde_json::from_str::<OandaCredentials>(&stored).unwrap(),
+            OandaCredentials::from_record(serde_json::from_str(&stored).unwrap()),
             practice
         );
     }

@@ -1,16 +1,28 @@
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Pace, Request};
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::samples;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::error::ErrorKind;
+use crate::service::market::ports::http::Retry;
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(in crate::service) const BASE_URL: &str = "https://api.coingecko.com/api/v3";
 
-pub struct CoinGecko;
+pub struct CoinGecko {
+    http: Arc<dyn Http>,
+}
 
-pub const COINGECKO: CoinGecko = CoinGecko;
+impl CoinGecko {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+        }
+    }
+}
 
 impl MarketSource for CoinGecko {
     fn fetch_klines(
@@ -22,11 +34,13 @@ impl MarketSource for CoinGecko {
         let coin_id = symbol.to_lowercase();
         let days = samples::chart_days(timeframe, limit)
             .ok_or_else(|| ProviderError::unsupported(DataSource::CoinGecko, timeframe))?;
-        crate::service::net::rate_limit::coingecko().wait_for_slot();
         let url = format!("{BASE_URL}/coins/{coin_id}/market_chart?vs_currency=usd&days={days}");
-        let body =
-            crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-                .map_err(|error| ProviderError::http(DataSource::CoinGecko, error))?;
+        let body = self.http.fetch(
+            DataSource::CoinGecko,
+            &Request::get(&url)
+                .retry(Retry::Never)
+                .paced(Pace::CoinGecko),
+        )?;
         let prices = parse_prices(&body)?;
         Ok(newest_candles(
             &prices,
@@ -56,9 +70,10 @@ impl MarketSource for CoinGecko {
             return Ok(Vec::new());
         }
         let url = search_url(&q);
-        let body =
-            crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Never)
-                .map_err(|error| ProviderError::http(DataSource::CoinGecko, error))?;
+        let body = self.http.fetch(
+            DataSource::CoinGecko,
+            &Request::get(&url).retry(Retry::Never),
+        )?;
         let value: Value = serde_json::from_str(&body)
             .map_err(|error| ProviderError::malformed(DataSource::CoinGecko, error))?;
         let mut results = Vec::new();
@@ -179,6 +194,84 @@ fn fold_prices(prices: &[(i64, f64)], target: Timeframe) -> Vec<Kline> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http;
+
+    fn venue(rig: &Rig) -> CoinGecko {
+        CoinGecko::new(&rig.context())
+    }
+
+    #[test]
+    fn a_chart_is_one_request_on_the_hosts_schedule_folded_from_its_samples() {
+        let rig = Rig::new();
+        let samples: Vec<String> = (0..=12)
+            .map(|step| {
+                format!(
+                    "[{},{}]",
+                    Rig::NOON - 3_600_000 + step * 300_000,
+                    100 + step
+                )
+            })
+            .collect();
+        rig.http.on(
+            "/market_chart?",
+            &format!(r#"{{"prices":[{}]}}"#, samples.join(",")),
+        );
+        let candles = venue(&rig)
+            .fetch_klines("Bitcoin", Timeframe::HOUR_1, 24)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url,
+            "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1"
+        );
+        assert_eq!(sent[0].pace, Some(Pace::CoinGecko));
+        assert_eq!(sent[0].retry, Retry::Never);
+        // The first hour holds only the sample that closes the one before it, which has no start.
+        assert_eq!(candles.len(), 1);
+        assert_eq!(candles[0].open_time, Rig::NOON - 3_600_000);
+        assert_eq!(candles[0].close, 112.0);
+    }
+
+    #[test]
+    fn what_coingecko_refuses_is_told_by_kind() {
+        let kind_of = |status| {
+            let rig = Rig::new();
+            rig.http.fail("/market_chart?", http::Error::Status(status));
+            venue(&rig)
+                .fetch_klines("bitcoin", Timeframe::HOUR_1, 24)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(kind_of(429), ErrorKind::RateLimited);
+        assert_eq!(kind_of(404), ErrorKind::Transport(http::Error::Status(404)));
+        let rig = Rig::new();
+        rig.http
+            .on("/market_chart?", r#"{"error":"coin not found"}"#);
+        assert!(matches!(
+            venue(&rig)
+                .fetch_klines("nope", Timeframe::HOUR_1, 24)
+                .unwrap_err()
+                .kind,
+            ErrorKind::Malformed(_)
+        ));
+    }
+
+    #[test]
+    fn search_is_one_unpaced_request_and_names_the_coin() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/search?query=bitcoin",
+            r#"{"coins":[{"id":"bitcoin","symbol":"btc","name":"Bitcoin"}]}"#,
+        );
+        let found = venue(&rig).search_tickers(" Bitcoin ").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "BTC");
+        assert_eq!(found[0].full_symbol, "bitcoin");
+        assert_eq!(found[0].names.base.as_deref(), Some("Bitcoin"));
+        assert_eq!(rig.http.sent()[0].pace, None);
+    }
 
     #[test]
     fn a_query_outside_ascii_is_escaped_in_the_search_address() {
@@ -191,9 +284,11 @@ mod tests {
     #[test]
     fn a_length_the_samples_cannot_build_is_refused_before_any_request() {
         for timeframe in [Timeframe::MINUTE_1, Timeframe::parse("22m").unwrap()] {
-            let error = COINGECKO
+            let rig = Rig::new();
+            let error = venue(&rig)
                 .fetch_klines("bitcoin", timeframe, 100)
                 .unwrap_err();
+            assert!(rig.http.urls().is_empty());
             assert_eq!(
                 error,
                 ProviderError::unsupported(DataSource::CoinGecko, timeframe)

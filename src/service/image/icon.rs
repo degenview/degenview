@@ -200,7 +200,10 @@ fn base_symbol(source: DataSource, symbol: &str) -> String {
 fn resolve(source: DataSource, ticker: &str, base: &str) -> (Option<String>, bool) {
     // A Polymarket token names its own artwork; Kalshi has none.
     if source == DataSource::Polymarket {
-        return match crate::service::market::polymarket::artwork_for_token(ticker) {
+        return match crate::service::wiring::venues()
+            .polymarket
+            .artwork_for_token(ticker)
+        {
             Ok(url) => (url, false),
             Err(()) => (None, true),
         };

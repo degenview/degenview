@@ -1,3 +1,6 @@
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::line;
 use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::market::error::ErrorKind;
@@ -7,13 +10,24 @@ use crate::service::{
     replace_last_price, whole_dollars,
 };
 use serde_json::Value;
+use std::sync::Arc;
 
 const GAMMA_BASE: &str = "https://gamma-api.polymarket.com";
 const CLOB_BASE: &str = "https://clob.polymarket.com";
 
-pub struct Polymarket;
+pub struct Polymarket {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+}
 
-pub const POLYMARKET: Polymarket = Polymarket;
+impl Polymarket {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+        }
+    }
+}
 
 /// Gamma serializes `outcomes`/`outcomePrices`/`clobTokenIds` as JSON strings that
 /// themselves contain arrays; they need a second decode pass.
@@ -88,12 +102,9 @@ impl MarketSource for Polymarket {
             "{CLOB_BASE}/prices-history?market={symbol}&interval={}&fidelity={}",
             window.token, window.fidelity
         );
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| ProviderError::http(DataSource::Polymarket, error))?;
+        let body = self
+            .http
+            .fetch(DataSource::Polymarket, &Request::get(&url))?;
         let value: Value = serde_json::from_str(&body)
             .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
 
@@ -111,7 +122,7 @@ impl MarketSource for Polymarket {
             .collect();
         points.sort_by_key(|(t, _)| *t);
         // A window can reach back past the line (`max` is the whole history).
-        let since = crate::clock::now_ms() - window.span_ms;
+        let since = self.clock.now_ms() - window.span_ms;
         points.retain(|(t, _)| *t >= since);
 
         let candles: Vec<Kline> = points
@@ -134,7 +145,7 @@ impl MarketSource for Polymarket {
         }
 
         let thinned = downsample(&candles, limit as usize);
-        Ok(match fetch_current_ask(symbol) {
+        Ok(match self.fetch_current_ask(symbol) {
             Some(price) => replace_last_price(thinned, price),
             None => thinned,
         })
@@ -160,12 +171,9 @@ impl MarketSource for Polymarket {
             return Ok(Vec::new());
         }
         let url = search_url(&q);
-        let body = crate::service::net::http::get_text(
-            &url,
-            &[],
-            crate::service::net::http::Retry::Transient,
-        )
-        .map_err(|error| ProviderError::http(DataSource::Polymarket, error))?;
+        let body = self
+            .http
+            .fetch(DataSource::Polymarket, &Request::get(&url))?;
         let value: Value = serde_json::from_str(&body)
             .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
 
@@ -188,18 +196,18 @@ fn artwork(value: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The artwork of the market behind a YES token, for rows and charts saved without any. `Err`
-/// means the lookup failed (retry soon); `Ok(None)` means the market has no artwork.
-pub fn artwork_for_token(token_id: &str) -> Result<Option<String>, ()> {
-    if token_id.is_empty() || !token_id.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return Ok(None);
+impl Polymarket {
+    /// The artwork of the market behind a YES token, for rows and charts saved without any. `Err`
+    /// means the lookup failed (retry soon); `Ok(None)` means the market has no artwork.
+    pub fn artwork_for_token(&self, token_id: &str) -> Result<Option<String>, ()> {
+        if token_id.is_empty() || !token_id.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Ok(None);
+        }
+        let url = format!("{GAMMA_BASE}/markets?clob_token_ids={token_id}");
+        let body = self.http.get(&Request::get(&url)).map_err(|_| ())?;
+        let markets: Vec<Value> = serde_json::from_str(&body).map_err(|_| ())?;
+        Ok(markets.first().and_then(artwork))
     }
-    let url = format!("{GAMMA_BASE}/markets?clob_token_ids={token_id}");
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-            .map_err(|_| ())?;
-    let markets: Vec<Value> = serde_json::from_str(&body).map_err(|_| ())?;
-    Ok(markets.first().and_then(artwork))
 }
 
 /// The open markets of one Gamma event, one result per tradable YES token.
@@ -282,32 +290,124 @@ fn event_stats(event: &Value) -> EventStats {
     }
 }
 
-/// The most-traded live events of the last 24 hours, flattened like search results.
-pub fn trending(limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
-    let url = format!(
-        "{GAMMA_BASE}/events?active=true&closed=false&order=volume24hr&ascending=false&limit={limit}"
-    );
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
-            .map_err(|error| ProviderError::http(DataSource::Polymarket, error))?;
-    let events: Vec<Value> = serde_json::from_str(&body)
-        .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
-    Ok(events.iter().flat_map(event_results).collect())
-}
+impl Polymarket {
+    /// The most-traded live events of the last 24 hours, flattened like search results.
+    pub fn trending(&self, limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
+        let url = format!(
+            "{GAMMA_BASE}/events?active=true&closed=false&order=volume24hr&ascending=false&limit={limit}"
+        );
+        let body = self
+            .http
+            .fetch(DataSource::Polymarket, &Request::get(&url))?;
+        let events: Vec<Value> = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
+        Ok(events.iter().flat_map(event_results).collect())
+    }
 
-/// The executable YES ask, matching the market page's headline.
-fn fetch_current_ask(token_id: &str) -> Option<f64> {
-    let url = format!("{CLOB_BASE}/price?token_id={token_id}&side=SELL");
-    let body =
-        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
+    /// The executable YES ask, matching the market page's headline.
+    fn fetch_current_ask(&self, token_id: &str) -> Option<f64> {
+        let url = format!("{CLOB_BASE}/price?token_id={token_id}&side=SELL");
+        let body = self
+            .http
+            .fetch(DataSource::Polymarket, &Request::get(&url))
             .ok()?;
-    let value: Value = serde_json::from_str(&body).ok()?;
-    probability(&value["price"])
+        let value: Value = serde_json::from_str(&body).ok()?;
+        probability(&value["price"])
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http::{self, Retry};
+
+    fn venue(rig: &Rig) -> Polymarket {
+        Polymarket::new(&rig.context())
+    }
+
+    #[test]
+    fn a_line_keeps_the_points_inside_its_span_and_ends_on_the_executable_ask() {
+        let rig = Rig::new();
+        let now = Rig::NOON / 1_000;
+        let window = pm_window(Timeframe::HOUR_1);
+        let before_the_span = now - window.span_ms / 1_000 - 3_600;
+        rig.http.on(
+            "/prices-history?",
+            &format!(
+                r#"{{"history":[{{"t":{before_the_span},"p":0.10}},{{"t":{},"p":0.50}},{{"t":{},"p":0.55}}]}}"#,
+                now - 1_200,
+                now - 600
+            ),
+        );
+        rig.http.on("/price?token_id=123", r#"{"price":"0.61"}"#);
+        let candles = venue(&rig)
+            .fetch_klines("123", Timeframe::HOUR_1, 100)
+            .expect("a line");
+        let sent = rig.http.sent();
+        assert_eq!(
+            sent.iter()
+                .map(|sent| sent.url.as_str())
+                .collect::<Vec<_>>(),
+            [
+                format!(
+                    "https://clob.polymarket.com/prices-history?market=123&interval={}&fidelity={}",
+                    window.token, window.fidelity
+                ),
+                "https://clob.polymarket.com/price?token_id=123&side=SELL".to_owned(),
+            ]
+        );
+        assert!(sent.iter().all(|sent| sent.retry == Retry::Transient));
+        let closes: Vec<f64> = candles.iter().map(|candle| candle.close).collect();
+        assert_eq!(closes, [0.50, 0.61]);
+    }
+
+    #[test]
+    fn a_market_with_no_history_is_no_data_and_a_failure_is_its_kind() {
+        let rig = Rig::new();
+        rig.http.on("/prices-history?", r#"{"history":[]}"#);
+        assert_eq!(
+            venue(&rig)
+                .fetch_klines("123", Timeframe::HOUR_1, 100)
+                .unwrap_err()
+                .kind,
+            ErrorKind::NoData
+        );
+        let rig = Rig::new();
+        rig.http.fail("/prices-history?", http::Error::Status(429));
+        assert_eq!(
+            venue(&rig)
+                .fetch_klines("123", Timeframe::HOUR_1, 100)
+                .unwrap_err()
+                .kind,
+            ErrorKind::RateLimited
+        );
+    }
+
+    #[test]
+    fn search_lists_the_open_choices_of_each_event_and_trending_asks_for_the_busiest() {
+        let rig = Rig::new();
+        let events = r#"{"events":[{"title":"Fed decision","markets":[
+            {"groupItemTitle":"Cut","clobTokenIds":"[\"1\",\"2\"]","bestAsk":0.62}]}]}"#;
+        rig.http.on("/public-search?q=fed", events);
+        rig.http.on(
+            "/events?active=true",
+            r#"[{"title":"Fed decision","markets":[{"groupItemTitle":"Hold","clobTokenIds":"[\"3\"]"}]}]"#,
+        );
+        let polymarket = venue(&rig);
+        let found = polymarket.search_tickers(" fed ").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].full_symbol, "1");
+        let busiest = polymarket.trending(5).expect("events");
+        assert_eq!(busiest[0].full_symbol, "3");
+        assert_eq!(
+            rig.http.urls(),
+            [
+                "https://gamma-api.polymarket.com/public-search?q=fed&limit_per_type=10&events_status=active",
+                "https://gamma-api.polymarket.com/events?active=true&closed=false&order=volume24hr&ascending=false&limit=5",
+            ]
+        );
+    }
 
     #[test]
     fn a_query_outside_ascii_is_escaped_in_the_search_address() {
@@ -321,8 +421,11 @@ mod tests {
 
     #[test]
     fn artwork_lookup_refuses_ids_that_are_not_tokens() {
-        assert_eq!(artwork_for_token(""), Ok(None));
-        assert_eq!(artwork_for_token("1&limit=500"), Ok(None));
+        let rig = Rig::new();
+        let polymarket = venue(&rig);
+        assert_eq!(polymarket.artwork_for_token(""), Ok(None));
+        assert_eq!(polymarket.artwork_for_token("1&limit=500"), Ok(None));
+        assert!(rig.http.urls().is_empty());
     }
 
     fn window_of(timeframe: &str) -> (&'static str, i64) {

@@ -1,10 +1,8 @@
 //! Where each of Binance's two markets is served. Everything that differs between spot and the
 //! USDⓈ-M perpetuals is a value here, so the code that asks is the same for both.
 
-use super::catalog::Pair;
 use crate::model::exchange::Market;
 use crate::model::{DataSource, Listing};
-use crate::service::market::catalog::Catalog;
 use serde_json::Value;
 
 pub(in crate::service) struct Endpoints {
@@ -15,7 +13,6 @@ pub(in crate::service) struct Endpoints {
     pub exchange_info_url: &'static str,
     /// Whether an entry of that list is a market of this kind that trades.
     pub lists: fn(&Value) -> bool,
-    pub catalog: &'static Catalog<Pair>,
     /// The combined-stream socket of klines, without its `?streams=`.
     pub kline_stream_url: &'static str,
     pub stream_host: &'static str,
@@ -25,11 +22,6 @@ pub(in crate::service) struct Endpoints {
     pub ticker_batch: Option<usize>,
 }
 
-static SPOT_CATALOG: Catalog<Pair> =
-    Catalog::new(Listing::spot(DataSource::Binance), "catalog_binance");
-static PERPETUAL_CATALOG: Catalog<Pair> =
-    Catalog::new(Listing::BINANCE_PERPETUAL, "catalog_binance_futures");
-
 /// Plain spot `exchangeInfo` is 18 MB (every market ever listed, each with its filters and its
 /// permission sets); the `TRADING` ones without permission sets are 2.6 MB.
 static SPOT: Endpoints = Endpoints {
@@ -37,7 +29,6 @@ static SPOT: Endpoints = Endpoints {
     klines_url: "https://api.binance.com/api/v3/klines",
     exchange_info_url: "https://api.binance.com/api/v3/exchangeInfo?symbolStatus=TRADING&showPermissionSets=false",
     lists: super::catalog::is_trading,
-    catalog: &SPOT_CATALOG,
     kline_stream_url: "wss://stream.binance.com/stream",
     stream_host: "stream.binance.com",
     ticker_url: "https://api.binance.com/api/v3/ticker/24hr",
@@ -51,7 +42,6 @@ static PERPETUAL: Endpoints = Endpoints {
     klines_url: "https://fapi.binance.com/fapi/v1/klines",
     exchange_info_url: "https://fapi.binance.com/fapi/v1/exchangeInfo",
     lists: super::catalog::is_trading_perpetual,
-    catalog: &PERPETUAL_CATALOG,
     kline_stream_url: "wss://fstream.binance.com/market/stream",
     stream_host: "fstream.binance.com",
     ticker_url: "https://fapi.binance.com/fapi/v1/ticker/24hr",

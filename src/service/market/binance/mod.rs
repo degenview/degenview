@@ -2,47 +2,84 @@
 //! (`model::market::binance`) and [`endpoints`] where that market is served.
 
 use super::candles::plan;
+use super::catalog::Catalog;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use super::search_rank::normalize;
+use crate::model::exchange::Market;
 use crate::model::market::binance::split_market;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult};
+use catalog::Pair;
 use serde_json::Value;
+use std::sync::Arc;
 
 mod catalog;
 mod endpoints;
 
-pub(in crate::service) use catalog::tick_size;
 pub(in crate::service) use endpoints::{Endpoints, endpoints};
 
-pub struct Binance;
+pub struct Binance {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every spot market that trades, downloaded at most once a day.
+    pub(super) spot_catalog: Catalog<Pair>,
+    /// Every perpetual that trades.
+    pub(super) perpetual_catalog: Catalog<Pair>,
+}
 
-pub const BINANCE: Binance = Binance;
+impl Binance {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            spot_catalog: Catalog::new(
+                Listing::spot(DataSource::Binance),
+                "catalog_binance",
+                context,
+            ),
+            perpetual_catalog: Catalog::new(
+                Listing::BINANCE_PERPETUAL,
+                "catalog_binance_futures",
+                context,
+            ),
+        }
+    }
+
+    fn catalog(&self, market: Market) -> &Catalog<Pair> {
+        match market {
+            Market::Spot => &self.spot_catalog,
+            Market::Perpetual => &self.perpetual_catalog,
+        }
+    }
+
+    /// A request for the klines of `listing`'s market.
+    fn get(&self, listing: Listing, url: &str) -> Result<String, ProviderError> {
+        self.http
+            .fetch(listing, &Request::get(url).statuses(MARKET_STATUSES))
+    }
+}
 
 /// What the statuses of a request that names a market mean at Binance (klines, a ticker asked for
 /// by name): a 400 names a market it does not list. A request that names none (the exchange's
 /// market list, the whole ticker) has no table: a 400 there says nothing about any market.
 pub(in crate::service) const MARKET_STATUSES: Statuses = &[(400, ErrorKind::UnknownSymbol)];
 
-/// A request for the klines of `listing`'s market.
-fn get(listing: Listing, url: &str) -> Result<String, ProviderError> {
-    crate::service::net::http::get_text(url, &[], crate::service::net::http::Retry::Transient)
-        .map_err(|error| ProviderError::http_with(listing, MARKET_STATUSES, error))
-}
-
 /// The most klines one Binance request returns.
 const MAX_PER_REQUEST: usize = 1_000;
 
 /// What one `symbol` of the app asks Binance for: where, the pair as a query value, and the
 /// market's own listing.
-struct Request {
+struct Target {
     endpoints: &'static Endpoints,
     pair: String,
     listing: Listing,
 }
 
-impl Request {
+impl Target {
     fn of(symbol: &str) -> Self {
         // Any spelling the app takes (`btc`, `BTC/USDT.P`) names the market the same way here as
         // in its live feed and its key.
@@ -63,23 +100,23 @@ impl MarketSource for Binance {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let request = Request::of(symbol);
-        let plan = plan(request.listing, timeframe)?;
+        let target = Target::of(symbol);
+        let plan = plan(target.listing, timeframe)?;
         let requested = plan.base_count(limit as usize);
         if requested > MAX_PER_REQUEST {
             // More finer candles than one request holds: page back from now.
-            let end_ms = crate::clock::now_ms() + 1;
+            let end_ms = self.clock.now_ms() + 1;
             return self.fetch_klines_range(symbol, timeframe, 0, end_ms, limit as usize);
         }
         let url = format!(
             "{}?symbol={}&interval={}&limit={requested}",
-            request.endpoints.klines_url,
-            request.pair,
+            target.endpoints.klines_url,
+            target.pair,
             plan.base().interval()
         );
-        let body = get(request.listing, &url)?;
+        let body = self.get(target.listing, &url)?;
         Ok(plan.shape(
-            parse_klines(request.listing, &body)?,
+            parse_klines(target.listing, &body)?,
             requested,
             limit as usize,
         ))
@@ -96,8 +133,8 @@ impl MarketSource for Binance {
         const PAGE: usize = MAX_PER_REQUEST;
         // Pages are fetched side by side: their start times follow from the interval alone.
         const PARALLEL: usize = 8;
-        let request = Request::of(symbol);
-        let plan = plan(request.listing, timeframe)?;
+        let target = Target::of(symbol);
+        let plan = plan(target.listing, timeframe)?;
         let interval = plan.base().interval();
         let requested = plan.base_count(max);
         let step = plan.base().nominal_ms();
@@ -113,15 +150,15 @@ impl MarketSource for Binance {
                 let handles: Vec<_> = batch
                     .iter()
                     .map(|&from| {
-                        let (interval, request) = (&interval, &request);
+                        let (interval, target) = (&interval, &target);
                         scope.spawn(move || {
                             let to = (from + page_ms).min(end_ms) - 1;
                             let url = format!(
                                 "{}?symbol={}&interval={interval}&startTime={from}&endTime={to}&limit={PAGE}",
-                                request.endpoints.klines_url,
-                                request.pair
+                                target.endpoints.klines_url,
+                                target.pair
                             );
-                            parse_klines(request.listing, &get(request.listing, &url)?)
+                            parse_klines(target.listing, &self.get(target.listing, &url)?)
                         })
                     })
                     .collect();
@@ -130,7 +167,7 @@ impl MarketSource for Binance {
                     .map(|handle| {
                         handle
                             .join()
-                            .unwrap_or_else(|_| Err(ProviderError::interrupted(request.listing)))
+                            .unwrap_or_else(|_| Err(ProviderError::interrupted(target.listing)))
                     })
                     .collect()
             });
@@ -152,7 +189,7 @@ impl MarketSource for Binance {
         if needle.is_empty() {
             return Ok(Vec::new());
         }
-        catalog::search(query, &needle)
+        self.search(query, &needle)
     }
 }
 
@@ -192,6 +229,139 @@ fn parse_row(listing: Listing, row: &Value) -> Result<Kline, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http::{self, Retry};
+
+    const MINUTE: i64 = 60_000;
+    const NOON: i64 = Rig::NOON;
+
+    fn venue(rig: &Rig) -> Binance {
+        Binance::new(&rig.context())
+    }
+
+    /// An answer of the `count` one-minute klines that open from `first`, oldest first.
+    fn minute_rows(first: i64, count: usize) -> String {
+        let rows: Vec<String> = (0..count as i64)
+            .map(|index| {
+                let open = first + index * MINUTE;
+                format!(
+                    r#"[{open},"10","12","9","11","1.5",{},"15",3,"1","1","0"]"#,
+                    open + MINUTE - 1
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    #[test]
+    fn the_newest_candles_are_one_request_of_the_markets_own_api() {
+        let rig = Rig::new();
+        rig.http
+            .on("api.binance.com", &minute_rows(NOON - 3 * MINUTE, 3));
+        rig.http
+            .on("fapi.binance.com", &minute_rows(NOON - 2 * MINUTE, 2));
+        let binance = venue(&rig);
+        let spot = binance
+            .fetch_klines("btc/usdt", Timeframe::MINUTE_1, 3)
+            .expect("candles");
+        let perpetual = binance
+            .fetch_klines("BTCUSDT.P", Timeframe::MINUTE_1, 2)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(
+            sent.iter()
+                .map(|sent| sent.url.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=3",
+                "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1m&limit=2",
+            ]
+        );
+        assert!(sent.iter().all(|sent| sent.retry == Retry::Transient));
+        assert_eq!((spot.len(), perpetual.len()), (3, 2));
+        assert_eq!(spot[0].open_time, NOON - 3 * MINUTE);
+    }
+
+    #[test]
+    fn a_range_is_fetched_as_windows_whose_starts_follow_from_the_interval() {
+        let rig = Rig::new();
+        let end = NOON;
+        let first = end - 1_500 * MINUTE;
+        let second = first + 1_000 * MINUTE;
+        rig.http
+            .on(&format!("startTime={first}&"), &minute_rows(first, 1_000));
+        rig.http
+            .on(&format!("startTime={second}&"), &minute_rows(second, 500));
+        let candles = venue(&rig)
+            .fetch_klines_range("BTCUSDT", Timeframe::MINUTE_1, 0, end, 1_500)
+            .expect("candles");
+        // The pages are asked side by side, so in no fixed order.
+        let mut urls = rig.http.urls();
+        urls.sort();
+        let base = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m";
+        let mut expected = vec![
+            format!("{base}&startTime={first}&endTime={}&limit=1000", second - 1),
+            format!("{base}&startTime={second}&endTime={}&limit=1000", end - 1),
+        ];
+        expected.sort();
+        assert_eq!(urls, expected);
+        assert_eq!(candles.len(), 1_500);
+        assert_eq!(candles[0].open_time, first);
+        assert_eq!(candles[1_499].open_time, end - MINUTE);
+    }
+
+    #[test]
+    fn a_request_for_more_than_one_page_of_the_newest_pages_back_from_the_clock() {
+        let rig = Rig::new();
+        let first = NOON + 1 - 1_200 * MINUTE;
+        rig.http
+            .on(&format!("startTime={first}&"), &minute_rows(first, 1_000));
+        rig.http.on(
+            &format!("startTime={}&", first + 1_000 * MINUTE),
+            &minute_rows(first + 1_000 * MINUTE, 200),
+        );
+        let candles = venue(&rig)
+            .fetch_klines("BTCUSDT", Timeframe::MINUTE_1, 1_200)
+            .expect("candles");
+        let urls = rig.http.urls();
+        assert_eq!(urls.len(), 2);
+        assert!(
+            urls.iter()
+                .any(|url| url.contains(&format!("startTime={first}&endTime="))),
+            "{urls:?}"
+        );
+        assert!(
+            urls.iter()
+                .any(|url| url.ends_with(&format!("endTime={NOON}&limit=1000"))),
+            "the last window ends with the clock: {urls:?}"
+        );
+        assert_eq!(candles.len(), 1_200);
+    }
+
+    #[test]
+    fn what_binance_refuses_is_told_by_kind_and_by_the_market_it_was_asked_of() {
+        let error_of = |symbol: &str, answer: Result<&str, http::Error>| {
+            let rig = Rig::new();
+            match answer {
+                Ok(body) => rig.http.on("/klines?", body),
+                Err(error) => rig.http.fail("/klines?", error),
+            };
+            venue(&rig)
+                .fetch_klines(symbol, Timeframe::HOUR_1, 5)
+                .unwrap_err()
+        };
+        assert_eq!(
+            error_of("NOPEUSDT", Err(http::Error::Status(400))).kind,
+            ErrorKind::UnknownSymbol
+        );
+        let limited = error_of("BTCUSDT.P", Err(http::Error::Status(429)));
+        assert_eq!(limited.kind, ErrorKind::RateLimited);
+        assert_eq!(limited.venue, Listing::BINANCE_PERPETUAL);
+        assert_eq!(
+            error_of("BTCUSDT", Ok(r#"{"code":-1121,"msg":"Invalid symbol."}"#)).kind,
+            ErrorKind::Malformed("expected a candle array".to_owned())
+        );
+    }
 
     #[test]
     fn parses_binance_rows() {
@@ -257,10 +427,10 @@ mod tests {
 
     #[test]
     fn a_symbol_is_asked_of_its_own_markets_api() {
-        let spot = Request::of("btcusdt");
+        let spot = Target::of("btcusdt");
         assert_eq!(spot.pair, "BTCUSDT");
         assert!(spot.endpoints.klines_url.contains("api.binance.com/api/v3"));
-        let perp = Request::of("btcusdt.p");
+        let perp = Target::of("btcusdt.p");
         assert_eq!(perp.pair, "BTCUSDT");
         assert_eq!(perp.listing, Listing::BINANCE_PERPETUAL);
         assert!(
@@ -268,9 +438,9 @@ mod tests {
                 .klines_url
                 .contains("fapi.binance.com/fapi/v1")
         );
-        assert_eq!(Request::of("龙USDT.P").pair, "%E9%BE%99USDT");
-        assert_eq!(Request::of("btc.p").pair, "BTCUSDT");
-        assert_eq!(Request::of("btc/usdt").pair, "BTCUSDT");
+        assert_eq!(Target::of("龙USDT.P").pair, "%E9%BE%99USDT");
+        assert_eq!(Target::of("btc.p").pair, "BTCUSDT");
+        assert_eq!(Target::of("btc/usdt").pair, "BTCUSDT");
     }
 
     #[test]

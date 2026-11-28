@@ -7,12 +7,14 @@
 use super::candles::plan;
 use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Pace, Request};
 use super::search_rank::normalize;
 use crate::model::market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::natives::KRAKEN_BARS;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::error::{Asked, ErrorKind};
-use crate::service::net::{http, rate_limit};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,9 +22,22 @@ use std::sync::Arc;
 
 pub(crate) const BASE_URL: &str = "https://api.kraken.com/0/public";
 
-pub struct Kraken;
+pub struct Kraken {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every market that is online, downloaded at most once a day.
+    pub(super) catalog: Catalog<Pair>,
+}
 
-pub const KRAKEN: Kraken = Kraken;
+impl Kraken {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            catalog: Catalog::new(Listing::spot(DataSource::Kraken), "catalog_kraken", context),
+        }
+    }
+}
 
 /// Kraken's `interval` (minutes) for a candle length it serves itself.
 pub(crate) fn interval(timeframe: Timeframe) -> Option<u32> {
@@ -47,7 +62,7 @@ impl MarketSource for Kraken {
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Kraken, timeframe)?;
         let requested = plan.base_count(limit as usize).min(KRAKEN_BARS);
-        let candles = fetch_ohlc(symbol, plan.base(), Some(requested))?;
+        let candles = self.fetch_ohlc(symbol, plan.base(), Some(requested))?;
         Ok(plan.shape(newest(candles, requested), requested, limit as usize))
     }
 
@@ -60,12 +75,12 @@ impl MarketSource for Kraken {
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
         let plan = plan(DataSource::Kraken, timeframe)?;
-        let rows = fetch_ohlc(symbol, plan.base(), None)?;
+        let rows = self.fetch_ohlc(symbol, plan.base(), None)?;
         Ok(window(plan, rows, start_ms, end_ms, max))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search_pairs(query, || CATALOG.get(download_pairs))
+        search_pairs(query, || self.catalog.get(|| self.download_pairs()))
     }
 }
 
@@ -116,28 +131,30 @@ fn newest(mut candles: Vec<Kline>, count: usize) -> Vec<Kline> {
     candles
 }
 
-/// The candles Kraken holds for `symbol`, oldest first. `recent` asks only for that many of the
-/// newest (and a little more), which keeps a tail refresh small; `None` asks for all 720.
-fn fetch_ohlc(
-    symbol: &str,
-    base: Timeframe,
-    recent: Option<usize>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let minutes =
-        interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Kraken, base))?;
-    let mut url = format!("{BASE_URL}/OHLC?pair={}&interval={minutes}", pair(symbol));
-    if let Some(count) = recent.filter(|count| *count < KRAKEN_BARS) {
-        let since = crate::clock::now_ms() / 1_000 - (count as i64 + 1) * i64::from(minutes) * 60;
-        url.push_str(&format!("&since={since}"));
+impl Kraken {
+    /// The candles Kraken holds for `symbol`, oldest first. `recent` asks only for that many of
+    /// the newest (and a little more), which keeps a tail refresh small; `None` asks for all 720.
+    fn fetch_ohlc(
+        &self,
+        symbol: &str,
+        base: Timeframe,
+        recent: Option<usize>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let minutes =
+            interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Kraken, base))?;
+        let mut url = format!("{BASE_URL}/OHLC?pair={}&interval={minutes}", pair(symbol));
+        if let Some(count) = recent.filter(|count| *count < KRAKEN_BARS) {
+            let since = self.clock.now_ms() / 1_000 - (count as i64 + 1) * i64::from(minutes) * 60;
+            url.push_str(&format!("&since={since}"));
+        }
+        parse_ohlc(&self.get(&url)?, base)
     }
-    parse_ohlc(&get(&url)?, base)
-}
 
-/// A request on Kraken's one-a-second schedule.
-fn get(url: &str) -> Result<String, ProviderError> {
-    rate_limit::kraken().wait_for_slot();
-    http::get_text(url, &[], http::Retry::Transient)
-        .map_err(|error| ProviderError::http(DataSource::Kraken, error))
+    /// A request on Kraken's schedule.
+    fn get(&self, url: &str) -> Result<String, ProviderError> {
+        self.http
+            .fetch(DataSource::Kraken, &Request::get(url).paced(Pace::Kraken))
+    }
 }
 
 /// The `result` of an answer to a request that `asked` about markets or a list, or the provider's
@@ -222,7 +239,7 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable market from `AssetPairs`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
+pub(super) struct Pair {
     id: String,
     base: String,
     quote: String,
@@ -240,11 +257,10 @@ impl ListedMarket for Pair {
     }
 }
 
-/// Every market that is online, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Kraken), "catalog_kraken");
-
-fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    parse_pairs(&get(&format!("{BASE_URL}/AssetPairs"))?)
+impl Kraken {
+    fn download_pairs(&self) -> Result<Vec<Pair>, ProviderError> {
+        parse_pairs(&self.get(&format!("{BASE_URL}/AssetPairs"))?)
+    }
 }
 
 /// `wsname` is `XBT/USD`: the market as `BTC/USD`, which is how every Kraken API spells it.
@@ -272,6 +288,8 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http;
 
     #[test]
     fn every_native_has_its_interval_in_minutes_and_nothing_else_does() {
@@ -323,6 +341,101 @@ mod tests {
         [1699999200,"10.0","12.0","9.0","11.0","10.5","42.5",7],
         [1700002800,"11.0","13.0","10.0","12.0","11.5","5.5",3]
     ],"last":1699999200}}"#;
+
+    fn venue(rig: &Rig) -> Kraken {
+        Kraken::new(&rig.context())
+    }
+
+    #[test]
+    fn the_newest_candles_are_one_request_that_starts_just_before_them_on_the_hosts_schedule() {
+        let rig = Rig::new();
+        rig.http.on("/OHLC?", OHLC);
+        let candles = venue(&rig)
+            .fetch_klines("btc-usd", Timeframe::HOUR_1, 2)
+            .expect("candles");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        // Three hours before the clock, for the two candles and the one the start cuts.
+        let since = Rig::NOON / 1_000 - 3 * 3_600;
+        assert_eq!(
+            sent[0].url,
+            format!("https://api.kraken.com/0/public/OHLC?pair=BTC/USD&interval=60&since={since}")
+        );
+        assert_eq!(sent[0].pace, Some(Pace::Kraken));
+        let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+        assert_eq!(opens, [1_699_999_200_000, 1_700_002_800_000]);
+    }
+
+    #[test]
+    fn a_range_is_cut_out_of_the_one_answer_kraken_holds() {
+        let rig = Rig::new();
+        rig.http.on("/OHLC?", OHLC);
+        let candles = venue(&rig)
+            .fetch_klines_range(
+                "BTC/USD",
+                Timeframe::HOUR_1,
+                1_700_000_000_000,
+                i64::MAX,
+                10,
+            )
+            .expect("candles");
+        assert_eq!(
+            rig.http.urls(),
+            ["https://api.kraken.com/0/public/OHLC?pair=BTC/USD&interval=60"]
+        );
+        let opens: Vec<i64> = candles.iter().map(|candle| candle.open_time).collect();
+        assert_eq!(opens, [1_700_002_800_000]);
+    }
+
+    #[test]
+    fn what_kraken_refuses_is_told_by_kind() {
+        let kind_of = |answer: Result<&str, http::Error>| {
+            let rig = Rig::new();
+            match answer {
+                Ok(body) => rig.http.on("/OHLC?", body),
+                Err(error) => rig.http.fail("/OHLC?", error),
+            };
+            venue(&rig)
+                .fetch_klines("BTC/USD", Timeframe::HOUR_1, 5)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(
+            kind_of(Ok(r#"{"error":["EQuery:Unknown asset pair"]}"#)),
+            ErrorKind::UnknownSymbol
+        );
+        assert_eq!(
+            kind_of(Ok(r#"{"error":["EGeneral:Too many requests"]}"#)),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            kind_of(Ok(r#"{"error":["EService:Unavailable"]}"#)),
+            ErrorKind::Refused(Some("Unavailable".to_owned()))
+        );
+        assert_eq!(
+            kind_of(Err(http::Error::Status(429))),
+            ErrorKind::RateLimited
+        );
+    }
+
+    #[test]
+    fn the_market_list_is_downloaded_once_a_day_and_searched_by_the_common_names() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/AssetPairs",
+            r#"{"error":[],"result":{
+                "XXBTZUSD":{"wsname":"XBT/USD","status":"online"},
+                "OLDUSD":{"wsname":"OLD/USD","status":"cancel_only"}}}"#,
+        );
+        let kraken = venue(&rig);
+        let found = kraken.search_tickers("xbtusd").expect("hits");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].symbol, "BTC/USD");
+        venue(&rig).search_tickers("btc").expect("hits");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].pace, Some(Pace::Kraken));
+    }
 
     #[test]
     fn rows_are_candles_with_the_close_of_their_bucket_and_the_last_key_is_not_a_pair() {
@@ -495,11 +608,12 @@ mod tests {
     #[test]
     #[ignore = "needs the network"]
     fn live_kraken_serves_candles_pairs_and_every_native() {
-        let hits = KRAKEN.search_tickers("xbt/usd").expect("search");
+        let kraken = &crate::service::wiring::venues().kraken;
+        let hits = kraken.search_tickers("xbt/usd").expect("search");
         assert_eq!(hits[0].symbol, "BTC/USD");
         assert_eq!(hits[0].quote.as_deref(), Some("USD"));
         for native in DataSource::Kraken.natives() {
-            let candles = KRAKEN
+            let candles = kraken
                 .fetch_klines("BTC/USD", *native, 100)
                 .expect("candles");
             assert_eq!(candles.len(), 100, "{native}");
@@ -511,30 +625,30 @@ mod tests {
             );
         }
         // A weekly chart is folded from the 720 days Kraken holds.
-        let weekly = KRAKEN
+        let weekly = kraken
             .fetch_klines("BTC/USD", Timeframe::WEEK_1, 500)
             .expect("weekly");
         assert!((90..=105).contains(&weekly.len()), "{}", weekly.len());
         // The chart's first 500 leave the rest of the 720 for one older page, then nothing.
-        let shown = KRAKEN
+        let shown = kraken
             .fetch_klines("BTC/USD", Timeframe::HOUR_1, 500)
             .expect("hourly");
         let end = shown[0].open_time;
-        let older = KRAKEN
+        let older = kraken
             .fetch_klines_range("BTC/USD", Timeframe::HOUR_1, 0, end, 1_000)
             .expect("older page");
         assert!((200..=225).contains(&older.len()), "{}", older.len());
         let end = older[0].open_time;
-        let none = KRAKEN
+        let none = kraken
             .fetch_klines_range("BTC/USD", Timeframe::HOUR_1, 0, end, 1_000)
             .expect("second older page");
         assert!(none.is_empty());
         // A tail refresh asks for little.
-        let tail = KRAKEN
+        let tail = kraken
             .fetch_klines("BTC/USD", Timeframe::MINUTE_1, 4)
             .expect("tail");
         assert_eq!(tail.len(), 4);
-        let error = KRAKEN
+        let error = kraken
             .fetch_klines("NOPE/USD", Timeframe::HOUR_1, 5)
             .unwrap_err();
         assert_eq!(error.kind, ErrorKind::UnknownSymbol);

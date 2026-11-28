@@ -4,9 +4,10 @@
 
 use crate::model::exchange::Exchange;
 use crate::model::liquidation::{Liquidation, Side};
-use crate::service::market::bybit::{KEEPALIVE, get};
+use crate::service::market::bybit::KEEPALIVE;
 use crate::service::net::ws::Session;
 use crate::service::stream::Worker;
+use crate::service::wiring;
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -20,7 +21,9 @@ const RETRY_AFTER: Duration = Duration::from_secs(10);
 /// down first.
 pub(super) fn session(worker: &Worker) -> Option<Session> {
     let symbols = worker.retry(RETRY_AFTER, || {
-        get(TICKERS)
+        wiring::venues()
+            .bybit
+            .get(TICKERS)
             .ok()
             .and_then(|body| busiest_markets(&body, MARKETS))
     })?;

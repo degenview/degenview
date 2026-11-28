@@ -1,4 +1,7 @@
-use crate::clock::now_ms;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::credentials::Credentials;
+use super::ports::http::{Http, Request};
 use crate::model::market::cmc::{
     ALTCOIN_HISTORICAL, ALTCOIN_LATEST, CHART_TYPES, FEAR_GREED_HISTORICAL, FEAR_GREED_LATEST,
 };
@@ -7,7 +10,7 @@ use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::{MarketSource, ProviderError, SearchResult, downsample};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const BASE: &str = "https://pro-api.coinmarketcap.com";
@@ -79,14 +82,6 @@ impl LatestReading {
     }
 }
 
-/// Readings by chart symbol, filled by `fetch_klines` for the chart body to draw.
-static LATEST: LazyLock<Mutex<HashMap<String, LatestReading>>> = LazyLock::new(Default::default);
-
-/// The last reading fetched for a "Latest" chart, if any.
-pub fn latest_reading(symbol: &str) -> Option<LatestReading> {
-    LATEST.lock().ok()?.get(symbol).cloned()
-}
-
 /// Bitcoin Season up to 25, Altcoin Season from 75.
 fn season_classification(index: f64) -> Classification {
     if index <= 25.0 {
@@ -98,7 +93,8 @@ fn season_classification(index: f64) -> Classification {
     }
 }
 
-fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
+/// The reading in a "latest" answer and when it was taken, `now_ms` for one that says nothing of it.
+fn parse_latest(symbol: &str, value: &Value, now_ms: i64) -> Option<(i64, LatestReading)> {
     let data = value.get("data")?;
     let text = |key: &str| data.get(key).and_then(Value::as_str).map(str::to_owned);
     if symbol == ALTCOIN_LATEST {
@@ -108,7 +104,7 @@ fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
         };
         let time = text("snapshot_time").and_then(|time| parse_date(&time));
         Some((
-            time.unwrap_or_else(now_ms),
+            time.unwrap_or(now_ms),
             LatestReading {
                 value: index,
                 classification: season_classification(index),
@@ -121,7 +117,7 @@ fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
     } else {
         let time = text("update_time").and_then(|time| parse_date(&time));
         Some((
-            time.unwrap_or_else(now_ms),
+            time.unwrap_or(now_ms),
             LatestReading {
                 value: data.get("value")?.as_f64()?,
                 classification: Classification::from_fear_greed(
@@ -136,14 +132,36 @@ fn parse_latest(symbol: &str, value: &Value) -> Option<(i64, LatestReading)> {
     }
 }
 
-pub struct CoinMarketCap;
+pub struct CoinMarketCap {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    credentials: Arc<dyn Credentials>,
+    /// Readings by chart symbol, filled by `fetch_klines` for the chart body to draw.
+    latest: Mutex<HashMap<String, LatestReading>>,
+    responses: Mutex<ResponseCache>,
+}
 
-pub const COIN_MARKET_CAP: CoinMarketCap = CoinMarketCap;
+impl CoinMarketCap {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            credentials: context.credentials.clone(),
+            latest: Mutex::default(),
+            responses: Mutex::default(),
+        }
+    }
 
-/// The saved (or environment) API key. Without one the public endpoints still answer, at lower
-/// rate limits.
-fn api_key() -> Option<String> {
-    crate::service::keychain::api_keys::cmc_api_key()
+    /// The last reading fetched for a "Latest" chart, if any.
+    pub fn latest_reading(&self, symbol: &str) -> Option<LatestReading> {
+        self.latest.lock().ok()?.get(symbol).cloned()
+    }
+
+    /// The saved (or environment) API key. Without one the public endpoints still answer, at
+    /// lower rate limits.
+    fn api_key(&self) -> Option<String> {
+        self.credentials.cmc()
+    }
 }
 
 /// The base URL: the authenticated API with a key, the public one without.
@@ -164,8 +182,6 @@ struct ResponseCache {
     failures: HashMap<String, (Instant, ProviderError)>,
 }
 
-static RESPONSES: LazyLock<Mutex<ResponseCache>> = LazyLock::new(Default::default);
-
 const LATEST_TTL: Duration = Duration::from_secs(3_600);
 const HISTORY_TTL: Duration = Duration::from_secs(3_600);
 /// How long a failed request is remembered before the network is tried again.
@@ -173,9 +189,13 @@ const FAILURE_BACKOFF: Duration = Duration::from_secs(120);
 /// The cache only ever sees a handful of URLs; this just bounds the worst case.
 const MAX_CACHED: usize = 32;
 
-fn get(path: &str, key: Option<&str>, ttl: Duration) -> Result<Value, ProviderError> {
-    let url = format!("{}{path}", base_url(key));
-    cached_get(&RESPONSES, &url, ttl, FAILURE_BACKOFF, || fetch(path, key))
+impl CoinMarketCap {
+    fn get(&self, path: &str, key: Option<&str>, ttl: Duration) -> Result<Value, ProviderError> {
+        let url = format!("{}{path}", base_url(key));
+        cached_get(&self.responses, &url, ttl, FAILURE_BACKOFF, || {
+            self.fetch(path, key)
+        })
+    }
 }
 
 /// `url` from the cache while fresh, else from `fetch`. The lock is not held across `fetch`.
@@ -243,27 +263,27 @@ fn statuses(key: Option<&str>) -> Statuses {
     }
 }
 
-fn fetch(path: &str, key: Option<&str>) -> Result<Value, ProviderError> {
-    let url = format!("{}{path}", base_url(key));
-    let mut headers = vec![("Accept", "application/json")];
-    if let Some(key) = key {
-        headers.push(("X-CMC_PRO_API_KEY", key));
-    }
-    let body = crate::service::net::http::get_text(
-        &url,
-        &headers,
-        crate::service::net::http::Retry::Transient,
-    )
-    .map_err(|error| ProviderError::http_with(DataSource::CoinMarketCap, statuses(key), error))?;
-    let value: Value = serde_json::from_str(&body)
-        .map_err(|error| ProviderError::malformed(DataSource::CoinMarketCap, error))?;
-    if value["status"]["error_code"].as_i64().unwrap_or(0) != 0 {
-        return Err(ProviderError::refused_because(
+impl CoinMarketCap {
+    fn fetch(&self, path: &str, key: Option<&str>) -> Result<Value, ProviderError> {
+        let url = format!("{}{path}", base_url(key));
+        let mut headers = vec![("Accept", "application/json")];
+        if let Some(key) = key {
+            headers.push(("X-CMC_PRO_API_KEY", key));
+        }
+        let body = self.http.fetch(
             DataSource::CoinMarketCap,
-            value["status"]["error_message"].as_str(),
-        ));
+            &Request::get(&url).headers(&headers).statuses(statuses(key)),
+        )?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::CoinMarketCap, error))?;
+        if value["status"]["error_code"].as_i64().unwrap_or(0) != 0 {
+            return Err(ProviderError::refused_because(
+                DataSource::CoinMarketCap,
+                value["status"]["error_message"].as_str(),
+            ));
+        }
+        Ok(value)
     }
-    Ok(value)
 }
 
 fn to_klines(points: Vec<(i64, f64)>, limit: u32) -> Result<Vec<Kline>, ProviderError> {
@@ -295,10 +315,10 @@ impl MarketSource for CoinMarketCap {
         _timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        let key = api_key();
+        let key = self.api_key();
         match symbol {
             ALTCOIN_HISTORICAL => {
-                let value = get(
+                let value = self.get(
                     "/v1/altcoin-season-index/historical?timeframe=7d",
                     key.as_deref(),
                     HISTORY_TTL,
@@ -317,27 +337,30 @@ impl MarketSource for CoinMarketCap {
                     .collect();
                 to_klines(points, limit)
             }
-            FEAR_GREED_HISTORICAL => to_klines(fear_greed_series(key.as_deref())?, limit),
+            FEAR_GREED_HISTORICAL => to_klines(self.fear_greed_series(key.as_deref())?, limit),
             ALTCOIN_LATEST | FEAR_GREED_LATEST => {
                 let path = if symbol == ALTCOIN_LATEST {
                     "/v1/altcoin-season-index/latest"
                 } else {
                     "/v3/fear-and-greed/latest"
                 };
-                let (time, mut reading) =
-                    parse_latest(symbol, &get(path, key.as_deref(), LATEST_TTL)?).ok_or_else(
-                        || ProviderError::new(DataSource::CoinMarketCap, ErrorKind::NoData),
-                    )?;
+                let (time, mut reading) = parse_latest(
+                    symbol,
+                    &self.get(path, key.as_deref(), LATEST_TTL)?,
+                    self.clock.now_ms(),
+                )
+                .ok_or_else(|| ProviderError::new(DataSource::CoinMarketCap, ErrorKind::NoData))?;
                 if symbol == FEAR_GREED_LATEST {
                     // The history only decorates the gauge, so a failure here is not an error.
                     // On a failure the previous history stays rather than the gauge losing it.
-                    reading.history = fear_greed_history(key.as_deref())
+                    reading.history = self
+                        .fear_greed_history(key.as_deref())
                         .ok()
-                        .or_else(|| latest_reading(symbol).map(|previous| previous.history))
+                        .or_else(|| self.latest_reading(symbol).map(|previous| previous.history))
                         .unwrap_or_default();
                 }
                 let value = reading.value;
-                if let Ok(mut latest) = LATEST.lock() {
+                if let Ok(mut latest) = self.latest.lock() {
                     latest.insert(symbol.to_owned(), reading);
                 }
                 // One point keeps the candle pipeline (loading, errors, alerts) working; the
@@ -387,28 +410,44 @@ const FRESH_WITHIN_MS: i64 = 3 * 86_400_000;
 const HISTORY_PAGE: usize = 500;
 const MAX_HISTORY_PAGES: usize = 4;
 
-/// Every Fear & Greed reading CMC will page out, oldest first. The endpoint doesn't document its
-/// order, so pages are followed until the newest reading is current (one request when the
-/// newest come first).
-fn fear_greed_series(key: Option<&str>) -> Result<Vec<(i64, f64)>, ProviderError> {
-    let mut points: Vec<(i64, f64)> = Vec::new();
-    for page in 0..MAX_HISTORY_PAGES {
-        let path = format!(
-            "/v3/fear-and-greed/historical?start={}&limit={HISTORY_PAGE}",
-            page * HISTORY_PAGE + 1
-        );
-        let value = get(&path, key, HISTORY_TTL)?;
-        let fetched = parse_series(&value);
-        let full = fetched.len() >= HISTORY_PAGE;
-        points.extend(fetched);
-        let newest = points.iter().map(|(time, _)| *time).max().unwrap_or(0);
-        if !full || newest >= now_ms() - FRESH_WITHIN_MS {
-            break;
+impl CoinMarketCap {
+    /// Every Fear & Greed reading CMC will page out, oldest first. The endpoint doesn't document
+    /// its order, so pages are followed until the newest reading is current (one request when the
+    /// newest come first).
+    fn fear_greed_series(&self, key: Option<&str>) -> Result<Vec<(i64, f64)>, ProviderError> {
+        let mut points: Vec<(i64, f64)> = Vec::new();
+        for page in 0..MAX_HISTORY_PAGES {
+            let path = format!(
+                "/v3/fear-and-greed/historical?start={}&limit={HISTORY_PAGE}",
+                page * HISTORY_PAGE + 1
+            );
+            let value = self.get(&path, key, HISTORY_TTL)?;
+            let fetched = parse_series(&value);
+            let full = fetched.len() >= HISTORY_PAGE;
+            points.extend(fetched);
+            let newest = points.iter().map(|(time, _)| *time).max().unwrap_or(0);
+            if !full || newest >= self.clock.now_ms() - FRESH_WITHIN_MS {
+                break;
+            }
         }
+        points.sort_by_key(|(time, _)| *time);
+        points.dedup_by_key(|(time, _)| *time);
+        Ok(points)
     }
-    points.sort_by_key(|(time, _)| *time);
-    points.dedup_by_key(|(time, _)| *time);
-    Ok(points)
+
+    /// The most recent 90 daily readings, oldest first, for the gauge.
+    fn fear_greed_history(&self, key: Option<&str>) -> Result<Vec<(i64, f64)>, ProviderError> {
+        let mut points = self.fear_greed_series(key)?;
+        let keep = points.len().saturating_sub(90);
+        points.drain(..keep);
+        Ok(points)
+    }
+
+    /// Settings ▸ CoinMarketCap ▸ Test Connection: one cheap authenticated-if-configured request.
+    pub fn test_connection(&self) -> Result<(), ProviderError> {
+        self.fetch("/v3/fear-and-greed/latest", self.api_key().as_deref())
+            .map(|_| ())
+    }
 }
 
 fn parse_series(value: &Value) -> Vec<(i64, f64)> {
@@ -423,19 +462,6 @@ fn parse_series(value: &Value) -> Vec<(i64, f64)> {
             Some((t, point.get("value")?.as_f64()?))
         })
         .collect()
-}
-
-/// The most recent 90 daily readings, oldest first, for the gauge.
-fn fear_greed_history(key: Option<&str>) -> Result<Vec<(i64, f64)>, ProviderError> {
-    let mut points = fear_greed_series(key)?;
-    let keep = points.len().saturating_sub(90);
-    points.drain(..keep);
-    Ok(points)
-}
-
-/// Settings ▸ CoinMarketCap ▸ Test Connection: one cheap authenticated-if-configured request.
-pub fn test_connection() -> Result<(), ProviderError> {
-    fetch("/v3/fear-and-greed/latest", api_key().as_deref()).map(|_| ())
 }
 
 /// CMC timestamps arrive as epoch seconds, ISO-8601, or a bare date.
@@ -471,6 +497,150 @@ fn parse_date(text: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http;
+
+    const LATEST_FEAR: &str = r#"{"data":{"value":56,"update_time":"2026-11-15T08:00:00.000Z","value_classification":"Neutral"},"status":{"error_code":0}}"#;
+    const FEAR_HISTORY: &str = r#"{"data":[
+        {"timestamp":"2026-11-14T00:00:00.000Z","value":50},
+        {"timestamp":"2026-11-13T00:00:00.000Z","value":40}
+    ],"status":{"error_code":0}}"#;
+
+    fn venue(rig: &Rig) -> CoinMarketCap {
+        CoinMarketCap::new(&rig.context())
+    }
+
+    #[test]
+    fn a_latest_reading_is_one_point_and_keeps_the_history_for_the_gauge() {
+        let rig = Rig::new();
+        rig.credentials.save_cmc("cmc-key");
+        rig.http.on("/v3/fear-and-greed/latest", LATEST_FEAR);
+        rig.http.on(
+            "/v3/fear-and-greed/historical?start=1&limit=500",
+            FEAR_HISTORY,
+        );
+        let cmc = venue(&rig);
+        let candles = cmc
+            .fetch_klines(FEAR_GREED_LATEST, Timeframe::DAY_1, 1)
+            .expect("one point");
+        assert_eq!(candles.len(), 1);
+        assert_eq!(candles[0].close, 56.0);
+        let sent = rig.http.sent();
+        assert_eq!(
+            sent.iter()
+                .map(|sent| sent.url.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "https://pro-api.coinmarketcap.com/v3/fear-and-greed/latest",
+                "https://pro-api.coinmarketcap.com/v3/fear-and-greed/historical?start=1&limit=500",
+            ]
+        );
+        assert_eq!(
+            sent[0].headers,
+            [
+                ("Accept".to_owned(), "application/json".to_owned()),
+                ("X-CMC_PRO_API_KEY".to_owned(), "cmc-key".to_owned())
+            ]
+        );
+        let reading = cmc.latest_reading(FEAR_GREED_LATEST).expect("a reading");
+        assert_eq!(reading.value, 56.0);
+        // Oldest first.
+        assert_eq!(
+            reading
+                .history
+                .iter()
+                .map(|(_, value)| *value)
+                .collect::<Vec<_>>(),
+            [40.0, 50.0]
+        );
+        assert_eq!(rig.credentials.cmc_lookups(), 1);
+    }
+
+    #[test]
+    fn without_a_key_the_public_api_answers_and_a_response_is_reused_within_the_hour() {
+        let rig = Rig::new();
+        rig.http.on("/v3/fear-and-greed/latest", LATEST_FEAR);
+        rig.http.on("/v3/fear-and-greed/historical", FEAR_HISTORY);
+        let cmc = venue(&rig);
+        cmc.fetch_klines(FEAR_GREED_LATEST, Timeframe::DAY_1, 1)
+            .expect("one point");
+        cmc.fetch_klines(FEAR_GREED_LATEST, Timeframe::DAY_1, 1)
+            .expect("one point");
+        let sent = rig.http.sent();
+        assert_eq!(sent.len(), 2, "the second answer is the first, kept");
+        assert!(
+            sent[0]
+                .url
+                .starts_with("https://pro-api.coinmarketcap.com/public-api/")
+        );
+        assert_eq!(
+            sent[0].headers,
+            [("Accept".to_owned(), "application/json".to_owned())]
+        );
+    }
+
+    #[test]
+    fn what_coinmarketcap_refuses_is_told_by_kind_and_a_failure_is_not_asked_again_at_once() {
+        let rig = Rig::new();
+        rig.http.on(
+            "/v3/fear-and-greed/latest",
+            r#"{"status":{"error_code":1008,"error_message":"You've exceeded your API Key's rate limit."}}"#,
+        );
+        let cmc = venue(&rig);
+        let first = cmc
+            .fetch_klines(FEAR_GREED_LATEST, Timeframe::DAY_1, 1)
+            .unwrap_err();
+        assert_eq!(
+            first.kind,
+            ErrorKind::Refused(Some(
+                "You've exceeded your API Key's rate limit.".to_owned()
+            ))
+        );
+        let again = cmc
+            .fetch_klines(FEAR_GREED_LATEST, Timeframe::DAY_1, 1)
+            .unwrap_err();
+        assert_eq!(again, first);
+        assert_eq!(rig.http.urls().len(), 1);
+
+        // A refusal means what it was asked with: no key asks for one, a key is refused.
+        for (key, kind) in [
+            (None, ErrorKind::MissingKey),
+            (Some("cmc-key"), ErrorKind::Unauthorized),
+        ] {
+            let rig = Rig::new();
+            if let Some(key) = key {
+                rig.credentials.save_cmc(key);
+            }
+            rig.http
+                .fail("/v3/fear-and-greed/latest", http::Error::Status(401));
+            assert_eq!(
+                venue(&rig)
+                    .fetch_klines(FEAR_GREED_LATEST, Timeframe::DAY_1, 1)
+                    .unwrap_err()
+                    .kind,
+                kind
+            );
+        }
+    }
+
+    #[test]
+    fn a_chart_cmc_does_not_have_is_unknown_without_a_request() {
+        let rig = Rig::new();
+        let error = venue(&rig)
+            .fetch_klines("cmc.nope", Timeframe::DAY_1, 1)
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::UnknownSymbol);
+        assert!(rig.http.urls().is_empty());
+    }
+
+    #[test]
+    fn a_connection_test_is_one_request_with_the_saved_key() {
+        let rig = Rig::new();
+        rig.credentials.save_cmc("cmc-key");
+        rig.http.on("/v3/fear-and-greed/latest", LATEST_FEAR);
+        venue(&rig).test_connection().expect("a connection");
+        assert_eq!(rig.http.urls().len(), 1);
+    }
 
     #[test]
     fn parses_the_latest_readings() {
@@ -478,7 +648,7 @@ mod tests {
             r#"{"data":{"altcoin_index":60,"altcoin_marketcap":1.5e12,"snapshot_time":"2026-10-11T00:00:00.000Z","yearly_high":64,"yearly_high_date":"2026-09-27","yearly_low":14,"yearly_low_date":"2025-12-19"}}"#,
         )
         .unwrap();
-        let (_, reading) = parse_latest(ALTCOIN_LATEST, &altcoin).unwrap();
+        let (_, reading) = parse_latest(ALTCOIN_LATEST, &altcoin, 1_000).unwrap();
         assert_eq!(reading.value, 60.0);
         assert_eq!(reading.classification, Classification::Neutral);
         assert_eq!(reading.yearly_high, Some((64.0, "2026-09-27".to_owned())));
@@ -489,7 +659,7 @@ mod tests {
             r#"{"data":{"value":56,"update_time":"2026-10-11T08:00:00.000Z","value_classification":"Neutral"}}"#,
         )
         .unwrap();
-        let (time, reading) = parse_latest(FEAR_GREED_LATEST, &fear).unwrap();
+        let (time, reading) = parse_latest(FEAR_GREED_LATEST, &fear, 1_000).unwrap();
         assert!(time > 0);
         assert_eq!(reading.value, 56.0);
         assert_eq!(reading.classification, Classification::Neutral);
@@ -657,7 +827,7 @@ mod tests {
 
     #[test]
     fn a_refusal_without_a_key_asks_for_one_and_with_one_blames_the_key_or_the_plan() {
-        use crate::service::net::http::Error;
+        use crate::service::market::ports::http::Error;
         let kind = |key, code| {
             ProviderError::http_with(
                 DataSource::CoinMarketCap,

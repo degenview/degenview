@@ -6,11 +6,11 @@
 
 use crate::i18n::tr;
 use crate::model::DataSource;
-use crate::model::market::oanda::OandaEnvironment;
+use crate::model::market::oanda::{OandaCredentials, OandaEnvironment};
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, CredentialPair,
-    CredentialsStore, OandaCredentials, OandaCredentialsStore,
+    CredentialsStore, OandaCredentialsStore,
 };
 use crate::service::provider_message;
 use crate::service::work_queue;
@@ -526,7 +526,7 @@ pub fn coinmarketcap_body(
                 if form.is_testing() {
                     ui.add(LoadingIndicator::new().size(14.0));
                 } else if kit::sheet_button(ui, tr!("Test Connection"), false, true).clicked() {
-                    form.start_test(Some(ui.ctx()), crate::service::market::cmc::test_connection);
+                    form.start_test(Some(ui.ctx()), crate::service::cmc_test_connection);
                 }
                 open_button(
                     ui,

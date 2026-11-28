@@ -242,7 +242,7 @@ impl Backend {
         related: related_markets,
         trending: service::trending,
         coin_names: names::load_coins,
-        listed_names: names::load_listed,
+        listed_names: service::listed_asset_names,
         candles: service::fetch_klines,
     };
 }

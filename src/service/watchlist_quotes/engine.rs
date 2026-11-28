@@ -1525,7 +1525,7 @@ mod tests {
 
     #[test]
     fn only_an_unknown_symbol_is_searched_for_every_other_failure_backs_the_source_off() {
-        use crate::service::net::http;
+        use crate::service::market::ports::http;
         for kind in [
             ErrorKind::Unauthorized,
             ErrorKind::Blocked,
@@ -1556,7 +1556,7 @@ mod tests {
 
     #[test]
     fn a_400_to_a_request_for_the_whole_list_is_one_request_and_a_backoff() {
-        use crate::service::net::http;
+        use crate::service::market::ports::http;
         use crate::service::watchlist_quotes::provider::quote_statuses;
         // MEXC's `/ticker/24hr` (like Gate.io's `/tickers`: see the provider's tests) names no
         // market, so its 400 names none either: halving the rows would ask for the same list

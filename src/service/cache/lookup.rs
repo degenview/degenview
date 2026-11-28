@@ -15,6 +15,7 @@
 use super::disk::{self, DiskCache, Kind};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -36,7 +37,7 @@ struct StoredFile {
 struct Record {
     at_ms: i64,
     /// `null` is a remembered "nothing here", with its own TTL.
-    value: serde_json::Value,
+    value: Value,
 }
 
 #[derive(Default)]
@@ -115,24 +116,37 @@ impl LookupCache {
         key: &str,
         ttl: Duration,
     ) -> Option<Hit<T>> {
+        let hit = self.get_value(namespace, key, ttl)?;
+        Some(Hit {
+            value: serde_json::from_value(hit.value).ok()?,
+            age: hit.age,
+            fresh: hit.fresh,
+        })
+    }
+
+    /// [`Self::get`] with the answer left as the JSON it is stored as.
+    pub fn get_value(&self, namespace: &str, key: &str, ttl: Duration) -> Option<Hit<Value>> {
         let now = (self.now_ms)();
         let record = {
             let mut tables = self.tables.lock().ok()?;
             self.table(&mut tables, namespace).entries.get(key)?.clone()
         };
-        let value = serde_json::from_value(record.value).ok()?;
         let age = Duration::from_millis(now.saturating_sub(record.at_ms).max(0).unsigned_abs());
         Some(Hit {
-            value,
+            value: record.value,
             age,
             fresh: age < ttl,
         })
     }
 
     pub fn put<T: Serialize>(&self, namespace: &str, key: &str, value: &T) {
-        let Ok(value) = serde_json::to_value(value) else {
-            return;
-        };
+        if let Ok(value) = serde_json::to_value(value) {
+            self.put_value(namespace, key, value);
+        }
+    }
+
+    /// [`Self::put`] of a value already made into JSON.
+    pub fn put_value(&self, namespace: &str, key: &str, value: Value) {
         let record = Record {
             at_ms: (self.now_ms)(),
             value,

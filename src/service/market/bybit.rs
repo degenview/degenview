@@ -8,21 +8,37 @@ use super::catalog::Catalog;
 use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
+use super::ports::clock::Clock;
+use super::ports::context::MarketContext;
+use super::ports::http::{Http, Request};
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::service::market::error::{ErrorKind, Statuses};
-use crate::service::net::http;
 use crate::service::net::ws::Keepalive;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub(crate) const BASE_URL: &str = "https://api.bybit.com/v5/market";
 
-pub struct Bybit;
+pub struct Bybit {
+    http: Arc<dyn Http>,
+    clock: Arc<dyn Clock>,
+    /// Every spot market that is trading, downloaded at most once a day.
+    pub(super) catalog: Catalog<Pair>,
+}
 
-pub const BYBIT: Bybit = Bybit;
+impl Bybit {
+    pub fn new(context: &MarketContext) -> Self {
+        Self {
+            http: context.http.clone(),
+            clock: context.clock.clone(),
+            catalog: Catalog::new(Listing::spot(DataSource::Bybit), "catalog_bybit", context),
+        }
+    }
+}
 
 /// Bybit's heartbeat on every public socket: `{"op":"ping"}`, answered by a reply that starts
 /// `{"success":true,"ret_msg":"pong"`.
@@ -63,9 +79,7 @@ pub(crate) fn symbol_id(symbol: &str) -> String {
 }
 
 /// Bybit's `/market/kline` endpoint.
-struct Klines;
-
-impl KlineEndpoint for Klines {
+impl KlineEndpoint for Bybit {
     const SOURCE: DataSource = DataSource::Bybit;
     const PAGING: Paging = PAGING;
 
@@ -81,7 +95,7 @@ impl KlineEndpoint for Klines {
         before: Option<i64>,
     ) -> Result<Vec<Kline>, ProviderError> {
         // `end` includes the candle that opens at it; `before` is exclusive.
-        fetch_page(id, base, limit, before.map(|before| before - 1))
+        self.fetch_page(id, base, limit, before.map(|before| before - 1))
     }
 }
 
@@ -92,7 +106,7 @@ impl MarketSource for Bybit {
         timeframe: Timeframe,
         limit: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::latest(&Klines, symbol, timeframe, limit as usize)
+        kline_endpoint::latest(self, self.clock.now_ms(), symbol, timeframe, limit as usize)
     }
 
     fn fetch_klines_range(
@@ -103,39 +117,42 @@ impl MarketSource for Bybit {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, ProviderError> {
-        kline_endpoint::range(&Klines, symbol, timeframe, start_ms, end_ms, max)
+        kline_endpoint::range(self, symbol, timeframe, start_ms, end_ms, max)
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        search::find(query, || CATALOG.get(download_pairs))
+        search::find(query, || self.catalog.get(|| self.download_pairs()))
     }
 }
 
-fn fetch_page(
-    id: &str,
-    base: Timeframe,
-    limit: usize,
-    end_ms: Option<i64>,
-) -> Result<Vec<Kline>, ProviderError> {
-    let interval =
-        interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Bybit, base))?;
-    let mut url =
-        format!("{BASE_URL}/kline?category=spot&symbol={id}&interval={interval}&limit={limit}");
-    if let Some(end_ms) = end_ms {
-        url.push_str(&format!("&end={end_ms}"));
+impl Bybit {
+    fn fetch_page(
+        &self,
+        id: &str,
+        base: Timeframe,
+        limit: usize,
+        end_ms: Option<i64>,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        let interval =
+            interval(base).ok_or_else(|| ProviderError::unsupported(DataSource::Bybit, base))?;
+        let mut url =
+            format!("{BASE_URL}/kline?category=spot&symbol={id}&interval={interval}&limit={limit}");
+        if let Some(end_ms) = end_ms {
+            url.push_str(&format!("&end={end_ms}"));
+        }
+        parse_candles(&self.get(&url)?, base)
     }
-    parse_candles(&get(&url)?, base)
+
+    /// A request, with Bybit's regional refusal told apart from a network failure.
+    pub fn get(&self, url: &str) -> Result<String, ProviderError> {
+        self.http
+            .fetch(DataSource::Bybit, &Request::get(url).statuses(STATUSES))
+    }
 }
 
 /// What Bybit's HTTP statuses mean beyond a rate limit, at every endpoint (none of them names a
 /// market by status): some regions are refused with a 403, as is a client that asks too often.
 pub(in crate::service) const STATUSES: Statuses = &[(403, ErrorKind::Blocked)];
-
-/// A request, with Bybit's regional refusal told apart from a network failure.
-pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
-    http::get_text(url, &[], http::Retry::Transient)
-        .map_err(|error| ProviderError::http_with(DataSource::Bybit, STATUSES, error))
-}
 
 /// Whether a `retCode` says to slow down: 10006 (too many visits) and 10018 (the IP limit).
 fn is_rate_limit(code: i64) -> bool {
@@ -211,7 +228,7 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
 
 /// One tradable spot market from `instruments-info`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct Pair {
+pub(super) struct Pair {
     id: String,
     base: String,
     quote: String,
@@ -229,25 +246,24 @@ impl ListedMarket for Pair {
     }
 }
 
-/// Every spot market that is trading, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Bybit), "catalog_bybit");
-
 /// The most pages of the market list followed: 509 markets fit one page of 1,000.
 const CATALOG_PAGES: usize = 10;
 
-fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    let mut pairs = Vec::new();
-    let mut cursor = String::new();
-    for _ in 0..CATALOG_PAGES {
-        let url = format!("{BASE_URL}/instruments-info?category=spot&limit=1000{cursor}");
-        let (page, next) = parse_pairs(&get(&url)?)?;
-        pairs.extend(page);
-        match next {
-            Some(next) => cursor = format!("&cursor={next}"),
-            None => break,
+impl Bybit {
+    fn download_pairs(&self) -> Result<Vec<Pair>, ProviderError> {
+        let mut pairs = Vec::new();
+        let mut cursor = String::new();
+        for _ in 0..CATALOG_PAGES {
+            let url = format!("{BASE_URL}/instruments-info?category=spot&limit=1000{cursor}");
+            let (page, next) = parse_pairs(&self.get(&url)?)?;
+            pairs.extend(page);
+            match next {
+                Some(next) => cursor = format!("&cursor={next}"),
+                None => break,
+            }
         }
+        Ok(pairs)
     }
-    Ok(pairs)
 }
 
 /// The trading markets of a page and the cursor of the next one, if there is one.
@@ -280,7 +296,36 @@ fn parse_pairs(body: &str) -> Result<(Vec<Pair>, Option<String>), ProviderError>
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use crate::service::market::ports::fakes::Rig;
+    use crate::service::market::ports::http::{self, Retry};
     use std::sync::Arc;
+
+    const MINUTE: i64 = 60_000;
+    const NOON: i64 = Rig::NOON;
+
+    fn venue(rig: &Rig) -> Bybit {
+        Bybit::new(&rig.context())
+    }
+
+    /// An answer of `count` one-minute rows, newest first, the newest opening at `newest`.
+    fn minute_rows(newest: i64, count: usize) -> String {
+        let rows: Vec<String> = (0..count as i64)
+            .map(|back| {
+                format!(
+                    r#"["{}","10","12","9","11","1.5","15"]"#,
+                    newest - back * MINUTE
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"retCode":0,"retMsg":"OK","result":{{"category":"spot","symbol":"BTCUSDT","list":[{}]}}}}"#,
+            rows.join(",")
+        )
+    }
+
+    fn opens(candles: &[Kline]) -> Vec<i64> {
+        candles.iter().map(|candle| candle.open_time).collect()
+    }
 
     #[test]
     fn every_native_has_its_interval_and_nothing_else_does() {
@@ -437,11 +482,151 @@ mod tests {
         assert_eq!(ask("BTC").len(), 2);
     }
 
+    #[test]
+    fn the_newest_candles_are_one_request_and_come_back_oldest_first() {
+        let rig = Rig::new();
+        rig.http.on("/kline?", ROWS);
+        let candles = venue(&rig)
+            .fetch_klines("btc/usdt", Timeframe::HOUR_1, 2)
+            .expect("candles");
+        assert_eq!(
+            rig.http
+                .sent()
+                .iter()
+                .map(|sent| (sent.url.as_str(), sent.retry))
+                .collect::<Vec<_>>(),
+            [(
+                "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=60&limit=2",
+                Retry::Transient
+            )]
+        );
+        assert_eq!(opens(&candles), [1_699_999_200_000, 1_700_002_800_000]);
+    }
+
+    #[test]
+    fn a_range_is_paged_back_by_the_end_cursor_of_each_page() {
+        let rig = Rig::new();
+        let end = NOON;
+        rig.http
+            .on("&limit=1000&end=", &minute_rows(end - MINUTE, 1_000));
+        rig.http
+            .on("&limit=500&end=", &minute_rows(end - 1_001 * MINUTE, 500));
+        let candles = venue(&rig)
+            .fetch_klines_range("BTCUSDT", Timeframe::MINUTE_1, 0, end, 1_500)
+            .expect("candles");
+        // `end` includes the candle that opens at it, so each cursor is a millisecond before the
+        // oldest candle held.
+        let base = "https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=1";
+        assert_eq!(
+            rig.http.urls(),
+            [
+                format!("{base}&limit=1000&end={}", end - 1),
+                format!("{base}&limit=500&end={}", end - 1_000 * MINUTE - 1),
+            ]
+        );
+        assert_eq!(candles.len(), 1_500);
+        assert_eq!(candles[0].open_time, end - 1_500 * MINUTE);
+        assert_eq!(candles[1_499].open_time, end - MINUTE);
+    }
+
+    #[test]
+    fn a_long_request_for_the_newest_pages_back_from_the_clock() {
+        let rig = Rig::new();
+        rig.http
+            .on("&limit=1000&end=", &minute_rows(NOON - MINUTE, 1_000));
+        rig.http
+            .on("&limit=200&end=", &minute_rows(NOON - 1_001 * MINUTE, 200));
+        let candles = venue(&rig)
+            .fetch_klines("BTCUSDT", Timeframe::MINUTE_1, 1_200)
+            .expect("candles");
+        let urls = rig.http.urls();
+        assert!(
+            urls[0].ends_with(&format!("&limit=1000&end={NOON}")),
+            "{urls:?}"
+        );
+        assert_eq!(urls.len(), 2);
+        assert_eq!(candles.len(), 1_200);
+    }
+
+    #[test]
+    fn a_length_bybit_cannot_serve_is_refused_before_any_request() {
+        let rig = Rig::new();
+        let error = venue(&rig)
+            .fetch_klines("BTCUSDT", Timeframe::SECOND_1, 10)
+            .unwrap_err();
+        assert!(error.is_unsupported_interval());
+        assert!(rig.http.urls().is_empty());
+    }
+
+    #[test]
+    fn what_bybit_refuses_is_told_by_kind() {
+        let kind_of = |answer: Result<&str, http::Error>| {
+            let rig = Rig::new();
+            match answer {
+                Ok(body) => rig.http.on("/kline?", body),
+                Err(error) => rig.http.fail("/kline?", error),
+            };
+            venue(&rig)
+                .fetch_klines("BTCUSDT", Timeframe::HOUR_1, 5)
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(
+            kind_of(Ok(
+                r#"{"retCode":10001,"retMsg":"Not supported symbols","result":{}}"#
+            )),
+            ErrorKind::Refused(Some("Not supported symbols".to_owned()))
+        );
+        assert_eq!(
+            kind_of(Ok(
+                r#"{"retCode":10006,"retMsg":"Too many visits!","result":{}}"#
+            )),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(kind_of(Err(http::Error::Status(403))), ErrorKind::Blocked);
+        assert_eq!(
+            kind_of(Err(http::Error::Status(500))),
+            ErrorKind::Transport(http::Error::Status(500))
+        );
+    }
+
+    #[test]
+    fn the_market_list_follows_its_cursor_once_a_day_and_is_searched_locally() {
+        let rig = Rig::new();
+        rig.http.on(
+            "instruments-info?category=spot&limit=1000&cursor=page2",
+            r#"{"retCode":0,"result":{"nextPageCursor":"","list":[
+                {"symbol":"ETHBTC","baseCoin":"ETH","quoteCoin":"BTC","status":"Trading"}]}}"#,
+        );
+        rig.http.on(
+            "instruments-info?category=spot&limit=1000",
+            r#"{"retCode":0,"result":{"nextPageCursor":"page2","list":[
+                {"symbol":"BTCUSDT","baseCoin":"BTC","quoteCoin":"USDT","status":"Trading"}]}}"#,
+        );
+        let bybit = venue(&rig);
+        let found = bybit.search_tickers("btc").expect("hits");
+        assert_eq!(
+            found
+                .iter()
+                .map(|hit| hit.symbol.as_str())
+                .collect::<Vec<_>>(),
+            ["BTCUSDT", "ETHBTC"]
+        );
+        assert_eq!(rig.http.urls().len(), 2);
+        // A second search, and one after a relaunch, are answered from what was kept.
+        bybit.search_tickers("eth").expect("hits");
+        venue(&rig).search_tickers("eth").expect("hits");
+        assert_eq!(rig.http.urls().len(), 2);
+    }
+
     /// Run with `cargo test --lib bybit::tests::live -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs the network"]
     fn live_bybit_serves_candles_pairs_and_every_native() {
-        let hits = BYBIT.search_tickers("btc-usdt").expect("search");
+        let hits = crate::service::wiring::venues()
+            .bybit
+            .search_tickers("btc-usdt")
+            .expect("search");
         assert_eq!(hits[0].symbol, "BTCUSDT");
         assert_eq!(hits[0].quote.as_deref(), Some("USDT"));
         for native in DataSource::Bybit.natives() {
@@ -451,7 +636,8 @@ mod tests {
             } else {
                 350
             };
-            let candles = BYBIT
+            let candles = crate::service::wiring::venues()
+                .bybit
                 .fetch_klines("BTCUSDT", *native, wanted)
                 .expect("candles");
             // Weeks and months reach back only to the market's listing.
@@ -468,11 +654,13 @@ mod tests {
             );
         }
         // A 22-minute chart of 500 candles is eleven thousand one-minute ones: 12 pages.
-        let folded = BYBIT
+        let folded = crate::service::wiring::venues()
+            .bybit
             .fetch_klines("BTCUSDT", Timeframe::parse("22m").unwrap(), 500)
             .expect("folded candles");
         assert_eq!(folded.len(), 500);
-        let error = BYBIT
+        let error = crate::service::wiring::venues()
+            .bybit
             .fetch_klines("NOPEUSDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
         assert_eq!(
