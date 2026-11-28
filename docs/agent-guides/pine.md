@@ -77,7 +77,10 @@
   function reads the global whatever its caller declared. A call still parks its locals' previous
   values (`invoke_with`'s `saved`, `restore_saved`) so none outlives it. A loop counter or block local
   that nothing shares stays in the table, so `i[1]` reads the previous bar's last count. `var`/`varip`
-  locals are set at entry (stash value, else unset so the declaration initialises them).
+  locals are set at entry (stash value, else unset so the declaration initialises them). A call
+  stashes only the ones that are set: "declared" is "present in the table", so a `var` in a block
+  that has not run must leave no entry (not an `na`). TradingView initialises it on the block's
+  first run (measured 2026-11-28).
   - **A call that reads no variable keeps its written name; a variable is held under its slot.**
     `call_binding::is_declared_call` says which, mirroring the chain's order: a builtin
     (`is_builtin_call`: `route_of`, plus the by-value names in `is_by_value`: `request.*`, `log.*`,

@@ -1398,6 +1398,34 @@ fn a_named_argument_finds_a_parameter_that_was_renamed() {
 }
 
 #[test]
+fn a_var_in_a_functions_block_initializes_the_first_time_the_block_runs() {
+    // Measured on TradingView: the calls before the block first runs leave the variable
+    // undeclared, so the declaration still initializes it then. `var` and `varip` count on the
+    // odd bars (1, 3, 5); the array is made on bar 3 and holds that bar's value.
+    let session = run(
+        "f() =>\n    r = 0.0\n    if bar_index % 2 == 1\n        var float d = 6.0\n        d += 1\n        r := d\n    r\n\
+         g() =>\n    r = 0.0\n    if bar_index % 2 == 1\n        varip float d = 6.0\n        d += 1\n        r := d\n    r\n\
+         h() =>\n    r = 0.0\n    if bar_index >= 3\n        var array<float> a = array.from(bar_index * 100.0)\n        r := a.get(0)\n    r\n\
+         x = f()\ny = g()\nz = h()",
+        6,
+    );
+    assert_eq!(value(&session, "x"), RuntimeValue::Float(9.0));
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(9.0));
+    assert_eq!(value(&session, "z"), RuntimeValue::Float(300.0));
+}
+
+#[test]
+fn each_call_site_initializes_a_blocks_var_on_its_own_first_run() {
+    let session = run(
+        "f(bool on) =>\n    r = -1\n    if on\n        var int n = bar_index\n        r := n\n    r\n\
+         late = f(bar_index >= 4)\nearly = f(bar_index >= 2)",
+        6,
+    );
+    assert_eq!(value(&session, "late"), RuntimeValue::Int(4));
+    assert_eq!(value(&session, "early"), RuntimeValue::Int(2));
+}
+
+#[test]
 fn a_var_in_a_block_named_like_a_global_is_not_the_global() {
     let session = run(
         "var g = 0.0\nif close > 0\n    var g = 10.0\n    g += 1\nafter = g",

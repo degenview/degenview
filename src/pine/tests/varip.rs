@@ -87,6 +87,27 @@ fn a_varip_local_in_a_function_counts_per_call_site_through_the_ticks() {
 }
 
 #[test]
+fn a_functions_block_first_run_on_the_live_bar_initializes_its_var_and_varip() {
+    let seen = live_bar(
+        "f() =>\n    r = 0\n    if bar_index == 3\n        var int n = 10\n        n += 1\n        r := n\n    r\n\
+         g() =>\n    r = 0\n    if bar_index == 3\n        varip int n = 10\n        n += 1\n        r := n\n    r\n\
+         plot(f())\n\
+         plot(g())",
+    );
+    // The block does not run in the history. On the live bar `var` is rolled back to uninitialized
+    // before each execution, `varip` keeps counting.
+    assert_eq!(
+        seen,
+        [
+            vec![0.0, 0.0],
+            vec![11.0, 11.0],
+            vec![11.0, 12.0],
+            vec![11.0, 13.0]
+        ]
+    );
+}
+
+#[test]
 fn a_global_varip_and_a_function_local_of_the_same_name_stay_apart() {
     let seen = live_bar(
         "varip int n = 0\n\
