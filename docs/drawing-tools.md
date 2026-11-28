@@ -363,8 +363,10 @@ A drawing edit does not mark a saved layout as unsaved, but an Autosave layout w
 ## Replay, synthetic charts, panes
 
 Drawings project through the bars the chart draws: the constructed series on Renko, Kagi and the
-others, and the replay-truncated candles during replay. Times between bars interpolate and times
-beyond the data extrapolate at the average interval, so a drawing anchored after the replay cursor
+others, and the replay-truncated candles during replay. Times between bars interpolate. Times
+beyond the data count the bars the series can have there (`bucket::Calendar`: a stock's nights and
+weekends are none, holidays are not known and count as weekdays); a price-based chart's bars follow
+no clock and extrapolate at their average interval. So a drawing anchored after the replay cursor
 stays where it is. Changing the chart type, the timeframe or the replay position never rewrites an
 anchor; per-timeframe visibility is only a predicate on what is shown.
 

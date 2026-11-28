@@ -660,7 +660,8 @@ fn a_click_on_the_axis_or_the_plot_hands_a_menu_the_real_price_in_every_mode() {
     let ctx = egui::Context::default();
     for mode in PriceScaleMode::ALL {
         let view = view(&card, &candles, mode);
-        let projection = view.projection(plot(), &candles, card.appearance.price_format(), &ctx);
+        let format = card.appearance.price_format();
+        let projection = view.projection(plot(), &candles, format, None, &ctx);
         // 123.4 sits at some height; a click there is a price, never "+x%" or an index.
         let at = Pos2::new(plot().right() + 20.0, view.scale.y(123.4));
         let axis = request(at, Spot::PriceAxis, &projection, &view.scale, &[]);

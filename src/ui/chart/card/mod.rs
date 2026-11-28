@@ -15,6 +15,7 @@ use crate::model::chart::look::Palette;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::synthetic::{BarShape, Construction, SyntheticBar, SyntheticSeries};
 use crate::model::chart::viewport::{ChartViewport, PriceRange, SavedViewport};
+use crate::model::market::bucket::Grid;
 use crate::model::paper::PaperOrderSide;
 use crate::model::pine::instance::{PineInstance, VisualOrder};
 use crate::model::{
@@ -328,6 +329,8 @@ pub struct ChartCard {
     drawn_type: ChartType,
     /// The workspace's timeframe, for the watermark.
     timeframe: Option<Timeframe>,
+    /// The grid the market last drawn cuts its bars on.
+    grid: Grid,
     /// The time the forming bar has left, which the workspace works out each frame from the
     /// chart's data and the clock. The card draws it and never looks at either.
     countdown: Option<Countdown>,
@@ -446,6 +449,7 @@ impl Default for ChartCard {
             constructed: None,
             drawn_type: ChartType::Candles,
             timeframe: None,
+            grid: Grid::Utc,
             countdown: None,
             maximized_pane: None,
             pane_ids: Vec::new(),

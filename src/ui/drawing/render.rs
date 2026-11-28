@@ -3,6 +3,7 @@
 //! anchors through its time/price scales and hands the results to these helpers.
 
 use crate::i18n::{tr, tr_n};
+use crate::model::market::bucket::Calendar;
 use crate::model::{Anchor, Kline, PriceFormat};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
@@ -225,22 +226,46 @@ pub fn duration(secs: i64) -> String {
 }
 
 /// Maps candle open times to a continuous index and back. Between candles it
-/// interpolates linearly; outside the data it extrapolates at the average interval,
-/// so a drawing anchored in the future or before the first bar still has a position.
+/// interpolates linearly; outside the data it counts the bars the series' calendar
+/// has there (so a stock's future skips its nights and weekends), so a drawing
+/// anchored in the future or before the first bar still has a position. A series
+/// whose bars follow no clock (a price-based chart) extrapolates at the average
+/// interval.
 pub struct TimeIndex<'a> {
     candles: &'a [Kline],
     interval: f64,
+    calendar: Option<Calendar>,
 }
 
 impl<'a> TimeIndex<'a> {
-    pub fn new(candles: &'a [Kline]) -> Self {
+    pub fn new(candles: &'a [Kline], calendar: Option<Calendar>) -> Self {
         let interval = match (candles.first(), candles.last()) {
             (Some(first), Some(last)) if candles.len() > 1 && last.open_time > first.open_time => {
                 (last.open_time - first.open_time) as f64 / (candles.len() - 1) as f64
             }
             _ => 60_000.0,
         };
-        Self { candles, interval }
+        Self {
+            candles,
+            interval,
+            calendar,
+        }
+    }
+
+    /// Bars from the one opening at `from` to `time_ms`, past either end of the data.
+    fn steps(&self, from: i64, time_ms: i64) -> f64 {
+        match self.calendar {
+            Some(calendar) => calendar.steps(from, time_ms),
+            None => (time_ms - from) as f64 / self.interval,
+        }
+    }
+
+    /// The inverse of `steps`.
+    fn after(&self, from: i64, steps: f64) -> i64 {
+        match self.calendar {
+            Some(calendar) => calendar.after(from, steps),
+            None => from + (steps * self.interval).round() as i64,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -267,9 +292,9 @@ impl<'a> TimeIndex<'a> {
             .candles
             .partition_point(|candle| candle.open_time <= time_ms);
         if taken == 0 {
-            (time_ms - first.open_time) as f64 / self.interval
+            self.steps(first.open_time, time_ms)
         } else if taken == count {
-            (count - 1) as f64 + (time_ms - last.open_time) as f64 / self.interval
+            (count - 1) as f64 + self.steps(last.open_time, time_ms)
         } else {
             let (lower, upper) = (&self.candles[taken - 1], &self.candles[taken]);
             let width = (upper.open_time - lower.open_time).max(1) as f64;
@@ -284,9 +309,9 @@ impl<'a> TimeIndex<'a> {
         };
         let top = (self.candles.len() - 1) as f64;
         if index <= 0.0 {
-            first.open_time + (index * self.interval).round() as i64
+            self.after(first.open_time, index)
         } else if index >= top {
-            last.open_time + ((index - top) * self.interval).round() as i64
+            self.after(last.open_time, index - top)
         } else {
             let lower = index.floor() as usize;
             let (a, b) = (&self.candles[lower], &self.candles[lower + 1]);
@@ -564,7 +589,7 @@ mod tests {
     #[test]
     fn time_index_round_trips_inside_and_outside() {
         let data = candles(&[1_000, 2_000, 3_000, 4_000]);
-        let index = TimeIndex::new(&data);
+        let index = TimeIndex::new(&data, None);
         assert_eq!(index.index_of(1_000), 0.0);
         assert_eq!(index.index_of(3_500), 2.5);
         assert_eq!(index.index_of(5_000), 4.0);
@@ -577,7 +602,7 @@ mod tests {
     #[test]
     fn bars_between_is_inclusive() {
         let data = candles(&[0, 1_000, 2_000, 3_000]);
-        let index = TimeIndex::new(&data);
+        let index = TimeIndex::new(&data, None);
         assert_eq!(index.bars_between(1_000, 2_000), 2);
         assert_eq!(index.bars_between(2_000, 2_000), 1);
         assert_eq!(index.bars_between(3_000, 0), 4);
@@ -585,9 +610,9 @@ mod tests {
 
     #[test]
     fn time_index_survives_empty_and_single() {
-        assert_eq!(TimeIndex::new(&[]).index_of(5), 0.0);
+        assert_eq!(TimeIndex::new(&[], None).index_of(5), 0.0);
         let one = candles(&[10_000]);
-        let index = TimeIndex::new(&one);
+        let index = TimeIndex::new(&one, None);
         assert_eq!(index.index_of(10_000), 0.0);
         assert_eq!(index.time_at(1.0), 70_000);
     }
