@@ -4,13 +4,16 @@
 //! painter (`pine_chart_render`) and the tests share it. A port of `PineDrawingGeometry`,
 //! `PineLabelGeometry`, `PineSize+Drawing` and the layout halves of `PineChartLayer`.
 
+use crate::model::chart::canvas::Window;
+use crate::model::chart::viewport::MIN_VISIBLE;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
-    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineStyle, MarkerShape,
-    PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical, YLocation,
-    index_is_known,
+    DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle,
+    MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical,
+    YLocation, index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
+use std::cmp::Ordering;
 
 // MARK: Colour and size
 
@@ -756,58 +759,126 @@ pub fn candle_index_for_bar(bar: i64, bar_count: usize, candle_count: usize) -> 
     bar - (bar_count as i64 - candle_count as i64)
 }
 
+/// The bars of a script that the plot shows: `count` of them, with `tail` newer bars off the
+/// right edge (the chart is scrolled back), and `future` empty slots past the newest bar that
+/// are on screen. Every value range follows these, never the script's newest bars.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VisibleBars {
+    pub count: usize,
+    pub tail: usize,
+    pub future: usize,
+}
+
+impl VisibleBars {
+    /// What `window` shows of `bars` bars. The empty slots count only while the newest bar is
+    /// on screen: scrolled back, the plot's right edge lies on a bar.
+    pub fn from_window(window: Window, bars: usize) -> Self {
+        let tail = bars.saturating_sub(window.end);
+        let future = if tail == 0 {
+            let newest_edge = f64::from(window.lead) + (bars - window.start) as f64;
+            // A sliver of a slot (float noise from the offset) is not a slot.
+            (window.slots as f64 - newest_edge - 1e-3).ceil().max(0.0) as usize
+        } else {
+            0
+        };
+        Self {
+            count: window.count(),
+            tail,
+            future,
+        }
+    }
+
+    /// The part of a per-bar series of `len` values these bars show.
+    fn series_range(self, len: usize) -> std::ops::Range<usize> {
+        let end = len.saturating_sub(self.tail);
+        end.saturating_sub(self.count)..end
+    }
+
+    /// The absolute bar indexes shown, as `(first, last)`; `None` when no bar is.
+    fn bar_span(self, bar_count: usize) -> Option<(i64, i64)> {
+        (self.count > 0).then(|| {
+            let newest = bar_count as i64 - 1 - self.tail as i64;
+            (newest + 1 - self.count as i64, newest + self.future as i64)
+        })
+    }
+}
+
 // MARK: Value range
 
 /// Prices of plots, plotcandles and the baseline of filled styles that show in the pane.
-fn series_values(pine: &VisualOutput, candle_count: usize) -> Vec<f64> {
-    let mut values = Vec::new();
-    for output in pine.plots.iter().filter(|o| o.display & DISPLAY_PANE != 0) {
-        let skip = output.values.len().saturating_sub(candle_count);
-        values.extend(output.values[skip..].iter().flatten().copied());
-        if matches!(
-            output.style,
-            PlotStyle::Histogram | PlotStyle::Columns | PlotStyle::Area
-        ) {
-            values.push(output.hist_base);
-        }
-    }
-    for output in pine
-        .candles
-        .iter()
-        .filter(|o| o.display & DISPLAY_PANE != 0)
-    {
-        let skip = output.bars.len().saturating_sub(candle_count);
-        for bar in output.bars[skip..].iter().flatten() {
-            let (high, low) =
-                crate::model::chart::look::drawn_extremes(bar.open, bar.high, bar.low, bar.close);
-            values.extend([high, low]);
-        }
-    }
+fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
+    let mut values = series_values_in_pane(pine, visible);
+    values.extend(
+        pine.plots
+            .iter()
+            .filter(|o| o.display & DISPLAY_PANE != 0)
+            .filter(|o| {
+                matches!(
+                    o.style,
+                    PlotStyle::Histogram | PlotStyle::Columns | PlotStyle::Area
+                )
+            })
+            .map(|o| o.hist_base),
+    );
     values
 }
 
-/// Boxes, lines, labels and polylines that overlap the visible bars (and `future_bars` past them).
-pub fn drawing_values(pine: &VisualOutput, candle_count: usize, future_bars: usize) -> Vec<f64> {
-    if candle_count == 0 {
-        return Vec::new();
+/// A line's extension by position on the chart, `left` toward older bars. As written it follows
+/// the line's own direction (see [`extended_line`]): a line written from right to left swaps
+/// sides, and an upright one runs up or down, over no further bars. A box's sides are already by
+/// position.
+fn sides_by_position(line: &LineOutput) -> LineExtend {
+    match line.x1.cmp(&line.x2) {
+        Ordering::Less => line.extend,
+        Ordering::Greater => line.extend.mirrored(),
+        Ordering::Equal => LineExtend::None,
     }
-    let first = pine.bar_count as i64 - candle_count as i64;
-    let last = pine.bar_count as i64 - 1 + future_bars as i64;
-    let in_view = |a: i64, b: i64| a.min(b) <= last && a.max(b) >= first;
+}
+
+/// The bars a box or line covers: from one anchor to the other, run on without end towards the
+/// side `extend`, by position, pushes it to.
+fn covered_bars(a: i64, b: i64, extend: LineExtend) -> (i64, i64) {
+    (
+        if extend.extends_left() {
+            i64::MIN
+        } else {
+            a.min(b)
+        },
+        if extend.extends_right() {
+            i64::MAX
+        } else {
+            a.max(b)
+        },
+    )
+}
+
+/// Boxes, lines, labels and polylines that overlap the visible bars (and the empty slots on
+/// screen past the newest). A box, or a horizontal line, that extends is as long as the plot: it
+/// counts when it crosses the bars shown. A sloped line counts by its anchors alone.
+pub fn drawing_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
+    let Some((first, last)) = visible.bar_span(pine.bar_count) else {
+        return Vec::new();
+    };
+    let in_view = |(low, high): (i64, i64)| low <= last && high >= first;
     let mut values = Vec::new();
     for item in pine
         .boxes
         .iter()
-        .filter(|b| b.is_complete() && in_view(b.left, b.right))
+        .filter(|b| b.is_complete() && in_view(covered_bars(b.left, b.right, b.extend)))
     {
         values.extend([item.top, item.bottom]);
     }
-    for item in pine
-        .lines
-        .iter()
-        .filter(|l| l.is_complete() && in_view(l.x1, l.x2))
-    {
-        values.extend([item.y1, item.y2]);
+    for item in pine.lines.iter().filter(|l| l.is_complete()) {
+        // TradingView fits the axis to a line's extension only when the line is a level: the
+        // price a sloped line reaches far from its anchors does not move the axis.
+        let extend = if item.y1 == item.y2 {
+            sides_by_position(item)
+        } else {
+            LineExtend::None
+        };
+        if in_view(covered_bars(item.x1, item.x2, extend)) {
+            values.extend([item.y1, item.y2]);
+        }
     }
     for item in pine
         .labels
@@ -821,18 +892,19 @@ pub fn drawing_values(pine: &VisualOutput, candle_count: usize, future_bars: usi
         let (Some(low), Some(high)) = (indexes.clone().min(), indexes.max()) else {
             continue;
         };
-        if index_is_known(low) && in_view(low, high) {
+        if index_is_known(low) && in_view((low, high)) {
             values.extend(polyline.points.iter().map(|point| point.price));
         }
     }
     values
 }
 
-/// Vertical domain for a script pane: every value-anchored output in view, padded so nothing
+/// Vertical domain for a script pane: every value-anchored output in view (a pane is drawn across
+/// the whole plot, so the empty slots on screen count), padded so nothing
 /// touches the frame (`padding` is a share of the range, as for the chart's price range).
-pub fn pane_value_range(pine: &VisualOutput, candle_count: usize, padding: f64) -> (f64, f64) {
-    let mut values = series_values(pine, candle_count);
-    values.extend(drawing_values(pine, candle_count, 0));
+pub fn pane_value_range(pine: &VisualOutput, visible: VisibleBars, padding: f64) -> (f64, f64) {
+    let mut values = series_values(pine, visible);
+    values.extend(drawing_values(pine, visible));
     values.extend(pine.hlines.iter().map(|line| line.value));
     values.retain(|value| value.is_finite());
     let (Some(low), Some(high)) = (
@@ -849,16 +921,15 @@ pub fn pane_value_range(pine: &VisualOutput, candle_count: usize, padding: f64) 
     (low - inset, high + inset)
 }
 
-/// Farthest future slots the chart reserves, as a share of the candles shown, so a far-off
-/// drawing never squeezes the candles into a sliver.
-pub const MAXIMUM_FUTURE_SHARE: f64 = 1.0;
+/// The most slots ever reserved past the last candle: as many as the fewest candles a chart shows,
+/// so a far-off drawing never leaves the candles less than half the plot. It does not depend on
+/// the zoom: zooming, selecting a rectangle and reframing a picture all count on the reserved
+/// slots staying put while the number of candles changes.
+pub const MAXIMUM_FUTURE_BARS: usize = MIN_VISIBLE;
 
 /// Slots past the last candle that this script's drawings reach, capped. Drawings placed by time
 /// (`xloc.bar_time`) are mapped by the renderer and not counted.
-pub fn future_bars(pine: &VisualOutput, candle_count: usize) -> usize {
-    if candle_count == 0 {
-        return 0;
-    }
+pub fn future_bars(pine: &VisualOutput) -> usize {
     let last_bar = pine.bar_count as i64 - 1;
     let mut bars: Vec<i64> = Vec::new();
     for item in pine
@@ -887,8 +958,7 @@ pub fn future_bars(pine: &VisualOutput, candle_count: usize) -> usize {
         .filter(|bar| index_is_known(*bar))
         .max()
         .unwrap_or(last_bar);
-    let cap = (candle_count as f64 * MAXIMUM_FUTURE_SHARE).floor() as i64;
-    (reach - last_bar).clamp(0, cap) as usize
+    (reach - last_bar).clamp(0, MAXIMUM_FUTURE_BARS as i64) as usize
 }
 
 /// What overlay scripts add to the chart's own geometry.
@@ -898,24 +968,37 @@ pub struct OverlayExtent {
     pub values: Vec<f64>,
 }
 
-/// The extent of every overlay script in `outputs`: bar slots past the last candle for drawings
-/// anchored beyond the latest bar, and prices the vertical scale has to reach. Scripts in their
-/// own pane add nothing — they have a value axis of their own.
+/// Slots past the last candle that the overlay scripts in `outputs` ask the chart to keep free.
+/// Scripts in their own pane add nothing.
+pub fn overlay_future_bars<'a>(outputs: impl IntoIterator<Item = &'a VisualOutput>) -> usize {
+    outputs
+        .into_iter()
+        .filter(|output| output.overlay)
+        .map(future_bars)
+        .max()
+        .unwrap_or(0)
+}
+
+/// The extent of every overlay script in `outputs`: the `future_bars` slots the chart keeps free
+/// past the last candle (from [`overlay_future_bars`]), and the prices the vertical scale has to
+/// reach for the bars `visible` shows. Scripts in their own pane add nothing — they have a value
+/// axis of their own.
 pub fn overlay_extent<'a>(
-    outputs: impl IntoIterator<Item = &'a VisualOutput> + Clone,
-    candle_count: usize,
+    outputs: impl IntoIterator<Item = &'a VisualOutput>,
+    visible: VisibleBars,
+    future_bars: usize,
 ) -> OverlayExtent {
-    if candle_count == 0 {
-        return OverlayExtent::default();
-    }
-    let mut extent = OverlayExtent::default();
-    for output in outputs.clone().into_iter().filter(|o| o.overlay) {
-        extent.future_bars = extent.future_bars.max(future_bars(output, candle_count));
+    let mut extent = OverlayExtent {
+        future_bars,
+        values: Vec::new(),
+    };
+    if visible.count == 0 {
+        return extent;
     }
     for output in outputs.into_iter().filter(|o| o.overlay) {
-        let mut values = series_values_in_pane(output, candle_count);
+        let mut values = series_values_in_pane(output, visible);
         values.extend(output.hlines.iter().map(|line| line.value));
-        values.extend(drawing_values(output, candle_count, extent.future_bars));
+        values.extend(drawing_values(output, visible));
         values.retain(|value| value.is_finite());
         extent.values.extend(values);
     }
@@ -923,19 +1006,25 @@ pub fn overlay_extent<'a>(
 }
 
 /// Plot and plotcandle values shown in the main pane (no filled-style baselines, as in Swift).
-fn series_values_in_pane(pine: &VisualOutput, candle_count: usize) -> Vec<f64> {
+fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let mut values = Vec::new();
     for output in pine.plots.iter().filter(|o| o.display & DISPLAY_PANE != 0) {
-        let skip = output.values.len().saturating_sub(candle_count);
-        values.extend(output.values[skip..].iter().flatten().copied());
+        values.extend(
+            output.values[visible.series_range(output.values.len())]
+                .iter()
+                .flatten()
+                .copied(),
+        );
     }
     for output in pine
         .candles
         .iter()
         .filter(|o| o.display & DISPLAY_PANE != 0)
     {
-        let skip = output.bars.len().saturating_sub(candle_count);
-        for bar in output.bars[skip..].iter().flatten() {
+        for bar in output.bars[visible.series_range(output.bars.len())]
+            .iter()
+            .flatten()
+        {
             let (high, low) =
                 crate::model::chart::look::drawn_extremes(bar.open, bar.high, bar.low, bar.close);
             values.extend([high, low]);
@@ -948,7 +1037,7 @@ fn series_values_in_pane(pine: &VisualOutput, candle_count: usize) -> Vec<f64> {
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        CandleBar, CandleOutput, HorizontalLine, LineOutput, MISSING_INDEX, PlotOutput,
+        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, MISSING_INDEX, PlotOutput,
         PolylineOutput, PolylinePoint,
     };
 
@@ -979,6 +1068,48 @@ mod tests {
             width: 1,
             style: LineStyle::Solid,
             extend: LineExtend::None,
+            time_anchored: false,
+            force_overlay: false,
+        }
+    }
+
+    fn box_between(left: i64, right: i64, top: f64, bottom: f64) -> BoxOutput {
+        BoxOutput {
+            id: 0,
+            left,
+            top,
+            right,
+            bottom,
+            border_color: None,
+            border_width: 1,
+            background_color: None,
+            border_style: LineStyle::Solid,
+            extend: LineExtend::None,
+            text: String::new(),
+            text_color: 0,
+            text_size: Size::Normal,
+            text_horizontal_align: TextAlign::default(),
+            text_vertical_align: TextAlign::default(),
+            text_font_family: FontFamily::Default,
+            time_anchored: false,
+            force_overlay: false,
+        }
+    }
+
+    fn label_at(x: i64, y: f64) -> LabelOutput {
+        LabelOutput {
+            id: 0,
+            x,
+            y,
+            text: String::new(),
+            color: None,
+            text_color: 0,
+            style: LabelStyle::LabelDown,
+            size: Size::Normal,
+            tooltip: None,
+            text_align: TextAlign::default(),
+            yloc: YLocation::Price,
+            font_family: FontFamily::Default,
             time_anchored: false,
             force_overlay: false,
         }
@@ -1468,6 +1599,23 @@ mod tests {
         assert_eq!(candle_index_for_bar(12, 11, 5), 6, "past the last candle");
     }
 
+    /// The newest `count` bars, at the right edge with nothing past them.
+    fn newest(count: usize) -> VisibleBars {
+        VisibleBars {
+            count,
+            tail: 0,
+            future: 0,
+        }
+    }
+
+    fn scrolled(count: usize, tail: usize) -> VisibleBars {
+        VisibleBars {
+            count,
+            tail,
+            future: 0,
+        }
+    }
+
     fn visual(bar_count: usize) -> VisualOutput {
         VisualOutput {
             overlay: true,
@@ -1490,23 +1638,23 @@ mod tests {
             title: None,
             style: LineStyle::Dashed,
         });
-        let (low, high) = pane_value_range(&output, 3, 0.1);
+        let (low, high) = pane_value_range(&output, newest(3), 0.1);
         // The plot's last three values (nan, 20, 15) plus the hline at 30.
         assert_eq!((low, high), (15.0 - 1.5, 30.0 + 1.5));
         assert_eq!(
-            pane_value_range(&visual(3), 3, 0.1),
+            pane_value_range(&visual(3), newest(3), 0.1),
             (0.0, 1.0),
             "nothing to show"
         );
         let mut flat = visual(3);
         flat.plots.push(plot(vec![Some(100.0)], PlotStyle::Line));
-        assert_eq!(pane_value_range(&flat, 3, 0.1), (99.0, 101.0));
+        assert_eq!(pane_value_range(&flat, newest(3), 0.1), (99.0, 101.0));
         let mut histogram = visual(3);
         histogram
             .plots
             .push(plot(vec![Some(5.0), Some(8.0)], PlotStyle::Histogram));
         assert_eq!(
-            pane_value_range(&histogram, 3, 0.0),
+            pane_value_range(&histogram, newest(3), 0.0),
             (0.0, 8.0),
             "the baseline counts"
         );
@@ -1533,7 +1681,7 @@ mod tests {
             show_last: None,
             force_overlay: false,
         });
-        assert_eq!(pane_value_range(&output, 3, 0.0), (1.0, 9.0));
+        assert_eq!(pane_value_range(&output, newest(3), 0.0), (1.0, 9.0));
     }
 
     #[test]
@@ -1542,7 +1690,7 @@ mod tests {
         output.lines.push(line(95, 10.0, 99, 20.0));
         output.lines.push(line(10, 500.0, 20, 600.0));
         output.lines.push(line(98, 40.0, MISSING_INDEX, f64::NAN));
-        let values = drawing_values(&output, 10, 0);
+        let values = drawing_values(&output, newest(10));
         assert_eq!(values, [10.0, 20.0]);
         output.polylines.push(PolylineOutput {
             id: 0,
@@ -1565,37 +1713,331 @@ mod tests {
             force_overlay: false,
         });
         assert_eq!(
-            drawing_values(&output, 10, 0),
+            drawing_values(&output, newest(10)),
             [10.0, 20.0, 7.0, 8.0].to_vec()
         );
         output.lines.push(line(104, 70.0, 108, 80.0));
-        assert!(!drawing_values(&output, 10, 0).contains(&70.0));
+        assert!(!drawing_values(&output, newest(10)).contains(&70.0));
         assert!(
-            drawing_values(&output, 10, 6).contains(&70.0),
+            drawing_values(
+                &output,
+                VisibleBars {
+                    future: 6,
+                    ..newest(10)
+                }
+            )
+            .contains(&70.0),
             "future bars widen the window"
         );
-        assert!(drawing_values(&output, 0, 0).is_empty());
+        assert!(drawing_values(&output, newest(0)).is_empty());
     }
 
     #[test]
-    fn future_bars_are_capped_at_the_share_of_candles_shown() {
+    fn future_bars_are_capped_at_the_fewest_candles_a_chart_shows() {
         let mut output = visual(100);
         output.lines.push(line(90, 1.0, 104, 2.0));
-        assert_eq!(future_bars(&output, 50), 5);
-        output.lines.push(line(90, 1.0, 400, 2.0));
-        assert_eq!(future_bars(&output, 50), 50, "capped at one screen");
+        assert_eq!(future_bars(&output), 5, "inside the cap");
+        output.lines.push(line(90, 1.0, 100_000, 2.0));
+        assert_eq!(future_bars(&output), MIN_VISIBLE);
         let mut anchored_by_time = visual(100);
         anchored_by_time.lines.push(LineOutput {
             time_anchored: true,
             ..line(0, 1.0, 400, 2.0)
         });
         assert_eq!(
-            future_bars(&anchored_by_time, 50),
+            future_bars(&anchored_by_time),
             0,
             "time-anchored drawings are mapped later"
         );
-        assert_eq!(future_bars(&visual(100), 50), 0);
-        assert_eq!(future_bars(&output, 0), 0);
+        assert_eq!(future_bars(&visual(100)), 0);
+    }
+
+    #[test]
+    fn visible_bars_follow_the_window_and_count_only_empty_slots_on_screen() {
+        use crate::model::chart::canvas::visible_window;
+        let at_rest = VisibleBars::from_window(visible_window(500, 100, 0.0, 10), 500);
+        assert_eq!(
+            at_rest,
+            VisibleBars {
+                count: 100,
+                tail: 0,
+                future: 10
+            }
+        );
+        let nudged = VisibleBars::from_window(visible_window(500, 100, 4.0, 10), 500);
+        assert_eq!((nudged.tail, nudged.future), (0, 6), "four slots filled");
+        let half = VisibleBars::from_window(visible_window(500, 100, 4.5, 10), 500);
+        assert_eq!(half.future, 6, "a half-filled slot is still on screen");
+        let back = VisibleBars::from_window(visible_window(500, 100, 60.0, 10), 500);
+        assert_eq!(
+            back,
+            VisibleBars {
+                count: 110,
+                tail: 50,
+                future: 0
+            },
+            "scrolled back, the edge lies on a bar"
+        );
+        assert_eq!(
+            VisibleBars::from_window(visible_window(0, 100, 0.0, 10), 0),
+            VisibleBars {
+                count: 0,
+                tail: 0,
+                future: 10
+            },
+            "no bars, so the margin is all empty"
+        );
+    }
+
+    #[test]
+    fn series_values_follow_the_bars_on_screen() {
+        let mut output = visual(10);
+        output.plots.push(plot(
+            (1..=10).map(|value| Some(f64::from(value))).collect(),
+            PlotStyle::Line,
+        ));
+        assert_eq!(series_values(&output, newest(3)), [8.0, 9.0, 10.0]);
+        assert_eq!(series_values(&output, scrolled(3, 4)), [4.0, 5.0, 6.0]);
+        assert_eq!(
+            series_values(&output, scrolled(5, 8)),
+            [1.0, 2.0],
+            "the window may reach before the first value"
+        );
+        assert!(series_values(&output, scrolled(3, 20)).is_empty());
+    }
+
+    #[test]
+    fn a_scrolled_pane_ranges_over_the_values_on_screen() {
+        let mut output = visual(10);
+        output.plots.push(plot(
+            vec![
+                Some(1.0),
+                Some(2.0),
+                Some(3.0),
+                Some(4.0),
+                Some(5.0),
+                Some(6.0),
+                Some(7.0),
+                Some(8.0),
+                Some(900.0),
+                Some(1_000.0),
+            ],
+            PlotStyle::Line,
+        ));
+        assert_eq!(pane_value_range(&output, scrolled(3, 3), 0.0), (5.0, 7.0));
+        assert_eq!(
+            pane_value_range(&output, newest(3), 0.0),
+            (8.0, 1_000.0),
+            "at the right edge the newest values count"
+        );
+        let with_future = VisibleBars {
+            future: 8,
+            ..newest(3)
+        };
+        assert_eq!(
+            pane_value_range(&output, with_future, 0.0),
+            (8.0, 1_000.0),
+            "empty slots add no series values"
+        );
+    }
+
+    fn output_with_line(x1: i64, y1: f64, x2: i64, y2: f64, extend: LineExtend) -> VisualOutput {
+        let mut output = visual(300);
+        output.lines.push(LineOutput {
+            extend,
+            ..line(x1, y1, x2, y2)
+        });
+        output
+    }
+
+    /// The prices a drawing contributes to the bars 60-99 of 300.
+    fn in_window_60_to_99(output: &VisualOutput) -> Vec<f64> {
+        let mut values = drawing_values(output, scrolled(40, 200));
+        values.sort_by(f64::total_cmp);
+        values
+    }
+
+    #[test]
+    fn a_horizontal_line_extended_into_the_window_counts_its_price() {
+        let level = |x1, x2, extend| output_with_line(x1, 10.0, x2, 10.0, extend);
+        assert_eq!(
+            in_window_60_to_99(&level(250, 260, LineExtend::Left)),
+            [10.0, 10.0]
+        );
+        assert_eq!(
+            in_window_60_to_99(&level(250, 260, LineExtend::Both)),
+            [10.0, 10.0]
+        );
+        assert!(in_window_60_to_99(&level(250, 260, LineExtend::None)).is_empty());
+        assert!(
+            in_window_60_to_99(&level(250, 260, LineExtend::Right)).is_empty(),
+            "extending away from the window does not reach it"
+        );
+        assert_eq!(
+            in_window_60_to_99(&level(10, 20, LineExtend::Right)),
+            [10.0, 10.0]
+        );
+        assert_eq!(
+            in_window_60_to_99(&level(10, 20, LineExtend::Both)),
+            [10.0, 10.0]
+        );
+        assert!(in_window_60_to_99(&level(10, 20, LineExtend::Left)).is_empty());
+    }
+
+    #[test]
+    fn a_sloped_line_adds_nothing_to_the_range_by_extending() {
+        // TradingView leaves them out: 1% per 100 bars, 1% per 10 bars, 20% per bar.
+        for rise in [0.001, 0.01, 2.0] {
+            for extend in [LineExtend::Left, LineExtend::Both] {
+                let ahead = output_with_line(250, 10.0, 260, 10.0 + rise, extend);
+                assert!(
+                    in_window_60_to_99(&ahead).is_empty(),
+                    "a rise of {rise} extended {extend:?} from the right"
+                );
+            }
+            for extend in [LineExtend::Right, LineExtend::Both] {
+                let behind = output_with_line(10, 10.0, 20, 10.0 + rise, extend);
+                assert!(
+                    in_window_60_to_99(&behind).is_empty(),
+                    "a rise of {rise} extended {extend:?} from the left"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_sloped_line_over_the_window_counts_its_anchors_prices_extended_or_not() {
+        for extend in [
+            LineExtend::None,
+            LineExtend::Left,
+            LineExtend::Right,
+            LineExtend::Both,
+        ] {
+            let over = output_with_line(80, 10.0, 90, 20.0, extend);
+            assert_eq!(in_window_60_to_99(&over), [10.0, 20.0], "{extend:?}");
+        }
+    }
+
+    #[test]
+    fn a_level_counts_where_it_is_drawn_whichever_way_it_is_written() {
+        // Bars 60-99 on screen; x is the bar here, so the drawn ends say what is shown.
+        let plot = Rect::from_min_max(Pos2::new(60.0, 0.0), Pos2::new(99.0, 100.0));
+        for (x1, x2) in [(10, 20), (20, 10), (250, 260), (260, 250), (250, 250)] {
+            for extend in [
+                LineExtend::None,
+                LineExtend::Left,
+                LineExtend::Right,
+                LineExtend::Both,
+            ] {
+                let (from, to) = extended_line(
+                    Pos2::new(x1 as f32, 50.0),
+                    Pos2::new(x2 as f32, 50.0),
+                    extend,
+                    plot,
+                );
+                let drawn = from.x.min(to.x) <= 99.0 && from.x.max(to.x) >= 60.0;
+                let counted =
+                    !in_window_60_to_99(&output_with_line(x1, 10.0, x2, 10.0, extend)).is_empty();
+                assert_eq!(counted, drawn, "{x1} to {x2}, {extend:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_vertical_line_never_extends() {
+        let vertical = output_with_line(250, 10.0, 250, 20.0, LineExtend::Both);
+        assert!(in_window_60_to_99(&vertical).is_empty());
+    }
+
+    #[test]
+    fn a_box_extended_into_the_window_counts() {
+        let boxed = |left, right, extend| {
+            let mut output = visual(300);
+            output.boxes.push(BoxOutput {
+                extend,
+                ..box_between(left, right, 30.0, 20.0)
+            });
+            output
+        };
+        assert_eq!(
+            in_window_60_to_99(&boxed(250, 260, LineExtend::Left)),
+            [20.0, 30.0]
+        );
+        assert_eq!(
+            in_window_60_to_99(&boxed(10, 20, LineExtend::Right)),
+            [20.0, 30.0]
+        );
+        assert!(in_window_60_to_99(&boxed(250, 260, LineExtend::None)).is_empty());
+        assert!(in_window_60_to_99(&boxed(250, 260, LineExtend::Right)).is_empty());
+    }
+
+    #[test]
+    fn a_pane_counts_a_label_in_the_empty_slots_it_is_drawn_in() {
+        let mut output = VisualOutput {
+            overlay: false,
+            ..visual(300)
+        };
+        output.labels.push(label_at(300, 99.0));
+        let margin = VisibleBars {
+            future: 6,
+            ..newest(40)
+        };
+        assert_eq!(
+            pane_value_range(&output, margin, 0.1),
+            (99.0 - 0.99, 99.0 + 0.99),
+            "the label sits in the margin, which the pane draws across"
+        );
+        assert_eq!(pane_value_range(&output, newest(40), 0.1), (0.0, 1.0));
+        assert_eq!(
+            pane_value_range(&output, scrolled(40, 20), 0.1),
+            (0.0, 1.0),
+            "scrolled back there is no margin on screen"
+        );
+    }
+
+    #[test]
+    fn a_scrolled_view_counts_the_drawings_on_screen_and_not_the_newest() {
+        let mut output = visual(100);
+        output.lines.push(line(20, 11.0, 30, 12.0));
+        output.lines.push(line(95, 900.0, 99, 901.0));
+        output.boxes.push(box_between(22, 40, 14.0, 13.0));
+        output.labels.push(label_at(25, 15.0));
+        output.labels.push(label_at(99, 902.0));
+        let mut seen = drawing_values(&output, scrolled(20, 60));
+        seen.sort_by(f64::total_cmp);
+        assert_eq!(seen, [11.0, 12.0, 13.0, 14.0, 15.0]);
+        assert_eq!(
+            drawing_values(&output, newest(20)),
+            [900.0, 901.0, 902.0],
+            "at the right edge only the newest drawings count"
+        );
+        assert_eq!(
+            pane_value_range(&output, scrolled(20, 60), 0.0),
+            (11.0, 15.0)
+        );
+    }
+
+    #[test]
+    fn a_drawing_just_past_the_edge_counts_only_while_its_slots_are_on_screen() {
+        let mut output = visual(100);
+        output.lines.push(line(101, 70.0, 104, 80.0));
+        let on_screen = VisibleBars {
+            future: 6,
+            ..newest(10)
+        };
+        assert!(drawing_values(&output, on_screen).contains(&70.0));
+        assert!(!drawing_values(&output, newest(10)).contains(&70.0));
+        assert!(
+            !drawing_values(
+                &output,
+                VisibleBars {
+                    future: 6,
+                    ..scrolled(10, 20)
+                }
+            )
+            .contains(&70.0),
+            "scrolled back, the slots past the newest bar are far off screen"
+        );
     }
 
     #[test]
@@ -1610,7 +2052,9 @@ mod tests {
             ..visual(10)
         };
         pane.plots.push(plot(vec![Some(1_000.0)], PlotStyle::Line));
-        let extent = overlay_extent(&[overlay, pane], 5);
+        let outputs = [overlay, pane];
+        let future = overlay_future_bars(&outputs);
+        let extent = overlay_extent(&outputs, newest(20), future);
         assert_eq!(extent.future_bars, 3);
         assert!(extent.values.contains(&40.0) && extent.values.contains(&70.0));
         assert!(extent.values.contains(&60.0));
@@ -1622,7 +2066,44 @@ mod tests {
             !extent.values.contains(&0.0),
             "the histogram baseline is not an overlay value"
         );
-        assert_eq!(overlay_extent(&[], 5), OverlayExtent::default());
+        assert_eq!(overlay_future_bars([]), 0);
+        assert_eq!(overlay_extent([], newest(20), 0), OverlayExtent::default());
+    }
+
+    #[test]
+    fn a_scrolled_overlay_extent_reaches_the_prices_on_screen_only() {
+        let mut overlay = visual(10);
+        overlay.plots.push(plot(
+            vec![
+                Some(100.0),
+                Some(101.0),
+                Some(102.0),
+                Some(103.0),
+                Some(104.0),
+                Some(105.0),
+                Some(106.0),
+                Some(107.0),
+                Some(5_000.0),
+                Some(6_000.0),
+            ],
+            PlotStyle::Line,
+        ));
+        overlay.lines.push(line(9, 7_000.0, 9, 7_100.0));
+        overlay.lines.push(line(2, 99.0, 3, 98.0));
+        let outputs = [overlay];
+        let back = overlay_extent(&outputs, scrolled(4, 4), 0);
+        let mut values = back.values.clone();
+        values.sort_by(f64::total_cmp);
+        assert_eq!(values, [98.0, 99.0, 102.0, 103.0, 104.0, 105.0]);
+        let at_rest = overlay_extent(&outputs, newest(4), 0);
+        assert!(at_rest.values.contains(&6_000.0) && at_rest.values.contains(&7_100.0));
+        assert!(!at_rest.values.contains(&98.0));
+        assert_eq!(overlay_extent(&outputs, scrolled(0, 4), 2).future_bars, 2);
+        assert!(
+            overlay_extent(&outputs, scrolled(0, 4), 2)
+                .values
+                .is_empty()
+        );
     }
     /// What `block_font_size`, `cell_padding`, `label_padding` and `shape_label` were fitted to:
     /// heights read from TradingView's canvas, with this font's line 1.2 sizes high.

@@ -245,11 +245,11 @@ impl ChartCard {
 /// and the axis width both read this, so the axis is as wide as the labels it draws.
 pub(super) fn pane_labels(
     pine: &VisualOutput,
-    shown: usize,
+    visible: VisibleBars,
     plot_height: f32,
     style: &CanvasStyle,
 ) -> Vec<(f64, String)> {
-    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown, 0.1);
+    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, visible, 0.1);
     // A pane is short: its labels sit closer than the price chart's, and it keeps at least two.
     let budget = chart::canvas::tick_budget(plot_height, style.pane_tick_spacing()).max(2);
     let ticks = chart::canvas::price_ticks(low, high, false, budget);
@@ -279,7 +279,7 @@ pub(super) fn draw_script_pane(
     price_plot: Rect,
     pine: &VisualOutput,
     shown: &[Kline],
-    tail: usize,
+    visible: VisibleBars,
     slot_width: f32,
     x_for_index: &dyn Fn(i64) -> f32,
     style: &CanvasStyle,
@@ -294,10 +294,10 @@ pub(super) fn draw_script_pane(
     if plot.height() <= 1.0 {
         return None;
     }
-    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown.len(), 0.1);
+    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, visible, 0.1);
     let span = (high - low).max(f64::EPSILON);
     let y_for = |value: f64| plot.bottom() - ((value - low) / span) as f32 * plot.height();
-    let labels = pane_labels(pine, shown.len(), plot.height(), style);
+    let labels = pane_labels(pine, visible, plot.height(), style);
     if let Some(grid) = style.vertical_grid {
         for x in tick_xs {
             if *x >= plot.left() && *x <= plot.right() {
@@ -325,7 +325,7 @@ pub(super) fn draw_script_pane(
     let layer = PineLayer {
         pine,
         candles: shown,
-        tail,
+        tail: visible.tail,
         in_pane: true,
         plot,
         slot_width,

@@ -114,7 +114,8 @@ impl ChartCard {
 
     /// How far the overlay scripts in `outputs` reach for `viewport` over `bars` bars: overlay
     /// scripts may draw past the last bar (a stack to the right of the chart) and above or below
-    /// the candles; the line chart draws none of that.
+    /// the candles; the line chart draws none of that. The prices are those of the bars on
+    /// screen, wherever the chart is scrolled to.
     pub(super) fn extent_of(
         &self,
         viewport: &ChartViewport,
@@ -125,19 +126,25 @@ impl ChartCard {
         if line {
             return OverlayExtent::default();
         }
-        let shown_count = chart::canvas::visible_window(
-            bars,
-            viewport.horizontal.visible,
-            viewport.horizontal.right_offset,
-            usize::from(self.appearance.canvas.margins.right),
-        )
-        .count();
-        overlay_extent(
+        let overlays = || {
             outputs
                 .iter()
                 .filter(|(output, _, _)| output.overlay)
-                .map(|(output, _, _)| &**output),
-            shown_count,
+                .map(|(output, _, _)| &**output)
+        };
+        let horizontal = &viewport.horizontal;
+        let margin = usize::from(self.appearance.canvas.margins.sanitized().right);
+        let future_bars = overlay_future_bars(overlays());
+        let window = chart::canvas::visible_window(
+            bars,
+            horizontal.visible,
+            horizontal.right_offset,
+            margin.max(future_bars),
+        );
+        overlay_extent(
+            overlays(),
+            VisibleBars::from_window(window, bars),
+            future_bars,
         )
     }
 

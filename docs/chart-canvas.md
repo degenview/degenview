@@ -114,6 +114,30 @@ last bar leaves the margin. Changing it fetches nothing and does not touch Pine'
 (the run's visible range is margin-independent), and a price-based chart uses its own bars as
 slots.
 
+What an overlay script reserves is the farthest slot its bar-anchored drawings reach past the last
+bar, capped at 20 slots (`ui::pine::geometry::MAXIMUM_FUTURE_BARS`, the fewest candles a chart
+shows), so one line drawn hundreds of bars ahead never leaves the candles less than half the plot.
+The cap is one number at every zoom: the zoom gestures and the Screenshot Studio count on the
+reserved slots staying put while the number of candles changes. Pan right to see the rest: the pan goes on until two bars are left (see
+[Chart navigation](chart-navigation.md)); what lies farther than that needs a zoom out.
+
+### Script ranges follow the bars on screen
+
+The price axis and every script pane fit their range to the script bars the plot shows, wherever
+the chart is scrolled (`ui::pine::geometry::VisibleBars`: count, `tail` newer bars off the right
+edge, and the empty slots on screen past the newest bar). Series values and drawings (boxes, lines,
+labels, polylines) outside those bars add nothing. A pane is drawn across the whole plot, margin
+included, so a drawing in the empty slots on screen counts for the pane as for the main chart. A
+box that extends, or a horizontal line that does, runs the plot's width: it counts when it crosses
+the bars shown (a line's `extend.left` runs past its first point and `extend.right` past its
+second, so one written right to left swaps sides) (measured on TradingView, which widens its axis for both). A sloped line counts by
+its anchors alone, extended or not: TradingView does not widen the axis for the price it reaches
+far from them, at any slope, and a vertical line never extends. The live chart, the
+Screenshot Studio, Select portion and the MCP snapshot all read this through
+`ChartCard::extent_of`, which sizes the reserved slots first and then lays the bars out again in
+the plot they make. Not counted: the quad of a linefill, which is drawn but adds no price of its
+own.
+
 ### Panes
 
 Pane order is the order of the scripts on the chart (`PineInstance` list), so moving a pane

@@ -141,7 +141,10 @@ fn the_chart_can_be_dragged_into_empty_space_but_only_so_far() {
     assert!(close(view.right_offset, -10.0), "ten bars of empty space");
     view.pan(0.0, -1.0e6, 10.0, 1000);
     assert!(
-        close(view.right_offset, -((DEFAULT_VISIBLE - MIN_VISIBLE) as f64)),
+        close(
+            view.right_offset,
+            -((DEFAULT_VISIBLE - MIN_BARS_AHEAD) as f64)
+        ),
         "never unbounded"
     );
     assert!(!view.follows_latest());
@@ -170,7 +173,7 @@ fn the_newest_bar_is_shown_until_it_is_scrolled_out_on_the_right() {
     for offset in [
         0.0,
         -10.0,
-        -((DEFAULT_VISIBLE - MIN_VISIBLE) as f64),
+        -((DEFAULT_VISIBLE - MIN_BARS_AHEAD) as f64),
         3.0,
         10.0,
     ] {
@@ -213,7 +216,7 @@ fn zoom_clamps_to_the_series_and_keeps_the_offset_valid() {
     };
     view.set_visible(30, 500);
     assert_eq!(view.visible, 30);
-    assert!(close(view.right_offset, -10.0), "{}", view.right_offset);
+    assert!(close(view.right_offset, -28.0), "{}", view.right_offset);
     view.set_visible(5, 500);
     assert_eq!(view.visible, MIN_VISIBLE);
     view.set_visible(10_000, 400);

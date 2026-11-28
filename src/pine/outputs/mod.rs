@@ -136,6 +136,15 @@ impl LineExtend {
         matches!(self, Self::Right | Self::Both)
     }
 
+    /// The same extension with the two sides swapped.
+    pub fn mirrored(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+            other => other,
+        }
+    }
+
     /// The sides both extend: how far the fill between two lines runs on.
     pub fn shared(self, other: Self) -> Self {
         match (

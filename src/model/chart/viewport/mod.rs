@@ -15,6 +15,10 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_VISIBLE: usize = 120;
 /// The fewest bars the plot may show.
 pub const MIN_VISIBLE: usize = 20;
+/// The bars that stay on screen when the chart is panned all the way into the empty space past
+/// the newest one, as in TradingView's Lightweight Charts. Far enough to reach whatever a script
+/// or a drawing put ahead within the candles shown.
+pub const MIN_BARS_AHEAD: usize = 2;
 /// The most bars `set_visible` restores from a saved layout.
 pub const MAX_RESTORED_VISIBLE: usize = 2000;
 /// How far the price axis may stretch the automatic range.
@@ -188,10 +192,11 @@ impl Default for HorizontalViewport {
 
 impl HorizontalViewport {
     /// The offsets the view may take over `total` bars: back until only [`MIN_VISIBLE`] bars of
-    /// history are left, forward until only that many bars of the series remain on screen.
+    /// history are left, forward until only [`MIN_BARS_AHEAD`] bars of the series remain on
+    /// screen.
     pub fn offset_limits(&self, total: usize) -> (f64, f64) {
         let oldest = total.saturating_sub(MIN_VISIBLE) as f64;
-        let furthest = self.visible.saturating_sub(MIN_VISIBLE) as f64;
+        let furthest = self.visible.saturating_sub(MIN_BARS_AHEAD) as f64;
         (-furthest, oldest.max(-furthest))
     }
 
@@ -205,6 +210,18 @@ impl HorizontalViewport {
     /// offset [`offset_limits`](Self::offset_limits) would not allow.
     pub fn shows_newest(&self, reserved: usize) -> bool {
         self.right_offset < reserved as f64 + 0.5 && self.right_offset > 0.5 - self.visible as f64
+    }
+
+    /// The offset moved no further than needed for at least one of `total` bars to be in view:
+    /// what a picture of the chart keeps, which may show fewer bars than a chart does.
+    pub fn keeping_a_bar(self, total: usize) -> Self {
+        let least = 1.0 - self.visible as f64;
+        Self {
+            right_offset: self
+                .right_offset
+                .clamp(least, (total as f64 - 1.0).max(least)),
+            ..self
+        }
     }
 
     /// Keeps the offset a number the window can use and inside its limits.

@@ -33,7 +33,9 @@ The offset counts from the **newest** bar. Two consequences are deliberate:
   pointer, as there; the compensation for a held view is applied to the drag too.
 
 The Canvas right margin stays the default placement of the newest bar; panning into empty space is
-temporary viewport state and never writes the Canvas setting.
+temporary viewport state and never writes the Canvas setting. It goes on until two bars are left on
+screen (`MIN_BARS_AHEAD`, Lightweight Charts' minimum), so what a script or a drawing put ahead of
+the last bar can be brought into view.
 
 ## Gestures
 
@@ -263,9 +265,8 @@ compared.
 **Not verified against TradingView.** TradingView's public docs do not state axis-drag direction,
 double-click behavior, right-side whitespace limits, or when autoscale turns off. These are
 inferred: dragging the body vertically turns autoscale off; dragging the price axis keeps it on
-(the app's existing behavior); the time axis stretches with the newest bar fixed; whitespace is
-bounded so that 20 bars remain on screen; the 4 pt vertical lock-in. Check them against the
-product before calling any of them final.
+(the app's existing behavior); the time axis stretches with the newest bar fixed; the 4 pt
+vertical lock-in. Check them against the product before calling any of them final.
 
 ## Not done
 
