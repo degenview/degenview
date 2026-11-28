@@ -1212,7 +1212,7 @@ mod tests {
 
         assert_eq!(
             lock(&engine).provider_health()[0].last_error.as_deref(),
-            Some("Binance sent an answer DegenView could not read")
+            Some("Binance perp sent an answer DegenView could not read")
         );
         assert_ne!(
             book.get(&held[0]).and_then(|quote| quote.note).as_deref(),
@@ -1590,6 +1590,25 @@ mod tests {
         assert_eq!(book.get(&markets[0]).unwrap().last, None);
         round(&engine, &provider, T0 + 1_000);
         assert_eq!(provider.calls().len(), 1, "{source:?}: the backoff holds");
+    }
+
+    #[test]
+    fn an_unknown_symbol_code_in_the_answer_to_the_whole_list_is_one_request_and_a_backoff() {
+        use crate::service::watchlist_quotes::provider::parse_mexc;
+        // MEXC's whole ticker names no symbol, so "invalid symbol" there is not about any of the
+        // rows: the engine must not halve them looking for it.
+        let (engine, book, provider) = setup();
+        let failure = parse_mexc(r#"{"code":-1121,"msg":"Invalid symbol."}"#, &[]).unwrap_err();
+        assert_ne!(failure.kind, ErrorKind::UnknownSymbol);
+        *provider.failure.lock().unwrap() = Some(failure);
+        let markets: Vec<InstrumentId> = (0..33)
+            .map(|index| id(DataSource::Mexc, &format!("S{index:02}USDT")))
+            .collect();
+        lock(&engine).update(1, markets.clone(), true, T0);
+        round(&engine, &provider, T0);
+        assert_eq!(provider.calls().len(), 1, "no halving");
+        assert!(lock(&engine).provider_health()[0].retry_at_ms.is_some());
+        assert_eq!(book.get(&markets[0]).unwrap().last, None);
     }
 
     #[test]

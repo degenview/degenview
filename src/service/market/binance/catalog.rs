@@ -1,10 +1,9 @@
 //! Binance's lists of tradable markets, one per market kind, and the search over them.
 
 use super::endpoints::{Endpoints, endpoints};
-use crate::model::DataSource;
-use crate::model::InstrumentId;
 use crate::model::exchange::Market;
 use crate::model::market::binance::join_market;
+use crate::model::{DataSource, InstrumentId, Listing};
 use crate::service::market::catalog::search::HITS;
 use crate::service::market::search_rank::normalize;
 use crate::service::{ProviderError, SearchResult, rank_results};
@@ -86,7 +85,7 @@ fn download_pairs_with(
 ) -> Result<Vec<Pair>, ProviderError> {
     let body = get(endpoints.exchange_info_url, EXCHANGE_INFO_MAX_BYTES)
         .map_err(|error| ProviderError::http(endpoints.listing, error))?;
-    parse_pairs(&body, endpoints.lists)
+    parse_pairs(endpoints.listing, &body, endpoints.lists)
 }
 
 fn price_step(entry: &Value) -> Option<String> {
@@ -145,9 +144,13 @@ pub(super) fn is_trading_perpetual(entry: &Value) -> bool {
     perpetual && named && is_trading(entry)
 }
 
-fn parse_pairs(body: &str, lists: fn(&Value) -> bool) -> Result<Vec<Pair>, ProviderError> {
-    let value: Value = serde_json::from_str(body)
-        .map_err(|error| ProviderError::malformed(DataSource::Binance, error))?;
+fn parse_pairs(
+    listing: Listing,
+    body: &str,
+    lists: fn(&Value) -> bool,
+) -> Result<Vec<Pair>, ProviderError> {
+    let value: Value =
+        serde_json::from_str(body).map_err(|error| ProviderError::malformed(listing, error))?;
     Ok(value
         .get("symbols")
         .and_then(Value::as_array)
@@ -248,7 +251,8 @@ mod tests {
             {"symbol":"LUNAUSDT","status":"BREAK","baseAsset":"LUNA","quoteAsset":"USDT"},
             {"symbol":"NOQUOTE","status":"TRADING","baseAsset":"X"}
         ]}"#;
-        let pairs = parse_pairs(body, is_trading).expect("pairs");
+        let pairs =
+            parse_pairs(Listing::spot(DataSource::Binance), body, is_trading).expect("pairs");
         assert_eq!(pairs.len(), 1);
         assert_eq!(
             (
@@ -258,9 +262,9 @@ mod tests {
             ),
             ("BTCUSDT", "BTC", "USDT")
         );
-        assert!(parse_pairs("not json", is_trading).is_err());
+        assert!(parse_pairs(Listing::spot(DataSource::Binance), "not json", is_trading).is_err());
         assert!(
-            parse_pairs("{}", is_trading)
+            parse_pairs(Listing::spot(DataSource::Binance), "{}", is_trading)
                 .expect("no symbols")
                 .is_empty()
         );
@@ -294,7 +298,8 @@ mod tests {
             {"symbol":"LUNAUSDT","status":"SETTLING","contractType":"PERPETUAL","baseAsset":"LUNA","quoteAsset":"USDT"},
             {"symbol":"BTCXYZ","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"XYZ"}
         ]}"#;
-        let pairs = parse_pairs(body, is_trading_perpetual).expect("pairs");
+        let pairs =
+            parse_pairs(Listing::BINANCE_PERPETUAL, body, is_trading_perpetual).expect("pairs");
         let symbols: Vec<&str> = pairs.iter().map(|pair| pair.symbol.as_str()).collect();
         assert_eq!(symbols, ["BTCUSDT", "TSLAUSDT", "SUSDT"]);
     }
@@ -305,7 +310,8 @@ mod tests {
             {"symbol":"ETHUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"ETH","quoteAsset":"USDT","filters":[{"filterType":"PRICE_FILTER","tickSize":"0.01"}]},
             {"symbol":"BTCUSDT","status":"TRADING","contractType":"PERPETUAL","baseAsset":"BTC","quoteAsset":"USDT","filters":[{"filterType":"LOT_SIZE"},{"filterType":"PRICE_FILTER","tickSize":"0.10"}]}
         ]}"#;
-        let pairs = parse_pairs(body, is_trading_perpetual).expect("pairs");
+        let pairs =
+            parse_pairs(Listing::BINANCE_PERPETUAL, body, is_trading_perpetual).expect("pairs");
         assert_eq!(step_of(&pairs, "BTCUSDT").as_deref(), Some("0.10"));
         assert_eq!(step_of(&pairs, "NOPEUSDT"), None);
     }
@@ -325,5 +331,14 @@ mod tests {
         assert!(merge("btc", down(), found()).is_err());
         assert!(merge("btc", down(), down()).is_err());
         assert!(merge("btc", Ok(Vec::new()), down()).is_err());
+    }
+
+    #[test]
+    fn an_unreadable_list_names_the_list_that_was_asked() {
+        let perpetual = parse_pairs(Listing::BINANCE_PERPETUAL, "not json", is_trading_perpetual);
+        assert_eq!(
+            perpetual.expect_err("fails").venue,
+            Listing::BINANCE_PERPETUAL
+        );
     }
 }

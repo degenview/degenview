@@ -78,7 +78,11 @@ impl MarketSource for Binance {
             plan.base().interval()
         );
         let body = get(request.listing, &url)?;
-        Ok(plan.shape(parse_klines(&body)?, requested, limit as usize))
+        Ok(plan.shape(
+            parse_klines(request.listing, &body)?,
+            requested,
+            limit as usize,
+        ))
     }
 
     fn fetch_klines_range(
@@ -117,7 +121,7 @@ impl MarketSource for Binance {
                                 request.endpoints.klines_url,
                                 request.pair
                             );
-                            parse_klines(&get(request.listing, &url)?)
+                            parse_klines(request.listing, &get(request.listing, &url)?)
                         })
                     })
                     .collect();
@@ -152,28 +156,26 @@ impl MarketSource for Binance {
     }
 }
 
-fn parse_klines(body: &str) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body)
-        .map_err(|error| ProviderError::malformed(DataSource::Binance, error))?;
+fn parse_klines(listing: Listing, body: &str) -> Result<Vec<Kline>, ProviderError> {
+    let value: Value =
+        serde_json::from_str(body).map_err(|error| ProviderError::malformed(listing, error))?;
     let rows = value
         .as_array()
-        .ok_or_else(|| ProviderError::malformed(DataSource::Binance, "expected a candle array"))?;
-    rows.iter().map(parse_row).collect()
+        .ok_or_else(|| ProviderError::malformed(listing, "expected a candle array"))?;
+    rows.iter().map(|row| parse_row(listing, row)).collect()
 }
 
-fn parse_row(row: &Value) -> Result<Kline, ProviderError> {
+fn parse_row(listing: Listing, row: &Value) -> Result<Kline, ProviderError> {
     let value = |index: usize| -> Result<f64, ProviderError> {
         row.get(index)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| {
-                ProviderError::malformed(DataSource::Binance, format!("invalid field {index}"))
-            })
+            .ok_or_else(|| ProviderError::malformed(listing, format!("invalid field {index}")))
     };
     let time = |index: usize| -> Result<i64, ProviderError> {
-        row.get(index).and_then(Value::as_i64).ok_or_else(|| {
-            ProviderError::malformed(DataSource::Binance, format!("invalid timestamp {index}"))
-        })
+        row.get(index)
+            .and_then(Value::as_i64)
+            .ok_or_else(|| ProviderError::malformed(listing, format!("invalid timestamp {index}")))
     };
 
     Ok(Kline {
@@ -194,7 +196,8 @@ mod tests {
     #[test]
     fn parses_binance_rows() {
         let body = r#"[[1700000000000,"10.0","12.0","9.0","11.0","42.5",1700003599999]]"#;
-        let candles = parse_klines(body).expect("valid response");
+        let candles =
+            parse_klines(Listing::spot(DataSource::Binance), body).expect("valid response");
         assert_eq!(candles.len(), 1);
         assert_eq!(
             candles[0],
@@ -272,11 +275,17 @@ mod tests {
 
     #[test]
     fn rejects_error_objects() {
-        let error = parse_klines(r#"{"code":-1121,"msg":"Invalid symbol."}"#)
-            .expect_err("object must fail");
-        assert_eq!(
-            error,
-            ProviderError::malformed(DataSource::Binance, "expected a candle array")
-        );
+        for listing in [
+            Listing::spot(DataSource::Binance),
+            Listing::BINANCE_PERPETUAL,
+        ] {
+            let error = parse_klines(listing, r#"{"code":-1121,"msg":"Invalid symbol."}"#)
+                .expect_err("object must fail");
+            assert_eq!(
+                error,
+                ProviderError::malformed(listing, "expected a candle array"),
+                "a failure names the list that was asked"
+            );
+        }
     }
 }

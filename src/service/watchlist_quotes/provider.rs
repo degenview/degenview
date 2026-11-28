@@ -11,7 +11,7 @@ use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::OandaCredentials;
-use crate::service::market::error::{ErrorKind, Scope, Statuses};
+use crate::service::market::error::{Asked, ErrorKind, Scope, Statuses};
 use crate::service::market::{alpaca, binance, bybit, coinbase, gateio, kraken, mexc, oanda, okx};
 use crate::service::net::url::encode_component;
 use serde_json::Value;
@@ -246,9 +246,9 @@ pub fn binance_outcome(
     body: &str,
     requests: &[QuoteRequest],
 ) -> Result<Outcome, ProviderError> {
-    let mut outcome = Outcome::from_quotes(parse_binance(body, requests)?);
+    let mut outcome = Outcome::from_quotes(parse_binance(market, body, requests)?);
     if binance::endpoints(market).ticker_batch.is_none() {
-        let answer = json(DataSource::Binance, body)?;
+        let answer = json(Listing::new(DataSource::Binance, market), body)?;
         let listed: HashSet<String> = binance_tickers(&answer)
             .into_iter()
             .flatten()
@@ -725,7 +725,7 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
 
 // MARK: Parsers
 
-fn json(venue: DataSource, body: &str) -> Result<Value, ProviderError> {
+fn json(venue: impl Into<Listing>, body: &str) -> Result<Value, ProviderError> {
     serde_json::from_str(body).map_err(|error| ProviderError::malformed(venue, error))
 }
 
@@ -758,12 +758,14 @@ fn binance_tickers(answer: &Value) -> Option<&[Value]> {
 /// `/ticker/24hr?type=MINI`: `openPrice` is the rolling 24h open, a truer day-change
 /// reference than a candle picked from the last 25 hours.
 pub fn parse_binance(
+    market: Market,
     body: &str,
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let value = json(DataSource::Binance, body)?;
+    let listing = Listing::new(DataSource::Binance, market);
+    let value = json(listing, body)?;
     let tickers: HashMap<String, &Value> = binance_tickers(&value)
-        .ok_or_else(|| ProviderError::malformed(DataSource::Binance, "expected a ticker list"))?
+        .ok_or_else(|| ProviderError::malformed(listing, "expected a ticker list"))?
         .iter()
         .filter_map(|ticker| Some((ticker.get("symbol")?.as_str()?.to_uppercase(), ticker)))
         .collect();
@@ -803,7 +805,7 @@ pub fn parse_mexc(
     body: &str,
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let tickers: HashMap<String, SourceQuote> = mexc::rows_of(body)?
+    let tickers: HashMap<String, SourceQuote> = mexc::rows_of(body, Asked::List)?
         .iter()
         .filter_map(|ticker| {
             let id = ticker.get("symbol")?.as_str()?.to_uppercase();
@@ -944,7 +946,7 @@ pub fn parse_kraken(
     body: &str,
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let result = kraken::result_of(body)?;
+    let result = kraken::result_of(body, Asked::Markets)?;
     let tickers = result
         .as_object()
         .ok_or_else(|| ProviderError::malformed(DataSource::Kraken, "expected a ticker list"))?;
@@ -1000,7 +1002,7 @@ pub fn parse_okx(
     body: &str,
     requests: &[QuoteRequest],
 ) -> Result<HashMap<String, SourceQuote>, ProviderError> {
-    let tickers: HashMap<String, SourceQuote> = okx::data_rows(body)?
+    let tickers: HashMap<String, SourceQuote> = okx::data_rows(body, Asked::List)?
         .iter()
         .filter_map(okx_ticker)
         .collect();
@@ -1204,7 +1206,7 @@ mod tests {
         assert_eq!(outcome.quotes["BTCUSDT.P"].price, 2.0);
         assert!(outcome.rejected.is_empty());
         let body = r#"[{"symbol":"BTCUSDT","lastPrice":"2","openPrice":"1","quoteVolume":"5"}]"#;
-        let quotes = parse_binance(body, &[ask("BTCUSDT.P")]).expect("parsed");
+        let quotes = parse_binance(Market::Perpetual, body, &[ask("BTCUSDT.P")]).expect("parsed");
         assert_eq!(quotes["BTCUSDT.P"].price, 2.0);
         assert_eq!(quotes["BTCUSDT.P"].volume_24h, Some(5.0), "dollar quoted");
     }
@@ -1420,9 +1422,10 @@ mod tests {
         assert!(parse_mexc("not json", &[]).is_err());
         // The venue's own envelope reader says what the refusal is, as it does for candles.
         let kind = |body| parse_mexc(body, &[]).unwrap_err().kind;
+        // The whole ticker names no symbol, so "invalid symbol" cannot be about one of them.
         assert_eq!(
             kind(r#"{"code":-1121,"msg":"Invalid symbol."}"#),
-            ErrorKind::UnknownSymbol
+            ErrorKind::Refused(Some("Invalid symbol.".to_owned()))
         );
         assert_eq!(
             kind(r#"{"code":-1003,"msg":"Too many requests"}"#),
@@ -1606,14 +1609,15 @@ mod tests {
             silent.unwrap_err(),
             ProviderError::new(DataSource::Okx, ErrorKind::Refused(None))
         );
-        // "Instrument does not exist" is read by the venue's envelope reader here as for candles.
+        // "Instrument does not exist" is about an instrument the request named, and the ticker
+        // list names none: here it is the venue's refusal, which backs the source off.
         let unknown = parse_okx(
             r#"{"code":"51001","msg":"Instrument ID does not exist","data":[]}"#,
             &[],
         );
         assert_eq!(
             unknown.unwrap_err(),
-            ProviderError::new(DataSource::Okx, ErrorKind::UnknownSymbol)
+            ProviderError::refused(DataSource::Okx, "Instrument ID does not exist")
         );
         assert!(parse_okx("not json", &[]).is_err());
         assert!(parse_okx(r#"{"code":"0"}"#, &[]).is_err());
@@ -1626,6 +1630,7 @@ mod tests {
             {"symbol":"ETHBTC","lastPrice":"0.05","openPrice":"0.049","volume":"2000","quoteVolume":"100","closeTime":1700000000001}
         ]"#;
         let quotes = parse_binance(
+            Market::Spot,
             body,
             &[request("BTCUSDT"), request("ETHBTC"), request("GONEUSDT")],
         )
@@ -1660,16 +1665,42 @@ mod tests {
     }
 
     #[test]
+    fn an_unreadable_binance_answer_names_the_list_that_was_asked() {
+        for (market, listing) in [
+            (Market::Spot, Listing::spot(DataSource::Binance)),
+            (Market::Perpetual, Listing::BINANCE_PERPETUAL),
+        ] {
+            for body in ["not json", r#"{"code":-1121}"#] {
+                let asked = [request("BTCUSDT")];
+                assert_eq!(
+                    parse_binance(market, body, &asked).unwrap_err().venue,
+                    listing,
+                    "{market:?} {body}"
+                );
+                assert_eq!(
+                    binance_outcome(market, body, &asked).unwrap_err().venue,
+                    listing,
+                    "{market:?} {body}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn binance_rejects_non_arrays_and_zero_prices() {
         assert!(matches!(
-            parse_binance(r#"{"code":-1121}"#, &[request("X")]),
+            parse_binance(Market::Spot, r#"{"code":-1121}"#, &[request("X")]),
             Err(ProviderError {
                 kind: ErrorKind::Malformed(_),
                 ..
             })
         ));
         let zero = r#"[{"symbol":"AUSDT","lastPrice":"0","openPrice":"1"}]"#;
-        assert!(parse_binance(zero, &[request("AUSDT")]).unwrap().is_empty());
+        assert!(
+            parse_binance(Market::Spot, zero, &[request("AUSDT")])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

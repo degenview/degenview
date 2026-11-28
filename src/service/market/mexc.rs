@@ -11,7 +11,7 @@ use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
-use crate::service::market::error::{ErrorKind, Statuses};
+use crate::service::market::error::{Asked, ErrorKind, Statuses};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -180,7 +180,7 @@ fn get(url: &str, statuses: Statuses) -> Result<String, ProviderError> {
 /// Candles of length `base`, oldest first. The days, weeks and months MEXC cut at UTC+8 midnight
 /// (its oldest history) are not on this app's grid and are left out.
 fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let mut candles = rows_of(body)?
+    let mut candles = rows_of(body, Asked::Markets)?
         .iter()
         .map(|row| parse_row(row, base))
         .collect::<Result<Vec<_>, _>>()?;
@@ -189,15 +189,18 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
     Ok(candles)
 }
 
-/// The rows of an answer that is a list (klines, tickers), or what MEXC's envelope says when it
-/// is not: `{"code": -1121, "msg": "Invalid symbol."}`. `-1003` is "too many requests", the code
-/// of Binance's API that MEXC's v3 shares; no other rate-limit code is documented.
-pub(crate) fn rows_of(body: &str) -> Result<Vec<Value>, ProviderError> {
+/// The rows of an answer that is a list (klines, tickers) to a request that `asked` about markets
+/// or a list, or what MEXC's envelope says when it is not: `{"code": -1121, "msg": "Invalid
+/// symbol."}`, which only a request that named a symbol can mean. `-1003` is "too many requests",
+/// the code of Binance's API that MEXC's v3 shares; no other rate-limit code is documented.
+pub(crate) fn rows_of(body: &str, asked: Asked) -> Result<Vec<Value>, ProviderError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|error| ProviderError::malformed(DataSource::Mexc, error))?;
     let Value::Array(rows) = value else {
         return Err(match value.get("code").and_then(Value::as_i64) {
-            Some(-1121) => ProviderError::new(DataSource::Mexc, ErrorKind::UnknownSymbol),
+            Some(-1121) if asked == Asked::Markets => {
+                ProviderError::new(DataSource::Mexc, ErrorKind::UnknownSymbol)
+            }
             Some(-1003) => ProviderError::new(DataSource::Mexc, ErrorKind::RateLimited),
             _ => match value.get("msg").and_then(Value::as_str) {
                 Some(message) => ProviderError::refused(DataSource::Mexc, message),
@@ -598,6 +601,27 @@ mod tests {
         );
         for statuses in [MARKET_STATUSES, LIST_STATUSES] {
             assert_eq!(kind(statuses, 403), ErrorKind::Blocked);
+        }
+    }
+
+    #[test]
+    fn an_invalid_symbol_is_an_unknown_market_only_to_a_request_that_named_one() {
+        let body = r#"{"code":-1121,"msg":"Invalid symbol."}"#;
+        assert_eq!(
+            rows_of(body, Asked::Markets),
+            Err(ProviderError::new(
+                DataSource::Mexc,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        assert_eq!(
+            rows_of(body, Asked::List),
+            Err(ProviderError::refused(DataSource::Mexc, "Invalid symbol."))
+        );
+        // A rate limit is one whatever was asked.
+        let limited = r#"{"code":-1003,"msg":"Too many requests"}"#;
+        for asked in [Asked::Markets, Asked::List] {
+            assert!(rows_of(limited, asked).unwrap_err().is_rate_limited());
         }
     }
 }

@@ -11,7 +11,7 @@ use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::next_bucket_start_ms;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
-use crate::service::market::error::ErrorKind;
+use crate::service::market::error::{Asked, ErrorKind};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -127,16 +127,19 @@ fn get(url: &str) -> Result<String, ProviderError> {
         .map_err(|error| ProviderError::http(DataSource::Okx, error))
 }
 
-/// The `data` rows of an answer, or what its `code` says when it failed: OKX's `50011` is "too many
-/// requests" and `51001` "instrument does not exist".
-pub(crate) fn data_rows(body: &str) -> Result<Vec<Value>, ProviderError> {
+/// The `data` rows of an answer to a request that `asked` about markets or a list, or what its
+/// `code` says when it failed: OKX's `50011` is "too many requests" and `51001` "instrument does not
+/// exist", which only a request that named an instrument can mean.
+pub(crate) fn data_rows(body: &str, asked: Asked) -> Result<Vec<Value>, ProviderError> {
     let value: Value = serde_json::from_str(body)
         .map_err(|error| ProviderError::malformed(DataSource::Okx, error))?;
     let code = value.get("code").and_then(Value::as_str);
     if code != Some("0") {
         return Err(match code {
             Some("50011") => ProviderError::new(DataSource::Okx, ErrorKind::RateLimited),
-            Some("51001") => ProviderError::new(DataSource::Okx, ErrorKind::UnknownSymbol),
+            Some("51001") if asked == Asked::Markets => {
+                ProviderError::new(DataSource::Okx, ErrorKind::UnknownSymbol)
+            }
             _ => ProviderError::refused_because(
                 DataSource::Okx,
                 value.get("msg").and_then(Value::as_str),
@@ -152,7 +155,7 @@ pub(crate) fn data_rows(body: &str) -> Result<Vec<Value>, ProviderError> {
 
 /// Candles of length `base`, oldest first.
 fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let mut candles = data_rows(body)?
+    let mut candles = data_rows(body, Asked::Markets)?
         .iter()
         .map(|row| parse_row(row, base))
         .collect::<Result<Vec<_>, _>>()?;
@@ -215,7 +218,7 @@ fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
 }
 
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    Ok(data_rows(body)?
+    Ok(data_rows(body, Asked::List)?
         .iter()
         .filter(|row| row.get("state").and_then(Value::as_str) == Some("live"))
         .filter_map(|row| {
@@ -415,5 +418,30 @@ mod tests {
         }
         let all = search::find("BTC", || Ok(Arc::clone(&pairs))).unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn instrument_does_not_exist_is_an_unknown_market_only_to_a_request_that_named_one() {
+        let body = r#"{"code":"51001","msg":"Instrument ID doesn't exist.","data":[]}"#;
+        assert_eq!(
+            data_rows(body, Asked::Markets),
+            Err(ProviderError::new(
+                DataSource::Okx,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        // The instrument list and the whole ticker name none.
+        assert_eq!(
+            data_rows(body, Asked::List),
+            Err(ProviderError::refused(
+                DataSource::Okx,
+                "Instrument ID doesn't exist."
+            ))
+        );
+        assert!(
+            parse_pairs(body).is_err_and(
+                |error| error.kind.scope() == crate::service::market::error::Scope::Source
+            )
+        );
     }
 }

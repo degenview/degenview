@@ -30,7 +30,11 @@
    `retCode`, Kraken `error`, OKX `code`, MEXC `code`) is read in one function of the venue
    (`bybit::result_of`, `kraken::result_of`, `okx::data_rows`, `mexc::rows_of`) into `RateLimited`,
    `UnknownSymbol` or `Refused` (with the provider's message when it gave one); what it cannot read
-   is `Malformed`. The watchlist's quote requests use the same tables and envelope readers
+   is `Malformed`. An envelope code means what the request asked, like a status: the readers that
+   know an "unknown market" code (Kraken `EQuery:`, OKX `51001`, MEXC `-1121`) take
+   `error::Asked::{Markets, List}` and read it as `UnknownSymbol` only for a request that named
+   markets; for the market list or a whole ticker it is the venue's `Refused`, which backs the
+   source off instead of making the watchlist bisect a list that names no market. The watchlist's quote requests use the same tables and envelope readers
    (`watchlist_quotes::provider::quote_statuses` picks the table of each quote request). A service
    that answers in a venue's place (GeckoTerminal draws DEXScreener pools' candles) is named by
    `ProviderError::through`, so the message blames the one that failed.

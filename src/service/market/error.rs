@@ -15,6 +15,18 @@ pub struct ProviderError {
     pub kind: ErrorKind,
 }
 
+/// What a request asks about, which is what a provider's "unknown market" code is about: a code
+/// that says a market is unknown means so only to a request that named one. The envelope readers
+/// (`okx::data_rows`, `kraken::result_of`, `mexc::rows_of`) take it, as the statuses tables
+/// ([`Statuses`]) are chosen by it, so a whole-list request never reads as `UnknownSymbol`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Asked {
+    /// The request names the market(s) it asks for: candles, a ticker asked for by pair.
+    Markets,
+    /// It names none: the market list, a whole-exchange ticker.
+    List,
+}
+
 /// What the HTTP statuses of one kind of request mean to a venue, beyond a rate limit. A status
 /// means what the endpoint makes of it: a 400 from a request that names a market says the market
 /// is unknown, from one that names none (a list, a catalog, an account) it says nothing about any,
