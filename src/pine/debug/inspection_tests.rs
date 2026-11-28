@@ -117,6 +117,25 @@ fn a_variable_the_session_adds_for_a_lazy_history_is_not_shown() {
 }
 
 #[test]
+fn a_var_first_declared_on_a_later_call_shows_the_value_it_counts_from() {
+    // The block runs from bar 2. Line 8 is `r := n`, after `n += 1`.
+    let (probe, captured) = capture_all();
+    at_lines(
+        "f() =>\n    r = 0\n    if bar_index >= 2\n        var int n = 10\n        n += 1\n        r := n\n    r\nplot(f())\n",
+        4,
+        &[8],
+        probe,
+    );
+    let seen: Vec<Option<String>> = captured
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|stop| value_of(&stop.frames[0].1, "n"))
+        .collect();
+    assert_eq!(seen, [Some("11".to_owned()), Some("12".to_owned())]);
+}
+
+#[test]
 fn variables_are_grouped_by_scope_with_their_current_values() {
     let (probe, captured) = capture_all();
     // Line 8 is `twice + 1`, inside the function, on the third bar.

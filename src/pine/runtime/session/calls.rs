@@ -645,8 +645,8 @@ impl Session {
             .iter()
             .map(|local| (local.clone(), self.working.variables.get(local).cloned()))
             .collect();
-        // A `var` local that has run before resumes with its value; on the first call it is left
-        // unset so its declaration initialises it rather than taking a global's value.
+        // A `var` local this call site has declared resumes with its value; until then it is left
+        // unset, which is what makes its declaration initialise it.
         for local in function.persistent_locals.iter() {
             match self.working.variables.get(&stash_key(local)).cloned() {
                 Some(value) => {
@@ -726,13 +726,12 @@ impl Session {
                 return Err(error);
             }
         };
+        // Only a `var` that has been declared has a value to keep: one in a block no call has run
+        // yet stays undeclared, which an `na` stored for it would not.
         for local in function.persistent_locals.iter() {
-            let value = self
-                .working
-                .variables
-                .get(local)
-                .cloned()
-                .unwrap_or(RuntimeValue::Na);
+            let Some(value) = self.working.variables.get(local).cloned() else {
+                continue;
+            };
             let key = stash_key(local);
             // A `varip` local keeps the value the call left for the next tick of this bar as well.
             if !self.intrabar.is_empty()
