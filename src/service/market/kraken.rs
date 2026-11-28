@@ -6,14 +6,16 @@
 
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::catalog::search::{self, ListedMarket};
 use super::search_rank::normalize;
 use crate::model::market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::natives::KRAKEN_BARS;
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::{http, rate_limit};
-use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) const BASE_URL: &str = "https://api.kraken.com/0/public";
 
@@ -62,18 +64,17 @@ impl MarketSource for Kraken {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        // `BTC/USD`, `btc-usd`, `BTCUSD` and the legacy `XBTUSD` are one query.
-        let needle = alias(&normalize(query));
-        if needle.is_empty() {
-            return Ok(Vec::new());
-        }
-        let pairs = CATALOG.get(download_pairs)?;
-        let results = matching_pairs(&pairs, &needle);
-        Ok(rank_results(results, &needle)
-            .into_iter()
-            .take(20)
-            .collect())
+        search_pairs(query, || CATALOG.get(download_pairs))
     }
+}
+
+/// The hits for `query` among the pairs `list` brings. `BTC/USD`, `btc-usd`, `BTCUSD` and the
+/// legacy `XBTUSD` are one query.
+fn search_pairs(
+    query: &str,
+    list: impl FnOnce() -> Result<Arc<Vec<Pair>>, ProviderError>,
+) -> Result<Vec<SearchResult>, ProviderError> {
+    search::find(&alias(&normalize(query)), list)
 }
 
 /// The candles of `plan`'s target that open in `[start_ms, end_ms)` out of everything Kraken holds
@@ -211,19 +212,6 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     })
 }
 
-/// The listed markets whose name, without its slash, contains `needle` (letters and digits,
-/// upper case).
-fn matching_pairs(pairs: &[Pair], needle: &str) -> Vec<SearchResult> {
-    pairs
-        .iter()
-        .filter(|pair| normalize(&pair.id).contains(needle))
-        .map(|pair| {
-            SearchResult::new(DataSource::Kraken, pair.id.clone(), pair.id.clone())
-                .pair(pair.base.clone(), pair.quote.clone())
-        })
-        .collect()
-}
-
 /// One tradable market from `AssetPairs`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Pair {
@@ -232,13 +220,20 @@ struct Pair {
     quote: String,
 }
 
+impl ListedMarket for Pair {
+    const SOURCE: DataSource = DataSource::Kraken;
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn sides(&self) -> Option<(&str, &str)> {
+        Some((&self.base, &self.quote))
+    }
+}
+
 /// Every market that is online, downloaded at most once a day.
 static CATALOG: Catalog<Pair> = Catalog::new("catalog_kraken");
-
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     parse_pairs(&get(&format!("{BASE_URL}/AssetPairs"))?)
@@ -467,12 +462,17 @@ mod tests {
                 quote: "BTC".into(),
             },
         ];
+        let pairs = Arc::new(pairs);
+        let ask = |query: &str| search_pairs(query, || Ok(Arc::clone(&pairs))).unwrap();
         for query in ["btcusd", "BTC/USD", "btc-usd", "BTC USD", "xbtusd"] {
-            let found = matching_pairs(&pairs, &alias(&normalize(query)));
+            let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Kraken);
             assert_eq!(found[0].symbol, "BTC/USD");
+            assert_eq!(found[0].base.as_deref(), Some("BTC"));
+            assert_eq!(found[0].quote.as_deref(), Some("USD"));
         }
-        assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
+        assert_eq!(ask("BTC").len(), 2);
     }
 
     /// Run with `cargo test --lib kraken::tests::live -- --ignored --nocapture`.

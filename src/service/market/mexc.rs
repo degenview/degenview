@@ -6,13 +6,13 @@
 //! some regions get 403.
 
 use super::catalog::Catalog;
+use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
-use super::search_rank::normalize;
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service::net::http;
-use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -123,24 +123,11 @@ impl MarketSource for Mexc {
     }
 
     fn asset_names(&self) -> Vec<(String, String)> {
-        let Ok(pairs) = CATALOG.get(download_pairs) else {
-            return Vec::new();
-        };
-        pairs
-            .iter()
-            .filter_map(|pair| Some((pair.base.to_uppercase(), pair.name.clone()?)))
-            .collect()
+        search::asset_names(|| CATALOG.get(download_pairs))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        // `BTC-USDT`, `btc/usdt` and `BTCUSDT` are one query.
-        let needle = normalize(query);
-        if needle.is_empty() {
-            return Ok(Vec::new());
-        }
-        let pairs = CATALOG.get(download_pairs)?;
-        let results = matching_pairs(&pairs, &needle);
-        Ok(rank_results(results, query).into_iter().take(20).collect())
+        search::find(query, || CATALOG.get(download_pairs))
     }
 }
 
@@ -233,19 +220,6 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     })
 }
 
-/// The listed markets whose name contains `needle` (letters and digits, upper case).
-fn matching_pairs(pairs: &[Pair], needle: &str) -> Vec<SearchResult> {
-    pairs
-        .iter()
-        .filter(|pair| pair.id.contains(needle))
-        .map(|pair| {
-            SearchResult::new(DataSource::Mexc, pair.id.clone(), pair.id.clone())
-                .pair(pair.base.clone(), pair.quote.clone())
-                .named(pair.name.as_deref(), None)
-        })
-        .collect()
-}
-
 /// One tradable spot market from `exchangeInfo`: all the search needs of it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Pair {
@@ -257,13 +231,24 @@ struct Pair {
     name: Option<String>,
 }
 
+impl ListedMarket for Pair {
+    const SOURCE: DataSource = DataSource::Mexc;
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn sides(&self) -> Option<(&str, &str)> {
+        Some((&self.base, &self.quote))
+    }
+
+    fn names(&self) -> (Option<&str>, Option<&str>) {
+        (self.name.as_deref(), None)
+    }
+}
+
 /// Every spot market that is enabled, downloaded at most once a day.
 static CATALOG: Catalog<Pair> = Catalog::new("catalog_mexc_v2");
-
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     parse_pairs(&get(&format!("{BASE_URL}/exchangeInfo"))?)
@@ -302,6 +287,7 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use std::sync::Arc;
 
     #[test]
     fn every_native_has_its_interval_and_socket_name_and_nothing_else_does() {
@@ -495,12 +481,17 @@ mod tests {
                 name: None,
             },
         ];
+        let pairs = Arc::new(pairs);
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&pairs))).unwrap();
         for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
-            let found = matching_pairs(&pairs, &normalize(query));
+            let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Mexc);
             assert_eq!(found[0].symbol, "BTCUSDT");
+            assert_eq!(found[0].base.as_deref(), Some("BTC"));
+            assert_eq!(found[0].quote.as_deref(), Some("USDT"));
         }
-        assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
+        assert_eq!(ask("BTC").len(), 2);
     }
 
     /// Run with `cargo test --lib mexc::tests::live -- --ignored --nocapture`.

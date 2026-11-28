@@ -1,5 +1,6 @@
 use super::candles::plan;
 use super::catalog::Catalog;
+use super::catalog::search::WIDE_HITS;
 use crate::model::market::bucket;
 use crate::model::market::feed::AlpacaFeed;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
@@ -156,7 +157,10 @@ impl MarketSource for Alpaca {
                 )
             })
             .collect();
-        Ok(rank_results(results, query).into_iter().take(30).collect())
+        Ok(rank_results(results, query)
+            .into_iter()
+            .take(WIDE_HITS)
+            .collect())
     }
 }
 
@@ -169,11 +173,6 @@ struct Asset {
 
 /// Every tradable asset (the response is tens of megabytes), downloaded at most once a day.
 static CATALOG: Catalog<Asset> = Catalog::new("catalog_alpaca");
-
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
 
 fn download_assets(key: &str, secret: &str) -> Result<Vec<Asset>, ProviderError> {
     let url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity";

@@ -13,6 +13,7 @@
 //! from days rather than asked for.
 
 use super::catalog::Catalog;
+use super::catalog::search::{self, ListedMarket, WIDE_HITS};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
@@ -20,7 +21,7 @@ use crate::model::market::oanda::OandaEnvironment;
 use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
 use crate::service::keychain::api_keys::{CredentialPair, OandaCredentials};
 use crate::service::net::http::{self, Retry};
-use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -198,14 +199,9 @@ impl MarketSource for Oanda {
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
         // Credentials first: with none saved, a cached list must not make search seem available.
         let login = credentials()?;
-        let instruments = CATALOG.get_for(&login.account_id, || download_instruments(&login))?;
-        // `EUR/USD` and `eur_usd` find `EUR_USD`: Oanda writes an underscore.
-        let needle = normalize(query);
-        if needle.is_empty() {
-            return Ok(Vec::new());
-        }
-        let results = matching_instruments(&instruments, &needle);
-        Ok(rank_results(results, query).into_iter().take(30).collect())
+        search::find(query, || {
+            CATALOG.get_for(&login.account_id, || download_instruments(&login))
+        })
     }
 }
 
@@ -295,12 +291,28 @@ impl Instrument {
     }
 }
 
+impl ListedMarket for Instrument {
+    const SOURCE: DataSource = DataSource::Oanda;
+    const HITS: usize = WIDE_HITS;
+
+    fn id(&self) -> &str {
+        &self.name
+    }
+
+    /// Oanda names a market `BASE_QUOTE`.
+    fn sides(&self) -> Option<(&str, &str)> {
+        self.name
+            .split_once('_')
+            .filter(|(base, quote)| !base.is_empty() && !quote.is_empty())
+    }
+
+    fn names(&self) -> (Option<&str>, Option<&str>) {
+        (self.described(), None)
+    }
+}
+
 /// The instrument list belongs to the account whose credentials downloaded it.
 static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda_v2");
-
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
 
 fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, ProviderError> {
     let body = get(
@@ -331,33 +343,11 @@ fn parse_instruments(body: &str) -> Result<Vec<Instrument>, ProviderError> {
         .collect())
 }
 
-/// The listed instruments whose name contains `needle` (letters and digits, upper case).
-fn matching_instruments(instruments: &[Instrument], needle: &str) -> Vec<SearchResult> {
-    instruments
-        .iter()
-        .filter(|instrument| normalize(&instrument.name).contains(needle))
-        .map(|instrument| {
-            let result = SearchResult::new(
-                DataSource::Oanda,
-                instrument.name.clone(),
-                instrument.name.clone(),
-            )
-            .named(instrument.described(), None);
-            // Oanda names a market `BASE_QUOTE`.
-            match instrument.name.split_once('_') {
-                Some((base, quote)) if !base.is_empty() && !quote.is_empty() => {
-                    result.pair(base, quote)
-                }
-                _ => result,
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::service::market::candles::plan;
+    use std::sync::Arc;
 
     const DAY_MS: i64 = 86_400_000;
 
@@ -623,15 +613,18 @@ mod tests {
                 display_name: None,
             },
         ];
+        let instruments = Arc::new(instruments);
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&instruments))).unwrap();
         for query in ["eurusd", "EUR/USD", "eur_usd", "EUR USD"] {
-            let found = matching_instruments(&instruments, &normalize(query));
+            let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Oanda);
             assert_eq!(found[0].symbol, "EUR_USD");
             assert_eq!(found[0].base.as_deref(), Some("EUR"));
             assert_eq!(found[0].quote.as_deref(), Some("USD"));
         }
-        assert_eq!(matching_instruments(&instruments, "USD").len(), 3);
-        assert_eq!(matching_instruments(&instruments, "XAU").len(), 1);
+        assert_eq!(ask("USD").len(), 3);
+        assert_eq!(ask("XAU").len(), 1);
     }
 
     #[test]

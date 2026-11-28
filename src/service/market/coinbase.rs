@@ -1,10 +1,10 @@
 use super::candles::plan;
 use super::catalog::Catalog;
-use super::search_rank::normalize;
+use super::catalog::search::{self, ListedMarket};
 use crate::clock::now_ms;
 use crate::model::market::bucket::FoldPlan;
 use crate::model::{DataSource, Kline, Timeframe};
-use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
+use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -71,32 +71,8 @@ impl MarketSource for Coinbase {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-        // `BTC-USD`, `btc/usd` and `BTCUSD` are one query.
-        let needle = normalize(query);
-        if needle.is_empty() {
-            return Ok(Vec::new());
-        }
-        let products = CATALOG.get(download_products)?;
-        let results = matching_products(&products, &needle);
-        Ok(rank_results(results, query).into_iter().take(20).collect())
+        search::find(query, || CATALOG.get(download_products))
     }
-}
-
-/// The listed products whose id, without its dash, contains `needle` (letters and digits, upper
-/// case).
-fn matching_products(products: &[Product], needle: &str) -> Vec<SearchResult> {
-    products
-        .iter()
-        .filter(|product| product.id.replace('-', "").contains(needle))
-        .map(|product| {
-            SearchResult::new(
-                crate::model::DataSource::Coinbase,
-                product.id.clone(),
-                product.id.clone(),
-            )
-            .pair(product.base.clone(), product.quote.clone())
-        })
-        .collect()
 }
 
 /// One tradable product from `/products`: all the search needs of it.
@@ -107,13 +83,20 @@ struct Product {
     quote: String,
 }
 
+impl ListedMarket for Product {
+    const SOURCE: DataSource = DataSource::Coinbase;
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn sides(&self) -> Option<(&str, &str)> {
+        Some((&self.base, &self.quote))
+    }
+}
+
 /// Every product that is online, downloaded at most once a day.
 static CATALOG: Catalog<Product> = Catalog::new("catalog_coinbase");
-
-/// Forgets the list held in memory (after the disk cache was cleared).
-pub(in crate::service) fn clear_catalog() {
-    CATALOG.clear_memory();
-}
 
 fn download_products() -> Result<Vec<Product>, ProviderError> {
     let body = crate::service::net::http::get_text(
@@ -336,6 +319,7 @@ mod tests {
 
     use super::*;
     use crate::model::market::bucket;
+    use std::sync::Arc;
 
     #[test]
     fn a_product_is_found_however_it_is_separated() {
@@ -351,12 +335,17 @@ mod tests {
                 quote: "BTC".into(),
             },
         ];
+        let products = Arc::new(products);
+        let ask = |query: &str| search::find(query, || Ok(Arc::clone(&products))).unwrap();
         for query in ["btc-usdt", "BTCUSDT", "btc/usdt", "BTC USDT"] {
-            let found = matching_products(&products, &normalize(query));
+            let found = ask(query);
             assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].source, DataSource::Coinbase);
             assert_eq!(found[0].symbol, "BTC-USDT");
+            assert_eq!(found[0].base.as_deref(), Some("BTC"));
+            assert_eq!(found[0].quote.as_deref(), Some("USDT"));
         }
-        assert_eq!(matching_products(&products, "BTC").len(), 2);
+        assert_eq!(ask("BTC").len(), 2);
     }
 
     #[test]
