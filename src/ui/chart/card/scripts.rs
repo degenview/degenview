@@ -241,6 +241,21 @@ impl ChartCard {
     }
 }
 
+/// The hidden scale of an overlay with `scale = scale.none`: fitted to the values it has on the
+/// bars `visible` shows, and laid across the band of the price scale `band` with the chart's own
+/// margins, so the overlay sits where a second price scale would put it. It is linear whatever
+/// the price axis does, and nothing on screen reads it.
+pub(super) fn own_scale(
+    pine: &VisualOutput,
+    visible: VisibleBars,
+    margins: chart::canvas::ChartMargins,
+    band: &PriceScale,
+) -> PriceScale {
+    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, visible, 0.0);
+    let (minimum, maximum) = chart::canvas::price_range(low, high, margins, false);
+    PriceScale::linear(minimum, maximum, band.top, band.height)
+}
+
 /// The value labels a script pane writes on its axis, with the value each stands at. The painter
 /// and the axis width both read this, so the axis is as wide as the labels it draws.
 pub(super) fn pane_labels(
@@ -331,6 +346,8 @@ pub(super) fn draw_script_pane(
         slot_width,
         x_for_index,
         y_for: &y_for,
+        // A pane has no candles and no trades: nothing in it is a price of the chart.
+        price_y: &y_for,
     };
     let clipped = painter.with_clip_rect(plot.expand2(Vec2::new(0.0, 0.0)));
     layer.draw_background(&clipped);

@@ -99,8 +99,13 @@ pub struct PineLayer<'a> {
     pub slot_width: f32,
     /// The x of the centre of visible candle slot `i` (negative or past the end allowed).
     pub x_for_index: &'a dyn Fn(i64) -> f32,
-    /// The y of a price (or pane value).
+    /// The y of a value the script wrote (a plot, a drawing's price, `location.absolute`): a price
+    /// on the chart's axis, a value of the pane's own scale in a script pane, or of the hidden
+    /// scale of an overlay on `scale.none`.
     pub y_for: &'a dyn Fn(f64) -> f32,
+    /// The y of a price of the chart: what hangs off a candle (the high and low a label or marker
+    /// sits against) and what a strategy traded at. It differs from `y_for` only on `scale.none`.
+    pub price_y: &'a dyn Fn(f64) -> f32,
 }
 
 /// `barcolor()` for visible candle `index` of `count` (the last of them `tail` bars before the
@@ -240,6 +245,20 @@ impl PineLayer<'_> {
 
     fn y(&self, price: f64) -> f32 {
         (self.y_for)(price)
+    }
+
+    /// The y of `price` on the chart's price axis, whatever scale the script's own values are on.
+    fn y_of_price(&self, price: f64) -> f32 {
+        (self.price_y)(price)
+    }
+
+    /// `gap` points under `candle`'s low, or over its high: where what hangs off a bar sits.
+    fn off_candle(&self, candle: &Kline, below: bool, gap: f32) -> f32 {
+        if below {
+            self.y_of_price(candle.low) + gap
+        } else {
+            self.y_of_price(candle.high) - gap
+        }
     }
 
     fn point_bar(&self, bar: i64, price: f64) -> Pos2 {
@@ -983,11 +1002,7 @@ impl PineLayer<'_> {
             self.count(),
         );
         let candle = self.candles.get(usize::try_from(slot).ok()?)?;
-        Some(if below {
-            self.y(candle.low) + MARKER_OFFSET
-        } else {
-            self.y(candle.high) - MARKER_OFFSET
-        })
+        Some(self.off_candle(candle, below, MARKER_OFFSET))
     }
 
     // MARK: Markers
@@ -1123,12 +1138,7 @@ impl PineLayer<'_> {
                 self.plot.min.y + gap
             };
         }
-        let candle = &self.candles[i];
-        if location.is_below() {
-            self.y(candle.low) + gap
-        } else {
-            self.y(candle.high) - gap
-        }
+        self.off_candle(&self.candles[i], location.is_below(), gap)
     }
 
     /// Where a marker's centre sits vertically. A marker that hangs off a bar keeps its near edge
@@ -1156,12 +1166,7 @@ impl PineLayer<'_> {
                 self.plot.min.y + offset
             };
         }
-        let candle = &self.candles[i];
-        if location.is_below() {
-            self.y(candle.low) + offset
-        } else {
-            self.y(candle.high) - offset
-        }
+        self.off_candle(&self.candles[i], location.is_below(), offset)
     }
 
     // MARK: Strategy trades
@@ -1179,7 +1184,8 @@ impl PineLayer<'_> {
         let end = self.pine.bar_count.saturating_sub(self.tail);
         let first = end.saturating_sub(self.count());
         let visible = |bar: usize| bar >= first && bar < end;
-        let point = |bar: usize, price: f64| self.point_bar(bar as i64, price);
+        let point =
+            |bar: usize, price: f64| Pos2::new(self.x_bar(bar as i64), self.y_of_price(price));
         let (win, loss) = (rgba(WIN_COLOR), rgba(LOSS_COLOR));
         for trade in report
             .trades
@@ -1664,6 +1670,7 @@ mod tests {
             slot_width: 20.0,
             x_for_index: x,
             y_for: y,
+            price_y: y,
         }
     }
 
@@ -2722,6 +2729,109 @@ mod tests {
             0,
             "chart-only"
         );
+    }
+
+    /// The script's own scale, far from the chart's prices (a 0-100 oscillator on a 60,000
+    /// chart).
+    fn own_y(value: f64) -> f32 {
+        (400.0 - value * 3.0) as f32
+    }
+
+    #[test]
+    fn what_hangs_off_a_candle_follows_the_price_axis_and_the_scripts_own_values_its_own_scale() {
+        use crate::pine::strategy::{StrategyReport, StrategySettings, Trade};
+        let candles = candles(3);
+        let (x, price) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let own = own_y as fn(f64) -> f32;
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        let label = |yloc, value| LabelOutput {
+            id: 1,
+            x: 1,
+            y: value,
+            text: "go".into(),
+            color: Some(0xFF00_00FF),
+            text_color: 0xFFFF_FFFF,
+            style: LabelStyle::LabelDown,
+            size: Size::Normal,
+            tooltip: None,
+            text_align: TextAlign::Center,
+            yloc,
+            font_family: FontFamily::Default,
+            time_anchored: false,
+            force_overlay: false,
+        };
+        output.labels.push(label(YLocation::AboveBar, f64::NAN));
+        output.labels.push(label(YLocation::BelowBar, f64::NAN));
+        output.labels.push(label(YLocation::Price, 40.0));
+        output.markers.push(MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: vec![true, true, true],
+            character: None,
+            color: 0xFF00_00FF,
+            location: MarkerLocation::BelowBar,
+            style: MarkerShape::Circle,
+            prices: Vec::new(),
+            colors: Vec::new(),
+            size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
+            display: DISPLAY_PANE,
+            force_overlay: false,
+        });
+        output.strategy = Some(StrategyReport {
+            settings: StrategySettings::default(),
+            trades: vec![Trade {
+                id: 1,
+                is_long: true,
+                quantity: 1.0,
+                entry_bar: 0,
+                entry_price: 100.0,
+                exit_bar: 2,
+                exit_price: 110.0,
+                profit: 10.0,
+                ..Trade::default()
+            }],
+            open_trades: Vec::new(),
+            equity: Vec::new(),
+            open_profit: 0.0,
+            chart: crate::model::ChartKind::Standard,
+        });
+        let mut layer = layer(&output, &candles, &x, &own);
+        layer.price_y = &price;
+        // Above and below a bar hang off the candle, which is on the price axis.
+        assert_eq!(
+            layer.label_y(&output.labels[0]),
+            Some(price(candles[1].high) - MARKER_OFFSET)
+        );
+        assert_eq!(
+            layer.label_y(&output.labels[1]),
+            Some(price(candles[1].low) + MARKER_OFFSET)
+        );
+        // A price the script wrote is a value of the script's own.
+        assert_eq!(layer.label_y(&output.labels[2]), Some(own(40.0)));
+        let below = layer.marker_y(MarkerLocation::BelowBar, &[], 1, 0.0);
+        assert_eq!(below, price(candles[1].low) + MARKER_OFFSET.max(MARKER_GAP));
+        let prices = [None, Some(55.0), None];
+        assert_eq!(
+            layer.marker_y(MarkerLocation::Absolute, &prices, 1, 0.0),
+            own(55.0)
+        );
+        // A trade filled at a price of the chart.
+        let dots: Vec<Pos2> = shapes_of(|painter| layer.draw_strategy_trades(painter))
+            .into_iter()
+            .filter_map(|shape| match shape {
+                Shape::Circle(circle) => Some(circle.center),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dots, [Pos2::new(x_of(2), price(110.0))]);
     }
 
     fn one_candle_output(bar_style: bool, color: Option<u32>, border: Option<u32>) -> VisualOutput {

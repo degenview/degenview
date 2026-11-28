@@ -37,6 +37,16 @@ if barstate.islast
     line.new(bar_index, close, bar_index + 500, close)
 ";
 
+/// A plot twenty times the close, far above the candles; `scale` is the declaration's argument.
+fn far_overlay(scale: &str) -> String {
+    format!(
+        "//@version=6
+indicator(\"Far overlay\", overlay = true{scale})
+plot(close * 20)
+"
+    )
+}
+
 /// A line drawn on the last bar, anchored 50 bars ahead and extended left across every bar on
 /// screen, at twenty times the close; `rise` is how far its second end lies above its first.
 fn extended_line_script(extend: &str, rise: f64) -> String {
@@ -224,6 +234,203 @@ fn only_a_level_extended_across_the_screen_is_on_the_scrolled_back_axis() {
             "a line rising {rise} does not stretch the axis, as on TradingView"
         );
     }
+}
+
+#[test]
+fn a_scale_none_overlay_leaves_the_price_axis_to_the_candles() {
+    let maximum = |scale: &str| {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let id = harness
+            .card
+            .add_pine_instance(None, "Far overlay", &far_overlay(scale));
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let input = input(&harness, false);
+        geometry(&harness, &input).view.maximum
+    };
+    assert!(
+        maximum("") > 4_000.0,
+        "an overlay on the price axis stretches it to its own values"
+    );
+    let own = maximum(", scale = scale.none");
+    assert!(own < 400.0, "the candles keep their range: {own}");
+}
+
+/// The stroked path with the most points on the plot: a script's plot, the longest line there.
+fn longest_path(drawn: &Drawn) -> &[Pos2] {
+    drawn
+        .paths
+        .iter()
+        .max_by_key(|points| points.len())
+        .expect("a path was stroked")
+}
+
+#[test]
+fn a_scale_none_overlay_is_fitted_to_its_own_hidden_scale_inside_the_plot() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id =
+        harness
+            .card
+            .add_pine_instance(None, "Far overlay", &far_overlay(", scale = scale.none"));
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 100,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    let drawn = gather(&painted(&harness, &input));
+    let line = longest_path(&drawn);
+    assert!(line.len() >= 90, "the plot is drawn: {} points", line.len());
+    let (top, bottom) = line
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(top, bottom), point| {
+            (top.min(point.y), bottom.max(point.y))
+        });
+    assert!(
+        top >= view.plot.top() && bottom <= view.plot.bottom(),
+        "inside the plot: {top}..{bottom} of {:?}",
+        view.plot
+    );
+    assert!(
+        bottom - top > view.plot.height() * 0.4,
+        "fitted to the plot, not a sliver at the edge: {top}..{bottom} of {:?}",
+        view.plot
+    );
+    // The same plot on the price axis would be off the plot, and the candles a sliver.
+    let mut on_axis = Harness::new(ChartCanvas::default());
+    let id = on_axis
+        .card
+        .add_pine_instance(None, "Far overlay", &far_overlay(""));
+    wait_for_run(&mut on_axis, id);
+    settled(&mut on_axis);
+    let mut shared = self::input(&on_axis, false);
+    shared.frame.viewport = input.frame.viewport;
+    let shared_view = geometry(&on_axis, &shared).view;
+    assert!(shared_view.maximum - shared_view.minimum > 10.0 * (view.maximum - view.minimum));
+}
+
+/// A 0-100 oscillator on the hidden scale, with a marker under every bar.
+const OSCILLATOR_WITH_MARKERS: &str = "//@version=6
+indicator(\"Oscillator\", overlay = true, scale = scale.none)
+plot(50 + 40 * math.sin(bar_index / 5.0))
+plotshape(true, location = location.belowbar, style = shape.circle, color = color.fuchsia)
+";
+
+#[test]
+fn what_hangs_off_a_candle_stays_on_the_candles_when_the_script_has_its_own_scale() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Oscillator", OSCILLATOR_WITH_MARKERS);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 60,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let view = geometry(&harness, &input).view;
+    let drawn = gather(&painted(&harness, &input));
+    let fuchsia = Color32::from_rgb(0xe0, 0x40, 0xfb);
+    let markers: Vec<Pos2> = drawn
+        .circles
+        .iter()
+        .filter(|(_, fill)| *fill == fuchsia)
+        .map(|(centre, _)| *centre)
+        .collect();
+    assert!(
+        markers.len() >= 50,
+        "a marker under each bar: {}",
+        markers.len()
+    );
+    assert!(
+        markers
+            .iter()
+            .all(|at| at.y > view.plot.top() && at.y < view.plot.bottom()),
+        "under the candles, on the plot, not on the oscillator's scale: {markers:?} in {:?}",
+        view.plot
+    );
+}
+
+#[test]
+fn absolute_markers_of_a_scale_none_overlay_are_fitted_to_the_plot() {
+    // Alone, and far above the oscillator they come with.
+    for body in [
+        "plotshape(close, style = shape.circle, location = location.absolute, color = color.fuchsia)",
+        "plot(50 + 40 * math.sin(bar_index / 5.0))
+plotshape(500, style = shape.circle, location = location.absolute, color = color.fuchsia)",
+    ] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let source = format!(
+            "//@version=6
+indicator(\"Markers\", overlay = true, scale = scale.none)
+{body}
+"
+        );
+        let id = harness.card.add_pine_instance(None, "Markers", &source);
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let mut input = input(&harness, false);
+        input.frame.viewport = Some(showing(
+            HorizontalViewport {
+                visible: 60,
+                right_offset: 0.0,
+            },
+            None,
+        ));
+        let view = geometry(&harness, &input).view;
+        let drawn = gather(&painted(&harness, &input));
+        let fuchsia = Color32::from_rgb(0xe0, 0x40, 0xfb);
+        let markers: Vec<Pos2> = drawn
+            .circles
+            .iter()
+            .filter(|(_, fill)| *fill == fuchsia)
+            .map(|(centre, _)| *centre)
+            .collect();
+        assert!(markers.len() >= 50, "{body}: {}", markers.len());
+        assert!(
+            markers.iter().all(|at| view.plot.contains(*at)),
+            "{body}: {markers:?} in {:?}",
+            view.plot
+        );
+    }
+}
+
+#[test]
+fn a_scale_none_overlay_follows_the_bars_on_screen() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness.card.add_pine_instance(
+        None,
+        "Jumping overlay",
+        "//@version=6
+indicator(\"Jumping scale none\", overlay = true, scale = scale.none)
+plot(bar_index < 200 ? close : close * 20)
+",
+    );
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut input = input(&harness, false);
+    input.frame.viewport = Some(scrolled_back());
+    let view = geometry(&harness, &input).view;
+    let drawn = gather(&painted(&harness, &input));
+    let line = longest_path(&drawn);
+    let (top, bottom) = line
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(top, bottom), point| {
+            (top.min(point.y), bottom.max(point.y))
+        });
+    assert!(
+        bottom - top > view.plot.height() * 0.2,
+        "the hidden scale fits the bars before the jump, not today's values: {top}..{bottom}"
+    );
 }
 
 #[test]
@@ -716,4 +923,168 @@ fn a_restyle_that_changes_nothing_changes_nothing() {
         });
         assert_eq!(odd.price_size, style.price_size, "{scale}");
     }
+}
+
+/// The vertical reach of the vertices painted in `colour`.
+fn reach_of(drawn: &Drawn, colour: Color32) -> Option<(f32, f32)> {
+    drawn
+        .meshes
+        .iter()
+        .flat_map(|mesh| &mesh.vertices)
+        .filter(|vertex| vertex.color == colour)
+        .map(|vertex| vertex.pos.y)
+        .fold(None, |reach, y| {
+            let (top, bottom) = reach.unwrap_or((y, y));
+            Some((top.min(y), bottom.max(y)))
+        })
+}
+
+const FUCHSIA: Color32 = Color32::from_rgb(0xe0, 0x40, 0xfb);
+
+/// A band between two hidden plots far from the candles' prices: only `fill()` draws.
+fn hidden_band(declaration: &str) -> String {
+    format!(
+        "//@version=6
+indicator(\"Hidden band\"{declaration})
+a = plot(30 + 10 * math.sin(bar_index / 5.0), display = display.none)
+b = plot(70 + 10 * math.sin(bar_index / 5.0), display = display.none)
+fill(a, b, color = color.fuchsia)
+"
+    )
+}
+
+/// The chart at rest on 60 candles with `source` on it, and what it paints.
+fn painted_at_rest(source: &str) -> (Harness, SnapshotGeometry, Drawn) {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness.card.add_pine_instance(None, "Probe", source);
+    wait_for_run(&mut harness, id);
+    settled(&mut harness);
+    let mut at_rest = input(&harness, false);
+    at_rest.frame.viewport = Some(showing(
+        HorizontalViewport {
+            visible: 60,
+            right_offset: 0.0,
+        },
+        None,
+    ));
+    let measured = geometry(&harness, &at_rest);
+    let drawn = gather(&painted(&harness, &at_rest));
+    (harness, measured, drawn)
+}
+
+#[test]
+fn a_fill_between_hidden_plots_lands_on_its_own_scale() {
+    // On the hidden scale it shares the plot with the candles; in a pane it sits below them.
+    let (_, overlay, drawn) = painted_at_rest(&hidden_band(", overlay = true, scale = scale.none"));
+    let plot = overlay.view.plot;
+    let (top, bottom) = reach_of(&drawn, FUCHSIA).expect("the band is painted");
+    assert!(
+        top >= plot.top() && bottom <= plot.bottom() && bottom - top > plot.height() * 0.5,
+        "scale.none: {top}..{bottom} of {plot:?}"
+    );
+    let (harness, pane, drawn) = painted_at_rest(&hidden_band(""));
+    let below = pane.view.plot.bottom();
+    let (top, bottom) = reach_of(&drawn, FUCHSIA).expect("the band is painted");
+    let height = harness.card.snapshot_size().y;
+    assert!(
+        top >= below && bottom <= height && bottom - top > (height - below) * 0.4,
+        "pane: {top}..{bottom} between {below} and {height}"
+    );
+}
+
+#[test]
+fn absolute_markers_alone_land_in_their_pane() {
+    let (harness, pane, drawn) = painted_at_rest(
+        "//@version=6
+indicator(\"Markers only\")
+plotshape(bar_index, style = shape.circle, location = location.absolute, color = color.fuchsia)
+",
+    );
+    let (below, height) = (pane.view.plot.bottom(), harness.card.snapshot_size().y);
+    let markers: Vec<f32> = drawn
+        .circles
+        .iter()
+        .filter(|(_, fill)| *fill == FUCHSIA)
+        .map(|(centre, _)| centre.y)
+        .collect();
+    assert!(markers.len() >= 50, "{}", markers.len());
+    assert!(
+        markers.iter().all(|y| *y > below && *y < height),
+        "between {below} and {height}: {markers:?}"
+    );
+}
+
+#[test]
+fn a_forced_overlay_fill_anchor_does_not_stretch_the_pane() {
+    let (_, pane, drawn) = painted_at_rest(
+        "//@version=6
+indicator(\"Forced\")
+a = plot(5 + math.sin(bar_index / 5.0))
+b = plot(close * 20, force_overlay = true)
+fill(a, b, color = color.fuchsia)
+",
+    );
+    let axis: Vec<f64> = drawn
+        .texts
+        .iter()
+        .filter(|(pos, ..)| pos.x > pane.view.plot.right() && pos.y > pane.view.plot.bottom())
+        .filter_map(|(_, text, _)| text.replace(',', "").parse().ok())
+        .collect();
+    assert!(axis.len() >= 2, "{axis:?}");
+    assert!(axis.iter().all(|value| *value < 20.0), "{axis:?}");
+}
+
+#[test]
+fn label_shapes_hang_off_the_candles_when_the_script_has_its_own_scale() {
+    let (_, measured, drawn) = painted_at_rest(
+        "//@version=6
+indicator(\"Signals\", overlay = true, scale = scale.none)
+plot(50 + 40 * math.sin(bar_index / 5.0))
+plotshape(bar_index % 5 == 0, style = shape.labelup, location = location.belowbar, text = \"BUY\")
+plotshape(bar_index % 7 == 0, style = shape.labeldown, location = location.abovebar, text = \"SELL\")
+",
+    );
+    // A bubble under the lowest candle may hang past the plot's edge by its own height. On the
+    // script's 0-100 scale a candle's price would be thousands of points away.
+    let plot = measured.view.plot.expand(40.0);
+    for word in ["BUY", "SELL"] {
+        let at: Vec<Pos2> = drawn
+            .texts
+            .iter()
+            .filter(|(_, text, _)| text == word)
+            .map(|(pos, ..)| *pos)
+            .collect();
+        assert!(at.len() >= 7, "{word}: {}", at.len());
+        assert!(
+            at.iter().all(|at| plot.contains(*at)),
+            "{word}: {at:?} in {plot:?}"
+        );
+    }
+}
+
+#[test]
+fn the_price_axis_reaches_an_overlays_markers_and_hidden_fill() {
+    let (_, measured, drawn) = painted_at_rest(
+        "//@version=6
+indicator(\"On price\", overlay = true)
+a = plot(close * 1.5, display = display.none)
+b = plot(close * 1.6, display = display.none)
+fill(a, b, color = color.fuchsia)
+plotshape(close * 0.5, style = shape.circle, location = location.absolute, color = color.fuchsia)
+",
+    );
+    let plot = measured.view.plot;
+    let (top, bottom) = reach_of(&drawn, FUCHSIA).expect("the band is painted");
+    assert!(
+        top >= plot.top() && bottom <= plot.bottom(),
+        "{top}..{bottom}"
+    );
+    let markers: Vec<Pos2> = drawn
+        .circles
+        .iter()
+        .filter(|(_, fill)| *fill == FUCHSIA)
+        .map(|(centre, _)| *centre)
+        .collect();
+    assert!(markers.len() >= 50, "{}", markers.len());
+    assert!(markers.iter().all(|at| plot.contains(*at)), "{markers:?}");
 }

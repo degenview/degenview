@@ -367,13 +367,31 @@ impl ChartCard {
             |index: usize| plot.left() + slot_width * (index as f32 + 0.5) + slot_width * lead;
         let x_for_index =
             |index: i64| plot.left() + slot_width * (index as f32 + 0.5) + slot_width * lead;
-        let y_for = |price: f64| scale.y(price);
         // Bars lying after the last one shown: the scripts' series are indexed from the end.
         let tail = bars.len() - view.end;
+        // An overlay on `scale.none` maps its values on a hidden scale of its own; every other
+        // overlay reads the price scale.
+        let own_scales: Vec<Option<PriceScale>> = layout
+            .overlay_outputs
+            .iter()
+            .map(|(pine, _)| {
+                pine.scale_none
+                    .then(|| own_scale(pine, view.visible, self.appearance.canvas.margins, scale))
+            })
+            .collect();
+        let y_fors: Vec<_> = own_scales
+            .iter()
+            .map(|own| {
+                let scale = own.as_ref().unwrap_or(scale);
+                move |price: f64| scale.y(price)
+            })
+            .collect();
+        let price_y = |price: f64| scale.y(price);
         let pine_layers: Vec<(PineLayer, bool)> = layout
             .overlay_outputs
             .iter()
-            .map(|(pine, order)| {
+            .zip(&y_fors)
+            .map(|((pine, order), y_for)| {
                 (
                     PineLayer {
                         pine,
@@ -383,7 +401,8 @@ impl ChartCard {
                         plot,
                         slot_width,
                         x_for_index: &x_for_index,
-                        y_for: &y_for,
+                        y_for,
+                        price_y: &price_y,
                     },
                     order.behind(pine.behind_chart),
                 )

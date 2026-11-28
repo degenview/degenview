@@ -133,7 +133,7 @@ use live_overlays::LiveOverlays;
 use overlays::TagBand;
 use price_scale::tick_step;
 pub(in crate::ui) use price_scale::{AxisTicks, PriceScale};
-use scripts::{draw_script_pane, pane_labels};
+use scripts::{draw_script_pane, own_scale, pane_labels};
 pub use snapshot::{FrozenOutputs, SnapshotError, SnapshotFrame, SnapshotGeometry, SnapshotInput};
 #[cfg(test)]
 use view::Probe;

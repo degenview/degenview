@@ -9,8 +9,8 @@ use crate::model::chart::viewport::MIN_VISIBLE;
 use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
     DISPLAY_PANE, FontFamily, Horizontal, LabelStyle, LineExtend, LineOutput, LineStyle,
-    MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign, Vertical,
-    YLocation, index_is_known,
+    MarkerLocation, MarkerShape, PlotStyle, Size, TableCell, TableOutput, TablePosition, TextAlign,
+    Vertical, YLocation, index_is_known,
 };
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 use std::cmp::Ordering;
@@ -805,7 +805,8 @@ impl VisibleBars {
 
 // MARK: Value range
 
-/// Prices of plots, plotcandles and the baseline of filled styles that show in the pane.
+/// Everything per bar that a script's own scale (its pane, or the hidden scale of
+/// `scale.none`) has to reach: [`series_values_in_pane`] and the baseline of filled styles.
 fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let mut values = series_values_in_pane(pine, visible);
     values.extend(
@@ -820,6 +821,46 @@ fn series_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
             })
             .map(|o| o.hist_base),
     );
+    values
+}
+
+/// Where the `location.absolute` markers shown on the bars `visible` stand.
+fn absolute_marker_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
+    let mut values = Vec::new();
+    for marker in pine
+        .markers
+        .iter()
+        .filter(|m| m.display & DISPLAY_PANE != 0 && m.location == MarkerLocation::Absolute)
+    {
+        values.extend(
+            visible
+                .series_range(marker.values.len())
+                .filter(|&bar| marker.values[bar])
+                .filter_map(|bar| marker.prices.get(bar).copied().flatten()),
+        );
+    }
+    values
+}
+
+/// The values of the hidden plots a `fill()` spans: the area between them is drawn all the same.
+/// A pane script's `force_overlay` plot is not one of them, though it stays here hidden for a
+/// fill to find: its values are prices of the main chart.
+fn hidden_fill_values(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
+    let mut values = Vec::new();
+    for plot in pine.plots.iter().filter(|plot| {
+        plot.display & DISPLAY_PANE == 0
+            && (pine.overlay || !plot.force_overlay)
+            && pine
+                .fills
+                .iter()
+                .any(|fill| fill.plot_a == plot.id || fill.plot_b == plot.id)
+    }) {
+        values.extend(
+            plot.values[visible.series_range(plot.values.len())]
+                .iter()
+                .flatten(),
+        );
+    }
     values
 }
 
@@ -982,7 +1023,8 @@ pub fn overlay_future_bars<'a>(outputs: impl IntoIterator<Item = &'a VisualOutpu
 /// The extent of every overlay script in `outputs`: the `future_bars` slots the chart keeps free
 /// past the last candle (from [`overlay_future_bars`]), and the prices the vertical scale has to
 /// reach for the bars `visible` shows. Scripts in their own pane add nothing — they have a value
-/// axis of their own.
+/// axis of their own — and neither does an overlay with `scale = scale.none`, whose values are
+/// fitted to a hidden scale of their own.
 pub fn overlay_extent<'a>(
     outputs: impl IntoIterator<Item = &'a VisualOutput>,
     visible: VisibleBars,
@@ -995,7 +1037,7 @@ pub fn overlay_extent<'a>(
     if visible.count == 0 {
         return extent;
     }
-    for output in outputs.into_iter().filter(|o| o.overlay) {
+    for output in outputs.into_iter().filter(|o| o.overlay && !o.scale_none) {
         let mut values = series_values_in_pane(output, visible);
         values.extend(output.hlines.iter().map(|line| line.value));
         values.extend(drawing_values(output, visible));
@@ -1005,7 +1047,9 @@ pub fn overlay_extent<'a>(
     extent
 }
 
-/// Plot and plotcandle values shown in the main pane (no filled-style baselines, as in Swift).
+/// All a script draws per bar at a value, on whichever scale: plots and plotcandles,
+/// `location.absolute` markers and the plots a `fill()` spans (no filled-style baselines on the
+/// price axis, as in Swift). TradingView fits its price axis to the markers and the fills too.
 fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> {
     let mut values = Vec::new();
     for output in pine.plots.iter().filter(|o| o.display & DISPLAY_PANE != 0) {
@@ -1030,6 +1074,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
             values.extend([high, low]);
         }
     }
+    values.extend(absolute_marker_values(pine, visible));
+    values.extend(hidden_fill_values(pine, visible));
     values
 }
 
@@ -1037,8 +1083,8 @@ fn series_values_in_pane(pine: &VisualOutput, visible: VisibleBars) -> Vec<f64> 
 mod tests {
     use super::*;
     use crate::pine::outputs::{
-        BoxOutput, CandleBar, CandleOutput, HorizontalLine, LabelOutput, MISSING_INDEX, PlotOutput,
-        PolylineOutput, PolylinePoint,
+        BoxOutput, CandleBar, CandleOutput, FillOutput, HorizontalLine, LabelOutput, MISSING_INDEX,
+        MarkerKind, MarkerOutput, PlotOutput, PolylineOutput, PolylinePoint,
     };
 
     fn plot(values: Vec<Option<f64>>, style: PlotStyle) -> PlotOutput {
@@ -2068,6 +2114,156 @@ mod tests {
         );
         assert_eq!(overlay_future_bars([]), 0);
         assert_eq!(overlay_extent([], newest(20), 0), OverlayExtent::default());
+    }
+
+    #[test]
+    fn the_price_axis_reaches_an_overlays_absolute_markers_and_hidden_fills() {
+        let mut overlay = visual(3);
+        overlay.markers.push(MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: vec![true; 3],
+            character: None,
+            color: 0xFF00_00FF,
+            location: MarkerLocation::Absolute,
+            style: MarkerShape::Circle,
+            prices: vec![Some(900.0); 3],
+            colors: Vec::new(),
+            size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
+            display: DISPLAY_PANE,
+            force_overlay: false,
+        });
+        for id in [1, 2] {
+            overlay.plots.push(PlotOutput {
+                id,
+                display: 0,
+                ..plot(vec![Some(id as f64 * 100.0); 3], PlotStyle::Line)
+            });
+        }
+        let reach = |output: &VisualOutput| {
+            let mut values = overlay_extent([output], newest(3), 0).values;
+            values.sort_by(f64::total_cmp);
+            values.dedup();
+            values
+        };
+        assert_eq!(reach(&overlay), [900.0], "hidden and spanned by nothing");
+        overlay.fills.push(FillOutput {
+            id: 0,
+            plot_a: 1,
+            plot_b: 2,
+            colors: Vec::new(),
+            title: None,
+            gradients: Vec::new(),
+        });
+        assert_eq!(reach(&overlay), [100.0, 200.0, 900.0]);
+    }
+
+    #[test]
+    fn a_scripts_own_scale_reaches_its_absolute_markers_and_fills() {
+        let marker = |location, shown: [bool; 3], display| MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: shown.to_vec(),
+            character: None,
+            color: 0xFF00_00FF,
+            location,
+            style: MarkerShape::Circle,
+            prices: vec![Some(500.0), Some(600.0), Some(700.0)],
+            colors: Vec::new(),
+            size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
+            display,
+            force_overlay: false,
+        };
+        let range = |output: &VisualOutput| pane_value_range(output, newest(2), 0.0);
+        let mut markers = visual(3);
+        markers.markers.push(marker(
+            MarkerLocation::Absolute,
+            [true, true, false],
+            DISPLAY_PANE,
+        ));
+        // Bar 0 is off screen and bar 2 shows no marker.
+        assert_eq!(range(&markers), (594.0, 606.0));
+        for unseen in [
+            marker(MarkerLocation::AboveBar, [true; 3], DISPLAY_PANE),
+            marker(MarkerLocation::Absolute, [true; 3], 0),
+        ] {
+            markers.markers = vec![unseen];
+            assert_eq!(range(&markers), (0.0, 1.0));
+        }
+
+        let hidden = |id, value, force_overlay| PlotOutput {
+            id,
+            display: 0,
+            force_overlay,
+            ..plot(vec![Some(value); 3], PlotStyle::Line)
+        };
+        let fill = FillOutput {
+            id: 0,
+            plot_a: 1,
+            plot_b: 2,
+            colors: Vec::new(),
+            title: None,
+            gradients: Vec::new(),
+        };
+        let mut pane = VisualOutput {
+            overlay: false,
+            ..visual(3)
+        };
+        pane.plots = vec![hidden(1, 30.0, false), hidden(2, 70.0, false)];
+        assert_eq!(range(&pane), (0.0, 1.0), "hidden and spanned by nothing");
+        pane.fills.push(fill);
+        assert_eq!(range(&pane), (30.0, 70.0));
+        // The forced plot's price stays out of the pane's scale.
+        pane.plots[1] = hidden(2, 60_000.0, true);
+        assert_eq!(range(&pane), (29.7, 30.3));
+    }
+
+    #[test]
+    fn a_scale_none_overlay_adds_no_price_but_keeps_its_future_slots() {
+        let mut free = visual(10);
+        free.plots.push(plot(vec![Some(50.0)], PlotStyle::Line));
+        free.lines.push(line(8, 40.0, 12, 70.0));
+        free.hlines.push(HorizontalLine {
+            id: 0,
+            value: 90.0,
+            color: 0,
+            title: None,
+            style: LineStyle::Dashed,
+        });
+        let mut hidden = visual(10);
+        hidden.scale_none = true;
+        hidden
+            .plots
+            .push(plot(vec![Some(9_000.0)], PlotStyle::Line));
+        hidden.lines.push(line(8, 8_000.0, 14, 9_500.0));
+        hidden.hlines.push(HorizontalLine {
+            id: 0,
+            value: 7_000.0,
+            color: 0,
+            title: None,
+            style: LineStyle::Dashed,
+        });
+        let outputs = [free, hidden];
+        let future = overlay_future_bars(&outputs);
+        assert_eq!(future, 5, "its line still asks for room past the last bar");
+        let extent = overlay_extent(&outputs, newest(20), future);
+        assert_eq!(extent.future_bars, 5);
+        assert!(extent.values.contains(&50.0) && extent.values.contains(&90.0));
+        assert!(
+            extent.values.iter().all(|value| *value < 1_000.0),
+            "none of the hidden scale's values reach the price axis: {:?}",
+            extent.values
+        );
     }
 
     #[test]

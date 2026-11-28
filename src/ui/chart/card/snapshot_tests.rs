@@ -361,6 +361,61 @@ fn script_labels_lines_boxes_shapes_and_tables_snapshot_as_they_draw() {
     );
 }
 
+const SCALE_NONE_VISUALS: &str = "//@version=6
+indicator(\"Hidden scale\", overlay = true, scale = scale.none)
+plot(close * 20)
+if bar_index % 25 == 0
+    label.new(bar_index, close * 20, \"mark\")
+    box.new(bar_index, close * 21, bar_index + 3, close * 19)
+";
+
+#[test]
+fn a_scale_none_overlay_snapshots_as_it_draws() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Hidden scale", SCALE_NONE_VISUALS);
+    wait_for_run(&mut harness, id);
+    let output = harness.card.pine_visual_for_tests(id);
+    assert!(output.labels > 0 && output.boxes > 0, "{output:?}");
+    same_as_live(&mut harness, false);
+}
+
+/// An overlay far from the price, on the price axis and on `scale.none`, written as PNGs for a
+/// person to look at: the candles keep their range and the overlay is fitted to the plot.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_a_scale_none_overlay() {
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    for (name, scale) in [("scale-shared", ""), ("scale-none", ", scale = scale.none")] {
+        let mut harness = Harness::new(ChartCanvas::default());
+        let source = format!(
+            "//@version=6
+indicator(\"Hidden scale\", overlay = true{scale})
+plot(close * 20, \"x20\", color.orange)
+"
+        );
+        let id = harness
+            .card
+            .add_pine_instance(None, "Hidden scale", &source);
+        wait_for_run(&mut harness, id);
+        settled(&mut harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let scene = harness
+            .card
+            .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
+        std::fs::write(dir.join(format!("{name}.png")), png).expect("written");
+    }
+}
+
 const TOOLTIP_VISUALS: &str = "//@version=6
 indicator(\"Tips\", overlay = true)
 var t = table.new(position.top_right, 1, 1)
