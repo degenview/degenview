@@ -2,6 +2,7 @@
 //! script's name.
 
 pub mod bundled;
+pub mod command;
 pub mod instance;
 pub mod logs_view;
 pub mod script;

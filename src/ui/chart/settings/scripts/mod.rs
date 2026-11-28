@@ -3,10 +3,10 @@
 
 use super::{ChartSettingsAction, ChartSettingsContext, ChartSettingsState};
 use crate::i18n::{tr, tr_n};
+use crate::model::pine::command::{NewScript, ScriptCommand};
 use crate::model::pine::instance::{PineInstance, VisualOrder};
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::pine_studio::drawer;
-use crate::ui::chart::card::ChartCard;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::pine::script_catalog;
@@ -212,7 +212,11 @@ pub(super) fn scripts_page(
         });
     }
 
-    if let Some(asked) = apply_events(c.card, &instances, events) {
+    // One click makes one event.
+    if let Some(asked) = events
+        .into_iter()
+        .find_map(|event| action_for(&instances, event))
+    {
         action = Some(asked);
     }
 
@@ -246,45 +250,31 @@ pub(super) fn scripts_page(
     action
 }
 
-/// Applies what the rows asked for to the chart; returns the sheet-level action, if one asked.
-pub(super) fn apply_events(
-    card: &mut ChartCard,
+/// What a row asks of the chart, which the workspace does as one undo step.
+pub(super) fn action_for(
     instances: &[PineInstance],
-    events: Vec<RowEvent>,
+    event: RowEvent,
 ) -> Option<ChartSettingsAction> {
-    let mut action = None;
-    for event in events {
-        match event {
-            RowEvent::ToggleVisible(id) => {
-                let visible = instances
-                    .iter()
-                    .find(|i| i.id == id)
-                    .is_some_and(|i| i.visible);
-                card.set_pine_visible(id, !visible);
-            }
-            RowEvent::Remove(id) => {
-                card.remove_pine_instance(id);
-            }
-            RowEvent::MoveTo(id, index) => card.move_pine_instance(id, index),
-            RowEvent::SetOrder(id, order) => card.set_pine_visual_order(id, order),
-            RowEvent::Configure(id, anchor) => {
-                action = Some(ChartSettingsAction::ConfigureScript(id, anchor));
-            }
-            RowEvent::Enable(script) => {
-                card.add_pine_instance(Some(script.id.clone()), &script.name, &script.source);
-            }
-            RowEvent::Duplicate(id) => {
-                if let Some(instance) = instances.iter().find(|i| i.id == id) {
-                    card.add_pine_instance(
-                        instance.script_id.clone(),
-                        &instance.name,
-                        &instance.source,
-                    );
-                }
-            }
+    let applied = |id: u64| instances.iter().find(|instance| instance.id == id);
+    Some(match event {
+        RowEvent::ToggleVisible(id) => {
+            ChartSettingsAction::Script(ScriptCommand::show(id, !applied(id)?.visible))
         }
-    }
-    action
+        RowEvent::Remove(id) => ChartSettingsAction::Script(ScriptCommand::Remove(id)),
+        RowEvent::MoveTo(id, index) => {
+            ChartSettingsAction::Script(ScriptCommand::MoveTo(id, index))
+        }
+        RowEvent::SetOrder(id, order) => {
+            ChartSettingsAction::Script(ScriptCommand::order(id, order))
+        }
+        RowEvent::Configure(id, anchor) => ChartSettingsAction::ConfigureScript(id, anchor),
+        RowEvent::Enable(script) => ChartSettingsAction::AddScript(NewScript::new(
+            Some(script.id.clone()),
+            &script.name,
+            &script.source,
+        )),
+        RowEvent::Duplicate(id) => ChartSettingsAction::AddScript(NewScript::another(applied(id)?)),
+    })
 }
 
 fn count_chip(ui: &mut Ui, text: &str) {

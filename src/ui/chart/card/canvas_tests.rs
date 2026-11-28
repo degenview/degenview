@@ -130,6 +130,14 @@ impl Harness {
         }
     }
 
+    /// Presses a pane button, doing what the workspace does with the change it asks for.
+    pub(super) fn pane_button(&mut self, id: u64, action: PaneAction) {
+        self.card.apply_pane_action(id, action);
+        for command in self.card.take_script_commands() {
+            self.card.apply_script_command(&command);
+        }
+    }
+
     pub(super) fn frame(&mut self) -> (Vec<ClippedShape>, ChartPointer) {
         let input = egui::RawInput {
             time: Some(self.clock),
@@ -1964,22 +1972,20 @@ fn pane_buttons_move_collapse_maximize_and_remove_the_right_script() {
             .collect()
     };
     assert_eq!(names(&harness.card), ["Pane", "Second"]);
-    harness.card.apply_pane_action(ids[0], PaneAction::MoveDown);
+    harness.pane_button(ids[0], PaneAction::MoveDown);
     assert_eq!(
         names(&harness.card),
         ["Second", "Pane"],
         "the order is the scripts' order"
     );
-    harness.card.apply_pane_action(ids[0], PaneAction::MoveUp);
+    harness.pane_button(ids[0], PaneAction::MoveUp);
     assert_eq!(names(&harness.card), ["Pane", "Second"]);
     // Moving the first pane up, or the last down, changes nothing.
-    harness.card.apply_pane_action(ids[0], PaneAction::MoveUp);
-    harness.card.apply_pane_action(ids[1], PaneAction::MoveDown);
+    harness.pane_button(ids[0], PaneAction::MoveUp);
+    harness.pane_button(ids[1], PaneAction::MoveDown);
     assert_eq!(names(&harness.card), ["Pane", "Second"]);
 
-    harness
-        .card
-        .apply_pane_action(ids[1], PaneAction::ToggleCollapse);
+    harness.pane_button(ids[1], PaneAction::ToggleCollapse);
     assert!(harness.card.pine_instances()[1].pane.collapsed);
     assert!(!harness.card.pine_instances()[0].pane.collapsed);
     assert_eq!(
@@ -1993,21 +1999,17 @@ fn pane_buttons_move_collapse_maximize_and_remove_the_right_script() {
         2,
         "a collapsed script still runs and keeps its pane"
     );
-    harness
-        .card
-        .apply_pane_action(ids[1], PaneAction::ToggleMaximize);
+    harness.pane_button(ids[1], PaneAction::ToggleMaximize);
     assert_eq!(harness.card.maximized_pane, Some(ids[1]));
     assert!(
         !harness.card.pine_instances()[1].pane.collapsed,
         "maximizing expands"
     );
     harness.draw();
-    harness
-        .card
-        .apply_pane_action(ids[1], PaneAction::ToggleMaximize);
+    harness.pane_button(ids[1], PaneAction::ToggleMaximize);
     assert_eq!(harness.card.maximized_pane, None);
 
-    harness.card.apply_pane_action(ids[0], PaneAction::Remove);
+    harness.pane_button(ids[0], PaneAction::Remove);
     assert_eq!(
         names(&harness.card),
         ["Second"],
@@ -2169,7 +2171,7 @@ fn a_drag_ends_when_the_panes_change_under_it() {
     assert!(harness.card.pane_drag.is_some());
     let ids = harness.card.pane_ids.clone();
     // The pane below the held line goes away mid-drag; the rest must keep their own heights.
-    harness.card.apply_pane_action(ids[1], PaneAction::Remove);
+    harness.pane_button(ids[1], PaneAction::Remove);
     harness.pointer = Some(Pos2::new(x, line - 60.0));
     for _ in 0..3 {
         harness.frame();
@@ -2194,9 +2196,7 @@ fn a_drag_ends_when_the_panes_change_under_it() {
 fn a_maximized_pane_leaves_the_time_axis_and_a_vanished_one_restores_the_chart() {
     let mut harness = with_panes(ChartCanvas::default());
     let ids = harness.card.pane_ids.clone();
-    harness
-        .card
-        .apply_pane_action(ids[0], PaneAction::ToggleMaximize);
+    harness.pane_button(ids[0], PaneAction::ToggleMaximize);
     let (drawn, pointer) = harness.draw();
     let rect = pointer.rect.expect("chart");
     assert!(
@@ -2211,7 +2211,7 @@ fn a_maximized_pane_leaves_the_time_axis_and_a_vanished_one_restores_the_chart()
             .all(|(y, _)| *y > rect.top() + 24.0),
         "no price chart"
     );
-    harness.card.apply_pane_action(ids[0], PaneAction::Remove);
+    harness.pane_button(ids[0], PaneAction::Remove);
     harness.draw();
     assert_eq!(
         harness.card.maximized_pane, None,

@@ -1,8 +1,9 @@
 use super::appearance::{PRICE_SAMPLES, decimals_hint, price_axis, scale_hint, small_prices_hint};
-use super::scripts::{RowEvent, apply_events};
+use super::scripts::{RowEvent, action_for};
 use super::*;
 use crate::model::chart::price_format::MAX_DECIMALS;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::pine::command::{NewScript, ScriptCommand};
 use crate::model::pine::script::{LocalScript, ScriptType};
 use crate::model::{DataSource, IndicatorConfig, PriceFormat, SmallPrices};
 use crate::store::SharedStore;
@@ -10,7 +11,6 @@ use crate::store::Store;
 use crate::ui::chart::card::ChartCard;
 use crate::ui::pine::script_catalog;
 use eframe::egui;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -190,48 +190,38 @@ fn the_scripts_page_lists_saved_scripts_with_and_without_a_search_field() {
 }
 
 #[test]
-fn switching_a_script_on_applies_it_and_off_keeps_its_settings() {
-    use crate::pine::compiler::program::InputValue;
+fn each_row_asks_for_the_change_it_names() {
     let script = Arc::new(crate::ui::pine::script_catalog::sample(
         "abc",
         "Squeeze",
         ScriptType::Indicator,
     ));
     let mut card = ChartCard::default();
-    apply_events(&mut card, &[], vec![RowEvent::Enable(script.clone())]);
+    let id = card.add_pine_instance(Some("abc".into()), "Squeeze", "plot(close)");
     let instances = card.pine_instances().to_vec();
-    assert_eq!(instances.len(), 1);
-    assert_eq!(instances[0].script_id.as_deref(), Some("abc"));
-    assert!(instances[0].visible);
-
-    card.set_pine_instance_inputs(
-        instances[0].id,
-        &HashMap::from([("len".to_owned(), InputValue::Int(21))]),
+    assert_eq!(
+        action_for(&instances, RowEvent::Enable(script.clone())),
+        Some(ChartSettingsAction::AddScript(NewScript::new(
+            Some(script.id.clone()),
+            &script.name,
+            &script.source,
+        )))
     );
-    card.set_pine_instance_style(
-        instances[0].id,
-        HashMap::from([("plot.0.color".to_owned(), "#ff0000".to_owned())]),
+    assert_eq!(
+        action_for(&instances, RowEvent::ToggleVisible(id)),
+        Some(ChartSettingsAction::Script(ScriptCommand::show(id, false)))
     );
-    let id = instances[0].id;
-    apply_events(&mut card, &instances, vec![RowEvent::ToggleVisible(id)]);
-    let off = card.pine_instances()[0].clone();
-    assert!(!off.visible);
-    assert!(!off.inputs.is_empty() && !off.style_overrides.is_empty());
-
-    let instances = card.pine_instances().to_vec();
-    apply_events(&mut card, &instances, vec![RowEvent::ToggleVisible(id)]);
-    let on = card.pine_instances()[0].clone();
-    assert!(on.visible);
-    assert_eq!(on.inputs, off.inputs);
-    assert_eq!(card.pine_instances().len(), 1, "never a second instance");
-
-    let instances = card.pine_instances().to_vec();
-    apply_events(&mut card, &instances, vec![RowEvent::Duplicate(id)]);
-    assert_eq!(card.pine_instances().len(), 2);
-    assert!(card.pine_instances()[1].inputs.is_empty());
-    let instances = card.pine_instances().to_vec();
-    apply_events(&mut card, &instances, vec![RowEvent::Remove(id)]);
-    assert_eq!(card.pine_instances().len(), 1);
+    assert_eq!(
+        action_for(&instances, RowEvent::Duplicate(id)),
+        Some(ChartSettingsAction::AddScript(NewScript::another(
+            &instances[0]
+        )))
+    );
+    assert_eq!(
+        action_for(&instances, RowEvent::Remove(id)),
+        Some(ChartSettingsAction::Script(ScriptCommand::Remove(id)))
+    );
+    assert_eq!(action_for(&instances, RowEvent::ToggleVisible(99)), None);
 }
 
 #[test]

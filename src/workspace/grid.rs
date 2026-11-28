@@ -848,6 +848,9 @@ impl ChartWorkspace {
                         Action::Overlay(command) => {
                             self.apply_overlay_command(chart_id, command);
                         }
+                        Action::ToggleVisible(Kind::Script(id)) => {
+                            self.toggle_script(chart_id, id);
+                        }
                         Action::Add(_)
                         | Action::Remove(_)
                         | Action::AddScript(_)
@@ -863,13 +866,6 @@ impl ChartWorkspace {
                                     }
                                     Action::ToggleVisible(Kind::BuiltIn(kind)) => {
                                         kind.toggle_visible(&mut chart.indicators);
-                                    }
-                                    Action::ToggleVisible(Kind::Script(id)) => {
-                                        if let Some(instance) =
-                                            chart.chart.pine_instances().iter().find(|i| i.id == id)
-                                        {
-                                            chart.chart.set_pine_visible(id, !instance.visible);
-                                        }
                                     }
                                     _ => {}
                                 }

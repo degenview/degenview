@@ -55,6 +55,12 @@ impl ChartWorkspace {
             Some(ChartSettingsAction::ConfigureScript(id, anchor)) => {
                 self.toggle_script_popover(chart_id, id, anchor);
             }
+            Some(ChartSettingsAction::AddScript(script)) => {
+                self.add_script(chart_id, script);
+            }
+            Some(ChartSettingsAction::Script(command)) => {
+                self.edit_script(chart_id, &command);
+            }
             Some(ChartSettingsAction::SetScaleMode(mode)) => self.set_scale_mode(chart_id, mode),
             Some(ChartSettingsAction::Overlay(command)) => {
                 self.apply_overlay_command(chart_id, command);

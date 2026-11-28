@@ -2,6 +2,7 @@ use super::*;
 use crate::model::chart;
 use crate::model::chart::context::{QuickOrder, Target};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
+use crate::model::pine::command::NewScript;
 use crate::model::{Anchor, Kline, Tool};
 use eframe::egui::{OutputCommand, pos2};
 
@@ -675,14 +676,8 @@ fn indicator_history_and_drawing_history_share_one_stack_in_order() {
 fn a_script_picked_from_the_plus_menu_is_applied_by_id_and_undo_takes_it_off() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
-    let added = rig.workspace.add_pine_instance_to(
-        chart,
-        "saved-script".to_owned(),
-        "Saved",
-        "//@version=6",
-        &Default::default(),
-        true,
-    );
+    let script = NewScript::new(Some("saved-script".to_owned()), "Saved", "//@version=6");
+    let added = rig.workspace.add_script(chart, script);
     assert!(added.is_some());
     let instances = rig.chart_mut(chart).chart.pine_instances().to_vec();
     assert_eq!(instances[0].script_id.as_deref(), Some("saved-script"));

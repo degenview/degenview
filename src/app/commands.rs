@@ -7,6 +7,7 @@ use crate::host::tab::window::TabRequest;
 use crate::host::tradingview::Start;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::alert::{AlertRuntimeCommand, AlertRuntimeCommandPayload};
+use crate::model::pine::command::NewScript;
 use crate::model::tab::windows::WindowClose;
 use crate::model::watchlist::new_id;
 use crate::native_bridge::{self, NativeCommand};
@@ -197,7 +198,8 @@ impl DegenViewApp {
                         if let Ok(mut content) = tab.content.lock()
                             && let TabContent::Chart(workspace) = &mut *content
                         {
-                            workspace.add_pine_on_focused(script_id.clone(), &name, &source);
+                            let script = NewScript::new(script_id.clone(), &name, &source);
+                            workspace.add_script_on_focused(script);
                             break;
                         }
                     }

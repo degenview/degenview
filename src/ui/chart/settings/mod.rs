@@ -17,6 +17,7 @@ use super::settings::compare::CompareInput;
 use super::settings::templates::{TemplateAction, TemplateState};
 use crate::i18n::tr;
 use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::pine::command::{NewScript, ScriptCommand};
 use crate::model::{DataSource, IndicatorConfig};
 use crate::store::SharedStore;
 use crate::ui::icons::Icon;
@@ -123,13 +124,17 @@ pub struct ChartSettingsContext<'a> {
 }
 
 /// What the sheet asks the workspace to do.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ChartSettingsAction {
     Done,
     RemoveChart,
     OpenPineStudio,
     /// Open (or put away) the Inputs and Style popover of an applied script, pointing at `Rect`.
     ConfigureScript(u64, Rect),
+    /// Put a script on the chart.
+    AddScript(NewScript),
+    /// Change a script on the chart.
+    Script(ScriptCommand),
     /// Give every chart of the workspace this look.
     ApplyToAll(crate::model::chart::template::ApplyScope),
     /// Read the price axis in this mode.

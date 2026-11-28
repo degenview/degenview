@@ -148,7 +148,7 @@ Delete and saved-source writes require their own grants.
   text, never the draft; libraries and scripts with compile errors are refused; input overrides are
   checked against the compiled `InputSchema` (known id, right kind, min/max, options, source names,
   `#RRGGBB[AA]` colours), and a value equal to the default is no override. The app thread then calls
-  `ChartWorkspace::add_pine_instance_to`. Updates check against the instance's own stored source
+  `ChartWorkspace::add_script`. Updates check against the instance's own stored source
   (compiled on the app thread, as the settings popover does); `null` resets an input. All three
   push the same undo step as the chart's Scripts tab, only when something changed. The alert host
   copies an instance's inputs into the script alert armed on it and silences the alert when the

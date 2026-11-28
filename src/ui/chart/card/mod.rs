@@ -387,6 +387,8 @@ pub struct ChartCard {
     /// workspace last took them.
     alert_market: lines::Market,
     alert_moves: Vec<lines::AlertMove>,
+    /// Pane buttons that change the chart's scripts, until the workspace takes them.
+    script_commands: Vec<crate::model::pine::command::ScriptCommand>,
     /// The alerts whose pill is open (the rest show only their arrow), and the ones deleted from
     /// their pill since the workspace last took them. Never saved.
     alert_open: std::collections::HashSet<crate::model::alert::AlertId>,
@@ -470,6 +472,7 @@ impl Default for ChartCard {
             alert_menu: None,
             alert_market: lines::Market::default(),
             alert_moves: Vec::new(),
+            script_commands: Vec::new(),
             alert_open: std::collections::HashSet::new(),
             alert_deletes: Vec::new(),
             scale_menu: true,
