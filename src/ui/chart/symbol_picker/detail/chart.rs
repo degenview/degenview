@@ -122,19 +122,20 @@ mod tests {
     use super::*;
     use crate::model::{DataSource, Kline, Timeframe};
     use crate::service::ProviderError;
+    use crate::service::market::error::ErrorKind;
     use crate::ui::render_tests::Screen;
     use eframe::egui::{pos2, vec2};
 
     static ASKED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     fn fetch(
-        _: DataSource,
+        source: DataSource,
         symbol: &str,
         _: Timeframe,
         _: u32,
     ) -> Result<Vec<Kline>, ProviderError> {
         ASKED.lock().expect("asked").push(symbol.to_owned());
-        Err(ProviderError::other("no history"))
+        Err(ProviderError::new(source, ErrorKind::NoData))
     }
 
     #[test]

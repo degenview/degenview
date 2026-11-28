@@ -2318,14 +2318,17 @@ fn every_pane_labels_its_own_scale_with_at_least_two_prices() {
 fn a_failed_load_with_no_candles_shows_only_the_message() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness.candles.clear();
-    harness.error = Some(ProviderError::other("Binance is down"));
+    harness.error = Some(ProviderError::refused(
+        crate::model::DataSource::Binance,
+        "down",
+    ));
     let (drawn, pointer) = harness.draw();
     let texts: Vec<&str> = drawn
         .texts
         .iter()
         .map(|(_, text, _)| text.as_str())
         .collect();
-    assert_eq!(texts, ["Binance is down"]);
+    assert_eq!(texts, ["Binance error: down"]);
     assert!(drawn.segments.is_empty(), "no grid or axis without data");
     let rect = pointer.rect.expect("the chart still reports its rectangle");
     let (centre, _, _) = &drawn.texts[0];
@@ -2347,7 +2350,10 @@ fn no_candles_and_no_error_draws_an_empty_chart_without_panicking() {
 #[test]
 fn a_failed_refresh_keeps_the_last_candles_and_adds_a_warning() {
     let mut harness = Harness::new(ChartCanvas::default());
-    harness.error = Some(ProviderError::other("timeout"));
+    harness.error = Some(ProviderError::refused(
+        crate::model::DataSource::Binance,
+        "timeout",
+    ));
     let (drawn, pointer) = harness.draw();
     assert!(
         price_labels(&drawn).len() >= 2,

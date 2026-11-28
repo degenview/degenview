@@ -220,11 +220,6 @@ pub fn trading_kind(result: &SearchResult) -> &'static str {
 
 type Answer = Result<Vec<SearchResult>, ProviderError>;
 
-/// What a search that ended without an answer (its worker panicked) shows for its provider.
-fn stopped() -> &'static str {
-    tr!("The search stopped unexpectedly.")
-}
-
 /// Where the answers come from: the providers, or canned ones under test.
 #[derive(Clone, Copy)]
 pub struct Backend {
@@ -309,7 +304,7 @@ impl SymbolSearch {
     ) -> Listing {
         let answers = &mut self.answers;
         self.pending.retain(|slot, search| {
-            let Some(answer) = search.poll_or(|| Err(ProviderError::other(stopped()))) else {
+            let Some(answer) = search.poll_or(|| Err(ProviderError::interrupted(slot.1))) else {
                 return true;
             };
             answers.insert(slot.clone(), answer);
@@ -466,6 +461,7 @@ fn related_markets(asset: &str) -> Vec<SearchResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::market::error::ErrorKind;
 
     #[test]
     fn the_scopes_cover_their_own_markets() {
@@ -609,7 +605,10 @@ mod tests {
         let mut search = SymbolSearch::default();
         search.answers.insert(
             ("aapl".into(), DataSource::Alpaca),
-            Err(ProviderError::other("Add your Alpaca API key in Settings")),
+            Err(ProviderError::new(
+                DataSource::Alpaca,
+                ErrorKind::MissingKey,
+            )),
         );
         let listing = search.listing(&ctx, "aapl", Scope::Stocks, None);
         assert_eq!(listing.errors.len(), 1);

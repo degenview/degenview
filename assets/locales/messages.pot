@@ -845,7 +845,7 @@ msgstr ""
 msgid "Add the secret value that {token} stands for."
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Add this provider's API key in Settings to see its quotes"
 msgstr ""
 
@@ -912,7 +912,7 @@ msgstr ""
 msgid "Add vertex here"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Add your Alpaca API key in Settings to see stock quotes"
 msgstr ""
 
@@ -924,7 +924,7 @@ msgstr ""
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr ""
 
@@ -1293,15 +1293,11 @@ msgstr ""
 msgid "Allowed"
 msgstr ""
 
-#: src/service/market/error.rs
-msgid "Alpaca error: {error}"
-msgstr ""
-
 #: src/pine_studio/preview/chart.rs
 msgid "Alpaca isn't set up"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Alpaca refused your API key. Check it in Settings"
 msgstr ""
 
@@ -2487,15 +2483,6 @@ msgstr ""
 msgid "By {author} · {license}"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "Bybit error: {message}"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid ""
-"Bybit refused the request (HTTP 403): it is not available in every country"
-msgstr ""
-
 #: src/ui/drawing/properties/coordinates.rs
 msgid "C"
 msgstr ""
@@ -2966,10 +2953,6 @@ msgstr ""
 
 #: src/ui/chart/symbol_picker/predictions/rows.rs
 msgid "Chart every choice together"
-msgstr ""
-
-#: src/workspace/chart/mod.rs
-msgid "Chart fetch stopped before returning data"
 msgstr ""
 
 #: src/ui/alert/script_list.rs
@@ -3553,10 +3536,6 @@ msgstr ""
 #: src/trading/paper/backend.rs
 msgid ""
 "CoinMarketCap charts have no tradable price, so paper trading skips them."
-msgstr ""
-
-#: src/service/market/error.rs
-msgid "CoinMarketCap error: {error}"
 msgstr ""
 
 #: src/ui/settings/api_keys.rs
@@ -4730,11 +4709,6 @@ msgstr ""
 #: src/model/chart/kind.rs
 #: src/ui/drawing/properties/fib_pages.rs
 msgid "Dashed"
-msgstr ""
-
-#: src/service/market/error.rs
-#: src/service/watchlist_quotes/provider.rs
-msgid "Data error: {error}"
 msgstr ""
 
 #: src/ui/portfolio/asset_detail.rs
@@ -6955,11 +6929,6 @@ msgstr ""
 msgid "Gap size"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
-msgid ""
-"Gate.io refused the request (HTTP 403): it is not available in every country"
-msgstr ""
-
 #: src/model/drawings/style.rs
 msgid "Gear"
 msgstr ""
@@ -8236,10 +8205,6 @@ msgstr ""
 msgid "Keywords"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "Kraken error: {text}"
-msgstr ""
-
 #: src/ui/trade/venue_pill.rs
 msgid "LIVE"
 msgstr ""
@@ -9108,11 +9073,6 @@ msgid ""
 "computer ({error})"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
-msgid ""
-"MEXC refused the request (HTTP 403): it is not available in every country"
-msgstr ""
-
 #: src/ui/settings/mcp/security.rs
 msgid "Made when you apply an address"
 msgstr ""
@@ -9809,8 +9769,7 @@ msgstr ""
 msgid "Network"
 msgstr ""
 
-#: src/service/market/error.rs
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Network error: {error}"
 msgstr ""
 
@@ -10121,6 +10080,10 @@ msgstr ""
 msgid "No custom headers yet."
 msgstr ""
 
+#: src/service/provider_message.rs
+msgid "No data is available for {symbol} on Alpaca's free {feed} feed."
+msgstr ""
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid "No day in these bars can answer this question."
 msgstr ""
@@ -10315,10 +10278,6 @@ msgstr ""
 
 #: src/model/chart/context/mod.rs
 msgid "No price at this point"
-msgstr ""
-
-#: src/workspace/chart/mod.rs
-msgid "No price history for these choices"
 msgstr ""
 
 #: src/ui/alert/editor.rs
@@ -10824,15 +10783,11 @@ msgstr ""
 msgid "OK"
 msgstr ""
 
-#: src/service/market/error.rs
-msgid "Oanda error: {error}"
-msgstr ""
-
 #: src/model/watchlist/text.rs
 msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Oanda refused your access token. Check it in Settings"
 msgstr ""
 
@@ -10888,11 +10843,6 @@ msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Older and newer half"
-msgstr ""
-
-#: src/workspace/chart/mod.rs
-#: src/workspace/overlay/mod.rs
-msgid "Older candles stopped loading"
 msgstr ""
 
 #: src/ui/chart/session_stats_view/text.rs
@@ -12508,7 +12458,7 @@ msgstr ""
 msgid "Rate limit reached"
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Rate limited by the provider"
 msgstr ""
 
@@ -14505,15 +14455,15 @@ msgstr ""
 msgid "Set up Oanda to search forex"
 msgstr ""
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
 msgid "Set up this provider's API key in Settings first."
 msgstr ""
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
 msgid "Set up your Alpaca API key before using stock charts."
 msgstr ""
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
 msgid "Set up your Oanda account in Settings before using Oanda charts."
 msgstr ""
 
@@ -16118,10 +16068,6 @@ msgstr ""
 msgid "The cancel was sent but the answer was lost. The order is being checked."
 msgstr ""
 
-#: src/pine_studio/preview/fetch.rs
-msgid "The candles could not be loaded."
-msgstr ""
-
 #: src/model/chart/snapshot/studio.rs
 msgid "The capture's own proportions"
 msgstr ""
@@ -16657,18 +16603,6 @@ msgstr ""
 msgid "The price the line is fitted to."
 msgstr ""
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "The provider answered HTTP 400"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "The provider answered HTTP 404"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "The provider answered HTTP {code}"
-msgstr ""
-
 #: src/service/watchlist_quotes/engine.rs
 msgid "The provider doesn't know this market"
 msgstr ""
@@ -16683,7 +16617,7 @@ msgid ""
 "smaller change."
 msgstr ""
 
-#: src/workspace/overlay/mod.rs
+#: src/service/provider_message.rs
 msgid "The request stopped before it answered"
 msgstr ""
 
@@ -16781,10 +16715,6 @@ msgstr ""
 
 #: src/store/scripts/mod.rs
 msgid "The script’s file would land outside the library."
-msgstr ""
-
-#: src/ui/chart/symbol_picker/search.rs
-msgid "The search stopped unexpectedly."
 msgstr ""
 
 #: src/model/webhook/policy.rs
@@ -16886,10 +16816,6 @@ msgid ""
 "The time left in the forming bar, under the last price. Not shown on Renko, "
 "Kagi, Line Break, Point & Figure and Range charts, in a replay, or for markets"
 " without clock-cut bars."
-msgstr ""
-
-#: src/ui/chart/symbol_picker/predictions/trending.rs
-msgid "The trending list stopped loading."
 msgstr ""
 
 #: src/ui/chart/session_stats_view/result.rs
@@ -17950,42 +17876,6 @@ msgstr ""
 
 #: src/ui/workspace/toolbar.rs
 msgid "Undo ({shortcut})"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Alpaca response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Binance response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Bybit response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected CoinGecko response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Gate.io response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Kraken response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected MEXC response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected OKX response"
-msgstr ""
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Oanda response"
 msgstr ""
 
 #: src/model/broker/ticket.rs
@@ -19174,6 +19064,10 @@ msgstr ""
 msgid "You're on version {version}."
 msgstr ""
 
+#: src/service/provider_message.rs
+msgid "Your Alpaca plan does not include this data"
+msgstr ""
+
 #: src/pine_studio/library/unsaved.rs
 msgid "Your changes will be lost if you close this tab without saving."
 msgstr ""
@@ -19223,6 +19117,10 @@ msgstr ""
 
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Your scripts"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "Your {provider} plan does not include this data"
 msgstr ""
 
 #: src/ui/chart/indicator_picker/mod.rs
@@ -21242,8 +21140,52 @@ msgstr ""
 msgid "{prefix} isn't supported. Searched: {searched}."
 msgstr ""
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
+msgid "{provider} cannot serve a time range of candles"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} does not list this market"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} error: {message}"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} has no older candles for this market"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} has no price history for this market in this range"
+msgstr ""
+
+#: src/service/provider_message.rs
 msgid "{provider} has no {timeframe} history"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid ""
+"{provider} refused the request (HTTP 403): it is not available in every "
+"country, and it refuses a client that asks too often"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid ""
+"{provider} refused the request, and the markets at fault could not be singled "
+"out"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} refused your API key. Check it in Settings"
+msgstr ""
+
+#: src/service/provider_message.rs
+msgid "{provider} sent an answer DegenView could not read"
 msgstr ""
 
 #: src/ui/portfolio/empty.rs

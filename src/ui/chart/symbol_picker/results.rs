@@ -10,7 +10,8 @@ use super::search::{Listing, Scope};
 use super::{Env, Item, PADDING, Pick, PickKind, PickMode, SymbolPicker, predictions};
 use crate::i18n::tr;
 use crate::model::DataSource;
-use crate::service::{ProviderError, SearchResult};
+use crate::service::SearchResult;
+use crate::service::provider_message;
 use crate::ui::chart::picker_kit::widgets;
 use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::scroll::Beyond;
@@ -271,7 +272,7 @@ impl SymbolPicker {
         } else if let Some((source, error)) = listing.errors.iter().find(|(source, error)| {
             // A missing key is the notice card's job, not the empty state's: on a broad
             // search it must not override the ordinary no-results message.
-            !matches!(error, ProviderError::MissingKey(_))
+            error.missing_key().is_none()
                 && SettingsPage::for_source(*source)
                     .and_then(SettingsPage::search_failure_title)
                     .is_none()
@@ -282,7 +283,7 @@ impl SymbolPicker {
                     "{venue} could not be searched",
                     venue = source.display_name()
                 ),
-                &error.to_string(),
+                &provider_message::message(error),
             );
         } else {
             let searched = lookup

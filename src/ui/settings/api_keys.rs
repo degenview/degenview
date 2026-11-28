@@ -12,6 +12,7 @@ use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore, CredentialPair,
     CredentialsStore, OandaCredentials, OandaCredentialsStore,
 };
+use crate::service::provider_message;
 use crate::service::work_queue;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::loading::LoadingIndicator;
@@ -275,7 +276,7 @@ impl CmcForm {
 fn connection_status(outcome: Option<Result<(), ProviderError>>) -> StatusMessage {
     match outcome {
         Some(Ok(())) => StatusMessage::ok(tr!("Connection successful.")),
-        Some(Err(error)) => StatusMessage::error(error.to_string()),
+        Some(Err(error)) => StatusMessage::error(provider_message::message(&error)),
         None => StatusMessage::error(tr!("The connection test stopped unexpectedly.")),
     }
 }
@@ -727,7 +728,10 @@ mod tests {
             "a new test clears the old message"
         );
         form.start_test(None, || {
-            Err(ProviderError::other("ignored: one test at a time"))
+            Err(ProviderError::refused(
+                crate::model::DataSource::CoinMarketCap,
+                "ignored: one test at a time",
+            ))
         });
         wait_for_test(&mut form);
         assert!(!form.is_testing());
@@ -736,12 +740,16 @@ mod tests {
                 .eq([&StatusMessage::ok("Connection successful.")])
         );
 
-        form.start_test(None, || Err(ProviderError::other("Invalid API key")));
+        form.start_test(None, || {
+            Err(ProviderError::new(
+                crate::model::DataSource::CoinMarketCap,
+                crate::service::market::error::ErrorKind::Unauthorized,
+            ))
+        });
         wait_for_test(&mut form);
-        assert!(
-            form.statuses()
-                .eq([&StatusMessage::error("Invalid API key")])
-        );
+        assert!(form.statuses().eq([&StatusMessage::error(
+            "CoinMarketCap refused your API key. Check it in Settings"
+        )]));
 
         form.save(&cmc_store());
         assert!(

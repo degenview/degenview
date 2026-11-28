@@ -1,5 +1,6 @@
 use crate::model::market::line;
-use crate::model::{Kline, Timeframe};
+use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::market::error::ErrorKind;
 use crate::service::net::url::encode_component;
 use crate::service::{
     EventInfo, EventStats, MarketSource, ProviderError, SearchResult, downsample,
@@ -91,8 +92,10 @@ impl MarketSource for Polymarket {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )?;
-        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+        )
+        .map_err(|error| ProviderError::http(DataSource::Polymarket, error))?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
 
         let mut points: Vec<(i64, f64)> = value
             .get("history")
@@ -124,8 +127,9 @@ impl MarketSource for Polymarket {
             })
             .collect();
         if candles.is_empty() {
-            return Err(ProviderError::other(
-                "No price history for this market in this range",
+            return Err(ProviderError::new(
+                DataSource::Polymarket,
+                ErrorKind::NoData,
             ));
         }
 
@@ -134,6 +138,20 @@ impl MarketSource for Polymarket {
             Some(price) => replace_last_price(thinned, price),
             None => thinned,
         })
+    }
+
+    fn fetch_klines_range(
+        &self,
+        _symbol: &str,
+        _timeframe: Timeframe,
+        _start_ms: i64,
+        _end_ms: i64,
+        _max: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        Err(ProviderError::new(
+            DataSource::Polymarket,
+            ErrorKind::NoTimeRange,
+        ))
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -146,8 +164,10 @@ impl MarketSource for Polymarket {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )?;
-        let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+        )
+        .map_err(|error| ProviderError::http(DataSource::Polymarket, error))?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
 
         let events = value
             .get("events")
@@ -267,12 +287,11 @@ pub fn trending(limit: usize) -> Result<Vec<SearchResult>, ProviderError> {
     let url = format!(
         "{GAMMA_BASE}/events?active=true&closed=false&order=volume24hr&ascending=false&limit={limit}"
     );
-    let body = crate::service::net::http::get_text(
-        &url,
-        &[],
-        crate::service::net::http::Retry::Transient,
-    )?;
-    let events: Vec<Value> = serde_json::from_str(&body).map_err(ProviderError::data)?;
+    let body =
+        crate::service::net::http::get_text(&url, &[], crate::service::net::http::Retry::Transient)
+            .map_err(|error| ProviderError::http(DataSource::Polymarket, error))?;
+    let events: Vec<Value> = serde_json::from_str(&body)
+        .map_err(|error| ProviderError::malformed(DataSource::Polymarket, error))?;
     Ok(events.iter().flat_map(event_results).collect())
 }
 

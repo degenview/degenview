@@ -9,7 +9,8 @@ use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::next_bucket_start_ms;
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::net::http;
 use crate::service::net::ws::Keepalive;
 use crate::service::{MarketSource, ProviderError, SearchResult};
@@ -126,45 +127,46 @@ fn fetch_page(
     parse_candles(&get(&url)?, base)
 }
 
+/// What Bybit's HTTP statuses mean beyond a rate limit, at every endpoint (none of them names a
+/// market by status): some regions are refused with a 403, as is a client that asks too often.
+pub(in crate::service) const STATUSES: Statuses = &[(403, ErrorKind::Blocked)];
+
 /// A request, with Bybit's regional refusal told apart from a network failure.
 pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
-    match http::get_text(url, &[], http::Retry::Transient) {
-        Ok(body) => Ok(body),
-        Err(http::Error::Status(403)) => Err(ProviderError::other(
-            "Bybit refused the request (HTTP 403): it is not available in every country, and \
-             refuses a client that asks too often",
-        )),
-        Err(error) => Err(error.into()),
-    }
+    http::get_text(url, &[], http::Retry::Transient)
+        .map_err(|error| ProviderError::http_with(DataSource::Bybit, STATUSES, error))
 }
 
 /// Whether a `retCode` says to slow down: 10006 (too many visits) and 10018 (the IP limit).
-pub(crate) fn is_rate_limit(code: i64) -> bool {
+fn is_rate_limit(code: i64) -> bool {
     matches!(code, 10_006 | 10_018)
 }
 
-/// The `result` of an answer, or the provider's refusal.
-fn result_of(body: &str) -> Result<Value, ProviderError> {
-    let mut value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+/// The `result` of an answer, or the provider's refusal. Failures arrive as HTTP 200 with a
+/// `retCode` other than 0.
+pub(crate) fn result_of(body: &str) -> Result<Value, ProviderError> {
+    let mut value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Bybit, error))?;
     let code = value
         .get("retCode")
         .and_then(Value::as_i64)
-        .ok_or_else(|| ProviderError::data("expected a retCode"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Bybit, "expected a retCode"))?;
     if code != 0 {
         if is_rate_limit(code) {
-            return Err(ProviderError::Network(http::Error::Status(429)));
+            return Err(ProviderError::new(
+                DataSource::Bybit,
+                ErrorKind::RateLimited,
+            ));
         }
-        let message = value
-            .get("retMsg")
-            .and_then(Value::as_str)
-            .filter(|message| !message.is_empty())
-            .unwrap_or("The request failed");
-        return Err(ProviderError::other(format!("Bybit: {message}")));
+        return Err(ProviderError::refused_because(
+            DataSource::Bybit,
+            value.get("retMsg").and_then(Value::as_str),
+        ));
     }
     value
         .get_mut("result")
         .map(Value::take)
-        .ok_or_else(|| ProviderError::data("expected a result"))
+        .ok_or_else(|| ProviderError::malformed(DataSource::Bybit, "expected a result"))
 }
 
 /// Candles of length `base`, oldest first.
@@ -173,7 +175,7 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
     let mut candles = result
         .get("list")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a candle list"))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Bybit, "expected a candle list"))?
         .iter()
         .map(|row| parse_row(row, base))
         .collect::<Result<Vec<_>, _>>()?;
@@ -184,18 +186,18 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
 /// One kline of a push (`start`, `open`, …) is the same row as an object: see `live/bybit.rs`.
 fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     let text = |index: usize| -> Result<&str, ProviderError> {
-        row.get(index)
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
+        row.get(index).and_then(Value::as_str).ok_or_else(|| {
+            ProviderError::malformed(DataSource::Bybit, format!("invalid field {index}"))
+        })
     };
     let number = |index: usize| -> Result<f64, ProviderError> {
-        text(index)?
-            .parse()
-            .map_err(|_| ProviderError::data(format!("invalid field {index}")))
+        text(index)?.parse().map_err(|_| {
+            ProviderError::malformed(DataSource::Bybit, format!("invalid field {index}"))
+        })
     };
     let open_time: i64 = text(0)?
         .parse()
-        .map_err(|_| ProviderError::data("invalid timestamp"))?;
+        .map_err(|_| ProviderError::malformed(DataSource::Bybit, "invalid timestamp"))?;
     Ok(Kline {
         open_time,
         close_time: next_bucket_start_ms(base, open_time) - 1,
@@ -228,7 +230,7 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is trading, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_bybit");
+static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Bybit), "catalog_bybit");
 
 /// The most pages of the market list followed: 509 markets fit one page of 1,000.
 const CATALOG_PAGES: usize = 10;
@@ -254,7 +256,7 @@ fn parse_pairs(body: &str) -> Result<(Vec<Pair>, Option<String>), ProviderError>
     let pairs = result
         .get("list")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a market list"))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Bybit, "expected a market list"))?
         .iter()
         .filter(|row| row.get("status").and_then(Value::as_str) == Some("Trading"))
         .filter_map(|row| {
@@ -359,14 +361,24 @@ mod tests {
         let unknown = r#"{"retCode":10001,"retMsg":"Not supported symbols","result":{}}"#;
         assert_eq!(
             parse_candles(unknown, Timeframe::HOUR_1),
-            Err(ProviderError::other("Bybit: Not supported symbols"))
+            Err(ProviderError::refused(
+                DataSource::Bybit,
+                "Not supported symbols"
+            ))
         );
         for code in [10_006, 10_018] {
             let limited =
                 format!(r#"{{"retCode":{code},"retMsg":"Too many visits!","result":{{}}}}"#);
             let error = parse_candles(&limited, Timeframe::HOUR_1).unwrap_err();
-            assert!(error.is_rate_limited(), "{code}: {error}");
+            assert_eq!(
+                error,
+                ProviderError::new(DataSource::Bybit, ErrorKind::RateLimited),
+                "{code}"
+            );
         }
+        let region =
+            ProviderError::http_with(DataSource::Bybit, STATUSES, http::Error::Status(403));
+        assert_eq!(region.kind, ErrorKind::Blocked);
         assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
         assert!(parse_candles(r#"{"retCode":0,"result":{}}"#, Timeframe::HOUR_1).is_err());
         assert!(parse_candles(r#"{"result":{"list":[]}}"#, Timeframe::HOUR_1).is_err());
@@ -463,6 +475,9 @@ mod tests {
         let error = BYBIT
             .fetch_klines("NOPEUSDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
-        assert_eq!(error.to_string(), "Bybit: Not supported symbols");
+        assert_eq!(
+            error,
+            ProviderError::refused(DataSource::Bybit, "Not supported symbols")
+        );
     }
 }

@@ -18,7 +18,7 @@ pub use engine::Config;
 pub use engine::Outcome;
 pub use provider::QuoteProvider;
 #[cfg(test)]
-pub use provider::{QuoteFailure, QuoteRequest};
+pub use provider::QuoteRequest;
 
 use crate::clock::now_ms;
 use crate::model::alert::AlertProviderHealth;

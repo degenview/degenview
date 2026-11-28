@@ -3,7 +3,6 @@
 //! response shapes are covered without a network.
 
 use super::engine::Outcome;
-use crate::i18n::tr;
 use crate::lock::lock;
 use crate::model::exchange::Market;
 use crate::model::market::binance::split_market;
@@ -12,7 +11,8 @@ use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use crate::model::{DataSource, Kline, Listing, Timeframe};
 use crate::service::ProviderError;
 use crate::service::keychain::api_keys::OandaCredentials;
-use crate::service::market::binance;
+use crate::service::market::error::{Asked, ErrorKind, Scope, Statuses};
+use crate::service::market::{alpaca, binance, bybit, coinbase, gateio, kraken, mexc, oanda, okx};
 use crate::service::net::url::encode_component;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -28,43 +28,13 @@ pub struct QuoteRequest {
     pub chain: Option<String>,
 }
 
-/// Why a batch of quotes did not come back.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum QuoteFailure {
-    RateLimited,
-    /// No credentials of the provider are saved.
-    CredentialsMissing(DataSource),
-    /// The provider refused the request itself, as it does for an unknown symbol.
-    /// Retrying a smaller batch can find which symbol it was.
-    Rejected(String),
-    /// Network trouble or a server error; the whole source is treated as down for a moment.
-    Failed(String),
-}
-
-impl QuoteFailure {
-    pub fn message(&self) -> String {
-        match self {
-            Self::RateLimited => tr!("Rate limited by the provider").to_owned(),
-            Self::CredentialsMissing(source) => match source {
-                DataSource::Alpaca => {
-                    tr!("Add your Alpaca API key in Settings to see stock quotes").to_owned()
-                }
-                DataSource::Oanda => {
-                    tr!("Add your Oanda credentials in Settings to see Oanda quotes").to_owned()
-                }
-                _ => tr!("Add this provider's API key in Settings to see its quotes").to_owned(),
-            },
-            Self::Rejected(message) | Self::Failed(message) => message.clone(),
-        }
-    }
-}
-
 /// Quotes keyed by `QuoteRequest::symbol`; a symbol the provider did not answer is omitted.
 /// An adapter that makes several requests reports the ones that failed in the `Outcome`
 /// and keeps the rest; `Err` is for a call that failed as a whole.
 pub trait QuoteProvider: Send + Sync {
     /// `requests` are all of `listing`'s markets.
-    fn quotes(&self, listing: Listing, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure>;
+    fn quotes(&self, listing: Listing, requests: &[QuoteRequest])
+    -> Result<Outcome, ProviderError>;
 
     /// The network of a DEX pair saved without one, from its address.
     fn resolve_chain(&self, address: &str) -> Option<String>;
@@ -119,7 +89,11 @@ const MEXC_URL: &str = crate::service::market::mexc::BASE_URL;
 const DEX_URL: &str = "https://api.dexscreener.com/latest/dex";
 
 impl QuoteProvider for LiveProvider {
-    fn quotes(&self, listing: Listing, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+    fn quotes(
+        &self,
+        listing: Listing,
+        requests: &[QuoteRequest],
+    ) -> Result<Outcome, ProviderError> {
         if requests.is_empty() {
             return Ok(Outcome::default());
         }
@@ -153,57 +127,27 @@ impl QuoteProvider for LiveProvider {
     }
 }
 
-/// A GET that maps HTTP failures onto `QuoteFailure`.
-fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String, QuoteFailure> {
-    match crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
-    {
-        Ok(body) => Ok(body),
-        Err(crate::service::net::http::Error::Status(code)) => Err(classify_status(source, code)),
-        Err(error) => Err(QuoteFailure::Failed(tr!(
-            "Network error: {error}",
-            error = error
-        ))),
-    }
+/// A GET whose failures are the venue's own kinds, its statuses meaning nothing beyond a rate
+/// limit.
+fn get(
+    venue: impl Into<Listing>,
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<String, ProviderError> {
+    get_with(venue, &[], url, headers)
 }
 
-/// What an HTTP status means for a quote request. Only a status the provider documents
-/// as "a symbol in this request is unknown" is `Rejected`, which makes the engine search
-/// for the bad symbol; every other refusal (credentials, region, a changed endpoint, a
-/// ban) belongs to the whole source and backs it off instead.
-pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
-    match (source, code) {
-        (_, 429) => QuoteFailure::RateLimited,
-        (DataSource::Alpaca, 401 | 403) => QuoteFailure::Failed(
-            tr!("Alpaca refused your API key. Check it in Settings").to_owned(),
-        ),
-        (DataSource::Oanda, 401 | 403) => QuoteFailure::Failed(
-            tr!("Oanda refused your access token. Check it in Settings").to_owned(),
-        ),
-        // Binance answers an unknown symbol in a batch with 400; so do Alpaca and Oanda.
-        (DataSource::Binance | DataSource::Alpaca | DataSource::Oanda, 400) => {
-            QuoteFailure::Rejected(tr!("The provider answered HTTP 400").to_owned())
-        }
-        // Bybit refuses some countries, and a client that asks too often, with a 403.
-        (DataSource::Bybit, 403) => QuoteFailure::Failed(
-            tr!("Bybit refused the request (HTTP 403): it is not available in every country")
-                .to_owned(),
-        ),
-        // Gate.io refuses some countries, and a client that asks too often, with a 403.
-        (DataSource::Gate, 403) => QuoteFailure::Failed(
-            tr!("Gate.io refused the request (HTTP 403): it is not available in every country")
-                .to_owned(),
-        ),
-        // MEXC refuses some countries with a 403.
-        (DataSource::Mexc, 403) => QuoteFailure::Failed(
-            tr!("MEXC refused the request (HTTP 403): it is not available in every country")
-                .to_owned(),
-        ),
-        // Coinbase is asked one product at a time: a 404 names that product.
-        (DataSource::Coinbase, 404) => {
-            QuoteFailure::Rejected(tr!("The provider answered HTTP 404").to_owned())
-        }
-        _ => QuoteFailure::Failed(tr!("The provider answered HTTP {code}", code = code)),
-    }
+/// A GET whose statuses mean what `statuses` says: the table of the kind of request this is,
+/// which depends on whether it names the markets it asks for.
+fn get_with(
+    venue: impl Into<Listing>,
+    statuses: Statuses,
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<String, ProviderError> {
+    let venue = venue.into();
+    crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
+        .map_err(|error| ProviderError::http_with(venue, statuses, error))
 }
 
 /// The 24-hour ticker URL of `market` for `requests`. Spot takes a list: `symbols` is a JSON
@@ -238,8 +182,36 @@ fn binance_pair(symbol: &str) -> String {
     split_market(&symbol.to_uppercase()).0.to_owned()
 }
 
-fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
-    match get(DataSource::Binance, &binance_url(market, requests), &[]) {
+/// What the statuses of `listing`'s quote request mean. They mean what the endpoint makes of them:
+/// a 400 or 404 from a request that names the markets it asks for says one of them is unknown (the
+/// engine then looks for it), from one that names none (a whole ticker list) it says nothing about
+/// any, and backs the source off.
+pub(super) fn quote_statuses(listing: Listing, requests: &[QuoteRequest]) -> Statuses {
+    match listing.source {
+        // Spot names its markets; the futures API only does for one.
+        DataSource::Binance
+            if binance::endpoints(listing.market).ticker_batch.is_some() || requests.len() == 1 =>
+        {
+            binance::MARKET_STATUSES
+        }
+        DataSource::Coinbase => coinbase::PRODUCT_STATUSES,
+        DataSource::Alpaca => alpaca::MARKET_STATUSES,
+        DataSource::Oanda => oanda::MARKET_STATUSES,
+        DataSource::Bybit => bybit::STATUSES,
+        DataSource::Gate => gateio::LIST_STATUSES,
+        DataSource::Mexc => mexc::LIST_STATUSES,
+        _ => &[],
+    }
+}
+
+fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, ProviderError> {
+    let listing = Listing::new(DataSource::Binance, market);
+    match get_with(
+        listing,
+        quote_statuses(listing, requests),
+        &binance_url(market, requests),
+        &[],
+    ) {
         Ok(body) => binance_outcome(market, &body, requests),
         Err(failure) => binance_refusal(market, requests, failure),
     }
@@ -250,10 +222,13 @@ fn binance_quotes(market: Market, requests: &[QuoteRequest]) -> Result<Outcome, 
 pub fn binance_refusal(
     market: Market,
     requests: &[QuoteRequest],
-    failure: QuoteFailure,
-) -> Result<Outcome, QuoteFailure> {
+    failure: ProviderError,
+) -> Result<Outcome, ProviderError> {
     match (failure, requests) {
-        (QuoteFailure::Rejected(_), [one]) if binance::endpoints(market).ticker_batch.is_none() => {
+        (failure, [one])
+            if failure.kind.scope() == Scope::Symbol
+                && binance::endpoints(market).ticker_batch.is_none() =>
+        {
             Ok(Outcome {
                 rejected: HashSet::from([one.symbol.clone()]),
                 complete: true,
@@ -270,10 +245,10 @@ pub fn binance_outcome(
     market: Market,
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<Outcome, QuoteFailure> {
-    let mut outcome = Outcome::from_quotes(parse_binance(body, requests)?);
+) -> Result<Outcome, ProviderError> {
+    let mut outcome = Outcome::from_quotes(parse_binance(market, body, requests)?);
     if binance::endpoints(market).ticker_batch.is_none() {
-        let answer = json(body)?;
+        let answer = json(Listing::new(DataSource::Binance, market), body)?;
         let listed: HashSet<String> = binance_tickers(&answer)
             .into_iter()
             .flatten()
@@ -293,26 +268,37 @@ pub fn binance_outcome(
 /// down, and the rest of the batch would only add requests.
 const CONSECUTIVE_FAILURES: usize = 3;
 
-fn mexc(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(DataSource::Mexc, &format!("{MEXC_URL}/ticker/24hr"), &[])?;
+fn mexc(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let body = get_with(
+        DataSource::Mexc,
+        quote_statuses(DataSource::Mexc.into(), requests),
+        &format!("{MEXC_URL}/ticker/24hr"),
+        &[],
+    )?;
     parse_mexc(&body, requests)
 }
 
-fn gateio(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(DataSource::Gate, &format!("{GATE_URL}/tickers"), &[])?;
+fn gateio(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let body = get_with(
+        DataSource::Gate,
+        quote_statuses(DataSource::Gate.into(), requests),
+        &format!("{GATE_URL}/tickers"),
+        &[],
+    )?;
     parse_gateio(&body, requests)
 }
 
-fn bybit(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(
+fn bybit(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let body = get_with(
         DataSource::Bybit,
+        quote_statuses(DataSource::Bybit.into(), requests),
         &format!("{BYBIT_URL}/tickers?category=spot"),
         &[],
     )?;
     parse_bybit(&body, requests)
 }
 
-fn kraken(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+fn kraken(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
     // One unknown pair refuses the whole call: the engine bisects for it.
     let pairs: Vec<&str> = requests
         .iter()
@@ -330,7 +316,7 @@ fn kraken(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
     parse_kraken(&body, requests)
 }
 
-fn okx(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+fn okx(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
     let body = get(
         DataSource::Okx,
         &format!("{OKX_URL}/market/tickers?instType=SPOT"),
@@ -349,8 +335,9 @@ fn coinbase(requests: &[QuoteRequest]) -> Outcome {
             std::thread::sleep(Duration::from_millis(125));
         }
         let id = crate::service::market::coinbase::product_id(&request.symbol);
-        match get(
+        match get_with(
             DataSource::Coinbase,
+            quote_statuses(DataSource::Coinbase.into(), requests),
             &format!("{COINBASE_URL}/products/{id}/stats"),
             &[],
         ) {
@@ -360,12 +347,12 @@ fn coinbase(requests: &[QuoteRequest]) -> Outcome {
                     outcome.quotes.insert(request.symbol.clone(), quote);
                 }
             }
-            Err(QuoteFailure::Rejected(_)) => {
+            Err(failure) if failure.kind.scope() == Scope::Symbol => {
                 streak = 0;
                 outcome.rejected.insert(request.symbol.clone());
             }
             Err(failure) => {
-                let stop = matches!(failure, QuoteFailure::RateLimited) || {
+                let stop = failure.is_rate_limited() || {
                     streak += 1;
                     streak >= CONSECUTIVE_FAILURES
                 };
@@ -389,7 +376,7 @@ fn symbols_of(requests: &[QuoteRequest]) -> Vec<String> {
         .collect()
 }
 
-fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
     let ids = requests
         .iter()
         .map(|request| request.symbol.to_lowercase())
@@ -423,7 +410,10 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
         for page in pairs.chunks(chunk_size(DataSource::DexScreener.into())) {
             let names: Vec<String> = page.iter().map(|request| request.symbol.clone()).collect();
             if limited {
-                outcome.failed.push((names, QuoteFailure::RateLimited));
+                outcome.failed.push((
+                    names,
+                    ProviderError::new(DataSource::DexScreener, ErrorKind::RateLimited),
+                ));
                 continue;
             }
             let addresses = names.join(",");
@@ -434,7 +424,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
             ) {
                 Ok(body) => outcome.quotes.extend(parse_dex_pairs(&body, page)),
                 Err(failure) => {
-                    limited = matches!(failure, QuoteFailure::RateLimited);
+                    limited = failure.is_rate_limited();
                     outcome.failed.push((names, failure));
                 }
             }
@@ -443,9 +433,12 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
     outcome
 }
 
-fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, ProviderError> {
     let Some((key, secret)) = crate::service::keychain::api_keys::alpaca_credentials() else {
-        return Err(QuoteFailure::CredentialsMissing(DataSource::Alpaca));
+        return Err(ProviderError::new(
+            DataSource::Alpaca,
+            ErrorKind::MissingKey,
+        ));
     };
     let symbols = requests
         .iter()
@@ -453,8 +446,9 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
         .collect::<Vec<_>>()
         .join(",");
     let url = format!("https://data.alpaca.markets/v2/stocks/snapshots?symbols={symbols}&feed=iex");
-    let body = get(
+    let body = get_with(
         DataSource::Alpaca,
+        quote_statuses(DataSource::Alpaca.into(), requests),
         &url,
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
     )?;
@@ -469,9 +463,9 @@ fn oanda(
     requests: &[QuoteRequest],
     day_ago: &Arc<Mutex<DayAgoReferences>>,
     refreshing: &Arc<AtomicBool>,
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
     let Some(login) = crate::service::keychain::api_keys::oanda_credentials() else {
-        return Err(QuoteFailure::CredentialsMissing(DataSource::Oanda));
+        return Err(ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey));
     };
     let symbols = requests
         .iter()
@@ -485,8 +479,9 @@ fn oanda(
             login.account_id
         ),
     );
-    let body = get(
+    let body = get_with(
         DataSource::Oanda,
+        quote_statuses(DataSource::Oanda.into(), requests),
         &request.url,
         &[("Authorization", request.authorization.as_str())],
     )?;
@@ -627,12 +622,12 @@ fn day_ago_reference(
 pub fn parse_oanda_pricing(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let value = json(DataSource::Oanda, body)?;
     let prices = value
         .get("prices")
         .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Oanda response").to_owned()))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "expected a price list"))?;
     let mut quotes = HashMap::new();
     for request in requests {
         let Some(price) = prices.iter().find(|price| {
@@ -705,10 +700,9 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
                 streak += 1;
                 let stop = streak >= CONSECUTIVE_FAILURES;
                 let upto = if stop { requests.len() } else { index + 1 };
-                outcome.failed.push((
-                    symbols_of(&requests[index..upto]),
-                    QuoteFailure::Failed(error.to_string()),
-                ));
+                outcome
+                    .failed
+                    .push((symbols_of(&requests[index..upto]), error));
                 if stop {
                     break;
                 }
@@ -731,9 +725,8 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
 
 // MARK: Parsers
 
-fn json(body: &str) -> Result<Value, QuoteFailure> {
-    serde_json::from_str(body)
-        .map_err(|error| QuoteFailure::Failed(tr!("Data error: {error}", error = error)))
+fn json(venue: impl Into<Listing>, body: &str) -> Result<Value, ProviderError> {
+    serde_json::from_str(body).map_err(|error| ProviderError::malformed(venue, error))
 }
 
 fn number(value: Option<&Value>) -> Option<f64> {
@@ -765,12 +758,14 @@ fn binance_tickers(answer: &Value) -> Option<&[Value]> {
 /// `/ticker/24hr?type=MINI`: `openPrice` is the rolling 24h open, a truer day-change
 /// reference than a candle picked from the last 25 hours.
 pub fn parse_binance(
+    market: Market,
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let listing = Listing::new(DataSource::Binance, market);
+    let value = json(listing, body)?;
     let tickers: HashMap<String, &Value> = binance_tickers(&value)
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Binance response").to_owned()))?
+        .ok_or_else(|| ProviderError::malformed(listing, "expected a ticker list"))?
         .iter()
         .filter_map(|ticker| Some((ticker.get("symbol")?.as_str()?.to_uppercase(), ticker)))
         .collect();
@@ -809,11 +804,8 @@ pub fn parse_binance(
 pub fn parse_mexc(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let tickers: HashMap<String, SourceQuote> = value
-        .as_array()
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected MEXC response").to_owned()))?
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let tickers: HashMap<String, SourceQuote> = mexc::rows_of(body, Asked::List)?
         .iter()
         .filter_map(|ticker| {
             let id = ticker.get("symbol")?.as_str()?.to_uppercase();
@@ -872,11 +864,11 @@ pub fn gateio_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
 pub fn parse_gateio(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let value = json(DataSource::Gate, body)?;
     let tickers: HashMap<String, SourceQuote> = value
         .as_array()
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Gate.io response").to_owned()))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Gate, "expected a ticker list"))?
         .iter()
         .filter_map(gateio_ticker)
         .collect();
@@ -916,27 +908,12 @@ pub fn bybit_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
 pub fn parse_bybit(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let code = value
-        .get("retCode")
-        .and_then(Value::as_i64)
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Bybit response").to_owned()))?;
-    if code != 0 {
-        return Err(if crate::service::market::bybit::is_rate_limit(code) {
-            QuoteFailure::RateLimited
-        } else {
-            let message = value
-                .get("retMsg")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            QuoteFailure::Failed(tr!("Bybit error: {message}", message = message))
-        });
-    }
-    let tickers: HashMap<String, SourceQuote> = value
-        .pointer("/result/list")
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let result = bybit::result_of(body)?;
+    let tickers: HashMap<String, SourceQuote> = result
+        .get("list")
         .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Bybit response").to_owned()))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Bybit, "expected a ticker list"))?
         .iter()
         .filter_map(bybit_ticker)
         .collect();
@@ -968,30 +945,11 @@ pub fn kraken_volume(pair: &str, base_volume: f64, vwap: f64) -> (f64, VolumeKin
 pub fn parse_kraken(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    if let Some(code) = value
-        .get("error")
-        .and_then(Value::as_array)
-        .and_then(|errors| errors.first())
-        .and_then(Value::as_str)
-    {
-        let text = code
-            .split_once(':')
-            .map_or(code, |(_, text)| text)
-            .to_owned();
-        return Err(if crate::service::market::kraken::is_rate_limit(code) {
-            QuoteFailure::RateLimited
-        } else if code.starts_with("EQuery:") {
-            QuoteFailure::Rejected(text)
-        } else {
-            QuoteFailure::Failed(tr!("Kraken error: {text}", text = text))
-        });
-    }
-    let tickers = value
-        .get("result")
-        .and_then(Value::as_object)
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Kraken response").to_owned()))?;
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let result = kraken::result_of(body, Asked::Markets)?;
+    let tickers = result
+        .as_object()
+        .ok_or_else(|| ProviderError::malformed(DataSource::Kraken, "expected a ticker list"))?;
     let mut quotes = HashMap::new();
     for request in requests {
         let Some(ticker) = tickers.get(&request.symbol) else {
@@ -1043,16 +1001,8 @@ pub fn okx_ticker(ticker: &Value) -> Option<(String, SourceQuote)> {
 pub fn parse_okx(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    if value.get("code").and_then(Value::as_str) != Some("0") {
-        let message = value.get("msg").and_then(Value::as_str).unwrap_or_default();
-        return Err(QuoteFailure::Failed(format!("OKX error: {message}")));
-    }
-    let tickers: HashMap<String, SourceQuote> = value
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected OKX response").to_owned()))?
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let tickers: HashMap<String, SourceQuote> = okx::data_rows(body, Asked::List)?
         .iter()
         .filter_map(okx_ticker)
         .collect();
@@ -1109,11 +1059,11 @@ pub fn from_change_percent(price: f64, change_percent_24h: Option<f64>) -> Sourc
 pub fn parse_coingecko_markets(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let value = json(DataSource::CoinGecko, body)?;
     let coins: HashMap<String, &Value> = value
         .as_array()
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected CoinGecko response").to_owned()))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::CoinGecko, "expected a market list"))?
         .iter()
         .filter_map(|coin| Some((coin.get("id")?.as_str()?.to_lowercase(), coin)))
         .collect();
@@ -1192,11 +1142,11 @@ pub fn parse_chain(body: &str, address: &str) -> Option<String> {
 pub fn parse_alpaca_snapshots(
     body: &str,
     requests: &[QuoteRequest],
-) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let value = json(body)?;
-    let snapshots = value
-        .as_object()
-        .ok_or_else(|| QuoteFailure::Failed(tr!("Unexpected Alpaca response").to_owned()))?;
+) -> Result<HashMap<String, SourceQuote>, ProviderError> {
+    let value = json(DataSource::Alpaca, body)?;
+    let snapshots = value.as_object().ok_or_else(|| {
+        ProviderError::malformed(DataSource::Alpaca, "expected a snapshot object")
+    })?;
     let mut quotes = HashMap::new();
     for request in requests {
         let Some(snapshot) = snapshots.get(&request.symbol.to_uppercase()) else {
@@ -1228,6 +1178,15 @@ pub fn parse_alpaca_snapshots(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn request(symbol: &str) -> QuoteRequest {
+        QuoteRequest {
+            symbol: symbol.to_owned(),
+            chain: None,
+        }
+    }
+
     #[test]
     fn one_futures_market_is_asked_by_name_and_more_as_the_whole_list() {
         let ask = |symbol: &str| QuoteRequest {
@@ -1247,7 +1206,7 @@ mod tests {
         assert_eq!(outcome.quotes["BTCUSDT.P"].price, 2.0);
         assert!(outcome.rejected.is_empty());
         let body = r#"[{"symbol":"BTCUSDT","lastPrice":"2","openPrice":"1","quoteVolume":"5"}]"#;
-        let quotes = parse_binance(body, &[ask("BTCUSDT.P")]).expect("parsed");
+        let quotes = parse_binance(Market::Perpetual, body, &[ask("BTCUSDT.P")]).expect("parsed");
         assert_eq!(quotes["BTCUSDT.P"].price, 2.0);
         assert_eq!(quotes["BTCUSDT.P"].volume_24h, Some(5.0), "dollar quoted");
     }
@@ -1274,14 +1233,34 @@ mod tests {
         assert_eq!(super::day_before(&[]), None);
     }
 
+    /// What a quote request of `listing` for `symbols` makes of an HTTP `code`.
+    fn quote_failure(listing: Listing, symbols: &[&str], code: u16) -> ProviderError {
+        let requests: Vec<QuoteRequest> = symbols.iter().map(|symbol| request(symbol)).collect();
+        ProviderError::http_with(
+            listing,
+            quote_statuses(listing, &requests),
+            crate::service::net::http::Error::Status(code),
+        )
+    }
+
     #[test]
     fn only_a_symbol_level_refusal_makes_the_engine_search_for_the_bad_symbol() {
-        use super::classify_status as classify;
-        let rejected = |source, code| matches!(classify(source, code), QuoteFailure::Rejected(_));
+        let kind = |source: DataSource, code: u16| {
+            quote_failure(source.into(), &["AAA", "BBB"], code).kind
+        };
         // Documented "unknown symbol in this request" answers.
-        assert!(rejected(DataSource::Binance, 400));
-        assert!(rejected(DataSource::Alpaca, 400));
-        assert!(rejected(DataSource::Coinbase, 404));
+        for (source, code) in [
+            (DataSource::Binance, 400),
+            (DataSource::Alpaca, 400),
+            (DataSource::Oanda, 400),
+            (DataSource::Coinbase, 404),
+        ] {
+            assert_eq!(
+                kind(source, code).scope(),
+                Scope::Symbol,
+                "{source:?} {code}"
+            );
+        }
         // Everything that is about the request, the key, the region or the endpoint.
         for (source, code) in [
             (DataSource::Binance, 401),
@@ -1297,9 +1276,12 @@ mod tests {
             (DataSource::DexScreener, 404),
             (DataSource::Coinbase, 400),
             (DataSource::Coinbase, 403),
+            (DataSource::Bybit, 403),
+            (DataSource::Kraken, 400),
         ] {
-            assert!(
-                matches!(classify(source, code), QuoteFailure::Failed(_)),
+            assert_eq!(
+                kind(source, code).scope(),
+                Scope::Source,
                 "{source:?} {code}"
             );
         }
@@ -1307,24 +1289,46 @@ mod tests {
             DataSource::Binance,
             DataSource::Alpaca,
             DataSource::Coinbase,
+            DataSource::Bybit,
+            DataSource::Kraken,
         ] {
-            assert_eq!(classify(source, 429), QuoteFailure::RateLimited);
+            assert_eq!(kind(source, 429), ErrorKind::RateLimited);
         }
-        assert!(
-            classify(DataSource::Alpaca, 401)
-                .message()
-                .contains("API key"),
-            "a refused key says so"
-        );
+        assert_eq!(kind(DataSource::Alpaca, 401), ErrorKind::Unauthorized);
+        assert_eq!(kind(DataSource::Oanda, 403), ErrorKind::Unauthorized);
+        for source in [DataSource::Bybit, DataSource::Gate, DataSource::Mexc] {
+            assert_eq!(kind(source, 403), ErrorKind::Blocked, "{source:?}");
+        }
     }
 
-    use super::*;
-
-    fn request(symbol: &str) -> QuoteRequest {
-        QuoteRequest {
-            symbol: symbol.to_owned(),
-            chain: None,
+    #[test]
+    fn a_400_to_a_request_that_names_no_market_is_the_sources_and_is_not_bisected() {
+        // Gate.io's `/tickers` and MEXC's `/ticker/24hr` answer every market whatever is asked.
+        for source in [DataSource::Gate, DataSource::Mexc] {
+            let failure = quote_failure(source.into(), &["AAA", "BBB", "CCC"], 400);
+            assert_eq!(
+                failure.kind,
+                ErrorKind::Transport(crate::service::net::http::Error::Status(400)),
+                "{source:?}"
+            );
+            assert_eq!(failure.kind.scope(), Scope::Source, "{source:?}");
         }
+        // Binance's futures API names a market only when it is asked for one.
+        let perpetual = Listing::BINANCE_PERPETUAL;
+        assert_eq!(
+            quote_failure(perpetual, &["AAA"], 400).kind.scope(),
+            Scope::Symbol
+        );
+        assert_eq!(
+            quote_failure(perpetual, &["AAA", "BBB"], 400).kind.scope(),
+            Scope::Source
+        );
+        assert_eq!(
+            quote_failure(Listing::spot(DataSource::Binance), &["AAA", "BBB"], 400)
+                .kind
+                .scope(),
+            Scope::Symbol
+        );
     }
 
     #[test]
@@ -1416,14 +1420,20 @@ mod tests {
     #[test]
     fn mexc_odd_answers_and_refusals() {
         assert!(parse_mexc("not json", &[]).is_err());
-        assert!(parse_mexc(r#"{"code":-1121,"msg":"Invalid symbol."}"#, &[]).is_err());
-        assert!(matches!(
-            classify_status(DataSource::Mexc, 403),
-            QuoteFailure::Failed(message) if message.contains("not available in every country")
-        ));
+        // The venue's own envelope reader says what the refusal is, as it does for candles.
+        let kind = |body| parse_mexc(body, &[]).unwrap_err().kind;
+        // The whole ticker names no symbol, so "invalid symbol" cannot be about one of them.
         assert_eq!(
-            classify_status(DataSource::Mexc, 429),
-            QuoteFailure::RateLimited
+            kind(r#"{"code":-1121,"msg":"Invalid symbol."}"#),
+            ErrorKind::Refused(Some("Invalid symbol.".to_owned()))
+        );
+        assert_eq!(
+            kind(r#"{"code":-1003,"msg":"Too many requests"}"#),
+            ErrorKind::RateLimited
+        );
+        assert_eq!(
+            kind(r#"{"code":-1100,"msg":"Illegal characters"}"#),
+            ErrorKind::Refused(Some("Illegal characters".to_owned()))
         );
     }
 
@@ -1473,14 +1483,6 @@ mod tests {
     fn gate_odd_answers_and_refusals() {
         assert!(parse_gateio("not json", &[]).is_err());
         assert!(parse_gateio(r#"{"label":"INVALID_CURRENCY"}"#, &[]).is_err());
-        assert!(matches!(
-            classify_status(DataSource::Gate, 403),
-            QuoteFailure::Failed(message) if message.contains("not available in every country")
-        ));
-        assert_eq!(
-            classify_status(DataSource::Gate, 429),
-            QuoteFailure::RateLimited
-        );
     }
 
     #[test]
@@ -1525,22 +1527,15 @@ mod tests {
         let refused = |code: i64| {
             parse_bybit(&format!(r#"{{"retCode":{code},"retMsg":"No"}}"#), &[]).unwrap_err()
         };
-        assert_eq!(refused(10_006), QuoteFailure::RateLimited);
-        assert_eq!(refused(10_018), QuoteFailure::RateLimited);
+        let limited = ProviderError::new(DataSource::Bybit, ErrorKind::RateLimited);
+        assert_eq!(refused(10_006), limited);
+        assert_eq!(refused(10_018), limited);
         assert_eq!(
             refused(10_001),
-            QuoteFailure::Failed("Bybit error: No".to_owned())
+            ProviderError::refused(DataSource::Bybit, "No")
         );
         assert!(parse_bybit("not json", &[]).is_err());
         assert!(parse_bybit(r#"{"retCode":0}"#, &[]).is_err());
-        assert!(matches!(
-            classify_status(DataSource::Bybit, 403),
-            QuoteFailure::Failed(message) if message.contains("not available in every country")
-        ));
-        assert_eq!(
-            classify_status(DataSource::Bybit, 429),
-            QuoteFailure::RateLimited
-        );
     }
 
     #[test]
@@ -1581,21 +1576,13 @@ mod tests {
     fn kraken_refusals_are_told_apart_by_their_code() {
         let refused =
             |code: &str| parse_kraken(&format!(r#"{{"error":["{code}"]}}"#), &[]).unwrap_err();
+        let kind = |code: &str| refused(code).kind;
+        assert_eq!(kind("EQuery:Unknown asset pair"), ErrorKind::UnknownSymbol);
+        assert_eq!(kind("EAPI:Rate limit exceeded"), ErrorKind::RateLimited);
+        assert_eq!(kind("EGeneral:Too many requests"), ErrorKind::RateLimited);
         assert_eq!(
-            refused("EQuery:Unknown asset pair"),
-            QuoteFailure::Rejected("Unknown asset pair".to_owned())
-        );
-        assert_eq!(
-            refused("EAPI:Rate limit exceeded"),
-            QuoteFailure::RateLimited
-        );
-        assert_eq!(
-            refused("EGeneral:Too many requests"),
-            QuoteFailure::RateLimited
-        );
-        assert_eq!(
-            refused("EService:Unavailable"),
-            QuoteFailure::Failed("Kraken error: Unavailable".to_owned())
+            kind("EService:Unavailable"),
+            ErrorKind::Refused(Some("Unavailable".to_owned()))
         );
         assert!(parse_kraken("not json", &[]).is_err());
         assert!(parse_kraken(r#"{"error":[]}"#, &[]).is_err());
@@ -1609,7 +1596,28 @@ mod tests {
         );
         assert_eq!(
             failure.unwrap_err(),
-            QuoteFailure::Failed("OKX error: Too many requests".to_owned())
+            ProviderError::new(DataSource::Okx, ErrorKind::RateLimited)
+        );
+        let refused = parse_okx(r#"{"code":"50013","msg":"System is busy","data":[]}"#, &[]);
+        assert_eq!(
+            refused.unwrap_err(),
+            ProviderError::refused(DataSource::Okx, "System is busy")
+        );
+        // A refusal that gives no reason has none to word.
+        let silent = parse_okx(r#"{"code":"50013","msg":"","data":[]}"#, &[]);
+        assert_eq!(
+            silent.unwrap_err(),
+            ProviderError::new(DataSource::Okx, ErrorKind::Refused(None))
+        );
+        // "Instrument does not exist" is about an instrument the request named, and the ticker
+        // list names none: here it is the venue's refusal, which backs the source off.
+        let unknown = parse_okx(
+            r#"{"code":"51001","msg":"Instrument ID does not exist","data":[]}"#,
+            &[],
+        );
+        assert_eq!(
+            unknown.unwrap_err(),
+            ProviderError::refused(DataSource::Okx, "Instrument ID does not exist")
         );
         assert!(parse_okx("not json", &[]).is_err());
         assert!(parse_okx(r#"{"code":"0"}"#, &[]).is_err());
@@ -1622,6 +1630,7 @@ mod tests {
             {"symbol":"ETHBTC","lastPrice":"0.05","openPrice":"0.049","volume":"2000","quoteVolume":"100","closeTime":1700000000001}
         ]"#;
         let quotes = parse_binance(
+            Market::Spot,
             body,
             &[request("BTCUSDT"), request("ETHBTC"), request("GONEUSDT")],
         )
@@ -1656,13 +1665,42 @@ mod tests {
     }
 
     #[test]
+    fn an_unreadable_binance_answer_names_the_list_that_was_asked() {
+        for (market, listing) in [
+            (Market::Spot, Listing::spot(DataSource::Binance)),
+            (Market::Perpetual, Listing::BINANCE_PERPETUAL),
+        ] {
+            for body in ["not json", r#"{"code":-1121}"#] {
+                let asked = [request("BTCUSDT")];
+                assert_eq!(
+                    parse_binance(market, body, &asked).unwrap_err().venue,
+                    listing,
+                    "{market:?} {body}"
+                );
+                assert_eq!(
+                    binance_outcome(market, body, &asked).unwrap_err().venue,
+                    listing,
+                    "{market:?} {body}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn binance_rejects_non_arrays_and_zero_prices() {
         assert!(matches!(
-            parse_binance(r#"{"code":-1121}"#, &[request("X")]),
-            Err(QuoteFailure::Failed(_))
+            parse_binance(Market::Spot, r#"{"code":-1121}"#, &[request("X")]),
+            Err(ProviderError {
+                kind: ErrorKind::Malformed(_),
+                ..
+            })
         ));
         let zero = r#"[{"symbol":"AUSDT","lastPrice":"0","openPrice":"1"}]"#;
-        assert!(parse_binance(zero, &[request("AUSDT")]).unwrap().is_empty());
+        assert!(
+            parse_binance(Market::Spot, zero, &[request("AUSDT")])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1807,10 +1845,10 @@ mod tests {
         // A halted market still has a price, from its closeout levels.
         assert_eq!(quotes["HALTED"].price, 1.10010);
         assert!(parse_oanda_pricing("not json", &[request("EUR_USD")]).is_err());
-        assert!(
+        assert_eq!(
             parse_oanda_pricing(r#"{"errorMessage":"bad"}"#, &[request("EUR_USD")])
-                .expect_err("no prices")
-                == QuoteFailure::Failed("Unexpected Oanda response".to_owned())
+                .expect_err("no prices"),
+            ProviderError::malformed(DataSource::Oanda, "expected a price list")
         );
     }
 
@@ -1926,40 +1964,9 @@ mod tests {
     }
 
     #[test]
-    fn failures_describe_themselves() {
-        assert_eq!(
-            QuoteFailure::RateLimited.message(),
-            "Rate limited by the provider"
-        );
-        assert!(
-            QuoteFailure::CredentialsMissing(DataSource::Alpaca)
-                .message()
-                .contains("Alpaca")
-        );
-        assert_eq!(QuoteFailure::Failed("x".into()).message(), "x");
-    }
-
-    #[test]
     fn chunk_sizes_respect_each_providers_limit() {
         assert_eq!(chunk_size(DataSource::Coinbase.into()), 20);
         assert_eq!(chunk_size(DataSource::DexScreener.into()), 30);
         assert_eq!(chunk_size(DataSource::CoinGecko.into()), 250);
-    }
-
-    #[test]
-    fn a_quote_failure_is_worded_in_the_language() {
-        use crate::i18n::{Locale, with_locale};
-        for failure in [
-            QuoteFailure::RateLimited,
-            QuoteFailure::CredentialsMissing(DataSource::Oanda),
-        ] {
-            let english = failure.message();
-            assert_ne!(with_locale(Locale::PSEUDO, || failure.message()), english);
-        }
-        let provider_text = QuoteFailure::Failed("HTTP 500 from the provider".to_owned());
-        assert_eq!(
-            with_locale(Locale::PSEUDO, || provider_text.message()),
-            "HTTP 500 from the provider"
-        );
     }
 }

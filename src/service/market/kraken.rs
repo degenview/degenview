@@ -10,7 +10,8 @@ use super::catalog::search::{self, ListedMarket};
 use super::search_rank::normalize;
 use crate::model::market::bucket::{FoldPlan, bucket_start_ms, next_bucket_start_ms};
 use crate::model::market::natives::KRAKEN_BARS;
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::market::error::{Asked, ErrorKind};
 use crate::service::net::{http, rate_limit};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -135,52 +136,57 @@ fn fetch_ohlc(
 /// A request on Kraken's one-a-second schedule.
 fn get(url: &str) -> Result<String, ProviderError> {
     rate_limit::kraken().wait_for_slot();
-    Ok(http::get_text(url, &[], http::Retry::Transient)?)
+    http::get_text(url, &[], http::Retry::Transient)
+        .map_err(|error| ProviderError::http(DataSource::Kraken, error))
 }
 
-/// Whether a Kraken error code says to slow down: `EAPI:Rate limit exceeded`,
-/// `EGeneral:Too many requests`, `EService:Throttled`, `EGeneral:Temporary lockout`.
-pub(crate) fn is_rate_limit(code: &str) -> bool {
-    code.starts_with("EAPI:Rate limit")
-        || code.starts_with("EService:Throttled")
-        || code.starts_with("EGeneral:Temporary lockout")
-        || code.starts_with("EGeneral:Too many requests")
-}
-
-/// The `result` of an answer, or the provider's refusal.
-pub(crate) fn result_of(body: &str) -> Result<Value, ProviderError> {
-    let mut value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+/// The `result` of an answer to a request that `asked` about markets or a list, or the provider's
+/// refusal.
+pub(crate) fn result_of(body: &str, asked: Asked) -> Result<Value, ProviderError> {
+    let mut value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Kraken, error))?;
     if let Some(error) = value
         .get("error")
         .and_then(Value::as_array)
         .and_then(|errors| errors.first())
         .and_then(Value::as_str)
     {
-        return Err(refusal(error));
+        return Err(refusal(error, asked));
     }
     value
         .get_mut("result")
         .map(Value::take)
-        .ok_or_else(|| ProviderError::data("expected a result"))
+        .ok_or_else(|| ProviderError::malformed(DataSource::Kraken, "expected a result"))
 }
 
-/// What a Kraken error code (`EAPI:Rate limit exceeded`, `EQuery:Unknown asset pair`) means.
-fn refusal(code: &str) -> ProviderError {
-    if is_rate_limit(code) {
-        return ProviderError::Network(http::Error::Status(429));
-    }
-    let text = code.split_once(':').map_or(code, |(_, text)| text);
-    ProviderError::other(format!("Kraken: {text}"))
+/// What a Kraken error code (`EAPI:Rate limit exceeded`, `EQuery:Unknown asset pair`) means. The
+/// rate limits are `EAPI:Rate limit…`, `EService:Throttled`, `EGeneral:Temporary lockout` and
+/// `EGeneral:Too many requests`; an `EQuery` is a refusal of the request's own arguments, which
+/// for a request that named pairs is a pair it does not know.
+fn refusal(code: &str, asked: Asked) -> ProviderError {
+    let kind = if code.starts_with("EAPI:Rate limit")
+        || code.starts_with("EService:Throttled")
+        || code.starts_with("EGeneral:Temporary lockout")
+        || code.starts_with("EGeneral:Too many requests")
+    {
+        ErrorKind::RateLimited
+    } else if code.starts_with("EQuery:") && asked == Asked::Markets {
+        ErrorKind::UnknownSymbol
+    } else {
+        let text = code.split_once(':').map_or(code, |(_, text)| text);
+        return ProviderError::refused(DataSource::Kraken, text);
+    };
+    ProviderError::new(DataSource::Kraken, kind)
 }
 
 /// Candles of length `base`, oldest first.
 fn parse_ohlc(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let result = result_of(body)?;
+    let result = result_of(body, Asked::Markets)?;
     let rows = result
         .as_object()
         .and_then(|result| result.iter().find(|(key, _)| key.as_str() != "last"))
         .and_then(|(_, rows)| rows.as_array())
-        .ok_or_else(|| ProviderError::data("expected a candle array"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Kraken, "expected a candle array"))?;
     let mut candles = rows
         .iter()
         .map(|row| parse_row(row, base))
@@ -194,12 +200,14 @@ fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
         row.get(index)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
+            .ok_or_else(|| {
+                ProviderError::malformed(DataSource::Kraken, format!("invalid field {index}"))
+            })
     };
     let open_time = row
         .get(0)
         .and_then(Value::as_i64)
-        .ok_or_else(|| ProviderError::data("invalid timestamp"))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Kraken, "invalid timestamp"))?
         * 1_000;
     Ok(Kline {
         open_time,
@@ -233,7 +241,7 @@ impl ListedMarket for Pair {
 }
 
 /// Every market that is online, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_kraken");
+static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Kraken), "catalog_kraken");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
     parse_pairs(&get(&format!("{BASE_URL}/AssetPairs"))?)
@@ -241,10 +249,10 @@ fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
 
 /// `wsname` is `XBT/USD`: the market as `BTC/USD`, which is how every Kraken API spells it.
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    let result = result_of(body)?;
+    let result = result_of(body, Asked::List)?;
     let pairs = result
         .as_object()
-        .ok_or_else(|| ProviderError::data("expected a pair list"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Kraken, "expected a pair list"))?;
     Ok(pairs
         .values()
         .filter(|pair| pair.get("status").and_then(Value::as_str) == Some("online"))
@@ -340,7 +348,15 @@ mod tests {
         let unknown = r#"{"error":["EQuery:Unknown asset pair"]}"#;
         assert_eq!(
             parse_ohlc(unknown, Timeframe::HOUR_1),
-            Err(ProviderError::other("Kraken: Unknown asset pair"))
+            Err(ProviderError::new(
+                DataSource::Kraken,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        let refused = r#"{"error":["EService:Unavailable"]}"#;
+        assert_eq!(
+            parse_ohlc(refused, Timeframe::HOUR_1),
+            Err(ProviderError::refused(DataSource::Kraken, "Unavailable"))
         );
         for code in [
             "EAPI:Rate limit exceeded",
@@ -349,7 +365,7 @@ mod tests {
         ] {
             let limited = format!(r#"{{"error":["{code}"]}}"#);
             let error = parse_ohlc(&limited, Timeframe::HOUR_1).unwrap_err();
-            assert!(error.is_rate_limited(), "{code}: {error}");
+            assert!(error.is_rate_limited(), "{code}: {error:?}");
         }
         assert!(parse_ohlc("not json", Timeframe::HOUR_1).is_err());
         assert!(parse_ohlc(r#"{"error":[]}"#, Timeframe::HOUR_1).is_err());
@@ -521,6 +537,27 @@ mod tests {
         let error = KRAKEN
             .fetch_klines("NOPE/USD", Timeframe::HOUR_1, 5)
             .unwrap_err();
-        assert_eq!(error.to_string(), "Kraken: Unknown asset pair");
+        assert_eq!(error.kind, ErrorKind::UnknownSymbol);
+    }
+
+    #[test]
+    fn a_query_refusal_is_an_unknown_pair_only_to_a_request_that_named_pairs() {
+        let body = r#"{"error":["EQuery:Unknown asset pair"]}"#;
+        assert_eq!(
+            result_of(body, Asked::Markets),
+            Err(ProviderError::new(
+                DataSource::Kraken,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        // The pair list names none.
+        assert_eq!(
+            result_of(body, Asked::List),
+            Err(ProviderError::refused(
+                DataSource::Kraken,
+                "Unknown asset pair"
+            ))
+        );
+        assert!(parse_pairs(body).is_err_and(|error| error.kind != ErrorKind::UnknownSymbol));
     }
 }

@@ -114,11 +114,11 @@ the names `model/` and `ui/` already use (`alert`, `webhook`, `portfolio`, `pape
 (`net`, `cache`, `keychain`, `system`). `layout_tests.rs` fails the build on the two mechanical
 mistakes, on an import that points up a layer, and on drawing code outside the view layers.
 
-`service/` (external I/O; root: `mod.rs` with `MarketSource`, `SearchResult` and `fetch_*`, and `work_queue`):
+`service/` (external I/O; root: `mod.rs` with `MarketSource`, `SearchResult` and `fetch_*`, `work_queue`, and `provider_message`, the words of a provider failure in the language in use):
 
 | Directory | Holds |
 | --- | --- |
-| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError`), `live` feed, `candles` clean-up (`normalize`), `paging` (a venue's page size and the pager) and `kline_endpoint` (the orchestration of the venues that page candles back by cursor: OKX, Bybit, MEXC, Gate.io, Oanda), symbol `catalog/` (`Catalog`, `search` the shared search over a venue's list, `registry` the catalogs that hold a list, which register themselves and are cleared together with the cache), `search_rank`, `fx_rates`, `trend` (recent closes: days for sparklines, the last day for the symbol picker's chart), `coin_index` (top coins by market cap: artwork and names), `names` (what a market's assets are called) |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), their `error` (`ProviderError { venue, kind: ErrorKind }`, no wording: that is `service::provider_message`), `live` feed, `candles` clean-up (`normalize`), `paging` (a venue's page size and the pager) and `kline_endpoint` (the orchestration of the venues that page candles back by cursor: OKX, Bybit, MEXC, Gate.io, Oanda), symbol `catalog/` (`Catalog`, `search` the shared search over a venue's list, `registry` the catalogs that hold a list, which register themselves and are cleared together with the cache), `search_rank`, `fx_rates`, `trend` (recent closes: days for sparklines, the last day for the symbol picker's chart), `coin_index` (top coins by market cap: artwork and names), `names` (what a market's assets are called) |
 | `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart`, `agent` (`FollowingAgent`) and `proxy/` (the proxy setting, its resolution, OS readers and the live-feed tunnel) |
 | `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
 | `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |

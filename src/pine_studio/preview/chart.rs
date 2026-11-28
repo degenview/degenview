@@ -9,6 +9,7 @@ use crate::model::{DataSource, IndicatorConfig};
 use crate::pine_studio::commands::Cmd;
 use crate::pine_studio::workspace::PreviewInput;
 use crate::service::keychain::api_keys::alpaca_configured;
+use crate::service::provider_message;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{DrawingFrame, ReplayChartFrame, theme};
 use eframe::egui::{
@@ -141,7 +142,7 @@ pub fn chart(
     }
     // Refresh failures with candles on screen: a retry banner at the bottom.
     if let Some(error) = error.filter(|_| !preview.candles.is_empty())
-        && error_banner(ui, area, &error.to_string())
+        && error_banner(ui, area, &provider_message::message(&error))
     {
         preview.fetched_for = None;
     }

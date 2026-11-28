@@ -1,6 +1,5 @@
 //! The busiest prediction markets, shown while the Predictions tab's box is empty.
 
-use crate::i18n::tr;
 use crate::model::DataSource;
 use crate::service::work_queue::{self, Pending};
 use crate::service::{ProviderError, SearchResult};
@@ -50,11 +49,8 @@ impl Trending {
     /// trending is an extra, not something the user asked for.
     pub fn refresh(&mut self, ctx: &egui::Context) {
         if let Some(inbox) = &mut self.inbox
-            && let Some(answer) = inbox.poll_or(|| {
-                Err(ProviderError::other(tr!(
-                    "The trending list stopped loading."
-                )))
-            })
+            && let Some(answer) =
+                inbox.poll_or(|| Err(ProviderError::interrupted(DataSource::Polymarket)))
         {
             self.inbox = None;
             let lifetime = match answer {

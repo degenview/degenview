@@ -3,6 +3,7 @@ use crate::model::market::cmc::{
     ALTCOIN_HISTORICAL, ALTCOIN_LATEST, CHART_TYPES, FEAR_GREED_HISTORICAL, FEAR_GREED_LATEST,
 };
 use crate::model::{DataSource, Kline, Timeframe};
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::{MarketSource, ProviderError, SearchResult, downsample};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -225,6 +226,23 @@ fn cached_get(
     result
 }
 
+/// What CoinMarketCap's HTTP statuses mean with a key: a 401 refuses the key, a 403 the plan it
+/// belongs to.
+const KEYED_STATUSES: Statuses = &[(401, ErrorKind::Unauthorized), (403, ErrorKind::NotInPlan)];
+
+/// What they mean without one, on the keyless public API: it refuses, and a key is what it asks
+/// for.
+const KEYLESS_STATUSES: Statuses = &[(401, ErrorKind::MissingKey), (403, ErrorKind::MissingKey)];
+
+/// What a status of a request means, which depends on whether it was made with a key.
+fn statuses(key: Option<&str>) -> Statuses {
+    if key.is_some() {
+        KEYED_STATUSES
+    } else {
+        KEYLESS_STATUSES
+    }
+}
+
 fn fetch(path: &str, key: Option<&str>) -> Result<Value, ProviderError> {
     let url = format!("{}{path}", base_url(key));
     let mut headers = vec![("Accept", "application/json")];
@@ -236,13 +254,13 @@ fn fetch(path: &str, key: Option<&str>) -> Result<Value, ProviderError> {
         &headers,
         crate::service::net::http::Retry::Transient,
     )
-    .map_err(ProviderError::CoinMarketCap)?;
-    let value: Value = serde_json::from_str(&body).map_err(ProviderError::data)?;
+    .map_err(|error| ProviderError::http_with(DataSource::CoinMarketCap, statuses(key), error))?;
+    let value: Value = serde_json::from_str(&body)
+        .map_err(|error| ProviderError::malformed(DataSource::CoinMarketCap, error))?;
     if value["status"]["error_code"].as_i64().unwrap_or(0) != 0 {
-        return Err(ProviderError::other(
-            value["status"]["error_message"]
-                .as_str()
-                .unwrap_or("CoinMarketCap API error"),
+        return Err(ProviderError::refused_because(
+            DataSource::CoinMarketCap,
+            value["status"]["error_message"].as_str(),
         ));
     }
     Ok(value)
@@ -262,7 +280,10 @@ fn to_klines(points: Vec<(i64, f64)>, limit: u32) -> Result<Vec<Kline>, Provider
         })
         .collect();
     if candles.is_empty() {
-        return Err(ProviderError::other("No CoinMarketCap data"));
+        return Err(ProviderError::new(
+            DataSource::CoinMarketCap,
+            ErrorKind::NoData,
+        ));
     }
     Ok(downsample(&candles, limit as usize))
 }
@@ -304,8 +325,9 @@ impl MarketSource for CoinMarketCap {
                     "/v3/fear-and-greed/latest"
                 };
                 let (time, mut reading) =
-                    parse_latest(symbol, &get(path, key.as_deref(), LATEST_TTL)?)
-                        .ok_or_else(|| ProviderError::other("No CoinMarketCap data"))?;
+                    parse_latest(symbol, &get(path, key.as_deref(), LATEST_TTL)?).ok_or_else(
+                        || ProviderError::new(DataSource::CoinMarketCap, ErrorKind::NoData),
+                    )?;
                 if symbol == FEAR_GREED_LATEST {
                     // The history only decorates the gauge, so a failure here is not an error.
                     // On a failure the previous history stays rather than the gauge losing it.
@@ -322,8 +344,25 @@ impl MarketSource for CoinMarketCap {
                 // chart body draws the cached reading as a gauge instead of a line.
                 to_klines(vec![(time, value)], limit)
             }
-            _ => Err(ProviderError::other("Unknown CoinMarketCap chart")),
+            _ => Err(ProviderError::new(
+                DataSource::CoinMarketCap,
+                ErrorKind::UnknownSymbol,
+            )),
         }
+    }
+
+    fn fetch_klines_range(
+        &self,
+        _symbol: &str,
+        _timeframe: Timeframe,
+        _start_ms: i64,
+        _end_ms: i64,
+        _max: usize,
+    ) -> Result<Vec<Kline>, ProviderError> {
+        Err(ProviderError::new(
+            DataSource::CoinMarketCap,
+            ErrorKind::NoTimeRange,
+        ))
     }
 
     fn search_tickers(&self, _query: &str) -> Result<Vec<SearchResult>, ProviderError> {
@@ -432,7 +471,6 @@ fn parse_date(text: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::net::http;
 
     #[test]
     fn parses_the_latest_readings() {
@@ -535,7 +573,7 @@ mod tests {
         let cache = Mutex::new(ResponseCache::default());
         let calls = std::cell::Cell::new(0);
         let minute = Duration::from_secs(60);
-        let limited = ProviderError::CoinMarketCap(http::Error::Status(429));
+        let limited = ProviderError::new(DataSource::CoinMarketCap, ErrorKind::RateLimited);
         let failure = || Err(limited.clone());
         assert_eq!(
             cached_get(&cache, "u", minute, minute, counted(&calls, failure())),
@@ -615,5 +653,32 @@ mod tests {
             base_url(None),
             "https://pro-api.coinmarketcap.com/public-api"
         );
+    }
+
+    #[test]
+    fn a_refusal_without_a_key_asks_for_one_and_with_one_blames_the_key_or_the_plan() {
+        use crate::service::net::http::Error;
+        let kind = |key, code| {
+            ProviderError::http_with(
+                DataSource::CoinMarketCap,
+                statuses(key),
+                Error::Status(code),
+            )
+            .kind
+        };
+        for code in [401, 403] {
+            assert_eq!(kind(None, code), ErrorKind::MissingKey, "{code}");
+        }
+        assert_eq!(kind(Some("key"), 401), ErrorKind::Unauthorized);
+        assert_eq!(kind(Some("key"), 403), ErrorKind::NotInPlan);
+        assert_eq!(kind(None, 429), ErrorKind::RateLimited);
+    }
+
+    #[test]
+    fn an_envelope_error_without_a_message_is_a_refusal_without_words() {
+        let error = ProviderError::refused_because(DataSource::CoinMarketCap, None);
+        assert_eq!(error.kind, ErrorKind::Refused(None));
+        let empty = ProviderError::refused_because(DataSource::CoinMarketCap, Some(""));
+        assert_eq!(empty, error, "an empty message says nothing either");
     }
 }

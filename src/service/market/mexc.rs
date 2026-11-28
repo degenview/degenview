@@ -10,7 +10,8 @@ use super::catalog::search::{self, ListedMarket};
 use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use crate::model::market::bucket::{bucket_start_ms, next_bucket_start_ms};
-use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
+use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::market::error::{Asked, ErrorKind, Statuses};
 use crate::service::net::http;
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -157,39 +158,29 @@ fn fetch_page(
     if let Some((start, end)) = window {
         url.push_str(&format!("&startTime={start}&endTime={end}"));
     }
-    parse_candles(&get(&url)?, base)
+    parse_candles(&get(&url, MARKET_STATUSES)?, base)
 }
 
-/// A request, with MEXC's refusals told apart from a network failure: a 400 names a market it
-/// does not list, a 403 a country it does not serve.
-pub(crate) fn get(url: &str) -> Result<String, ProviderError> {
-    match http::get_text(url, &[], http::Retry::Transient) {
-        Ok(body) => Ok(body),
-        Err(http::Error::Status(400)) => Err(ProviderError::other(
-            "MEXC refused the request (HTTP 400): it does not list this market",
-        )),
-        Err(http::Error::Status(403)) => Err(ProviderError::other(
-            "MEXC refused the request (HTTP 403): it is not available in every country",
-        )),
-        Err(error) => Err(error.into()),
-    }
+/// What the statuses of a request that names a market mean at MEXC (klines): a 400 names a market
+/// it does not list, a 403 refuses a country it does not serve.
+pub(in crate::service) const MARKET_STATUSES: Statuses =
+    &[(400, ErrorKind::UnknownSymbol), (403, ErrorKind::Blocked)];
+
+/// The same for a request that names none (the market list, every ticker): a 400 there says
+/// nothing about any market.
+pub(in crate::service) const LIST_STATUSES: Statuses = &[(403, ErrorKind::Blocked)];
+
+/// A request, with MEXC's refusals told apart from a network failure: its statuses mean what
+/// `statuses` says.
+fn get(url: &str, statuses: Statuses) -> Result<String, ProviderError> {
+    http::get_text(url, &[], http::Retry::Transient)
+        .map_err(|error| ProviderError::http_with(DataSource::Mexc, statuses, error))
 }
 
 /// Candles of length `base`, oldest first. The days, weeks and months MEXC cut at UTC+8 midnight
 /// (its oldest history) are not on this app's grid and are left out.
 fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
-    let rows = match value.as_array() {
-        Some(rows) => rows,
-        None => {
-            let message = value.get("msg").and_then(Value::as_str);
-            return Err(message.map_or_else(
-                || ProviderError::data("expected a candle array"),
-                |message| ProviderError::other(format!("MEXC: {message}")),
-            ));
-        }
-    };
-    let mut candles = rows
+    let mut candles = rows_of(body, Asked::Markets)?
         .iter()
         .map(|row| parse_row(row, base))
         .collect::<Result<Vec<_>, _>>()?;
@@ -198,17 +189,41 @@ fn parse_candles(body: &str, base: Timeframe) -> Result<Vec<Kline>, ProviderErro
     Ok(candles)
 }
 
+/// The rows of an answer that is a list (klines, tickers) to a request that `asked` about markets
+/// or a list, or what MEXC's envelope says when it is not: `{"code": -1121, "msg": "Invalid
+/// symbol."}`, which only a request that named a symbol can mean. `-1003` is "too many requests",
+/// the code of Binance's API that MEXC's v3 shares; no other rate-limit code is documented.
+pub(crate) fn rows_of(body: &str, asked: Asked) -> Result<Vec<Value>, ProviderError> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Mexc, error))?;
+    let Value::Array(rows) = value else {
+        return Err(match value.get("code").and_then(Value::as_i64) {
+            Some(-1121) if asked == Asked::Markets => {
+                ProviderError::new(DataSource::Mexc, ErrorKind::UnknownSymbol)
+            }
+            Some(-1003) => ProviderError::new(DataSource::Mexc, ErrorKind::RateLimited),
+            _ => match value.get("msg").and_then(Value::as_str) {
+                Some(message) => ProviderError::refused(DataSource::Mexc, message),
+                None => ProviderError::malformed(DataSource::Mexc, "expected a list"),
+            },
+        });
+    };
+    Ok(rows)
+}
+
 fn parse_row(row: &Value, base: Timeframe) -> Result<Kline, ProviderError> {
     let number = |index: usize| -> Result<f64, ProviderError> {
         row.get(index)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid field {index}")))
+            .ok_or_else(|| {
+                ProviderError::malformed(DataSource::Mexc, format!("invalid field {index}"))
+            })
     };
     let open_time = row
         .get(0)
         .and_then(Value::as_i64)
-        .ok_or_else(|| ProviderError::data("invalid timestamp"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Mexc, "invalid timestamp"))?;
     Ok(Kline {
         open_time,
         close_time: next_bucket_start_ms(base, open_time) - 1,
@@ -248,20 +263,21 @@ impl ListedMarket for Pair {
 }
 
 /// Every spot market that is enabled, downloaded at most once a day.
-static CATALOG: Catalog<Pair> = Catalog::new("catalog_mexc_v2");
+static CATALOG: Catalog<Pair> = Catalog::new(Listing::spot(DataSource::Mexc), "catalog_mexc_v2");
 
 fn download_pairs() -> Result<Vec<Pair>, ProviderError> {
-    parse_pairs(&get(&format!("{BASE_URL}/exchangeInfo"))?)
+    parse_pairs(&get(&format!("{BASE_URL}/exchangeInfo"), LIST_STATUSES)?)
 }
 
 /// The enabled spot markets. Its tokenised stocks and commodities (`GOLD(XAUT)USDC`) are not
 /// letters and digits and are left out, like a symbol the app cannot name.
 fn parse_pairs(body: &str) -> Result<Vec<Pair>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Mexc, error))?;
     Ok(value
         .get("symbols")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a symbol list"))?
+        .ok_or_else(|| ProviderError::malformed(DataSource::Mexc, "expected a symbol list"))?
         .iter()
         .filter(|row| {
             row.get("status").and_then(Value::as_str) == Some("1")
@@ -434,7 +450,27 @@ mod tests {
                 r#"{"code":-1121,"msg":"Invalid symbol."}"#,
                 Timeframe::HOUR_1
             ),
-            Err(ProviderError::other("MEXC: Invalid symbol."))
+            Err(ProviderError::new(
+                DataSource::Mexc,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        assert_eq!(
+            parse_candles(
+                r#"{"code":-1003,"msg":"Too many requests"}"#,
+                Timeframe::HOUR_1
+            ),
+            Err(ProviderError::new(DataSource::Mexc, ErrorKind::RateLimited))
+        );
+        assert_eq!(
+            parse_candles(
+                r#"{"code":-1100,"msg":"Illegal characters found in parameter."}"#,
+                Timeframe::HOUR_1
+            ),
+            Err(ProviderError::refused(
+                DataSource::Mexc,
+                "Illegal characters found in parameter."
+            ))
         );
         assert!(parse_candles(r#"{"x":1}"#, Timeframe::HOUR_1).is_err());
         assert_eq!(parse_candles("[]", Timeframe::HOUR_1), Ok(Vec::new()));
@@ -548,9 +584,44 @@ mod tests {
         let error = MEXC
             .fetch_klines("NOPEUSDT", Timeframe::HOUR_1, 5)
             .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::UnknownSymbol);
+    }
+
+    #[test]
+    fn a_400_names_an_unknown_market_only_where_one_was_asked_for() {
+        use crate::service::net::http::Error;
+        let kind = |statuses, code| {
+            ProviderError::http_with(DataSource::Mexc, statuses, Error::Status(code)).kind
+        };
+        assert_eq!(kind(MARKET_STATUSES, 400), ErrorKind::UnknownSymbol);
+        // The market list and the whole ticker name none.
         assert_eq!(
-            error.to_string(),
-            "MEXC refused the request (HTTP 400): it does not list this market"
+            kind(LIST_STATUSES, 400),
+            ErrorKind::Transport(Error::Status(400))
         );
+        for statuses in [MARKET_STATUSES, LIST_STATUSES] {
+            assert_eq!(kind(statuses, 403), ErrorKind::Blocked);
+        }
+    }
+
+    #[test]
+    fn an_invalid_symbol_is_an_unknown_market_only_to_a_request_that_named_one() {
+        let body = r#"{"code":-1121,"msg":"Invalid symbol."}"#;
+        assert_eq!(
+            rows_of(body, Asked::Markets),
+            Err(ProviderError::new(
+                DataSource::Mexc,
+                ErrorKind::UnknownSymbol
+            ))
+        );
+        assert_eq!(
+            rows_of(body, Asked::List),
+            Err(ProviderError::refused(DataSource::Mexc, "Invalid symbol."))
+        );
+        // A rate limit is one whatever was asked.
+        let limited = r#"{"code":-1003,"msg":"Too many requests"}"#;
+        for asked in [Asked::Markets, Asked::List] {
+            assert!(rows_of(limited, asked).unwrap_err().is_rate_limited());
+        }
     }
 }

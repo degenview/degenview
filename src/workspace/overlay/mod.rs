@@ -25,6 +25,7 @@ use crate::model::market::live::{LiveFold, LiveMark};
 use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
+use crate::service::provider_message;
 use crate::service::{self, LiveCandles, ProviderError};
 use eframe::egui;
 use std::collections::HashMap;
@@ -610,9 +611,9 @@ fn receive_fetch(series: &mut Series, timeframe: Timeframe, now: Instant) -> boo
     let result = match receiver.try_recv() {
         Ok(result) => result,
         Err(mpsc::TryRecvError::Empty) => return false,
-        Err(mpsc::TryRecvError::Disconnected) => Err(ProviderError::other(tr!(
-            "The request stopped before it answered"
-        ))),
+        Err(mpsc::TryRecvError::Disconnected) => {
+            Err(ProviderError::interrupted(series.instrument.source))
+        }
     };
     series.inbox = None;
     match result {
@@ -641,11 +642,11 @@ fn receive_fetch(series: &mut Series, timeframe: Timeframe, now: Instant) -> boo
         // No candle of the source reaches this timeframe: asking again would change nothing, so
         // the overlay waits for another timeframe (`reset`) instead of being retried.
         Err(error) if error.is_unsupported_interval() => {
-            series.status = OverlayStatus::Blocked(error.to_string().into());
+            series.status = OverlayStatus::Blocked(provider_message::message(&error).into());
             series.retry_at = None;
         }
         Err(error) => {
-            series.status = OverlayStatus::Error(error.to_string().into());
+            series.status = OverlayStatus::Error(provider_message::message(&error).into());
             series.retry_at = Some(now + retry_after(series.instrument.source));
         }
     }
@@ -660,7 +661,7 @@ fn receive_older(series: &mut Series, now: Instant) -> bool {
         Ok(result) => result,
         Err(mpsc::TryRecvError::Empty) => return false,
         Err(mpsc::TryRecvError::Disconnected) => {
-            Err(ProviderError::other(tr!("Older candles stopped loading")))
+            Err(ProviderError::interrupted(series.instrument.source))
         }
     };
     series.older_inbox = None;

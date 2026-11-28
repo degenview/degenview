@@ -22,6 +22,7 @@ use crate::model::watchlist::WatchlistInstrument;
 use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::model::watchlist::text::market_item;
 use crate::model::{DataSource, InstrumentId};
+use crate::service::provider_message;
 use crate::store::watchlist::{ListChanges, Place};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
@@ -467,7 +468,10 @@ fn search_all(
                         );
                     }
                     // MCP reports each source's failure as text, next to its own.
-                    (source, search(data, query).map_err(|error| error.to_string()))
+                    (
+                        source,
+                        search(data, query).map_err(|error| provider_message::message(&error)),
+                    )
                 })
             })
             .collect();
@@ -664,7 +668,10 @@ impl DegenViewMcp {
             Ok(Ok(Ok(candles))) => candles,
             Ok(Ok(Err(error))) => {
                 return Err(failure(&McpError::AppUnavailable(
-                    error.to_string().chars().take(300).collect::<String>(),
+                    provider_message::message(&error)
+                        .chars()
+                        .take(300)
+                        .collect::<String>(),
                 )));
             }
             Ok(Err(_)) => {

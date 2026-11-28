@@ -7,8 +7,7 @@ use crate::model::mcp::Permission;
 use crate::model::watchlist::quote::SourceQuote;
 use crate::model::{DataSource, Listing};
 use crate::service::watchlist_quotes::{
-    Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest, WatchlistQuoteBook,
-    WatchlistQuoteCoordinator,
+    Config, Outcome, QuoteProvider, QuoteRequest, WatchlistQuoteBook, WatchlistQuoteCoordinator,
 };
 use crate::service::{ProviderError, SearchResult};
 use serde_json::{Value, json};
@@ -26,7 +25,7 @@ impl QuoteProvider for OneMarket {
         &self,
         _listing: Listing,
         requests: &[QuoteRequest],
-    ) -> Result<Outcome, QuoteFailure> {
+    ) -> Result<Outcome, ProviderError> {
         let quotes: HashMap<String, SourceQuote> = requests
             .iter()
             .filter(|request| request.symbol == "BTCUSDT")
@@ -61,7 +60,7 @@ impl QuoteProvider for SlowProvider {
         &self,
         _listing: Listing,
         _requests: &[QuoteRequest],
-    ) -> Result<Outcome, QuoteFailure> {
+    ) -> Result<Outcome, ProviderError> {
         std::thread::sleep(std::time::Duration::from_millis(1500));
         Ok(Outcome::from_quotes(HashMap::new()))
     }
@@ -156,7 +155,10 @@ fn search_returns_the_ids_other_tools_take_and_reports_a_failing_provider() {
                 // Not this provider's: never reported under it.
                 hit(DataSource::Polymarket, "Will BTC...", "0xabc"),
             ]),
-            DataSource::Coinbase => Err(ProviderError::other("Coinbase is down")),
+            DataSource::Coinbase => Err(ProviderError::refused(
+                DataSource::Coinbase,
+                "System is busy",
+            )),
             _ => Ok(Vec::new()),
         }
     }));
@@ -177,7 +179,10 @@ fn search_returns_the_ids_other_tools_take_and_reports_a_failing_provider() {
     assert_eq!(results[0]["instrument"], "BINANCE:BTCUSDT");
     assert_eq!(found["truncated"], false);
     assert_eq!(found["source_errors"][0]["source"], "coinbase");
-    assert_eq!(found["source_errors"][0]["message"], "Coinbase is down");
+    assert_eq!(
+        found["source_errors"][0]["message"],
+        "Coinbase error: System is busy"
+    );
 
     // Fewer than the hits: say so.
     let result = call(
@@ -752,7 +757,10 @@ fn a_provider_failure_and_an_empty_answer_are_reported_not_hidden() {
     let harness = Harness::start(&[("c", "tok", SEARCH)]);
     let url = harness.url();
     harness.shared.set_candle_fetch(Arc::new(|_, _, _, _| {
-        Err(ProviderError::other("Binance is down"))
+        Err(ProviderError::refused(
+            crate::model::DataSource::Binance,
+            "Binance is down",
+        ))
     }));
     let args = json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1H"});
     let failed = call(&url, "tok", "degenview_get_market_candles", args.clone());

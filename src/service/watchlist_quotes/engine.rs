@@ -9,7 +9,7 @@
 //! by splitting the batch and then left out for ten minutes.
 
 use super::book::WatchlistQuoteBook;
-use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest, chunk_size};
+use super::provider::{QuoteProvider, QuoteRequest, chunk_size};
 use super::quote_stream::StreamTick;
 use crate::i18n::tr;
 use crate::lock::lock;
@@ -19,6 +19,9 @@ use crate::model::watchlist::quote::{
     Freshness, SourceQuote, WatchlistQuote, evaluate_freshness, refresh_interval_secs,
 };
 use crate::model::{DataSource, InstrumentId, Listing};
+use crate::service::ProviderError;
+use crate::service::market::error::{ErrorKind, Scope};
+use crate::service::provider_message::quote_message;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -113,7 +116,7 @@ pub struct Planned {
 pub struct Outcome {
     pub quotes: HashMap<String, SourceQuote>,
     pub rejected: HashSet<String>,
-    pub failed: Vec<(Vec<String>, QuoteFailure)>,
+    pub failed: Vec<(Vec<String>, ProviderError)>,
     /// The refusals are the provider's own word about those symbols (a list of everything it has,
     /// or a symbol asked for by name), so they hold even when no neighbour of them was asked for.
     pub complete: bool,
@@ -127,7 +130,7 @@ impl Outcome {
         }
     }
 
-    pub fn failing(symbols: Vec<String>, failure: QuoteFailure) -> Self {
+    pub fn failing(symbols: Vec<String>, failure: ProviderError) -> Self {
         Self {
             failed: vec![(symbols, failure)],
             ..Self::default()
@@ -145,14 +148,14 @@ impl Outcome {
 
     /// The failure that decides the source's backoff: a rate limit outranks a plain failure,
     /// which outranks a missing key.
-    fn worst_failure(&self) -> Option<&QuoteFailure> {
+    fn worst_failure(&self) -> Option<&ProviderError> {
         self.failed
             .iter()
             .map(|(_, failure)| failure)
-            .max_by_key(|failure| match failure {
-                QuoteFailure::RateLimited => 3,
-                QuoteFailure::Failed(_) | QuoteFailure::Rejected(_) => 2,
-                QuoteFailure::CredentialsMissing(_) => 1,
+            .max_by_key(|failure| match failure.kind {
+                ErrorKind::RateLimited => 3,
+                ErrorKind::MissingKey => 1,
+                _ => 2,
             })
     }
 }
@@ -581,7 +584,7 @@ impl Engine {
         let mut updates: HashMap<String, WatchlistQuote> = HashMap::new();
 
         // Why each failed symbol failed; the first reason wins.
-        let mut failed: HashMap<&str, &QuoteFailure> = HashMap::new();
+        let mut failed: HashMap<&str, &ProviderError> = HashMap::new();
         for (symbols, failure) in &outcome.failed {
             for symbol in symbols {
                 failed.entry(symbol.as_str()).or_insert(failure);
@@ -589,19 +592,19 @@ impl Engine {
         }
         let source_answered = !outcome.quotes.is_empty() || outcome.complete;
         match outcome.worst_failure() {
-            Some(QuoteFailure::CredentialsMissing(source)) => {
+            Some(failure) if failure.kind == ErrorKind::MissingKey => {
                 state.next_allowed_ms = now + 60_000;
-                state.last_error = Some(QuoteFailure::CredentialsMissing(*source).message());
+                state.last_error = Some(quote_message(failure));
             }
             Some(failure) => {
-                let (low, high) = if matches!(failure, QuoteFailure::RateLimited) {
+                let (low, high) = if failure.is_rate_limited() {
                     self.config.rate_limit_backoff
                 } else {
                     self.config.failure_backoff
                 };
                 state.backoff_secs = (state.backoff_secs * 2.0).max(low).min(high);
                 state.next_allowed_ms = now + (state.backoff_secs * 1_000.0) as i64;
-                state.last_error = Some(failure.message());
+                state.last_error = Some(quote_message(failure));
             }
             None => {
                 state.backoff_secs = 0.0;
@@ -628,11 +631,11 @@ impl Engine {
             } else if let Some(failure) = failed.get(request.symbol.as_str()) {
                 updates.insert(
                     key.clone(),
-                    match failure {
-                        QuoteFailure::CredentialsMissing(_) => {
-                            WatchlistQuote::unsupported(Some(failure.message()))
+                    match failure.kind {
+                        ErrorKind::MissingKey => {
+                            WatchlistQuote::unsupported(Some(quote_message(failure)))
                         }
-                        _ => self.fallback(key, Some(failure.message())),
+                        _ => self.fallback(key, Some(quote_message(failure))),
                     },
                 );
             } else if source_answered && outcome.rejected.contains(&request.symbol) {
@@ -811,7 +814,7 @@ fn fetch_chunked(
 ) -> Outcome {
     let mut budget = ISOLATION_BUDGET;
     let mut merged = Outcome::default();
-    let mut limited: Option<QuoteFailure> = None;
+    let mut limited: Option<ProviderError> = None;
     for page in requests.chunks(size.max(1)) {
         if let Some(failure) = &limited {
             merged.absorb(Outcome::failing(symbols(page), failure.clone()));
@@ -821,9 +824,9 @@ fn fetch_chunked(
         if part
             .failed
             .iter()
-            .any(|(_, failure)| matches!(failure, QuoteFailure::RateLimited))
+            .any(|(_, failure)| failure.is_rate_limited())
         {
-            limited = Some(QuoteFailure::RateLimited);
+            limited = Some(ProviderError::new(listing, ErrorKind::RateLimited));
         }
         merged.absorb(part);
     }
@@ -844,8 +847,7 @@ fn fetch_page(
     requests: &[QuoteRequest],
     budget: &mut usize,
 ) -> Outcome {
-    let mut rejection = String::new();
-    let outcome = bisect(provider, listing, requests, budget, &mut rejection);
+    let outcome = bisect(provider, listing, requests, budget);
     // Every symbol of a page refused one by one is the page's fault, not theirs: a request
     // the provider will not take (a revoked key, a region, a changed endpoint) must back
     // the source off, not mark a whole library as unknown markets. Refusals that are the
@@ -856,7 +858,10 @@ fn fetch_page(
         && outcome.failed.is_empty()
         && outcome.rejected.len() == requests.len()
     {
-        return Outcome::failing(symbols(requests), QuoteFailure::Failed(rejection));
+        return Outcome::failing(
+            symbols(requests),
+            ProviderError::new(listing, ErrorKind::Unisolated),
+        );
     }
     outcome
 }
@@ -866,14 +871,10 @@ fn bisect(
     listing: Listing,
     requests: &[QuoteRequest],
     budget: &mut usize,
-    rejection: &mut String,
 ) -> Outcome {
     match provider.quotes(listing, requests) {
         Ok(outcome) => outcome,
-        Err(QuoteFailure::Rejected(message)) => {
-            if rejection.is_empty() {
-                *rejection = message.clone();
-            }
+        Err(failure) if failure.kind.scope() == Scope::Symbol => {
             if requests.len() <= 1 {
                 return Outcome {
                     rejected: requests
@@ -886,21 +887,24 @@ fn bisect(
             if *budget < 2 {
                 return Outcome::failing(
                     symbols(requests),
-                    QuoteFailure::Failed(format!("{message} (too many markets to isolate)")),
+                    ProviderError::new(listing, ErrorKind::Unisolated),
                 );
             }
             *budget -= 2;
             let (first, second) = requests.split_at(requests.len() / 2);
-            let mut merged = bisect(provider, listing, first, budget, rejection);
+            let mut merged = bisect(provider, listing, first, budget);
             // A rate limit in one half means the other half would meet it too.
             if merged
                 .failed
                 .iter()
-                .any(|(_, failure)| matches!(failure, QuoteFailure::RateLimited))
+                .any(|(_, failure)| failure.is_rate_limited())
             {
-                merged.absorb(Outcome::failing(symbols(second), QuoteFailure::RateLimited));
+                merged.absorb(Outcome::failing(
+                    symbols(second),
+                    ProviderError::new(listing, ErrorKind::RateLimited),
+                ));
             } else {
-                merged.absorb(bisect(provider, listing, second, budget, rejection));
+                merged.absorb(bisect(provider, listing, second, budget));
             }
             merged
         }
@@ -944,7 +948,7 @@ pub fn poll(engine: &Mutex<Engine>, provider: &dyn QuoteProvider, now: &dyn Fn()
                             .iter()
                             .map(|(_, request)| request.symbol.clone())
                             .collect(),
-                        QuoteFailure::Failed("Quote worker crashed".to_owned()),
+                        ProviderError::interrupted(planned.listing),
                     )
                 })
             })
@@ -969,7 +973,7 @@ mod tests {
     struct FakeProvider {
         prices: Mutex<HashMap<String, f64>>,
         reject: Mutex<HashSet<String>>,
-        failure: Mutex<Option<QuoteFailure>>,
+        failure: Mutex<Option<ProviderError>>,
         /// A request holding any of these symbols fails as a page, not as a symbol.
         page_fails: Mutex<HashSet<String>>,
         /// Every request is refused as if it named an unknown symbol.
@@ -996,7 +1000,7 @@ mod tests {
             &self,
             listing: Listing,
             requests: &[QuoteRequest],
-        ) -> Result<Outcome, QuoteFailure> {
+        ) -> Result<Outcome, ProviderError> {
             let mut symbols: Vec<String> = requests.iter().map(|r| r.symbol.clone()).collect();
             symbols.sort();
             let made = {
@@ -1013,7 +1017,7 @@ mod tests {
                 .unwrap()
                 .is_some_and(|after| made > after)
             {
-                return Err(QuoteFailure::RateLimited);
+                return Err(ProviderError::new(listing, ErrorKind::RateLimited));
             }
             if self
                 .page_fails
@@ -1022,14 +1026,14 @@ mod tests {
                 .iter()
                 .any(|symbol| requests.iter().any(|r| &r.symbol == symbol))
             {
-                return Err(QuoteFailure::Failed("page failed".to_owned()));
+                return Err(ProviderError::refused(listing, "page failed"));
             }
             if *self.reject_all.lock().unwrap() {
-                return Err(QuoteFailure::Rejected("HTTP 400".to_owned()));
+                return Err(ProviderError::new(listing, ErrorKind::UnknownSymbol));
             }
             let rejects = self.reject.lock().unwrap();
             if requests.iter().any(|r| rejects.contains(&r.symbol)) {
-                return Err(QuoteFailure::Rejected("unknown symbol".to_owned()));
+                return Err(ProviderError::new(listing, ErrorKind::UnknownSymbol));
             }
             let prices = self.prices.lock().unwrap();
             Ok(Outcome::from_quotes(
@@ -1159,7 +1163,7 @@ mod tests {
             &self,
             listing: Listing,
             requests: &[QuoteRequest],
-        ) -> Result<Outcome, QuoteFailure> {
+        ) -> Result<Outcome, ProviderError> {
             crate::service::watchlist_quotes::provider::binance_outcome(
                 listing.market,
                 self.0,
@@ -1208,7 +1212,7 @@ mod tests {
 
         assert_eq!(
             lock(&engine).provider_health()[0].last_error.as_deref(),
-            Some("Unexpected Binance response")
+            Some("Binance perp sent an answer DegenView could not read")
         );
         assert_ne!(
             book.get(&held[0]).and_then(|quote| quote.note).as_deref(),
@@ -1228,7 +1232,7 @@ mod tests {
             .iter()
             .map(|(_, request)| request.clone())
             .collect();
-        let refused = QuoteFailure::Rejected("HTTP 400".to_owned());
+        let refused = ProviderError::new(Listing::BINANCE_PERPETUAL, ErrorKind::UnknownSymbol);
         let outcome = binance_refusal(Market::Perpetual, &requests, refused).expect("settled");
         lock(&engine).apply(&planned, &outcome, T0);
         assert_eq!(book.get(&gone).unwrap().freshness, Freshness::Unavailable);
@@ -1448,13 +1452,16 @@ mod tests {
         assert_eq!(book.get(&markets[249]).unwrap().freshness, Freshness::Live);
         let failed = book.get(&markets[150]).unwrap();
         assert_eq!(failed.freshness, Freshness::Unavailable);
-        assert_eq!(failed.note.as_deref(), Some("page failed"));
+        assert_eq!(failed.note.as_deref(), Some("Binance error: page failed"));
         let health = lock(&engine).provider_health();
         let binance = health
             .iter()
             .find(|health| health.source == DataSource::Binance)
             .unwrap();
-        assert_eq!(binance.last_error.as_deref(), Some("page failed"));
+        assert_eq!(
+            binance.last_error.as_deref(),
+            Some("Binance error: page failed")
+        );
         assert_eq!(
             binance.last_successful_quote_ms,
             Some(T0),
@@ -1499,7 +1506,10 @@ mod tests {
             .iter()
             .find(|health| health.source == DataSource::Binance)
             .unwrap();
-        assert!(binance.last_error.is_some());
+        assert_eq!(
+            binance.last_error.as_deref(),
+            Some("Binance refused the request, and the markets at fault could not be singled out")
+        );
         assert!(
             binance.retry_at_ms.is_some(),
             "backed off, not retried at once"
@@ -1511,6 +1521,94 @@ mod tests {
         let before = provider.calls().len();
         round(&engine, &provider, T0 + 1_000);
         assert_eq!(provider.calls().len(), before, "the backoff holds");
+    }
+
+    #[test]
+    fn only_an_unknown_symbol_is_searched_for_every_other_failure_backs_the_source_off() {
+        use crate::service::net::http;
+        for kind in [
+            ErrorKind::Unauthorized,
+            ErrorKind::Blocked,
+            ErrorKind::Transport(http::Error::Status(500)),
+            ErrorKind::Malformed("expected a ticker list".to_owned()),
+            ErrorKind::Refused(Some("System is busy".to_owned())),
+        ] {
+            let (engine, book, provider) = setup();
+            let failure = ProviderError::new(DataSource::Binance, kind.clone());
+            *provider.failure.lock().unwrap() = Some(failure.clone());
+            let markets = many_binance(&engine, &provider, 16);
+            round(&engine, &provider, T0);
+            assert_eq!(provider.calls().len(), 1, "{kind:?}: no halving");
+            let health = lock(&engine).provider_health();
+            let binance = health
+                .iter()
+                .find(|health| health.source == DataSource::Binance)
+                .unwrap();
+            assert_eq!(
+                binance.last_error,
+                Some(quote_message(&failure)),
+                "{kind:?}"
+            );
+            assert!(binance.retry_at_ms.is_some(), "{kind:?}: backed off");
+            assert_eq!(book.get(&markets[0]).unwrap().last, None);
+        }
+    }
+
+    #[test]
+    fn a_400_to_a_request_for_the_whole_list_is_one_request_and_a_backoff() {
+        use crate::service::net::http;
+        use crate::service::watchlist_quotes::provider::quote_statuses;
+        // MEXC's `/ticker/24hr` (like Gate.io's `/tickers`: see the provider's tests) names no
+        // market, so its 400 names none either: halving the rows would ask for the same list
+        // over and over. (Gate.io is quoted from its socket first, so it makes no request here.)
+        let source = DataSource::Mexc;
+        let (engine, book, provider) = setup();
+        let listing = Listing::from(source);
+        let failure = ProviderError::http_with(
+            listing,
+            quote_statuses(listing, &[]),
+            http::Error::Status(400),
+        );
+        *provider.failure.lock().unwrap() = Some(failure.clone());
+        let markets: Vec<InstrumentId> = (0..33)
+            .map(|index| id(source, &format!("S{index:02}-USDT")))
+            .collect();
+        lock(&engine).update(1, markets.clone(), true, T0);
+        round(&engine, &provider, T0);
+        assert_eq!(provider.calls().len(), 1, "{source:?}: no halving");
+        let health = lock(&engine).provider_health();
+        let state = health
+            .iter()
+            .find(|health| health.source == source)
+            .unwrap();
+        assert_eq!(
+            state.last_error,
+            Some(quote_message(&failure)),
+            "{source:?}"
+        );
+        assert!(state.retry_at_ms.is_some(), "{source:?}: backed off");
+        assert_eq!(book.get(&markets[0]).unwrap().last, None);
+        round(&engine, &provider, T0 + 1_000);
+        assert_eq!(provider.calls().len(), 1, "{source:?}: the backoff holds");
+    }
+
+    #[test]
+    fn an_unknown_symbol_code_in_the_answer_to_the_whole_list_is_one_request_and_a_backoff() {
+        use crate::service::watchlist_quotes::provider::parse_mexc;
+        // MEXC's whole ticker names no symbol, so "invalid symbol" there is not about any of the
+        // rows: the engine must not halve them looking for it.
+        let (engine, book, provider) = setup();
+        let failure = parse_mexc(r#"{"code":-1121,"msg":"Invalid symbol."}"#, &[]).unwrap_err();
+        assert_ne!(failure.kind, ErrorKind::UnknownSymbol);
+        *provider.failure.lock().unwrap() = Some(failure);
+        let markets: Vec<InstrumentId> = (0..33)
+            .map(|index| id(DataSource::Mexc, &format!("S{index:02}USDT")))
+            .collect();
+        lock(&engine).update(1, markets.clone(), true, T0);
+        round(&engine, &provider, T0);
+        assert_eq!(provider.calls().len(), 1, "no halving");
+        assert!(lock(&engine).provider_health()[0].retry_at_ms.is_some());
+        assert_eq!(book.get(&markets[0]).unwrap().last, None);
     }
 
     #[test]
@@ -1617,7 +1715,8 @@ mod tests {
         lock(&engine).update(1, vec![btc.clone(), gecko.clone()], true, T0);
         round(&engine, &provider, T0);
 
-        *provider.failure.lock().unwrap() = Some(QuoteFailure::Failed("boom".into()));
+        *provider.failure.lock().unwrap() =
+            Some(ProviderError::refused(DataSource::Binance, "boom"));
         round(&engine, &provider, T0 + 5_000);
         let quote = book.get(&btc).unwrap();
         assert_eq!(quote.last, Some(100.0), "last price kept");
@@ -1627,7 +1726,7 @@ mod tests {
             .iter()
             .find(|health| health.source == DataSource::Binance)
             .unwrap();
-        assert_eq!(binance.last_error.as_deref(), Some("boom"));
+        assert_eq!(binance.last_error.as_deref(), Some("Binance error: boom"));
         assert_eq!(binance.last_successful_quote_ms, Some(T0));
         assert!(binance.retry_at_ms.is_some());
         assert!(binance.has_data_gap);
@@ -1662,7 +1761,10 @@ mod tests {
     #[test]
     fn a_failure_with_no_history_says_why_instead_of_a_bare_dash() {
         let (engine, book, provider) = setup();
-        *provider.failure.lock().unwrap() = Some(QuoteFailure::RateLimited);
+        *provider.failure.lock().unwrap() = Some(ProviderError::new(
+            DataSource::Binance,
+            ErrorKind::RateLimited,
+        ));
         let btc = id(DataSource::Binance, "BTCUSDT");
         lock(&engine).update(1, vec![btc.clone()], true, T0);
         round(&engine, &provider, T0);
@@ -1675,7 +1777,10 @@ mod tests {
     #[test]
     fn a_rate_limit_backs_off_further_than_a_plain_failure() {
         let (engine, _book, provider) = setup();
-        *provider.failure.lock().unwrap() = Some(QuoteFailure::RateLimited);
+        *provider.failure.lock().unwrap() = Some(ProviderError::new(
+            DataSource::Binance,
+            ErrorKind::RateLimited,
+        ));
         lock(&engine).update(1, vec![id(DataSource::Binance, "BTCUSDT")], true, T0);
         round(&engine, &provider, T0);
         round(&engine, &provider, T0 + 14_000);
@@ -1747,14 +1852,24 @@ mod tests {
     #[test]
     fn missing_credentials_mark_stocks_unsupported_and_retry_after_a_minute() {
         let (engine, book, provider) = setup();
-        *provider.failure.lock().unwrap() =
-            Some(QuoteFailure::CredentialsMissing(DataSource::Alpaca));
+        *provider.failure.lock().unwrap() = Some(ProviderError::new(
+            DataSource::Alpaca,
+            ErrorKind::MissingKey,
+        ));
         let aapl = id(DataSource::Alpaca, "AAPL");
         lock(&engine).update(1, vec![aapl.clone()], true, T0);
         round(&engine, &provider, T0);
         let quote = book.get(&aapl).unwrap();
         assert_eq!(quote.freshness, Freshness::Unsupported);
-        assert!(quote.note.unwrap().contains("Alpaca"));
+        assert_eq!(
+            quote.note.as_deref(),
+            Some("Add your Alpaca API key in Settings to see stock quotes"),
+            "a row says what the key is for, not what a chart needs"
+        );
+        assert_eq!(
+            lock(&engine).provider_health()[0].last_error.as_deref(),
+            Some("Add your Alpaca API key in Settings to see stock quotes")
+        );
         round(&engine, &provider, T0 + 30_000);
         assert_eq!(provider.calls().len(), 1);
         round(&engine, &provider, T0 + 61_000);

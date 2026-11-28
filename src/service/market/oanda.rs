@@ -18,8 +18,9 @@ use super::kline_endpoint::{self, KlineEndpoint};
 use super::paging::Paging;
 use super::search_rank::normalize;
 use crate::model::market::oanda::OandaEnvironment;
-use crate::model::{DataSource, Kline, TimeUnit, Timeframe};
+use crate::model::{DataSource, Kline, Listing, TimeUnit, Timeframe};
 use crate::service::keychain::api_keys::{CredentialPair, OandaCredentials};
+use crate::service::market::error::{ErrorKind, Statuses};
 use crate::service::net::http::{self, Retry};
 use crate::service::{MarketSource, ProviderError, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -41,9 +42,24 @@ const PAGING: Paging = Paging {
     pause: Duration::ZERO,
 };
 
+/// What the statuses of a request that names instruments mean at Oanda (candles, pricing): a 400
+/// names an instrument it does not know, a 401 or 403 refuses the access token.
+pub(in crate::service) const MARKET_STATUSES: Statuses = &[
+    (400, ErrorKind::UnknownSymbol),
+    (401, ErrorKind::Unauthorized),
+    (403, ErrorKind::Unauthorized),
+];
+
+/// A request about the account (its instrument list, Test Connection): a 401 or 403 refuses the
+/// access token, and a 400 is a malformed account id, which no instrument is to blame for.
+const ACCOUNT_STATUSES: Statuses = &[
+    (401, ErrorKind::Unauthorized),
+    (403, ErrorKind::Unauthorized),
+];
+
 fn credentials() -> Result<OandaCredentials, ProviderError> {
     crate::service::keychain::api_keys::oanda_credentials()
-        .ok_or(ProviderError::MissingKey(DataSource::Oanda))
+        .ok_or(ProviderError::new(DataSource::Oanda, ErrorKind::MissingKey))
 }
 
 /// The v3 API of an environment.
@@ -69,17 +85,22 @@ pub(in crate::service) fn api_request(login: &OandaCredentials, path: &str) -> A
     }
 }
 
-fn send(request: &ApiRequest, retry: Retry) -> Result<String, ProviderError> {
+fn send(request: &ApiRequest, statuses: Statuses, retry: Retry) -> Result<String, ProviderError> {
     http::get_text(
         &request.url,
         &[("Authorization", request.authorization.as_str())],
         retry,
     )
-    .map_err(ProviderError::Oanda)
+    .map_err(|error| ProviderError::http_with(DataSource::Oanda, statuses, error))
 }
 
-fn get(login: &OandaCredentials, path: &str, retry: Retry) -> Result<String, ProviderError> {
-    send(&api_request(login, path), retry)
+/// A request about the account: its instrument list.
+fn get_account(
+    login: &OandaCredentials,
+    path: &str,
+    retry: Retry,
+) -> Result<String, ProviderError> {
+    send(&api_request(login, path), ACCOUNT_STATUSES, retry)
 }
 
 /// The `granularity` value Oanda takes for a native length: `S5`, `M1`, `H4`, `D`, `W`, `M`.
@@ -104,7 +125,7 @@ fn instruments_path(account_id: &str) -> String {
 /// login (the one typed on the page, saved or not), which is what Oanda charts need it for.
 pub fn test_connection(login: &OandaCredentials) -> Result<(), ProviderError> {
     let login = login.trimmed();
-    get(&login, &instruments_path(&login.account_id), Retry::Never).map(|_| ())
+    get_account(&login, &instruments_path(&login.account_id), Retry::Never).map(|_| ())
 }
 
 /// Oanda's candles endpoint, asked as one login over `transport`.
@@ -118,7 +139,7 @@ impl<'a> Klines<'a, fn(&ApiRequest) -> Result<String, ProviderError>> {
     fn over_http(login: &'a OandaCredentials) -> Self {
         Self {
             login,
-            transport: |request| send(request, Retry::Transient),
+            transport: |request| send(request, MARKET_STATUSES, Retry::Transient),
         }
     }
 }
@@ -237,11 +258,12 @@ fn candle_page(
 /// `{"candles": [{"time": ISO, "volume": n, "complete": bool, "mid": {"o","h","l","c"}}]}`, oldest
 /// first. The forming (incomplete) last candle is kept, as Binance's is.
 fn parse_candles(body: &str, bar: Timeframe) -> Result<Vec<Kline>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Oanda, error))?;
     let rows = value
         .get("candles")
         .and_then(Value::as_array)
-        .ok_or_else(|| ProviderError::data("expected a candles object"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "expected a candles object"))?;
     rows.iter().map(|row| parse_candle(row, bar)).collect()
 }
 
@@ -250,15 +272,17 @@ fn parse_candle(row: &Value, bar: Timeframe) -> Result<Kline, ProviderError> {
         .get("time")
         .and_then(Value::as_str)
         .and_then(crate::format::parse_iso8601)
-        .ok_or_else(|| ProviderError::data("invalid candle time"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "invalid candle time"))?;
     let mid = row
         .get("mid")
-        .ok_or_else(|| ProviderError::data("expected mid prices"))?;
+        .ok_or_else(|| ProviderError::malformed(DataSource::Oanda, "expected mid prices"))?;
     let price = |key: &str| -> Result<f64, ProviderError> {
         mid.get(key)
             .and_then(Value::as_str)
             .and_then(|text| text.parse().ok())
-            .ok_or_else(|| ProviderError::data(format!("invalid price {key}")))
+            .ok_or_else(|| {
+                ProviderError::malformed(DataSource::Oanda, format!("invalid price {key}"))
+            })
     };
     let volume = row.get("volume").and_then(Value::as_f64).unwrap_or(0.0);
     Ok(Kline {
@@ -312,10 +336,11 @@ impl ListedMarket for Instrument {
 }
 
 /// The instrument list belongs to the account whose credentials downloaded it.
-static CATALOG: Catalog<Instrument> = Catalog::new("catalog_oanda_v2");
+static CATALOG: Catalog<Instrument> =
+    Catalog::new(Listing::spot(DataSource::Oanda), "catalog_oanda_v2");
 
 fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, ProviderError> {
-    let body = get(
+    let body = get_account(
         login,
         &instruments_path(&login.account_id),
         Retry::Transient,
@@ -324,7 +349,8 @@ fn download_instruments(login: &OandaCredentials) -> Result<Vec<Instrument>, Pro
 }
 
 fn parse_instruments(body: &str) -> Result<Vec<Instrument>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::Oanda, error))?;
     Ok(value
         .get("instruments")
         .and_then(Value::as_array)
@@ -389,7 +415,10 @@ mod tests {
             Timeframe::HOUR_1,
         )
         .expect_err("object must fail");
-        assert_eq!(error, ProviderError::data("expected a candles object"));
+        assert_eq!(
+            error,
+            ProviderError::malformed(DataSource::Oanda, "expected a candles object")
+        );
         assert!(parse_candles("not json", Timeframe::HOUR_1).is_err());
     }
 
@@ -639,5 +668,23 @@ mod tests {
         assert_eq!(instruments[0].name, "EUR_USD");
         assert!(parse_instruments("not json").is_err());
         assert!(parse_instruments("{}").expect("no instruments").is_empty());
+    }
+
+    #[test]
+    fn a_400_names_an_unknown_instrument_only_where_one_was_asked_for() {
+        use crate::service::net::http::Error;
+        let kind = |statuses, code| {
+            ProviderError::http_with(DataSource::Oanda, statuses, Error::Status(code)).kind
+        };
+        assert_eq!(kind(MARKET_STATUSES, 400), ErrorKind::UnknownSymbol);
+        // A mistyped account id in Test Connection, or the instrument list, names no instrument.
+        assert_eq!(
+            kind(ACCOUNT_STATUSES, 400),
+            ErrorKind::Transport(Error::Status(400))
+        );
+        for statuses in [MARKET_STATUSES, ACCOUNT_STATUSES] {
+            assert_eq!(kind(statuses, 401), ErrorKind::Unauthorized);
+            assert_eq!(kind(statuses, 403), ErrorKind::Unauthorized);
+        }
     }
 }

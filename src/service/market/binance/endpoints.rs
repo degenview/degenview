@@ -3,10 +3,13 @@
 
 use super::catalog::Pair;
 use crate::model::exchange::Market;
+use crate::model::{DataSource, Listing};
 use crate::service::market::catalog::Catalog;
 use serde_json::Value;
 
 pub(in crate::service) struct Endpoints {
+    /// The market list these are the endpoints of: whose failures they report.
+    pub listing: Listing,
     pub klines_url: &'static str,
     /// The list of markets the search reads.
     pub exchange_info_url: &'static str,
@@ -22,12 +25,15 @@ pub(in crate::service) struct Endpoints {
     pub ticker_batch: Option<usize>,
 }
 
-static SPOT_CATALOG: Catalog<Pair> = Catalog::new("catalog_binance");
-static PERPETUAL_CATALOG: Catalog<Pair> = Catalog::new("catalog_binance_futures");
+static SPOT_CATALOG: Catalog<Pair> =
+    Catalog::new(Listing::spot(DataSource::Binance), "catalog_binance");
+static PERPETUAL_CATALOG: Catalog<Pair> =
+    Catalog::new(Listing::BINANCE_PERPETUAL, "catalog_binance_futures");
 
 /// Plain spot `exchangeInfo` is 18 MB (every market ever listed, each with its filters and its
 /// permission sets); the `TRADING` ones without permission sets are 2.6 MB.
 static SPOT: Endpoints = Endpoints {
+    listing: Listing::spot(DataSource::Binance),
     klines_url: "https://api.binance.com/api/v3/klines",
     exchange_info_url: "https://api.binance.com/api/v3/exchangeInfo?symbolStatus=TRADING&showPermissionSets=false",
     lists: super::catalog::is_trading,
@@ -41,6 +47,7 @@ static SPOT: Endpoints = Endpoints {
 /// The futures API takes no filter on its list (1.2 MB), and its kline streams are served only
 /// under `/market`: any other path connects and says nothing.
 static PERPETUAL: Endpoints = Endpoints {
+    listing: Listing::BINANCE_PERPETUAL,
     klines_url: "https://fapi.binance.com/fapi/v1/klines",
     exchange_info_url: "https://fapi.binance.com/fapi/v1/exchangeInfo",
     lists: super::catalog::is_trading_perpetual,

@@ -6,7 +6,6 @@ use super::{
     TIMEFRAME_KEY,
 };
 use crate::format;
-use crate::i18n::tr;
 use crate::model::Timeframe;
 use crate::service::work_queue;
 use crate::service::{self, ProviderError};
@@ -39,11 +38,8 @@ impl PreviewState {
         let Some(fetch) = &mut self.inbox else {
             return;
         };
-        let Some(result) = fetch.poll_or(|| {
-            Err(ProviderError::other(tr!(
-                "The candles could not be loaded."
-            )))
-        }) else {
+        let source = self.market.source;
+        let Some(result) = fetch.poll_or(|| Err(ProviderError::interrupted(source))) else {
             return;
         };
         self.inbox = None;

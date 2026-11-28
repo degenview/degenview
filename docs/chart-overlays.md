@@ -154,7 +154,7 @@ chart uses (`service::fetch_klines`, `fetch_klines_range`, `work_queue::submit_f
   Other providers refresh over REST.
 * **Errors**: a failing market shows its own error, is retried after 15 s (45 s for CoinGecko and
   DexScreener) and never touches the others or the chart. A missing Alpaca key is that error. A
-  market whose source has no candles at the chart's timeframe (`ProviderError::UnsupportedInterval`,
+  market whose source has no candles at the chart's timeframe (`ErrorKind::Unsupported`,
   "CoinGecko has no 1m history") is `OverlayStatus::Blocked` with that text, like "Same market as the
   chart": nothing is requested for it until the timeframe changes, which resets every overlay.
 

@@ -136,7 +136,7 @@ mod tests {
             let error = crate::service::for_source(DataSource::CoinGecko)
                 .fetch_klines("bitcoin", timeframe, 10)
                 .unwrap_err();
-            assert!(error.is_unsupported_interval(), "{text}: {error}");
+            assert!(error.is_unsupported_interval(), "{text}: {error:?}");
         }
     }
 
@@ -154,7 +154,7 @@ mod tests {
         for interval in Timeframe::LEGACY.into_iter().chain(odd) {
             let fetch = |source, symbol: &str| {
                 crate::service::fetch_klines(source, symbol, interval, 500)
-                    .map_err(|error| format!("{source:?} {interval}: {error}"))
+                    .map_err(|error| format!("{source:?} {interval}: {error:?}"))
             };
             let binance = fetch(Binance, "ETHUSDT").unwrap();
             let coinbase = fetch(Coinbase, "ETH-USD").unwrap();

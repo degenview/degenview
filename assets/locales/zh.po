@@ -778,7 +778,7 @@ msgstr "将指标添加到图表。"
 msgid "Add the secret value that {token} stands for."
 msgstr "添加 {token} 所代表的密钥值。"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Add this provider's API key in Settings to see its quotes"
 msgstr "在设置中添加此服务商的 API 密钥，即可查看其报价"
 
@@ -841,7 +841,7 @@ msgstr "添加交易记录，或导入 CSV 或 CoinMarketCap 导出文件。"
 msgid "Add vertex here"
 msgstr "在此添加顶点"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Add your Alpaca API key in Settings to see stock quotes"
 msgstr "在设置中添加 Alpaca API 密钥后即可查看股票报价"
 
@@ -853,7 +853,7 @@ msgstr "在设置中添加你的 Alpaca API 密钥。"
 msgid "Add your ImgBB API key in Settings ▸ Snapshots to share."
 msgstr "在设置 ▸ 快照中添加 ImgBB API 密钥后即可分享。"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Add your Oanda credentials in Settings to see Oanda quotes"
 msgstr "在设置中添加 Oanda 凭据，即可查看 Oanda 报价"
 
@@ -1199,15 +1199,11 @@ msgstr "允许“{client}”写入脚本草稿吗？"
 msgid "Allowed"
 msgstr "允许"
 
-#: src/service/market/error.rs
-msgid "Alpaca error: {error}"
-msgstr "Alpaca 错误：{error}"
-
 #: src/pine_studio/preview/chart.rs
 msgid "Alpaca isn't set up"
 msgstr "尚未设置 Alpaca"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Alpaca refused your API key. Check it in Settings"
 msgstr "Alpaca 拒绝了你的 API 密钥。到设置中检查一下"
 
@@ -2307,14 +2303,6 @@ msgstr "按年份"
 msgid "By {author} · {license}"
 msgstr "作者 {author} · {license}"
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "Bybit error: {message}"
-msgstr "Bybit 错误：{message}"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Bybit refused the request (HTTP 403): it is not available in every country"
-msgstr "Bybit 拒绝了请求（HTTP 403）：并非所有国家和地区都可使用"
-
 #: src/ui/drawing/properties/coordinates.rs
 msgid "C"
 msgstr "C"
@@ -2740,10 +2728,6 @@ msgstr "图表基本样式"
 #: src/ui/chart/symbol_picker/predictions/rows.rs
 msgid "Chart every choice together"
 msgstr "将所有选项绘制在同一图表"
-
-#: src/workspace/chart/mod.rs
-msgid "Chart fetch stopped before returning data"
-msgstr "图表数据请求在返回前中断"
 
 #: src/ui/alert/script_list.rs
 msgid "Chart not open"
@@ -3273,10 +3257,6 @@ msgstr "代码块：第 {first}–{last} 行"
 #: src/trading/paper/backend.rs
 msgid "CoinMarketCap charts have no tradable price, so paper trading skips them."
 msgstr "CoinMarketCap 图表没有可交易的价格，模拟交易会跳过它们。"
-
-#: src/service/market/error.rs
-msgid "CoinMarketCap error: {error}"
-msgstr "CoinMarketCap 错误：{error}"
 
 #: src/ui/settings/api_keys.rs
 msgid "CoinMarketCap works without an API key. Adding one gives DegenView higher API rate limits."
@@ -4380,10 +4360,6 @@ msgstr "仪表盘"
 #: src/model/chart/kind.rs src/ui/drawing/properties/fib_pages.rs
 msgid "Dashed"
 msgstr "虚线"
-
-#: src/service/market/error.rs src/service/watchlist_quotes/provider.rs
-msgid "Data error: {error}"
-msgstr "数据错误：{error}"
 
 #: src/ui/portfolio/asset_detail.rs src/ui/portfolio/import_preview.rs
 #: src/ui/portfolio/transactions.rs
@@ -6457,10 +6433,6 @@ msgstr "缺口最小百分比"
 msgid "Gap size"
 msgstr "缺口大小"
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "Gate.io refused the request (HTTP 403): it is not available in every country"
-msgstr "Gate.io 拒绝了请求（HTTP 403）：并非所有国家和地区都可使用"
-
 #: src/model/drawings/style.rs
 msgid "Gear"
 msgstr "齿轮"
@@ -7614,10 +7586,6 @@ msgstr "密钥已保存"
 msgid "Keywords"
 msgstr "关键字"
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "Kraken error: {text}"
-msgstr "Kraken 错误：{text}"
-
 #: src/ui/trade/venue_pill.rs
 msgid "LIVE"
 msgstr "实盘"
@@ -8418,10 +8386,6 @@ msgid ""
 "computer ({error})"
 msgstr "无法保护 MCP 凭据免遭这台电脑 上数据库的改动（{error}）"
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "MEXC refused the request (HTTP 403): it is not available in every country"
-msgstr "MEXC 拒绝了请求（HTTP 403）：并非所有国家和地区都可使用"
-
 #: src/ui/settings/mcp/security.rs
 msgid "Made when you apply an address"
 msgstr "应用地址时生成"
@@ -9076,7 +9040,7 @@ msgstr "主动成交净流量，所有交易平台"
 msgid "Network"
 msgstr "网络"
 
-#: src/service/market/error.rs src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Network error: {error}"
 msgstr "网络错误：{error}"
 
@@ -9371,6 +9335,10 @@ msgstr "暂无成本基础"
 msgid "No custom headers yet."
 msgstr "还没有自定义请求头。"
 
+#: src/service/provider_message.rs
+msgid "No data is available for {symbol} on Alpaca's free {feed} feed."
+msgstr "Alpaca 免费的 {feed} 数据源中没有 {symbol} 的数据。"
+
 #: src/ui/chart/session_stats_view/result.rs
 msgid "No day in these bars can answer this question."
 msgstr "这些K线中没有可回答此问题的日子。"
@@ -9551,10 +9519,6 @@ msgstr "还没有价格提醒"
 #: src/model/chart/context/mod.rs
 msgid "No price at this point"
 msgstr "此处没有价格"
-
-#: src/workspace/chart/mod.rs
-msgid "No price history for these choices"
-msgstr "这些选项没有价格历史"
 
 #: src/ui/alert/editor.rs
 msgid "No price yet"
@@ -10002,15 +9966,11 @@ msgstr "OHLC 数值"
 msgid "OK"
 msgstr "确定"
 
-#: src/service/market/error.rs
-msgid "Oanda error: {error}"
-msgstr "Oanda 错误：{error}"
-
 #: src/model/watchlist/text.rs
 msgid "Oanda instruments are written BASE_QUOTE, like EUR_USD"
 msgstr "Oanda 品种使用 BASE_QUOTE 格式，例如 EUR_USD"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Oanda refused your access token. Check it in Settings"
 msgstr "Oanda 拒绝了你的访问令牌。在设置中检查令牌"
 
@@ -10063,10 +10023,6 @@ msgstr "较早"
 #: src/ui/chart/session_stats_view/result.rs
 msgid "Older and newer half"
 msgstr "较早与较新的一半"
-
-#: src/workspace/chart/mod.rs src/workspace/overlay/mod.rs
-msgid "Older candles stopped loading"
-msgstr "更早的K线停止加载"
 
 #: src/ui/chart/session_stats_view/text.rs
 msgid "Older half {older} · newer half {newer} · the halves agree"
@@ -11543,7 +11499,7 @@ msgstr "范围与比例"
 msgid "Rate limit reached"
 msgstr "已达到速率限制"
 
-#: src/service/watchlist_quotes/provider.rs
+#: src/service/provider_message.rs
 msgid "Rate limited by the provider"
 msgstr "数据源限制了请求频率"
 
@@ -13404,15 +13360,15 @@ msgstr "设置 Alpaca 以打开股票"
 msgid "Set up Oanda to search forex"
 msgstr "配置 Oanda 以搜索外汇"
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
 msgid "Set up this provider's API key in Settings first."
 msgstr "先在设置中配置此服务商的 API 密钥。"
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
 msgid "Set up your Alpaca API key before using stock charts."
 msgstr "使用股票图表前，先设置你的 Alpaca API 密钥。"
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
 msgid "Set up your Oanda account in Settings before using Oanda charts."
 msgstr "使用 Oanda 图表前，先在设置中配置 Oanda 账户。"
 
@@ -14909,10 +14865,6 @@ msgstr "缓存本来就是空的。"
 msgid "The cancel was sent but the answer was lost. The order is being checked."
 msgstr "取消请求已发出，但回复丢失。正在核查该订单。"
 
-#: src/pine_studio/preview/fetch.rs
-msgid "The candles could not be loaded."
-msgstr "无法加载K线。"
-
 #: src/model/chart/snapshot/studio.rs
 msgid "The capture's own proportions"
 msgstr "截图本身的比例"
@@ -15411,18 +15363,6 @@ msgstr "用于求平均的价格。"
 msgid "The price the line is fitted to."
 msgstr "该线拟合所用的价格。"
 
-#: src/service/watchlist_quotes/provider.rs
-msgid "The provider answered HTTP 400"
-msgstr "数据源返回 HTTP 400"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "The provider answered HTTP 404"
-msgstr "数据源返回 HTTP 404"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "The provider answered HTTP {code}"
-msgstr "数据源返回 HTTP {code}"
-
 #: src/service/watchlist_quotes/engine.rs
 msgid "The provider doesn't know this market"
 msgstr "数据源不识别该市场"
@@ -15435,7 +15375,7 @@ msgstr "数据源没有返回报价"
 msgid "The reply hit the model's length limit, so the script is cut off. Ask for a smaller change."
 msgstr "回复达到了模型的长度上限，脚本被截断。试着提出更小的更改。"
 
-#: src/workspace/overlay/mod.rs
+#: src/service/provider_message.rs
 msgid "The request stopped before it answered"
 msgstr "请求在得到响应前中断"
 
@@ -15520,10 +15460,6 @@ msgstr "脚本在本次调试开始后被编辑过，当前仍在运行旧代码
 #: src/pine_studio/commands.rs
 msgid "The scripts folder isn't available."
 msgstr "脚本文件夹不可用。"
-
-#: src/ui/chart/symbol_picker/search.rs
-msgid "The search stopped unexpectedly."
-msgstr "搜索意外中断。"
 
 #: src/model/webhook/policy.rs
 msgid "The secret can't contain line breaks or control characters."
@@ -15619,10 +15555,6 @@ msgid ""
 "Kagi, Line Break, Point & Figure and Range charts, in a replay, or for "
 "markets without clock-cut bars."
 msgstr "在最新价下方显示当前K线收盘前的剩余时间。砖形图、卡吉图、新价线、点数图和区间图不显示倒计时，回放期间或市场没有按时间收盘的K线时也不显示。"
-
-#: src/ui/chart/symbol_picker/predictions/trending.rs
-msgid "The trending list stopped loading."
-msgstr "热门列表加载中断。"
 
 #: src/ui/chart/session_stats_view/result.rs
 msgid "The two halves' 95% intervals do not overlap: the pattern may have changed."
@@ -16558,42 +16490,6 @@ msgstr "撤销"
 #: src/ui/workspace/toolbar.rs
 msgid "Undo ({shortcut})"
 msgstr "撤销（{shortcut}）"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Alpaca response"
-msgstr "Alpaca 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Binance response"
-msgstr "Binance 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Bybit response"
-msgstr "Bybit 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected CoinGecko response"
-msgstr "CoinGecko 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Gate.io response"
-msgstr "Gate.io 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Kraken response"
-msgstr "Kraken 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected MEXC response"
-msgstr "MEXC 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected OKX response"
-msgstr "OKX 返回了意外的响应"
-
-#: src/service/watchlist_quotes/provider.rs
-msgid "Unexpected Oanda response"
-msgstr "Oanda 返回了意外响应"
 
 #: src/model/broker/ticket.rs src/ui/settings/window.rs
 msgid "Unknown"
@@ -17697,6 +17593,10 @@ msgstr "你使用的已是最新版本 {version}。"
 msgid "You're on version {version}."
 msgstr "你使用的版本是 {version}。"
 
+#: src/service/provider_message.rs
+msgid "Your Alpaca plan does not include this data"
+msgstr "你的 Alpaca 套餐不包含这些数据"
+
 #: src/pine_studio/library/unsaved.rs
 msgid "Your changes will be lost if you close this tab without saving."
 msgstr "如果不保存就关闭此标签页，你的更改将丢失。"
@@ -17744,6 +17644,10 @@ msgstr "你的脚本会发送给服务商"
 #: src/ui/chart/settings/scripts/mod.rs
 msgid "Your scripts"
 msgstr "你的脚本"
+
+#: src/service/provider_message.rs
+msgid "Your {provider} plan does not include this data"
+msgstr "你的 {provider} 套餐不包含这些数据"
 
 #: src/ui/chart/indicator_picker/mod.rs
 msgid "Yours"
@@ -19453,9 +19357,49 @@ msgstr "不支持 {prefix} · 以下为其他交易平台的匹配结果"
 msgid "{prefix} isn't supported. Searched: {searched}."
 msgstr "不支持 {prefix}。已搜索：{searched}。"
 
-#: src/service/market/error.rs
+#: src/service/provider_message.rs
+msgid "{provider} cannot serve a time range of candles"
+msgstr "{provider} 无法提供指定时间范围的K线"
+
+#: src/service/provider_message.rs
+msgid "{provider} does not list this market"
+msgstr "{provider} 未列出该市场"
+
+#: src/service/provider_message.rs
+msgid "{provider} error: {message}"
+msgstr "{provider} 错误：{message}"
+
+#: src/service/provider_message.rs
+msgid "{provider} has no older candles for this market"
+msgstr "{provider} 没有该市场更早的K线"
+
+#: src/service/provider_message.rs
+msgid "{provider} has no price history for this market in this range"
+msgstr "{provider} 没有该市场在此范围内的价格历史"
+
+#: src/service/provider_message.rs
 msgid "{provider} has no {timeframe} history"
 msgstr "{provider} 没有 {timeframe} 周期的历史数据"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request"
+msgstr "{provider} 拒绝了请求"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request (HTTP 403): it is not available in every country, and it refuses a client that asks too often"
+msgstr "{provider} 拒绝了请求（HTTP 403）：并非所有国家和地区都可使用，且会拒绝请求过于频繁的客户端"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused the request, and the markets at fault could not be singled out"
+msgstr "{provider} 拒绝了请求，且无法找出出问题的市场"
+
+#: src/service/provider_message.rs
+msgid "{provider} refused your API key. Check it in Settings"
+msgstr "{provider} 拒绝了你的 API 密钥。到设置中检查一下"
+
+#: src/service/provider_message.rs
+msgid "{provider} sent an answer DegenView could not read"
+msgstr "{provider} 返回了 DegenView 无法读取的数据"
 
 #: src/ui/portfolio/empty.rs
 msgid "{quantity} at {price}"

@@ -1,5 +1,5 @@
 use crate::model::market::asset_name::AssetNames;
-use crate::model::{Kline, Timeframe};
+use crate::model::{DataSource, Kline, Timeframe};
 use crate::service::net::url::encode_component;
 use crate::service::{MarketSource, ProviderError, SearchResult, rank_results};
 use serde_json::Value;
@@ -44,7 +44,8 @@ impl MarketSource for DexScreener {
             &url,
             &[],
             crate::service::net::http::Retry::Transient,
-        )?;
+        )
+        .map_err(|error| ProviderError::http(DataSource::DexScreener, error))?;
         parse_search(&body, query)
     }
 }
@@ -55,7 +56,8 @@ fn search_url(query: &str) -> String {
 }
 
 fn parse_search(body: &str, query: &str) -> Result<Vec<SearchResult>, ProviderError> {
-    let value: Value = serde_json::from_str(body).map_err(ProviderError::data)?;
+    let value: Value = serde_json::from_str(body)
+        .map_err(|error| ProviderError::malformed(DataSource::DexScreener, error))?;
 
     // Deduplicate by base+quote symbol, keeping the highest-liquidity pair.
     let mut by_pair: HashMap<String, (f64, SearchResult)> = HashMap::new();
