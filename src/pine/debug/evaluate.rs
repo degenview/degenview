@@ -69,7 +69,7 @@ pub(crate) fn evaluate(
         .get(frame)
         .and_then(|f| f.location)
         .map_or(0, |l| l.offset);
-    let resolved = expression.in_scope(&map.visible(offset));
+    let resolved = expression.in_scope(map, offset);
     let outcome = session.eval(&resolved, &mut scratch);
 
     session.working.instructions = instructions;

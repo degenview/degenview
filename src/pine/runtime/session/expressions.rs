@@ -146,17 +146,19 @@ impl Session {
         if let Some(value) = self.working.variables.get(name) {
             return Ok(value.clone());
         }
-        // A variable, or a field of one, is found by the name the interpreter holds it under. What is
-        // not one is a builtin, looked up by the name the script wrote: a variable that hides a
-        // namespace (`color = 2` in a function) is held as `color#…`, and `color.red` still means
-        // the constant when the variable has no such field.
+        // A variable, or a field of one, is found by the name the interpreter holds it under.
+        if name.contains('.')
+            && let Some(value) = self.field_path(name, range)?
+        {
+            return Ok(value);
+        }
+        // What is not one is a builtin, looked up by the name the script wrote: a variable that
+        // hides a namespace (`color = 2` in a function) is held as `color#…`, and `color.red` still
+        // means the constant when the variable has no such field.
         let written = rename::display_text(name);
         let written = written.as_ref();
         // The names below are all dotted; a plain `close` skips straight to the market values.
         if name.contains('.') {
-            if let Some(value) = self.field_path(name, range)? {
-                return Ok(value);
-            }
             if let Some(value) = self.cumulative_variable(written, context) {
                 return Ok(value);
             }

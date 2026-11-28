@@ -8,9 +8,10 @@
 //! expression is accepted only if everything in it is known to be read-only. Anything else is
 //! refused, with the reason, before it runs.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
-use super::source_map::ScopeEntry;
+use super::source_map::SourceMap;
 use crate::pine::runtime::call_binding::is_builtin_call;
 use crate::pine::syntax::ast::{Argument, Expression, Statement};
 use crate::pine::syntax::{scopes, traversal};
@@ -25,6 +26,8 @@ const MAX_LENGTH: usize = 2_000;
 pub struct DebugExpression {
     source: String,
     expression: Expression,
+    /// What the names it reads start with: all `in_scope` has to look up.
+    heads: Vec<String>,
 }
 
 impl DebugExpression {
@@ -37,9 +40,14 @@ impl DebugExpression {
         &self.expression
     }
 
-    /// The expression as the interpreter runs it where `visible` are the names in scope: the names
-    /// of variables that share their name with something else are the renamed ones.
-    pub(crate) fn in_scope(&self, visible: &[&ScopeEntry]) -> Expression {
+    /// The expression as the interpreter runs it before the statement at `offset`: the names of
+    /// variables that share their name with something else are the renamed ones. A condition runs on
+    /// every pass of its line, so one that reads no renamed name is handed back as it is.
+    pub(crate) fn in_scope(&self, map: &SourceMap, offset: usize) -> Cow<'_, Expression> {
+        if !self.heads.iter().any(|head| map.is_renamed(head)) {
+            return Cow::Borrowed(&self.expression);
+        }
+        let visible = map.visible(offset);
         let mut expression = self.expression.clone();
         traversal::walk_expression_mut(&mut expression, &mut |node| {
             let name = match node {
@@ -57,7 +65,7 @@ impl DebugExpression {
                 *name = format!("{}{}", entry.name, &name[head.len()..]);
             }
         });
-        expression
+        Cow::Owned(expression)
     }
 }
 
@@ -108,9 +116,16 @@ pub fn parse(text: &str) -> Result<DebugExpression, ExpressionError> {
         }
     };
     check(&expression)?;
+    let mut heads = Vec::new();
+    traversal::walk_expression_mut(&mut expression.clone(), &mut |node| {
+        if let Expression::Identifier(name, _) | Expression::Call { name, .. } = node {
+            heads.push(scopes::head(name).to_owned());
+        }
+    });
     Ok(DebugExpression {
         source: text.to_owned(),
         expression,
+        heads,
     })
 }
 

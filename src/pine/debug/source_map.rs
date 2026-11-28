@@ -10,6 +10,8 @@
 //! The interpreter's variable table is flat and keeps names after their block ends, so what a
 //! stopped script may show is decided here, from the syntax, never from what the table holds.
 
+use std::collections::HashSet;
+
 use crate::pine::syntax::ast::{DeclarationMode, Expression, Statement};
 use crate::pine::syntax::rename;
 use crate::pine::syntax::traversal;
@@ -105,6 +107,8 @@ pub struct SourceMap {
     scope: Vec<ScopeEntry>,
     /// Lines that declare something that never runs, to say why a breakpoint there is refused.
     declarations: Vec<(usize, NotExecutable)>,
+    /// The script's names that some variable in `scope` is held under another name for.
+    renamed: HashSet<String>,
 }
 
 impl ScopeEntry {
@@ -115,6 +119,11 @@ impl ScopeEntry {
 }
 
 impl SourceMap {
+    /// Whether a variable the script calls `name` is held under another name anywhere.
+    pub(crate) fn is_renamed(&self, name: &str) -> bool {
+        self.renamed.contains(name)
+    }
+
     /// The names in the map are the ones the interpreter's variables carry: a declaration that
     /// shares a name with something else is renamed (`syntax::rename`), and `ScopeEntry::display`
     /// is what the script calls it.
@@ -142,6 +151,10 @@ impl SourceMap {
         offset: usize,
         global: bool,
     ) {
+        let shown = rename::display_name(name);
+        if shown != name {
+            self.renamed.insert(shown.to_owned());
+        }
         self.scope.push(ScopeEntry {
             name: name.to_owned(),
             kind,
