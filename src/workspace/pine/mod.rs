@@ -1,17 +1,18 @@
 //! Pine scripts and built-in indicators on a chart: the views the app and MCP take, and applying, changing and removing them.
 
 pub(in crate::workspace) mod logs;
+mod scripts;
 
 use super::ChartWorkspace;
 use super::chart::Chart;
 use crate::host::pine::subscription::{ChartFeed, ChartRun};
 use crate::model::alert::pine::ChartKey;
 use crate::model::pine::bundled::{self, BundledIndicator};
+use crate::model::pine::command::{NewScript, ScriptChange, ScriptCommand};
 use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Timeframe};
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
 use eframe::egui;
-use std::collections::HashMap;
 
 /// The focused chart's identity, read by the Pine integration (alert subscription + tick loop).
 pub struct PineChartTarget {
@@ -203,18 +204,11 @@ impl ChartWorkspace {
         }
         match copies.first() {
             Some((instance, _)) => {
-                self.change_pine_instance(chart_id, *instance, None, Some(true));
+                self.edit_script(chart_id, &ScriptCommand::show(*instance, true));
                 Ok(IndicatorOutcome::Updated)
             }
             None => self
-                .add_pine_instance_to(
-                    chart_id,
-                    script_id,
-                    indicator.name.text(),
-                    indicator.source,
-                    &HashMap::new(),
-                    true,
-                )
+                .add_script(chart_id, bundled_script(indicator))
                 .map(|_| IndicatorOutcome::Added)
                 .ok_or(IndicatorError::NoSuchChart),
         }
@@ -250,44 +244,6 @@ impl ChartWorkspace {
             }
         }
         Ok(RemoveOutcome::Removed)
-    }
-
-    /// Adds a Pine script to the focused chart, after the ones already there (the Pine
-    /// Studio's "Add to Chart").
-    pub fn add_pine_on_focused(&mut self, script_id: Option<String>, name: &str, source: &str) {
-        if let Some(id) = self.resolved_focused_id()
-            && let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == id)
-            && chart.takes_indicators()
-        {
-            chart.chart.add_pine_instance(script_id, name, source);
-        }
-    }
-
-    /// Applies a saved script to a market chart for an agent, as the chart's Scripts tab does,
-    /// with the inputs it was given. Undo takes it off again. `None` when the chart is not one
-    /// that takes indicators in this workspace.
-    pub fn add_pine_instance_to(
-        &mut self,
-        chart_id: u64,
-        script_id: String,
-        name: &str,
-        source: &str,
-        inputs: &HashMap<String, crate::pine::compiler::program::InputValue>,
-        visible: bool,
-    ) -> Option<u64> {
-        if !self
-            .charts
-            .iter()
-            .any(|chart| chart.id == chart_id && chart.takes_indicators())
-        {
-            return None;
-        }
-        self.remember_indicators(chart_id);
-        let chart = self.charts.iter_mut().find(|chart| chart.id == chart_id)?;
-        let id = chart.chart.add_pine_instance(Some(script_id), name, source);
-        chart.chart.set_pine_instance_inputs(id, inputs);
-        chart.chart.set_pine_visible(id, visible);
-        Some(id)
     }
 
     /// The chart the indicator picker adds to: the focused market chart, with what is already on
@@ -348,79 +304,18 @@ impl ChartWorkspace {
                 true
             }
             Action::AddScript(_) | Action::AddBundled(_) if !takes_indicators => false,
-            Action::AddScript(script) => self
-                .add_pine_instance_to(
-                    chart_id,
-                    script.id.clone(),
-                    &script.name,
-                    &script.source,
-                    &HashMap::new(),
-                    true,
-                )
-                .is_some(),
+            Action::AddScript(script) => {
+                let script = NewScript::new(Some(script.id.clone()), &script.name, &script.source);
+                self.add_script(chart_id, script).is_some()
+            }
             Action::AddBundled(indicator) => self
-                .add_pine_instance_to(
-                    chart_id,
-                    crate::model::pine::bundled::script_id(indicator),
-                    indicator.name.text(),
-                    indicator.source,
-                    &HashMap::new(),
-                    true,
-                )
+                .add_script(chart_id, bundled_script(indicator))
                 .is_some(),
-            Action::RemoveScript(id) => self.remove_pine_instance_from(chart_id, *id),
+            Action::RemoveScript(id) => self
+                .edit_script(chart_id, &ScriptCommand::Remove(*id))
+                .is_some(),
             _ => false,
         }
-    }
-
-    /// Changes an applied script's inputs and/or visibility. Returns whether anything differed;
-    /// only then does it take an undo step.
-    pub fn change_pine_instance(
-        &mut self,
-        chart_id: u64,
-        instance_id: u64,
-        inputs: Option<&HashMap<String, crate::pine::compiler::program::InputValue>>,
-        visible: Option<bool>,
-    ) -> Option<bool> {
-        let chart = self.charts.iter().find(|chart| chart.id == chart_id)?;
-        let instance = chart
-            .chart
-            .pine_instances()
-            .iter()
-            .find(|instance| instance.id == instance_id)?;
-        let changed = inputs.is_some_and(|inputs| *inputs != instance.input_values())
-            || visible.is_some_and(|visible| visible != instance.visible);
-        if changed {
-            self.remember_indicators(chart_id);
-            let chart = self.charts.iter_mut().find(|chart| chart.id == chart_id)?;
-            if let Some(inputs) = inputs {
-                chart.chart.set_pine_instance_inputs(instance_id, inputs);
-            }
-            if let Some(visible) = visible {
-                chart.chart.set_pine_visible(instance_id, visible);
-            }
-        }
-        Some(changed)
-    }
-
-    /// Takes an applied script off a chart (its saved source and alerts are left alone). Undo
-    /// brings it back. Returns whether the instance existed.
-    pub fn remove_pine_instance_from(&mut self, chart_id: u64, instance_id: u64) -> bool {
-        let exists = self.charts.iter().any(|chart| {
-            chart.id == chart_id
-                && chart
-                    .chart
-                    .pine_instances()
-                    .iter()
-                    .any(|instance| instance.id == instance_id)
-        });
-        if exists {
-            self.remember_indicators(chart_id);
-            if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
-                chart.chart.remove_pine_instance(instance_id);
-            }
-        }
-        exists
     }
 
     /// The focused chart's identity for the Pine integration (alert subscription creation).
@@ -556,13 +451,24 @@ impl ChartWorkspace {
             }
             settings_popover::Outcome::Apply { inputs, style } => {
                 ui::chart::indicator_strip::set_open_script_popover(ctx, None);
-                if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
-                    chart.chart.set_pine_instance_inputs(instance_id, &inputs);
-                    chart.chart.set_pine_instance_style(instance_id, style);
-                }
+                let change = ScriptChange {
+                    inputs: Some(inputs),
+                    style: Some(style),
+                    ..ScriptChange::default()
+                };
+                self.edit_script(chart_id, &ScriptCommand::Change(instance_id, change));
             }
         }
     }
+}
+
+/// A bundled indicator as a script to put on a chart.
+fn bundled_script(indicator: &BundledIndicator) -> NewScript {
+    NewScript::new(
+        Some(bundled::script_id(indicator)),
+        indicator.name.text(),
+        indicator.source,
+    )
 }
 
 #[cfg(test)]
@@ -570,6 +476,7 @@ mod tests {
     use super::*;
     use crate::model::DataSource;
     use crate::workspace::test_support::empty_workspace;
+    use std::collections::HashMap;
 
     #[test]
     fn agent_script_changes_are_undoable_and_only_real_changes_take_a_step() {
@@ -581,12 +488,14 @@ mod tests {
         let base = workspace.history.steps();
 
         let inputs = HashMap::from([("len".to_owned(), InputValue::Int(50))]);
-        assert_eq!(
-            workspace.add_pine_instance_to(999, "s1".into(), "SMA", "src", &inputs, true),
-            None
-        );
+        let script = NewScript {
+            inputs: inputs.clone(),
+            visible: false,
+            ..NewScript::new(Some("s1".into()), "SMA", "src")
+        };
+        assert_eq!(workspace.add_script(999, script.clone()), None);
         let id = workspace
-            .add_pine_instance_to(chart_id, "s1".into(), "SMA", "src", &inputs, false)
+            .add_script(chart_id, script)
             .expect("market chart");
         let instance = |workspace: &ChartWorkspace| {
             workspace
@@ -603,24 +512,33 @@ mod tests {
         assert_eq!(applied[0].input_values(), inputs);
 
         // Saying what is already true is not a change, so it is not an undo step.
+        let change = |id, inputs: &HashMap<String, InputValue>, visible| {
+            let change = ScriptChange {
+                inputs: Some(inputs.clone()),
+                visible: Some(visible),
+                ..ScriptChange::default()
+            };
+            ScriptCommand::Change(id, change)
+        };
         assert_eq!(
-            workspace.change_pine_instance(chart_id, id, Some(&inputs), Some(false)),
+            workspace.edit_script(chart_id, &change(id, &inputs, false)),
             Some(false)
         );
         assert_eq!(workspace.history.steps(), base + 1);
         assert_eq!(
-            workspace.change_pine_instance(chart_id, 99, None, Some(true)),
+            workspace.edit_script(chart_id, &ScriptCommand::show(99, true)),
             None
         );
         assert_eq!(
-            workspace.change_pine_instance(chart_id, id, Some(&HashMap::new()), Some(true)),
+            workspace.edit_script(chart_id, &change(id, &HashMap::new(), true)),
             Some(true)
         );
         assert!(instance(&workspace)[0].visible);
         assert!(instance(&workspace)[0].inputs.is_empty());
 
-        assert!(workspace.remove_pine_instance_from(chart_id, id));
-        assert!(!workspace.remove_pine_instance_from(chart_id, id));
+        let remove = ScriptCommand::Remove(id);
+        assert_eq!(workspace.edit_script(chart_id, &remove), Some(true));
+        assert_eq!(workspace.edit_script(chart_id, &remove), None);
         assert!(instance(&workspace).is_empty());
 
         workspace.undo(&eframe::egui::Context::default());
@@ -940,13 +858,13 @@ mod tests {
         let btc = workspace
             .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
             .chart_id;
-        workspace.add_pine_instance_to(
+        workspace.add_script(
             btc,
-            "script".into(),
-            "Mine",
-            "//@version=6\nindicator(\"Mine\")\nplot(close)",
-            &HashMap::new(),
-            true,
+            NewScript::new(
+                Some("script".into()),
+                "Mine",
+                "//@version=6\nindicator(\"Mine\")\nplot(close)",
+            ),
         );
         let mut saved = workspace.persisted();
         saved.charts[0].indicators.show_rsi = true;
@@ -1020,13 +938,13 @@ mod tests {
                 );
             }
             assert_eq!(
-                workspace.add_pine_instance_to(
+                workspace.add_script(
                     market,
-                    "s".into(),
-                    "S",
-                    "//@version=6\nindicator(\"S\")\nplot(close)",
-                    &HashMap::new(),
-                    true,
+                    NewScript::new(
+                        Some("s".into()),
+                        "S",
+                        "//@version=6\nindicator(\"S\")\nplot(close)",
+                    ),
                 ),
                 None
             );
@@ -1115,5 +1033,43 @@ mod tests {
                 .iter()
                 .any(|c| c.id == line && c.indicators.show_bollinger)
         );
+    }
+
+    #[test]
+    fn hiding_reordering_and_pane_buttons_are_undo_steps() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(7);
+        let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let chart_id = workspace.add_chart_for(&btc, &ctx).chart_id;
+        let first = workspace
+            .add_script(chart_id, NewScript::new(None, "A", "plot(close)"))
+            .unwrap();
+        let second = workspace
+            .add_script(chart_id, NewScript::new(None, "B", "plot(close)"))
+            .unwrap();
+        let order = |workspace: &ChartWorkspace| {
+            workspace.charts[0]
+                .chart
+                .pine_instances()
+                .iter()
+                .map(|instance| instance.id)
+                .collect::<Vec<_>>()
+        };
+        let base = workspace.history.steps();
+
+        workspace.toggle_script(chart_id, first);
+        assert!(!workspace.charts[0].chart.pine_instances()[0].visible);
+        assert_eq!(workspace.history.steps(), base + 1);
+
+        let moved = ScriptCommand::MoveTo(second, 0);
+        assert_eq!(workspace.edit_script(chart_id, &moved), Some(true));
+        assert_eq!(order(&workspace), [second, first]);
+        assert_eq!(workspace.edit_script(chart_id, &moved), Some(false));
+        assert_eq!(workspace.history.steps(), base + 2);
+
+        workspace.undo(&ctx);
+        assert_eq!(order(&workspace), [first, second]);
+        workspace.undo(&ctx);
+        assert!(workspace.charts[0].chart.pine_instances()[0].visible);
     }
 }

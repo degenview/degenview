@@ -2,6 +2,7 @@
 //! hand back, the pane buttons, and the own pane an `overlay=false` script draws in.
 
 use super::*;
+use crate::model::pine::command::ScriptCommand;
 use crate::pine::time::bucket::seconds_of;
 
 impl ChartCard {
@@ -36,6 +37,41 @@ impl ChartCard {
     pub fn remove_pine_instance(&mut self, id: u64) {
         self.instances.retain(|instance| instance.id != id);
         self.pine.remove(id);
+    }
+
+    /// Makes the change a person or an agent asked for. Returns whether any script differs.
+    pub fn apply_script_command(&mut self, command: &ScriptCommand) -> bool {
+        let before = self.instances.clone();
+        match command {
+            ScriptCommand::Remove(id) => {
+                self.remove_pine_instance(*id);
+                if self.maximized_pane == Some(*id) {
+                    self.maximized_pane = None;
+                }
+            }
+            ScriptCommand::MoveTo(id, index) => self.move_pine_instance(*id, *index),
+            ScriptCommand::Change(id, change) => {
+                if let Some(inputs) = &change.inputs {
+                    self.set_pine_instance_inputs(*id, inputs);
+                }
+                if let Some(style) = &change.style {
+                    self.set_pine_instance_style(*id, style.clone());
+                }
+                if let Some(visible) = change.visible {
+                    self.set_pine_visible(*id, visible);
+                }
+                if let Some(order) = change.order {
+                    self.set_pine_visual_order(*id, order);
+                }
+            }
+        }
+        self.instances != before
+    }
+
+    /// The changes the card's own controls asked for since the last call, for the workspace to
+    /// make as undo steps.
+    pub fn take_script_commands(&mut self) -> Vec<ScriptCommand> {
+        std::mem::take(&mut self.script_commands)
     }
 
     /// Moves an instance to `index` (clamped); draw order follows list order.
@@ -186,8 +222,8 @@ impl ChartCard {
         self.pine.update(ctx, &chart, &self.instances)
     }
 
-    /// Applies a pane button. Order, collapse and removal act on the script's own instance, so
-    /// there is one list of what is on the chart and in what order.
+    /// Takes a pane button. Order and removal change the chart's scripts, which the workspace does
+    /// (`take_script_commands`); folding and maximizing are the pane's own layout.
     pub(super) fn apply_pane_action(&mut self, id: u64, action: PaneAction) {
         match action {
             PaneAction::MoveUp | PaneAction::MoveDown => {
@@ -205,7 +241,7 @@ impl ChartCard {
                 if let Some(other) = neighbour
                     && let Some(index) = self.instances.iter().position(|i| i.id == other)
                 {
-                    self.move_pine_instance(id, index);
+                    self.script_commands.push(ScriptCommand::MoveTo(id, index));
                     // The next click, before the next frame, sees the new order.
                     if let Some(at) = self.pane_ids.iter().position(|pane| *pane == other) {
                         self.pane_ids.swap(position, at);
@@ -231,12 +267,7 @@ impl ChartCard {
                     self.maximized_pane = Some(id);
                 }
             }
-            PaneAction::Remove => {
-                self.remove_pine_instance(id);
-                if self.maximized_pane == Some(id) {
-                    self.maximized_pane = None;
-                }
-            }
+            PaneAction::Remove => self.script_commands.push(ScriptCommand::Remove(id)),
         }
     }
 }

@@ -21,6 +21,7 @@ use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::chart::template::ApplyScope;
 use crate::model::overlay::{Move, OverlayCommand};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
+use crate::model::pine::command::ScriptCommand;
 use crate::model::session_stats;
 use crate::ui::ContextRequest;
 use crate::ui::chart::context_menu::{self, MenuState, Outcome};
@@ -510,23 +511,12 @@ impl ChartWorkspace {
                 self.settings_state.tab = chart_settings::Tab::Scripts;
                 self.settings_chart = Some(chart_id);
             }
-            Command::PaneToggle(instance) => {
-                let card = &mut self.charts[index].chart;
-                let visible = card
-                    .pine_instances()
-                    .iter()
-                    .find(|candidate| candidate.id == instance)
-                    .is_some_and(|candidate| candidate.visible);
-                card.set_pine_visible(instance, !visible);
-            }
+            Command::PaneToggle(instance) => self.toggle_script(chart_id, instance),
             Command::PaneRemove(instance) => {
-                self.remember_indicators(chart_id);
-                self.charts[index].chart.remove_pine_instance(instance);
+                self.edit_script(chart_id, &ScriptCommand::Remove(instance));
             }
             Command::PaneOrder(instance, order) => {
-                self.charts[index]
-                    .chart
-                    .set_pine_visual_order(instance, order);
+                self.edit_script(chart_id, &ScriptCommand::order(instance, order));
             }
             Command::OpenPineStudio => actions.push(WorkspaceAction::OpenPineScripts),
             Command::PineLogs(instance) => self.open_pine_logs(chart_id, Some(instance)),
@@ -888,6 +878,10 @@ impl ChartWorkspace {
             for moved in self.charts[index].chart.take_alert_moves() {
                 actions.extend(self.move_alert(index, moved));
             }
+            let chart_id = self.charts[index].id;
+            for command in self.charts[index].chart.take_script_commands() {
+                self.edit_script(chart_id, &command);
+            }
         }
         actions
     }
@@ -1076,13 +1070,7 @@ impl ChartWorkspace {
                 indicator.toggle_visible(&mut self.charts[index].indicators);
             }
             TreeAction::ToggleShown(TreeKey::Indicator(IndicatorKey::Script(id))) => {
-                let card = &mut self.charts[index].chart;
-                let visible = card
-                    .pine_instances()
-                    .iter()
-                    .find(|candidate| candidate.id == id)
-                    .is_some_and(|candidate| candidate.visible);
-                card.set_pine_visible(id, !visible);
+                self.toggle_script(chart_id, id);
             }
             TreeAction::ToggleShown(TreeKey::Overlay(id)) => {
                 // One undo step, from `apply_overlay_command` itself.
@@ -1114,8 +1102,7 @@ impl ChartWorkspace {
                 indicator.set_applied(&mut self.charts[index].indicators, false);
             }
             TreeAction::Delete(TreeKey::Indicator(IndicatorKey::Script(id))) => {
-                self.remember_indicators(chart_id);
-                self.charts[index].chart.remove_pine_instance(id);
+                self.edit_script(chart_id, &ScriptCommand::Remove(id));
             }
             TreeAction::Delete(TreeKey::Overlay(id)) => {
                 self.apply_overlay_command(chart_id, OverlayCommand::Remove(id));
@@ -1158,11 +1145,8 @@ impl ChartWorkspace {
             } => {
                 let scripts = self.charts[index].chart.pine_instances();
                 let place = |id: u64| scripts.iter().position(|script| script.id == id);
-                if let Some((from, to)) = place(id).zip(place(over))
-                    && from != to
-                {
-                    self.remember_indicators(chart_id);
-                    self.charts[index].chart.move_pine_instance(id, to);
+                if let Some(to) = place(over) {
+                    self.edit_script(chart_id, &ScriptCommand::MoveTo(id, to));
                 }
             }
             TreeAction::Drop { .. } => {}

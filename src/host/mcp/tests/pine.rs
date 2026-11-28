@@ -3,6 +3,7 @@ use super::*;
 use crate::host::pine::subscription::PineSubscriptionHost;
 use crate::mcp::types::PineAlertFailureStage;
 use crate::model::Kline;
+use crate::model::pine::command::NewScript;
 
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::pine::instance::{PineInstance, StoredInput};
@@ -368,8 +369,8 @@ fn a_workspace_lists_its_applied_scripts_and_says_when_they_have_not_run() {
     let chart = workspace
         .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
         .chart_id;
-    workspace.add_pine_on_focused(Some("s1".into()), "One", STRATEGY_SOURCE);
-    workspace.add_pine_on_focused(Some("s1".into()), "One", STRATEGY_SOURCE);
+    workspace.add_script_on_focused(NewScript::new(Some("s1".into()), "One", STRATEGY_SOURCE));
+    workspace.add_script_on_focused(NewScript::new(Some("s1".into()), "One", STRATEGY_SOURCE));
 
     let list = list_chart_pine(&workspace, chart).unwrap();
     assert_eq!(

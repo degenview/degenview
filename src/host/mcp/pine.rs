@@ -15,6 +15,7 @@ use crate::mcp::types::{
     ScriptAlertState, ScriptStatus, TradeDirection,
 };
 use crate::model::alert::pine::{ChartKey, PineAlertSubscription, ScriptFailure};
+use crate::model::pine::command::{NewScript, ScriptChange, ScriptCommand};
 use crate::store::SharedStore;
 use crate::workspace::{ChartWorkspace, PineInstanceView};
 use std::sync::Mutex;
@@ -356,21 +357,19 @@ pub fn add_pine_instance(
     script: &ScriptToApply,
     visible: bool,
 ) -> Result<PineInstanceChangeResult, McpError> {
-    let id = workspace
-        .add_pine_instance_to(
-            chart_id,
-            script.script_id.clone(),
-            &script.name,
-            &script.source,
-            &script.inputs,
-            visible,
-        )
-        .ok_or_else(|| {
-            McpError::NotFound(format!(
-                "No chart {chart_id} in workspace {}",
-                workspace.id()
-            ))
-        })?;
+    let new = NewScript {
+        script_id: Some(script.script_id.clone()),
+        name: script.name.clone(),
+        source: script.source.clone(),
+        inputs: script.inputs.clone(),
+        visible,
+    };
+    let id = workspace.add_script(chart_id, new).ok_or_else(|| {
+        McpError::NotFound(format!(
+            "No chart {chart_id} in workspace {}",
+            workspace.id()
+        ))
+    })?;
     instance_change(workspace, chart_id, id, InstanceStatus::Added)
 }
 
@@ -435,8 +434,13 @@ pub fn update_pine_instance(
             "changing its inputs",
         )?;
     }
+    let change = ScriptChange {
+        inputs,
+        visible,
+        ..ScriptChange::default()
+    };
     let changed = workspace
-        .change_pine_instance(chart_id, instance_id, inputs.as_ref(), visible)
+        .edit_script(chart_id, &ScriptCommand::Change(instance_id, change))
         .ok_or_else(|| {
             McpError::NotFound(format!(
                 "No script instance {instance_id} on chart {chart_id}"
@@ -467,7 +471,7 @@ pub fn remove_pine_instance(
         instance_id,
         "removing it",
     )?;
-    workspace.remove_pine_instance_from(chart_id, instance_id);
+    workspace.edit_script(chart_id, &ScriptCommand::Remove(instance_id));
     instance_change(workspace, chart_id, instance_id, InstanceStatus::Removed)
 }
 
