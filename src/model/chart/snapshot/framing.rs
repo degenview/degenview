@@ -290,22 +290,58 @@ impl Framing {
         (visible, visible as f64 + free)
     }
 
+    /// The least and most the centre of `slots` slots may be, `visible` of them bars' own, for
+    /// one of the chart's bars to stay in view: the same limits a picture's offset keeps
+    /// ([`HorizontalViewport::keeping_a_bar`]).
+    fn centres_with_a_bar(base: &Base, visible: usize, slots: f64) -> (f64, f64) {
+        let centre_at = |right_offset: f64| {
+            (base.total_bars + base.reserved) as f64 - right_offset - slots / 2.0
+        };
+        let furthest = HorizontalViewport {
+            visible,
+            right_offset: f64::MIN,
+        }
+        .keeping_a_bar(base.total_bars);
+        let oldest = HorizontalViewport {
+            visible,
+            right_offset: f64::MAX,
+        }
+        .keeping_a_bar(base.total_bars);
+        (
+            centre_at(oldest.right_offset),
+            centre_at(furthest.right_offset),
+        )
+    }
+
+    /// The centre before any move: the capture's, brought no further than needed to keep a bar
+    /// in view. Narrowed about its centre, a chart panned into empty space could lose them all.
+    fn resting_centre(base: &Base, visible: usize, slots: f64) -> f64 {
+        let (least, most) = Self::centres_with_a_bar(base, visible, slots);
+        base.start_bar_center.max(least).min(most)
+    }
+
     /// How far the view may go with these dials, for a composition whose plot is `plot` points.
     ///
     /// Across: not more than a quarter of the starting view either way, the first slot shown not
     /// before the oldest loaded bar, the last not more than `reserved` slots past the newest. A
     /// start that already shows more (a short history, a chart scrolled into empty space) keeps
-    /// what it shows, so the centre is always inside the bounds. Down: a quarter of the starting
-    /// price range.
+    /// what it shows, so the centre is always inside the bounds. Never past the last bar leaving
+    /// the view. Down: a quarter of the starting price range.
     pub fn bounds(&self, base: &Base, plot: Vec2) -> Bounds {
-        let (_, slots) = self.slots(base, plot);
+        let (visible, slots) = self.slots(base, plot);
+        let centre = Self::resting_centre(base, visible, slots);
+        let (least, most) = Self::centres_with_a_bar(base, visible, slots);
         let reach = POSITION_LIMIT * base.bars_in_view;
         let started_left = base.start_bar_center - base.bars_in_view / 2.0;
         let started_right = base.start_bar_center + base.bars_in_view / 2.0;
         let oldest = started_left.min(0.0);
         let newest = started_right.max((base.total_bars + base.reserved) as f64);
-        let low = (oldest - base.start_bar_center + slots / 2.0).clamp(-reach, 0.0);
-        let high = (newest - base.start_bar_center - slots / 2.0).clamp(0.0, reach);
+        let low = (oldest - centre + slots / 2.0)
+            .max(least - centre)
+            .clamp(-reach, 0.0);
+        let high = (newest - centre - slots / 2.0)
+            .min(most - centre)
+            .clamp(0.0, reach);
         Bounds {
             dx: (low, high),
             dy: (-POSITION_LIMIT, POSITION_LIMIT),
@@ -392,8 +428,8 @@ impl Framing {
             finite_or(self.dy, 0.0).clamp(bounds.dy.0 - RUBBER_REACH, bounds.dy.1 + RUBBER_REACH);
 
         let (visible, slots) = self.slots(base, plot);
-        let centre = base.start_bar_center + dx;
-        // Narrowed about its centre, a chart panned into empty space could lose every bar.
+        let centre = Self::resting_centre(base, visible, slots) + dx;
+        // The rubber band may pull past the limits, never past the last bar leaving the view.
         let horizontal = HorizontalViewport {
             visible,
             right_offset: (base.total_bars + base.reserved) as f64 - centre - slots / 2.0,
