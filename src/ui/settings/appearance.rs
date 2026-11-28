@@ -2,6 +2,7 @@
 
 use crate::i18n::{Locale, Preference, tr};
 use crate::model::tab::title::TabTitleStyle;
+use crate::model::timezone::ChartTimezone;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::theme::{self, AppTheme};
@@ -147,6 +148,41 @@ pub fn language(ui: &mut egui::Ui, current: Preference) -> Option<Preference> {
                     &hint,
                 ) {
                     picked = Some(choices[index]);
+                }
+            },
+        );
+    });
+    picked.filter(|choice| *choice != current)
+}
+
+/// Width of the chart time-zone pull-down: the longest zone label and its chevrons.
+const TIMEZONE_PICKER_WIDTH: f32 = 220.0;
+
+/// The chart time-zone card: "Same as system" and fixed UTC offsets. Returns the choice made this
+/// frame.
+pub fn timezone(ui: &mut egui::Ui, current: ChartTimezone) -> Option<ChartTimezone> {
+    ui.add_space(22.0);
+    let labels: Vec<String> = ChartTimezone::ALL
+        .iter()
+        .map(|tz| tz.label().to_owned())
+        .collect();
+    let selected = ChartTimezone::ALL
+        .iter()
+        .position(|tz| *tz == current)
+        .unwrap_or(0);
+    let mut picked = None;
+    super::window::section(ui, tr!("Time zone"), None, |ui| {
+        super::card::card_reserving(
+            ui,
+            Icon::Clock,
+            tr!("Chart time zone"),
+            Some(tr!("Time zone shown on chart scales and tooltips.")),
+            TIMEZONE_PICKER_WIDTH,
+            |ui| {
+                if let Some(index) =
+                    kit::menu_picker(ui, TIMEZONE_PICKER_WIDTH, &labels, selected, true)
+                {
+                    picked = Some(ChartTimezone::ALL[index]);
                 }
             },
         );

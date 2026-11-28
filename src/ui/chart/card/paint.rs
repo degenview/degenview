@@ -463,10 +463,11 @@ impl ChartCard {
 
     /// A bar's time as the chart writes it: to the second on a candle shorter than a minute.
     pub(super) fn time_text(&self, epoch_ms: i64) -> String {
+        let offset_secs = crate::model::timezone::effective_offset_secs(epoch_ms);
         if self.shows_seconds() {
-            format::timestamp_seconds(epoch_ms)
+            format::timestamp_seconds_with_offset(epoch_ms, offset_secs)
         } else {
-            format::timestamp(epoch_ms)
+            format::timestamp_with_offset(epoch_ms, offset_secs)
         }
     }
 

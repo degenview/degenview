@@ -132,8 +132,14 @@ impl TableFeed {
             return String::new();
         };
         match column {
-            Column::Time if self.seconds => format::timestamp_seconds(kline.open_time),
-            Column::Time => format::timestamp(kline.open_time),
+            Column::Time if self.seconds => format::timestamp_seconds_with_offset(
+                kline.open_time,
+                crate::model::timezone::effective_offset_secs(kline.open_time),
+            ),
+            Column::Time => format::timestamp_with_offset(
+                kline.open_time,
+                crate::model::timezone::effective_offset_secs(kline.open_time),
+            ),
             Column::Open => price.format(kline.open),
             Column::High => price.format(kline.high),
             Column::Low => price.format(kline.low),

@@ -71,6 +71,19 @@ pub fn timestamp_seconds(epoch_ms: i64) -> String {
     )
 }
 
+/// `YYYY-MM-DD HH:MM` shifted by `offset_secs` east of UTC.
+pub fn timestamp_with_offset(epoch_ms: i64, offset_secs: i64) -> String {
+    let mut text = timestamp_seconds_with_offset(epoch_ms, offset_secs);
+    text.truncate("YYYY-MM-DD HH:MM".len());
+    text
+}
+
+/// `YYYY-MM-DD HH:MM:SS` shifted by `offset_secs` east of UTC, for candles shorter than a minute.
+pub fn timestamp_seconds_with_offset(epoch_ms: i64, offset_secs: i64) -> String {
+    let shifted_ms = epoch_ms.saturating_add(offset_secs.saturating_mul(1_000));
+    timestamp_seconds(shifted_ms)
+}
+
 /// Reads a UTC date and time the way [`timestamp`] writes it: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or
 /// `YYYY-MM-DD HH:MM:SS` (a `T` may stand for the space and a trailing `Z` is ignored). Returns
 /// epoch milliseconds, or `None` for anything that is not a real calendar moment.
@@ -284,6 +297,21 @@ mod tests {
     fn timestamp_is_utc() {
         assert_eq!(timestamp(0), "1970-01-01 00:00");
         assert_eq!(timestamp(1_700_000_000_000), "2023-11-14 22:13");
+    }
+
+    #[test]
+    fn timestamp_with_offset_shifts_by_seconds() {
+        let ms = 1_700_000_022_000;
+        assert_eq!(timestamp_with_offset(ms, 0), "2023-11-14 22:13");
+        assert_eq!(timestamp_with_offset(ms, 3 * 3_600), "2023-11-15 01:13");
+        assert_eq!(
+            timestamp_seconds_with_offset(ms, 5 * 3_600 + 1_800),
+            "2023-11-15 03:43:42"
+        );
+        assert_eq!(
+            timestamp_seconds_with_offset(ms, -5 * 3_600),
+            "2023-11-14 17:13:42"
+        );
     }
 
     #[test]

@@ -27,6 +27,7 @@ pub mod pinned_timeframes;
 pub mod portfolio;
 pub mod scripts;
 pub mod sync;
+pub mod timezone;
 pub mod watchlist;
 pub mod webhook;
 

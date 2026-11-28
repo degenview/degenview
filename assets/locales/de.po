@@ -21095,3 +21095,61 @@ msgstr "Dieses Flatpak kann die Daten von TradingView nicht selbst suchen."
 
 msgid "Choose TradingView’s data folder: usually snap/tradingview/current/.config/TradingView or .config/TradingView in your home folder. Press Ctrl+H to see hidden folders."
 msgstr "Wähle den Datenordner von TradingView: meist snap/tradingview/current/.config/TradingView oder .config/TradingView in deinem persönlichen Ordner. Drücke Strg+H, um versteckte Ordner zu sehen."
+
+
+msgid "Time zone"
+msgstr "Zeitzone"
+
+msgid "Chart time zone"
+msgstr "Chart-Zeitzone"
+
+msgid "Time zone shown on chart scales and tooltips."
+msgstr "Zeitzone, die auf Chart-Skalen und Tooltips angezeigt wird."
+
+msgid "Same as system"
+msgstr "Wie im System"
+
+msgid "(UTC+0) UTC"
+msgstr "(UTC+0) UTC"
+
+msgid "(UTC-8) Los Angeles"
+msgstr "(UTC-8) Los Angeles"
+
+msgid "(UTC-6) Chicago"
+msgstr "(UTC-6) Chicago"
+
+msgid "(UTC-5) New York"
+msgstr "(UTC-5) New York"
+
+msgid "(UTC-3) São Paulo"
+msgstr "(UTC-3) São Paulo"
+
+msgid "(UTC+0) London"
+msgstr "(UTC+0) London"
+
+msgid "(UTC+1) Frankfurt"
+msgstr "(UTC+1) Frankfurt"
+
+msgid "(UTC+2) Athens"
+msgstr "(UTC+2) Athen"
+
+msgid "(UTC+3) Moscow"
+msgstr "(UTC+3) Moskau"
+
+msgid "(UTC+4) Dubai"
+msgstr "(UTC+4) Dubai"
+
+msgid "(UTC+5:30) Mumbai"
+msgstr "(UTC+5:30) Mumbai"
+
+msgid "(UTC+7) Bangkok"
+msgstr "(UTC+7) Bangkok"
+
+msgid "(UTC+8) Singapore"
+msgstr "(UTC+8) Singapur"
+
+msgid "(UTC+9) Tokyo"
+msgstr "(UTC+9) Tokio"
+
+msgid "(UTC+10) Sydney"
+msgstr "(UTC+10) Sydney"
