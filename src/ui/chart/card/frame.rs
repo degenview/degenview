@@ -575,7 +575,8 @@ impl ChartCard {
                     );
                 }
             }
-            if !collapsed {
+            // A script that still waits for its inputs has drawn nothing: not even a scale.
+            if !collapsed && self.pending_script(*id).is_none() {
                 let pane_tooltip = draw_script_pane(
                     painter,
                     *pane_rect,
@@ -599,11 +600,7 @@ impl ChartCard {
                 canvas::solid(style.scale_line),
             );
             if *id != PREVIEW_INSTANCE {
-                let name = self
-                    .instances
-                    .iter()
-                    .find(|instance| instance.id == *id)
-                    .map_or("", |instance| instance.name.as_str());
+                let name = self.script_name(*id);
                 overlays.pane(
                     painter,
                     layout,

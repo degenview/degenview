@@ -22780,3 +22780,24 @@ msgstr "Будет сохранён как «{name}»."
 
 msgid "The script’s file would land outside the library."
 msgstr "Файл скрипта оказался бы вне библиотеки."
+
+#: src/ui/pine/setup/dialog.rs
+msgid "Confirm Inputs"
+msgstr "Подтверждение входных параметров"
+
+#: src/model/chart/context/mod.rs
+#: src/ui/chart/indicator_strip.rs
+msgid "Reset points…"
+msgstr "Задать точки заново…"
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” time for “{script}”"
+msgstr "Укажите время «{name}» для «{script}»"
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” price for “{script}”"
+msgstr "Укажите цену «{name}» для «{script}»"
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” time and price for “{script}”"
+msgstr "Укажите время и цену «{name}» для «{script}»"

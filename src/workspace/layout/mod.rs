@@ -413,6 +413,8 @@ impl ChartWorkspace {
         self.set_sync(view.sync);
         self.drop_rulers();
         self.history.clear();
+        // Chart ids start over, so a setup would land on another chart.
+        self.script_setups.clear();
         self.layout.active_view_id = Some(view.id);
         self.layout.active_view_name = Some(view.name.clone());
         self.set_baseline();

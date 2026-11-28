@@ -184,7 +184,7 @@ impl PineSettingsPopover {
                 }
             }
             Page::Inputs => {
-                for edit in inputs::cards(ui, &self.schema, &self.inputs) {
+                for edit in inputs::cards(ui, &self.schema, &self.inputs, |_| true) {
                     values::apply_edit(&mut self.inputs, &self.schema, edit);
                 }
             }

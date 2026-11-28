@@ -412,6 +412,7 @@ impl ChartWorkspace {
     pub(in crate::workspace) fn remove_chart(&mut self, chart_id: u64) {
         self.sync_hub.forget(chart_id);
         self.overlay_hub.forget_chart(chart_id);
+        self.script_setups.forget_chart(chart_id);
         self.charts.retain(|chart| chart.id != chart_id);
         if self.focused == Some(chart_id) {
             self.focused = None;

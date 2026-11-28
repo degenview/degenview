@@ -49,15 +49,29 @@ impl ChartCard {
     ) {
         let line = style.crosshair;
         let caps = self.cursor.caps();
+        // While the chart asks for a script's point, the chart that answers shows only the lines
+        // of what the click sets.
+        let asked = self
+            .setup
+            .pick
+            .as_ref()
+            .filter(|_| crosshair.owner_id == chart_id);
+        let (vertical, horizontal) = asked.map_or((true, true), |pick| {
+            let own_pane = pick.pane.is_some();
+            (
+                pick.axes.time().is_some(),
+                pick.axes.price().is_some() && !own_pane,
+            )
+        });
 
         // Vertical line — every chart draws it at the shared column, through the price chart and
         // on through each script pane under it.
-        if caps.lines && main_visible && !crosshair.frozen {
+        if caps.lines && vertical && main_visible && !crosshair.frozen {
             canvas::vertical(painter, x, (plot.top(), plot.bottom()), line);
         }
         for pane in pane_rects
             .iter()
-            .filter(|_| caps.lines && !crosshair.frozen)
+            .filter(|_| caps.lines && vertical && !crosshair.frozen)
         {
             if pane.height() > crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT {
                 canvas::vertical(painter, x, (pane.top(), pane.bottom()), line);
@@ -65,59 +79,39 @@ impl ChartCard {
         }
 
         // Horizontal line + price pill — only the chart the pointer is over.
-        if main_visible && crosshair.owner_id == chart_id && !crosshair.frozen {
+        if horizontal && main_visible && crosshair.owner_id == chart_id && !crosshair.frozen {
             let y = scale.y(crosshair.price);
             if plot.y_range().contains(y) {
                 if caps.lines {
                     canvas::horizontal(painter, (plot.left(), plot.right()), y, line);
                 }
                 if caps.axis_tags {
-                    let half = style.tag_half_height();
-                    let price_tag = Rect::from_min_max(
-                        Pos2::new(plot.right() + 3.0, y - half),
-                        Pos2::new(rect.right() - 3.0, y + half),
-                    );
-                    painter.rect_filled(price_tag, 3.0, Color32::from_gray(79));
-                    price_text::paint(
-                        painter,
-                        price_tag.center(),
-                        Align2::CENTER_CENTER,
-                        &scale.tag_label(self.appearance.price_format(), crosshair.price),
-                        style.price_font(),
-                        Color32::WHITE,
-                    );
+                    let label = scale.tag_label(self.appearance.price_format(), crosshair.price);
+                    paint_value_tag(painter, (plot.right(), rect.right()), y, &label, style);
                 }
             }
         }
 
         let raw_index = ((x - plot.left()) / slot_width - lead).floor() as isize;
-        let Some((index, candle)) = usize::try_from(raw_index)
+        let bar = usize::try_from(raw_index)
             .ok()
-            .and_then(|index| candles.get(index).map(|candle| (index, candle)))
-        else {
+            .and_then(|index| candles.get(index).map(|candle| (index, candle)));
+        // A point can be picked where there is no bar yet: its time is shown there too.
+        let time = bar.map(|(_, candle)| candle.open_time).or_else(|| {
+            asked?;
+            let times = TimeIndex::new(candles, self.bar_calendar());
+            Some(times.time_at(raw_index as f64))
+        });
+        if let Some(time_ms) = time
+            && caps.axis_tags
+            && vertical
+            && !crosshair.frozen
+        {
+            self.paint_time_tag(painter, plot, rect, x, time_ms, style);
+        }
+        let Some((index, candle)) = bar else {
             return;
         };
-
-        if caps.axis_tags && !crosshair.frozen {
-            let date = self.time_text(candle.open_time);
-            let time_tag_width = self.time_tag_width(style);
-            let time_tag = Rect::from_center_size(
-                Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
-                Vec2::new(time_tag_width, style.time_axis_height() - 6.0),
-            )
-            .intersect(Rect::from_min_max(
-                Pos2::new(plot.left(), plot.bottom()),
-                Pos2::new(plot.right(), rect.bottom()),
-            ));
-            painter.rect_filled(time_tag, 3.0, Color32::from_gray(79));
-            painter.text(
-                time_tag.center(),
-                Align2::CENTER_CENTER,
-                date,
-                style.time_font(),
-                Color32::WHITE,
-            );
-        }
 
         // The header covers the plot's top, so the readouts start under it.
         let below_header = self.below_header(plot);
@@ -175,6 +169,34 @@ impl ChartCard {
                 );
             }
         }
+    }
+
+    /// The time `time_ms` on the time axis, at `x`. `rect` is the chart above its script panes.
+    pub(super) fn paint_time_tag(
+        &self,
+        painter: &egui::Painter,
+        plot: Rect,
+        rect: Rect,
+        x: f32,
+        time_ms: i64,
+        style: &CanvasStyle,
+    ) {
+        let time_tag = Rect::from_center_size(
+            Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
+            Vec2::new(self.time_tag_width(style), style.time_axis_height() - 6.0),
+        )
+        .intersect(Rect::from_min_max(
+            Pos2::new(plot.left(), plot.bottom()),
+            Pos2::new(plot.right(), rect.bottom()),
+        ));
+        painter.rect_filled(time_tag, 3.0, Color32::from_gray(79));
+        painter.text(
+            time_tag.center(),
+            Align2::CENTER_CENTER,
+            self.time_text(time_ms),
+            style.time_font(),
+            Color32::WHITE,
+        );
     }
 
     /// The box of values for the bar under the crosshair, in the plot's top-left corner.
@@ -459,4 +481,28 @@ fn paint_ohlc_readout(
         painter.galley(at, galley, color);
     }
     boxed.bottom()
+}
+
+/// A value on the price axis, which runs from `axis.0` to `axis.1`, at height `y`.
+pub(super) fn paint_value_tag(
+    painter: &egui::Painter,
+    axis: (f32, f32),
+    y: f32,
+    label: &str,
+    style: &CanvasStyle,
+) {
+    let half = style.tag_half_height();
+    let tag = Rect::from_min_max(
+        Pos2::new(axis.0 + 3.0, y - half),
+        Pos2::new(axis.1 - 3.0, y + half),
+    );
+    painter.rect_filled(tag, 3.0, Color32::from_gray(79));
+    price_text::paint(
+        painter,
+        tag.center(),
+        Align2::CENTER_CENTER,
+        label,
+        style.price_font(),
+        Color32::WHITE,
+    );
 }

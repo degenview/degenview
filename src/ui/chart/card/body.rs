@@ -196,10 +196,12 @@ impl ChartCard {
         // or picked.
         let held = self.pointer_is_held(layout.main_visible, replay.selecting);
         let zooming = self.zoom_is_live(layout.main_visible, replay.selecting);
+        // A script's point being picked takes the clicks: nothing is drawn or selected.
+        let picking = self.picking_point(drawing.tool, replay.selecting || held || zooming);
         if layout.main_visible
             && let Some(view) = &view
         {
-            if replay.selecting || held {
+            if replay.selecting || held || picking {
                 self.layer.clear_hover();
             } else {
                 self.layer.update(
@@ -220,7 +222,7 @@ impl ChartCard {
             self.handle_zoom(ui, response, view.as_ref(), &regions, bars.len(), zooming);
         // A range being picked (replay start, Pine Logs) has the drag to itself: no stroke over the
         // bars it selects, and one begun before the pick started is let go.
-        let marks_allowed = layout.main_visible && !held && !replay.selecting;
+        let marks_allowed = layout.main_visible && !held && !replay.selecting && !picking;
         if !marks_allowed {
             let now = ui.input(|input| input.time);
             self.demo.end(now);
@@ -241,7 +243,7 @@ impl ChartCard {
         }
         // Not while a drawing tool is armed: its press places anchors and drags out shapes, which
         // the drawing layer (run above, before this) has already begun by the time a hold shows.
-        if layout.main_visible && !held && drawing.tool == crate::model::Tool::Cursor {
+        if layout.main_visible && !held && !picking && drawing.tool == crate::model::Tool::Cursor {
             let blocked =
                 replay.selecting || self.layer.claims_drag() || self.demonstration_claims_drag();
             self.handle_hold(ui, response, plot, blocked);
@@ -593,6 +595,21 @@ impl ChartCard {
             },
             bars.len(),
         );
+        let taken = replay.selecting
+            || self.pointer_is_held(layout.main_visible, replay.selecting)
+            || self.zoom_is_live(layout.main_visible, replay.selecting);
+        if self.picking_point(drawing.tool, taken) {
+            self.handle_point_pick(
+                ui,
+                &response,
+                &painter,
+                &layout,
+                &view,
+                &projection,
+                drawing.magnet,
+                chart_id,
+            );
+        }
         let time = self.takes_part_in_sync(source).then(|| TimeAxis::new(bars));
         body::report_hover(&mut pointer, &response, plot, &view, &projection, time);
 

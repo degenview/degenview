@@ -4,6 +4,7 @@ use super::ChartWorkspace;
 use super::chart::displayed_candles;
 use crate::host::paper::PaperHost;
 use crate::lock::lock;
+use crate::model::cursor::CursorMode;
 use crate::model::watchlist::WatchlistError;
 use crate::model::{
     ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, Tool,
@@ -322,6 +323,9 @@ impl ChartWorkspace {
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
         let mut drawing_alert: Option<(u64, f64)> = None;
+        self.reconcile_setups();
+        // The chart a script's point is being picked on answers with a crosshair.
+        let asking_chart = self.script_setups.asking_chart();
         let drawing_defaults = self.drawing_templates().defaults().clone();
         let drawing_preview: Option<(u64, Drawing)> = self.tools.previewed_draft();
         let mut drawing_escape = false;
@@ -489,6 +493,9 @@ impl ChartWorkspace {
                                         }
                                         chart.chart.set_series_cutoff(replay_ms);
                                         chart.chart.set_timeframe(timeframe);
+                                        chart
+                                            .chart
+                                            .set_setup_view(self.script_setups.view(chart_id));
                                         let countdown = chart.bar_countdown(
                                             timeframe,
                                             replay_ms.is_some(),
@@ -589,6 +596,11 @@ impl ChartWorkspace {
                                                     .map(|(_, draft)| draft),
                                             );
                                             chart.chart.set_zoom_armed(zoom_armed);
+                                            let cursor = if asking_chart == Some(chart_id) {
+                                                CursorMode::Cross
+                                            } else {
+                                                cursor
+                                            };
                                             chart.chart.set_cursor_mode(cursor);
                                             chart.chart.set_values_tooltip(values_tooltip);
                                             chart.chart.set_snapshot_select(selecting_portion);
@@ -913,6 +925,10 @@ impl ChartWorkspace {
         for (chart_id, drawing) in drawing_commands {
             self.apply_drawing_commands(chart_id, drawing);
         }
+        let setup_charts: Vec<u64> = self.charts.iter().map(|chart| chart.id).collect();
+        for chart_id in setup_charts {
+            self.apply_setup_events(chart_id);
+        }
         self.apply_broker_overlay_actions(live_actions);
         if let Some((chart_id, side)) = live_trade
             && let Some(index) = self.chart_index(chart_id)
@@ -999,11 +1015,27 @@ impl ChartWorkspace {
             && !self.context_menu_open()
             && !self.sheet_over_charts()
         {
-            if self.replay.is_selecting_start() {
-                self.replay.cancel_selection();
-            } else if self.context.logs.picking {
-                self.context.logs.picking = false;
-            } else {
+            self.escape_over_charts(ui.ctx());
+        }
+    }
+
+    /// One press of Esc that no drawing or menu took lets go of one thing, the one taken up last:
+    /// a pick of bars, a tool in hand, a script's setup, then the cursor mode or the selection.
+    pub(in crate::workspace) fn escape_over_charts(&mut self, ctx: &egui::Context) {
+        if self.replay.is_selecting_start() {
+            self.replay.cancel_selection();
+        } else if self.context.logs.picking {
+            self.context.logs.picking = false;
+        } else if !self.tools.put_down() {
+            // A setup is given up for good, so an Esc meant for something on top of the chart
+            // must not reach it.
+            let covered = self.indicator_picker.is_open()
+                || self.symbol_picker.is_open()
+                || self.script_popover.is_some()
+                || self.settings_chart.is_some()
+                || ctx.egui_wants_keyboard_input()
+                || egui::Popup::is_any_open(ctx);
+            if covered || !self.cancel_setup() {
                 self.tools.escape();
             }
         }

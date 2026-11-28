@@ -379,6 +379,7 @@ fn instance_changed(status: InstanceStatus, instance_id: &str) -> McpReply {
     McpReply::PineInstanceChanged(Box::new(crate::mcp::types::PineInstanceChangeResult {
         status,
         instance_id: instance_id.into(),
+        confirm_inputs_at_default: Vec::new(),
         chart: AppliedPineList {
             workspace_id: "1".into(),
             chart_id: "2".into(),

@@ -427,6 +427,10 @@ pub struct PineInstanceChangeResult {
     /// `added`, `updated`, `unchanged` or `removed`.
     pub status: InstanceStatus,
     pub instance_id: String,
+    /// For an added script: the inputs it marks `confirm` that got no value and run at their
+    /// defaults (the app would have asked a person for them).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub confirm_inputs_at_default: Vec<String>,
     /// The scripts on the chart afterwards. A script runs once its chart draws it, so a new or
     /// changed one reads `not_run` until then.
     pub chart: AppliedPineList,

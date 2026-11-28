@@ -29,6 +29,9 @@ pub struct ScriptToApply {
     pub name: String,
     pub source: String,
     pub inputs: HashMap<String, InputValue>,
+    /// The inputs the script marks `confirm` that the caller gave no value. The app would ask a
+    /// person for these; an agent's add runs them at their defaults.
+    pub unconfirmed: Vec<String>,
 }
 
 /// Resolves the script to apply: the saved text (never the draft, as "Add to Chart" does) of an
@@ -61,6 +64,18 @@ pub fn script_to_apply(
         return Err(not_applicable());
     }
     let changes = parse_input_args(&program.input_schema, args)?;
+    let unconfirmed = program
+        .input_schema
+        .inputs
+        .iter()
+        .filter(|input| input.confirm)
+        .filter(|input| {
+            !changes
+                .iter()
+                .any(|(id, value)| *id == input.id && value.is_some())
+        })
+        .map(|input| input.id.clone())
+        .collect();
     let mut inputs = HashMap::new();
     merge_input_changes(&program.input_schema, &mut inputs, changes);
     Ok(ScriptToApply {
@@ -68,6 +83,7 @@ pub fn script_to_apply(
         name: script.name,
         source: script.source,
         inputs,
+        unconfirmed,
     })
 }
 

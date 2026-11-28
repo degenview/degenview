@@ -438,6 +438,7 @@ fn a_script_pane_menu_acts_on_its_instance() {
     pane.target = Target::Pane { instance: 4 };
     let mut facts = facts();
     facts.pane = Some(PaneFacts {
+        has_points: false,
         name: "RSI".to_owned(),
         visible: true,
         order: VisualOrder::Front,

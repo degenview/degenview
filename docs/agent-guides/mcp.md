@@ -121,7 +121,8 @@ entry and `McpCommand::domain` arm), its arms in the app's `run_mcp_command` and
 - `degenview_list_pine_alerts` reports `state` as stored and, beside it, `cannot_run` from
   `PineSubscriptionHost::failure` for an active alert whose script does not compile or stopped with
   a runtime error. Absent also means the app has not run it yet (its chart not open since launch).
-- Scripts on charts: `ChartWorkspace::{add_script, edit_script}` (take the undo step); validate
+- Scripts on charts: `ChartWorkspace::{insert_script, edit_script}` (take the undo step; never
+  `add_script`, which asks a person for `confirm` inputs); validate
   scripts and inputs
   with `mcp::pine` before queuing; apply only saved text, never the draft.
 - Pine edits: revision-checked `mcp::pine::{update_draft,save_script}` on the app thread

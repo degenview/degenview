@@ -57,7 +57,7 @@ when the chart already has an instance (a bundled indicator can be added again).
 `Action` (`Add`, `AddScript`, `AddBundled`) that `ChartWorkspace::apply_indicator_action` applies as
 one undo step; it refuses every add on a chart that takes no indicators (taking one off is still
 allowed), so any surface can call it, as the MCP tools and Pine Studio's "Add to Chart" do through
-`apply_indicator`, `add_script` and `add_script_on_focused`. Replacing a chart's market with one
+`apply_indicator`, `insert_script` and `add_script_on_focused`. Replacing a chart's market with one
 that takes none removes its indicators and scripts in the same undo step as the replacement, and a layout
 saved before this rule drops them when it opens.
 

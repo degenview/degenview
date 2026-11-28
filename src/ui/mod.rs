@@ -34,6 +34,7 @@ pub use chart::card::take_table_cell_selected;
 pub use chart::card::{
     ChartCard, ChartCardAction, CrosshairInfo, Scrolled, SeriesLine, WatchlistMembership,
 };
+pub use chart::card::{PendingScript, PickView, SetupEvent, SetupView};
 pub use chart::card::{SnapshotError, SnapshotFrame};
 pub use chart::card::{ViewMove, ViewStep};
 pub use drawing::layer::{DrawingFrame, LinkRequest};

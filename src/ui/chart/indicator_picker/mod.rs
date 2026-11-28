@@ -174,6 +174,10 @@ impl IndicatorPicker {
         self.open
     }
 
+    pub fn close(&mut self) {
+        self.open = false;
+    }
+
     pub fn open(&mut self) {
         self.open = true;
         self.query.clear();

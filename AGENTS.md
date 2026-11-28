@@ -28,6 +28,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
 | Recording a tutorial or demo video: screen capture, voice-over, subtitles | [Tutorial videos](tools/tutorial-video/README.md) |
 | Adding an indicator to a chart: the toolbar's Indicators button, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
+| Inputs set by clicking the chart (`confirm = true`, "Reset points…", Confirm Inputs, script points) | [Interactive inputs](docs/interactive-inputs.md) |
 | User-defined functions or methods, overloads, call resolution, or the Pine type checker | [User-defined methods](docs/pine-user-methods.md) |
 | Editor colours, syntax roles, editor themes or fonts | [Editor themes](docs/editor-themes.md) |
 | Colour swatches in the Pine editor, the inline colour picker, or `color.*` rewriting | [Pine colour picker](docs/pine-color-picker.md) |

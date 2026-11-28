@@ -2,6 +2,7 @@
 
 pub(in crate::workspace) mod logs;
 mod scripts;
+pub mod setup;
 
 use super::ChartWorkspace;
 use super::chart::Chart;
@@ -12,6 +13,7 @@ use crate::model::pine::command::{NewScript, ScriptChange, ScriptCommand};
 use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Timeframe};
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
+use crate::workspace::pine::setup::AddOutcome;
 use eframe::egui;
 
 /// The focused chart's identity, read by the Pine integration (alert subscription + tick loop).
@@ -208,7 +210,7 @@ impl ChartWorkspace {
                 Ok(IndicatorOutcome::Updated)
             }
             None => self
-                .add_script(chart_id, bundled_script(indicator))
+                .insert_script(chart_id, bundled_script(indicator))
                 .map(|_| IndicatorOutcome::Added)
                 .ok_or(IndicatorError::NoSuchChart),
         }
@@ -306,14 +308,21 @@ impl ChartWorkspace {
             Action::AddScript(_) | Action::AddBundled(_) if !takes_indicators => false,
             Action::AddScript(script) => {
                 let script = NewScript::new(Some(script.id.clone()), &script.name, &script.source);
-                self.add_script(chart_id, script).is_some()
+                self.add_script(chart_id, script) != AddOutcome::Refused
             }
-            Action::AddBundled(indicator) => self
-                .add_script(chart_id, bundled_script(indicator))
-                .is_some(),
-            Action::RemoveScript(id) => self
-                .edit_script(chart_id, &ScriptCommand::Remove(*id))
-                .is_some(),
+            Action::AddBundled(indicator) => {
+                self.add_script(chart_id, bundled_script(indicator)) != AddOutcome::Refused
+            }
+            Action::RemoveScript(id) => {
+                self.cancel_pending_script(chart_id, *id)
+                    || self
+                        .edit_script(chart_id, &ScriptCommand::Remove(*id))
+                        .is_some()
+            }
+            Action::ResetPoints(id) => {
+                self.reset_points(chart_id, *id);
+                true
+            }
             _ => false,
         }
     }
@@ -493,9 +502,9 @@ mod tests {
             visible: false,
             ..NewScript::new(Some("s1".into()), "SMA", "src")
         };
-        assert_eq!(workspace.add_script(999, script.clone()), None);
+        assert_eq!(workspace.insert_script(999, script.clone()), None);
         let id = workspace
-            .add_script(chart_id, script)
+            .insert_script(chart_id, script)
             .expect("market chart");
         let instance = |workspace: &ChartWorkspace| {
             workspace
@@ -858,7 +867,7 @@ mod tests {
         let btc = workspace
             .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
             .chart_id;
-        workspace.add_script(
+        workspace.insert_script(
             btc,
             NewScript::new(
                 Some("script".into()),
@@ -938,7 +947,7 @@ mod tests {
                 );
             }
             assert_eq!(
-                workspace.add_script(
+                workspace.insert_script(
                     market,
                     NewScript::new(
                         Some("s".into()),
@@ -1042,10 +1051,10 @@ mod tests {
         let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
         let chart_id = workspace.add_chart_for(&btc, &ctx).chart_id;
         let first = workspace
-            .add_script(chart_id, NewScript::new(None, "A", "plot(close)"))
+            .insert_script(chart_id, NewScript::new(None, "A", "plot(close)"))
             .unwrap();
         let second = workspace
-            .add_script(chart_id, NewScript::new(None, "B", "plot(close)"))
+            .insert_script(chart_id, NewScript::new(None, "B", "plot(close)"))
             .unwrap();
         let order = |workspace: &ChartWorkspace| {
             workspace.charts[0]

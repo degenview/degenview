@@ -513,6 +513,7 @@ fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script()
         name: "My script".into(),
         source: SOURCE.into(),
         inputs: Default::default(),
+        unconfirmed: Vec::new(),
     };
     let added = add_pine_instance(&mut workspace, chart_id, &script, true).unwrap();
     let instance: u64 = added.instance_id.parse().unwrap();

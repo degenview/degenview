@@ -117,6 +117,8 @@ pub struct TemplateRow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PaneFacts {
     pub name: String,
+    /// The script names chart points that "Reset points" can ask for again.
+    pub has_points: bool,
     pub visible: bool,
     pub order: VisualOrder,
 }
@@ -228,6 +230,8 @@ pub enum Command {
     ToggleBarCountdown,
     ResetChartView,
     PaneSettings(u64),
+    /// Ask for every point of a pane's script again.
+    PaneResetPoints(u64),
     PaneToggle(u64),
     PaneRemove(u64),
     PaneOrder(u64, VisualOrder),
@@ -874,32 +878,39 @@ fn pane(instance: u64, facts: &Facts) -> Vec<Entry> {
             Item::new(Command::PaneOrder(instance, order), label).checked(pane.order == order),
         )
     };
+    let reset = pane
+        .has_points
+        .then(|| Item::new(Command::PaneResetPoints(instance), tr!("Reset points…")));
+    let mut script = vec![
+        Item::new(
+            Command::PaneSettings(instance),
+            tr!("{name} settings…", name = pane.name),
+        ),
+        Item::new(
+            Command::PaneToggle(instance),
+            if pane.visible {
+                tr!("Hide")
+            } else {
+                tr!("Show")
+            },
+        ),
+        Item::submenu(
+            tr!("Visual order"),
+            vec![
+                order(tr!("As the script declares"), VisualOrder::Script),
+                order(tr!("Bring to front"), VisualOrder::Front),
+                order(tr!("Send behind chart"), VisualOrder::Behind),
+            ],
+        )
+        .glyph(Glyph::Layers),
+        Item::new(Command::PineLogs(instance), tr!("Pine logs")),
+        Item::new(Command::OpenPineStudio, tr!("Open Pine Studio")),
+    ];
+    if let Some(reset) = reset {
+        script.insert(1, reset);
+    }
     grouped(vec![
-        vec![
-            Item::new(
-                Command::PaneSettings(instance),
-                tr!("{name} settings…", name = pane.name),
-            ),
-            Item::new(
-                Command::PaneToggle(instance),
-                if pane.visible {
-                    tr!("Hide")
-                } else {
-                    tr!("Show")
-                },
-            ),
-            Item::submenu(
-                tr!("Visual order"),
-                vec![
-                    order(tr!("As the script declares"), VisualOrder::Script),
-                    order(tr!("Bring to front"), VisualOrder::Front),
-                    order(tr!("Send behind chart"), VisualOrder::Behind),
-                ],
-            )
-            .glyph(Glyph::Layers),
-            Item::new(Command::PineLogs(instance), tr!("Pine logs")),
-            Item::new(Command::OpenPineStudio, tr!("Open Pine Studio")),
-        ],
+        script,
         vec![Item::new(Command::PaneRemove(instance), tr!("Remove from chart")).destructive()],
     ])
 }

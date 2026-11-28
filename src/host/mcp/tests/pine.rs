@@ -119,6 +119,7 @@ fn applying_changing_and_removing_a_script_report_what_happened() {
         name: "I".into(),
         source: SOURCE.into(),
         inputs: Default::default(),
+        unconfirmed: Vec::new(),
     };
     let args = |json: serde_json::Value| -> InputArgs { serde_json::from_value(json).unwrap() };
 
@@ -433,6 +434,7 @@ fn a_script_with_an_armed_alert_keeps_its_inputs_and_stays_on_the_chart() {
         name: "I".into(),
         source: SOURCE.into(),
         inputs: Default::default(),
+        unconfirmed: Vec::new(),
     };
     let id: u64 = add_pine_instance(&mut workspace, chart_id, &script, true)
         .unwrap()

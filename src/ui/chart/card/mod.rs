@@ -6,6 +6,7 @@
 
 use crate::format;
 use crate::host::pine::chart::{ChartFrame, ChartRuns, InstanceStatus, PineLogs, RunRevision};
+use crate::host::pine::declaration::Declarations;
 use crate::i18n::tr;
 use crate::model::chart;
 use crate::model::chart::canvas::{PaneSpec, Window};
@@ -132,6 +133,7 @@ pub use context::ContextRequest;
 use crosshair::{CrosshairBars, READOUT_MARGIN, READOUT_PAD, READOUT_ROW_GAP};
 use live_overlays::LiveOverlays;
 use overlays::TagBand;
+pub use points::{PendingScript, PickView, SetupEvent, SetupView};
 use price_scale::tick_step;
 pub(in crate::ui) use price_scale::{AxisTicks, PriceScale};
 use scripts::{draw_script_pane, pane_labels};
@@ -392,6 +394,12 @@ pub struct ChartCard {
     alert_moves: Vec<lines::AlertMove>,
     /// Pane buttons that change the chart's scripts, until the workspace takes them.
     script_commands: Vec<crate::model::pine::command::ScriptCommand>,
+    /// What the workspace shows of scripts being set up from the chart.
+    setup: SetupView,
+    setup_events: Vec<SetupEvent>,
+    declarations: Declarations,
+    /// The highest instance id this card has given out.
+    last_instance_id: u64,
     /// The alerts whose pill is open (the rest show only their arrow), and the ones deleted from
     /// their pill since the workspace last took them. Never saved.
     alert_open: std::collections::HashSet<crate::model::alert::AlertId>,
@@ -477,6 +485,10 @@ impl Default for ChartCard {
             alert_market: lines::Market::default(),
             alert_moves: Vec::new(),
             script_commands: Vec::new(),
+            setup: SetupView::default(),
+            setup_events: Vec::new(),
+            declarations: Declarations::default(),
+            last_instance_id: 0,
             alert_open: std::collections::HashSet::new(),
             alert_deletes: Vec::new(),
             scale_menu: true,
@@ -818,6 +830,7 @@ mod overlay_card;
 mod overlays;
 mod paint;
 mod pane_divider;
+mod points;
 mod price_scale;
 mod scripts;
 mod snapshot;

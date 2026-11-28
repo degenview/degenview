@@ -1544,6 +1544,7 @@ msgid "Applies to every market. 1× means no borrowing."
 msgstr ""
 
 #: src/ui/pine/settings_popover.rs
+#: src/ui/pine/setup/dialog.rs
 #: src/ui/settings/mcp/security.rs
 #: src/ui/settings/mcp/server.rs
 msgid "Apply"
@@ -2585,6 +2586,7 @@ msgstr ""
 #: src/ui/mcp/activity.rs
 #: src/ui/paper/account_sheet.rs
 #: src/ui/pine/settings_popover.rs
+#: src/ui/pine/setup/dialog.rs
 #: src/ui/portfolio/asset_picker.rs
 #: src/ui/portfolio/cmc_import.rs
 #: src/ui/portfolio/import_preview.rs
@@ -3762,6 +3764,10 @@ msgstr ""
 
 #: src/pine_studio/menu_bar/themes.rs
 msgid "Configure Themes…"
+msgstr ""
+
+#: src/ui/pine/setup/dialog.rs
+msgid "Confirm Inputs"
 msgstr ""
 
 #: src/pine_studio/debug/panel/mod.rs
@@ -13283,6 +13289,11 @@ msgid "Reset colors"
 msgstr ""
 
 #: src/model/chart/context/mod.rs
+#: src/ui/chart/indicator_strip.rs
+msgid "Reset points…"
+msgstr ""
+
+#: src/model/chart/context/mod.rs
 msgid "Reset price scale"
 msgstr ""
 
@@ -14490,6 +14501,18 @@ msgstr ""
 
 #: src/model/alert/pine.rs
 msgid "Set by script"
+msgstr ""
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” price for “{script}”"
+msgstr ""
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” time and price for “{script}”"
+msgstr ""
+
+#: src/workspace/pine/setup/mod.rs
+msgid "Set the “{name}” time for “{script}”"
 msgstr ""
 
 #: src/ui/settings/brokers.rs

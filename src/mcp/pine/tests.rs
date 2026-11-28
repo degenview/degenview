@@ -97,6 +97,24 @@ fn a_default_or_null_is_no_override() {
 }
 
 #[test]
+fn applying_says_which_confirm_inputs_got_no_value() {
+    let (mut store, _root) = temp_store("apply-confirm");
+    let source = "//@version=6\nindicator(\"C\")\n\
+        from = input.time(0, \"From\", confirm = true)\n\
+        level = input.price(0, \"Level\", confirm = true)\n\
+        len = input.int(1, \"N\")\nplot(close)";
+    let script = create(&mut store, "Confirm", ScriptType::Indicator, source);
+    let applied = script_to_apply(
+        &mut store,
+        &script.id,
+        &args(serde_json::json!({"level": 0.0})),
+    )
+    .unwrap();
+    // Given its default, an input is still given.
+    assert_eq!(applied.unconfirmed, ["from"]);
+}
+
+#[test]
 fn only_a_compiling_indicator_or_strategy_can_be_applied() {
     let (mut store, root) = temp_store("apply");
     let good = create(&mut store, "Good", ScriptType::Indicator, SHAPED_INPUTS);

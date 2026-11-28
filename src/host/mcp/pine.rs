@@ -346,6 +346,7 @@ fn instance_change(
     Ok(PineInstanceChangeResult {
         status,
         instance_id: instance_id.to_string(),
+        confirm_inputs_at_default: Vec::new(),
         chart: list_chart_pine(workspace, chart_id)?,
     })
 }
@@ -364,13 +365,15 @@ pub fn add_pine_instance(
         inputs: script.inputs.clone(),
         visible,
     };
-    let id = workspace.add_script(chart_id, new).ok_or_else(|| {
+    let id = workspace.insert_script(chart_id, new).ok_or_else(|| {
         McpError::NotFound(format!(
             "No chart {chart_id} in workspace {}",
             workspace.id()
         ))
     })?;
-    instance_change(workspace, chart_id, id, InstanceStatus::Added)
+    let mut result = instance_change(workspace, chart_id, id, InstanceStatus::Added)?;
+    result.confirm_inputs_at_default = script.unconfirmed.clone();
+    Ok(result)
 }
 
 /// Refuses a change that would retarget or silence a live script alert. The alert host copies an
