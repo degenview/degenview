@@ -3,6 +3,7 @@
 
 use super::overlays::on_color;
 use super::*;
+use crate::ui::chart::series::snap_column;
 
 impl ChartCard {
     /// The price labels and the grid lines behind the series. One tick list serves both, so a
@@ -161,23 +162,43 @@ impl ChartCard {
         }
         let pane_height = plot.height() * 0.22;
         let pane_bottom = plot.bottom();
-        let bar_width = (slot_width * 0.6).clamp(1.0, 8.0);
+        let ppp = painter.ctx().pixels_per_point();
+        // Zoomed out far enough, several bars share a pixel column. Translucent bars painted over
+        // each other would darken it, so a column shows its tallest bar once.
+        let mut column: Option<(Rect, Color32)> = None;
+        let paint = |(bar, color): (Rect, Color32)| {
+            painter.rect_filled(bar, 0.0, theme::with_alpha_byte(color, 89));
+        };
         for (index, candle) in candles.iter().enumerate() {
             if candle.volume <= 0.0 {
                 continue;
             }
             let height = (pane_height * (candle.volume / peak) as f32).max(1.0);
-            let x = x_for(index);
+            let (left, right) = snap_column(x_for(index), slot_width, ppp);
             let color = if candle.is_up() {
                 self.bullish_color()
             } else {
                 self.bearish_color()
             };
             let bar = Rect::from_min_max(
-                Pos2::new(x - bar_width / 2.0, pane_bottom - height),
-                Pos2::new(x + bar_width / 2.0, pane_bottom),
+                Pos2::new(left, pane_bottom - height),
+                Pos2::new(right, pane_bottom),
             );
-            painter.rect_filled(bar, 0.0, theme::with_alpha_byte(color, 89));
+            match column.as_mut() {
+                Some(shared) if shared.0.left() == left => {
+                    if bar.height() > shared.0.height() {
+                        *shared = (bar, color);
+                    }
+                }
+                _ => {
+                    if let Some(done) = column.replace((bar, color)) {
+                        paint(done);
+                    }
+                }
+            }
+        }
+        if let Some(last) = column {
+            paint(last);
         }
     }
 
