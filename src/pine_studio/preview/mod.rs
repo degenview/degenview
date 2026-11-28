@@ -5,10 +5,11 @@
 //! The preview never raises alerts: it only ever calls `ChartCard::set_pine_source`, which runs
 //! the script for drawing, never the alert path.
 
-use super::inputs::{InputValues, InputsStore};
+use super::inputs::InputsStore;
 use crate::model::pine::script::ScriptType;
 use crate::model::{DataSource, InstrumentId, Kline, Listing, Timeframe};
 use crate::pine::compiler::program::{InputSchema, InputValue};
+use crate::pine::inputs::values::InputValues;
 use crate::service::ProviderError;
 use crate::service::work_queue::Pending;
 use crate::store::SharedStore;

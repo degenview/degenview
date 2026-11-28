@@ -261,7 +261,7 @@ fn inputs_fit_the_drawer() {
     let cases = [("none", InputSchema::default()), ("six", six)];
     for (state, schema) in &cases {
         for size in SIZES {
-            let values = crate::pine_studio::inputs::InputValues::new();
+            let values = crate::pine::inputs::values::InputValues::new();
             fits("inputs", state, size, |ui| {
                 crate::pine_studio::inputs::show(ui, schema, &values);
             });

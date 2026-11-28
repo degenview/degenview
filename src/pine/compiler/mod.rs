@@ -97,7 +97,14 @@ fn compile_internal(
         }));
     }
     let mut schema = InputSchema::default();
-    collect_inputs(&statements, &environment, &mut schema, &mut diagnostics);
+    let mut input_sites = HashMap::new();
+    collect_inputs(
+        &statements,
+        &environment,
+        &mut schema,
+        &mut input_sites,
+        &mut diagnostics,
+    );
 
     let method_names = super::syntax::ast::method_names(&statements);
     diagnostics.extend(structure_validate(&statements, &method_names, &normalized));
@@ -142,6 +149,7 @@ fn compile_internal(
         statements,
         declaration: metadata,
         input_schema: schema,
+        input_sites,
         diagnostics,
         method_names,
         resolutions,
@@ -625,6 +633,7 @@ fn collect_inputs(
     statements: &[Statement],
     environment: &HashMap<String, RuntimeValue>,
     schema: &mut InputSchema,
+    sites: &mut HashMap<usize, String>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let enums = enum_declarations(statements);
@@ -634,10 +643,12 @@ fn collect_inputs(
                 name: fn_name,
                 arguments,
                 range,
+                site,
                 ..
             } = value
             && (fn_name.starts_with("input.") || fn_name == "input")
         {
+            sites.insert(*site, name.clone());
             if fn_name == "input.enum" {
                 if let Some(mut input) = enum_input(name, arguments, &enums, environment) {
                     input.active =
@@ -674,20 +685,22 @@ fn collect_inputs(
                 continue;
             };
             let active = input_active(fn_name, arguments, environment, schema, diagnostics);
+            let kind = builtins::input_kind(fn_name, &default_value);
             schema.inputs.push(InputDefinition {
                 id: name.clone(),
-                kind: builtins::input_kind(fn_name, &default_value),
+                kind,
                 control: builtins::input_control(fn_name),
-                default_value,
+                default_value: default_value.typed(kind),
                 title: input_title(&inputs, &constant),
                 tooltip: inputs.string("tooltip", &constant),
                 group: inputs.string("group", &constant),
                 inline: inputs.string("inline", &constant),
-                confirm: inputs.flag("confirm"),
+                confirm: inputs.flag("confirm", &constant),
                 min_value: inputs.number("minval", &constant),
                 max_value: inputs.number("maxval", &constant),
                 step: inputs.number("step", &constant),
-                options: input_options(&inputs, fn_name, environment),
+                options: input_options(&inputs, fn_name, environment)
+                    .map(|options| options.into_iter().map(|v| v.typed(kind)).collect()),
                 option_titles: None,
                 active,
             });
@@ -698,8 +711,8 @@ fn collect_inputs(
             ..
         } = statement
         {
-            collect_inputs(when_true, environment, schema, diagnostics);
-            collect_inputs(when_false, environment, schema, diagnostics);
+            collect_inputs(when_true, environment, schema, sites, diagnostics);
+            collect_inputs(when_false, environment, schema, sites, diagnostics);
         }
     }
 }
@@ -775,7 +788,7 @@ fn enum_input(
         tooltip: inputs.string("tooltip", &constant),
         group: inputs.string("group", &constant),
         inline: inputs.string("inline", &constant),
-        confirm: inputs.flag("confirm"),
+        confirm: inputs.flag("confirm", &constant),
         min_value: None,
         max_value: None,
         step: None,

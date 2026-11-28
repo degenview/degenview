@@ -860,3 +860,34 @@ fn evaluating_a_watch_leaves_the_interpreters_state_exactly_as_it_was() {
     }
     assert_eq!(format!("{:?}", session.working), before);
 }
+
+#[test]
+fn a_call_s_result_has_a_series_to_open_and_an_input_has_none() {
+    let expandable: Arc<Mutex<Marks>> = Arc::default();
+    let sink = Arc::clone(&expandable);
+    let probe: Probe = Box::new(move |_, view| {
+        *sink.lock().unwrap() = view
+            .variables(0)
+            .iter()
+            .flat_map(|group| group.variables.iter())
+            .map(|variable| (variable.name.clone(), variable.expand.is_some()))
+            .collect();
+    });
+    at_lines(
+        "length = input.int(3, \"Length\")\n\
+         average = ta.sma(close, length)\n\
+         plot(average[1] + length[1])\n",
+        8,
+        &[5],
+        probe,
+    );
+    let expandable = expandable.lock().unwrap();
+    assert!(
+        expandable.contains(&("average".to_owned(), true)),
+        "{expandable:?}"
+    );
+    assert!(
+        expandable.contains(&("length".to_owned(), false)),
+        "{expandable:?}"
+    );
+}

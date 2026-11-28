@@ -3877,3 +3877,43 @@ fn after_a_holiday_a_stocks_week_begins_with_the_first_day_that_trades() {
     // The open of the 8th, the open of the 9th and noon of the 9th.
     assert_eq!(value(&session, "n"), RuntimeValue::Int(3));
 }
+
+#[test]
+fn an_inputs_default_and_options_hold_the_type_its_function_declares() {
+    use crate::pine::compiler::program::InputValue;
+    let schema = input_schema(
+        "level = input.price(100, \"Level\")\n\
+         ratio = input.float(2, \"Ratio\", options = [1, 2, 3])\n\
+         plot(level + ratio)",
+    );
+    assert_eq!(schema.inputs[0].default_value, InputValue::Float(100.0));
+    assert_eq!(schema.inputs[1].default_value, InputValue::Float(2.0));
+    assert_eq!(
+        schema.inputs[1].options,
+        Some(vec![
+            InputValue::Float(1.0),
+            InputValue::Float(2.0),
+            InputValue::Float(3.0)
+        ])
+    );
+}
+
+#[test]
+fn confirm_takes_any_constant_that_is_true() {
+    let schema = input_schema(
+        "const bool ask = true\n\
+         from = input.time(0, \"From\", confirm = ask)\n\
+         plot(from)",
+    );
+    assert!(schema.inputs[0].confirm);
+}
+
+#[test]
+fn an_input_declared_in_a_block_reads_its_value() {
+    let session = run(
+        "seen = 0\n\
+         if bar_index >= 0\n    from = input.int(7, \"From\")\n    seen := from",
+        2,
+    );
+    assert_eq!(value(&session, "seen"), RuntimeValue::Int(7));
+}

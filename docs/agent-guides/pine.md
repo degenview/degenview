@@ -307,6 +307,10 @@
   `symbol`/`session`/`text_area` and `timeframe` without `options` are strings with own controls
   (`pine_studio::inputs`). Stored values stay plain `InputValue`, so saved inputs are unchanged.
   `display` is warned.
+  A value holds its input's declared type (`InputValue::typed`: a whole number for a float input
+  is a float), in defaults, `options` and stored overrides alike. `CompiledProgram::input_sites`
+  maps each `input.*` call to its variable, from the same walk that builds the schema; never find
+  inputs a second way. Value overrides and edits: `pine::inputs::values`.
 - `active`: compiled by `pine::inputs::activity` into `InputDefinition::active`, an expression over
   inputs declared above (by name) and script constants (folded to literals), evaluated by
   `InputSchema::is_active` on edited values with `compiler::constant_value` (also folds comparisons,

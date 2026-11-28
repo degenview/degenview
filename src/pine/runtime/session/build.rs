@@ -14,7 +14,7 @@ use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::support::{LibraryLinkage, SecurityDataProvider};
 use crate::pine::runtime::types::RuntimeFunction;
 use crate::pine::strategy::broker::Broker;
-use crate::pine::syntax::ast::{Expression, Statement};
+use crate::pine::syntax::ast::Statement;
 use crate::pine::syntax::scopes::ShadowNames;
 
 impl Session {
@@ -44,7 +44,6 @@ impl Session {
         let mut callables = Vec::new();
         let mut methods: FastMap<String, Vec<RuntimeFunction>> = FastMap::default();
         let mut script_overloads: FastMap<String, Vec<RuntimeFunction>> = FastMap::default();
-        let mut input_variables = HashMap::new();
         let mut types = FastMap::default();
         let mut enums = FastMap::default();
         let linkage = LibraryLinkage::new(&program);
@@ -86,13 +85,6 @@ impl Session {
                         methods.entry(name.clone()).or_default().push(function);
                     }
                 }
-                Statement::Declaration {
-                    name,
-                    value: Expression::Call { site, .. },
-                    ..
-                } => {
-                    input_variables.insert(*site, name.clone());
-                }
                 _ => {}
             }
         }
@@ -119,6 +111,8 @@ impl Session {
         let keeps_series_bars = calls(&program, "request.security")
             || (symbol.grid != Grid::Utc && calls(&program, "timeframe.change"));
         let mut inputs = inputs;
+        program.input_schema.type_values(&mut inputs);
+        let input_variables = program.input_sites.clone();
         for input in &program.input_schema.inputs {
             inputs
                 .entry(input.id.clone())
